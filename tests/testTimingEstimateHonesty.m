@@ -8,8 +8,45 @@ testPUSCHReceiverPreservesNegativeTrackingEstimate();
 testDataReceiversDoNotCPClipAbsoluteAcquisitionOffset();
 testKnownGeometryDelayIsSubtractedFromAppliedCorrection();
 testKnownDelayDoesNotInvertEarlierPathTimingEstimate();
+testFreshPUSCHTimingIgnoresAlreadyRemovedDelay();
 
 ok = true;
+end
+
+function testFreshPUSCHTimingIgnoresAlreadyRemovedDelay()
+cfg=sixgr.config.defaultConfig();
+cfg.channel.model='AWGN'; cfg.channel.awgnOnly=true;
+cfg.phy.rx.useIdealTimingSync=false;
+cfg.phy.impairments.timingOffsetEnabled=true;
+cfg.phy.impairments.timingOffsetSamples=91; % Deliberately not actual delay.
+cfg.lls6g.receiverSync.ChannelFilterDelay_samples=300;
+cfg.lls6g.receiverSync.ReceivedTimingPrecompensation_samples=300;
+cfg.phy.carrier.NSizeGrid=25; cfg.phy.carrier.SubcarrierSpacing=15;
+cfg.phy.pusch.prbSet=0:24; cfg.phy.pusch.symbolAllocation=[0 14];
+cfg.phy.pusch.modulation='QPSK'; cfg.phy.pusch.mcsIndex=4;
+cfg.phy.pusch.mcsTable='qam64_table1'; cfg.phy.pusch.codeRate=308/1024;
+cfg.phy.pusch.targetCodeRate=308/1024;
+cfg.phy.pusch.numAntennaPorts=2; cfg.phy.pusch.numPorts=2;
+cfg.phy.pusch.transmissionScheme='codebook'; cfg.phy.pusch.transformPrecoding=false;
+cfg.phy.pusch.TPMI=0; cfg.phy.pusch.PMI=0;
+cfg.scenario.ue.nTxAnt=2; cfg.antenna.ue.numElements=2;
+for layers=[1 2]
+    cfg.phy.pusch.numLayers=layers; cfg.phy.pusch.nLayers=layers;
+    cfg.phy.pusch.dmrs.portSet=0:layers-1; cfg.phy.pusch.dmrs.DMRSPortSet=0:layers-1;
+    [tx,~]=sixgr.phy.ul.PUSCH_Tx(cfg);
+    for offset=[0 16 43]
+        wave=[zeros(offset,2);tx.Waveform;zeros(64-offset,2)];
+        rx=sixgr.phy.ul.PUSCH_Rx(wave,cfg,'Carrier',tx.Carrier,'PUSCH',tx.PUSCH, ...
+            'PUSCHIndices',tx.PUSCHIndices,'TransportBlockSize',tx.TransportBlockSize, ...
+            'TargetCodeRate',tx.TargetCodeRate,'RV',tx.RV,'NoiseVar',1e-8, ...
+            'NoiseVarDomain','time','CodingLayout',tx.CodingLayout);
+        assert(~rx.CRCError && rx.TimingEstimateUsed && ...
+            rx.RawTimingEstimate_samples==offset && rx.AppliedTimingCorrection_samples==offset && ...
+            rx.KnownTimingDelay_samples==0, ...
+            'Fresh PUSCH DM-RS timing must not subtract metadata about an upstream removed delay.');
+    end
+end
+fprintf('PUSCH_FRESH_TIMING_PASS ranks=1,2 delays=0,16,43 metadata_oracle=0\n');
 end
 
 function testKnownDelayDoesNotInvertEarlierPathTimingEstimate()

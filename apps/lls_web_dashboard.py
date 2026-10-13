@@ -25,6 +25,7 @@ from contextlib import contextmanager
 from http.cookies import SimpleCookie
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
+from itertools import islice
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -5056,16 +5057,26 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
     compact_manifest_rows = _read_csv_records(compact_manifest_path)
     compact_resolved_config = _read_json_file(compact_config_path)
     generic_sweep_preflight = _is_generic_sweep_parent_preflight(run_folder)
-    active_waveform_preflight = (
-        not generic_sweep_preflight
-        and _is_active_waveform_preflight(run_folder)
-    )
     compact_lls_run = bool(
         compact_provenance
         and compact_summary
         and compact_truth
         and compact_validity_rows
         and compact_manifest_rows
+    )
+    # Process discovery is needed only to establish config-only preflight.
+    # Doing it for every completed/failed/live folder spawns one Windows
+    # process enumeration per stored run, blocking the live run-list API.
+    # Stale live/preflight evidence still receives its independent process
+    # check below; terminal failure and success authority is unchanged.
+    active_waveform_preflight = (
+        not generic_sweep_preflight
+        and not (
+            manifest or summary or qualification or reanalysis or recovery
+            or component_qualification_manifest or compact_lls_run
+            or (live_stage and (config_identity or resolved_config))
+        )
+        and _is_active_waveform_preflight(run_folder)
     )
     if (
         not manifest
@@ -5167,14 +5178,15 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
     if not run_completion:
         completed = _truthy_value(summary.get("RunCompleted") or manifest.get("RunCompleted"))
         run_completion = "completed" if completed is True else "results_folder"
-    result_ok = _truthy_value(
-        summary.get("ResultOk")
-        or summary.get("Ok")
-        or manifest.get("ResultOk")
-        or qualification.get("FinalStatus")
-        or reanalysis.get("FinalStatus")
-        or recovery.get("QualificationStatus")
-    )
+    # JSON false is an explicit negative result, not missing evidence. Do
+    # not discard it through boolean `or` and fall through to another source.
+    result_ok = _truthy_value(next((
+        value for value in (
+            summary.get("ResultOk"), summary.get("Ok"),
+            manifest.get("ResultOk"), qualification.get("FinalStatus"),
+            reanalysis.get("FinalStatus"), recovery.get("QualificationStatus"),
+        ) if value is not None and value != ""
+    ), None))
     if result_ok is None and component_qualification_manifest:
         qualification_statuses = [
             str(row.get("Status") or "").strip().upper()
@@ -6973,12 +6985,31 @@ def parse_optional_int(raw: str | None) -> int | None:
 def parse_csv_bytes(raw: bytes, max_rows: int | None = None) -> tuple[list[str], list[list[str]]]:
     text = raw.decode("utf-8", errors="replace")
     with csv_field_limit_for_payload(len(raw)):
-        rows = list(csv.reader(io.StringIO(text)))
-    header = normalize_csv_header_row(rows[0] if rows else [])
-    body = rows[1:] if len(rows) > 1 else []
-    if max_rows is not None:
-        body = body[:max_rows]
-    return header, body
+        return read_csv_preview(csv.reader(io.StringIO(text)), max_rows)
+
+
+def read_csv_preview(reader: Any, max_rows: int | None) -> tuple[list[str], list[list[str]]]:
+    """Read a CSV header and bounded logical records, including quoted newlines."""
+    header = normalize_csv_header_row(next(reader, []))
+    return header, list(reader if max_rows is None else islice(reader, max_rows))
+
+
+def load_artifact_csv_preview(
+    artifact: dict[str, Any], max_rows: int | None
+) -> tuple[list[str], list[list[str]]]:
+    """Preview the known file without loading it all or rediscovering other runs.
+
+    A resource-grid CSV can contain millions of rows. A live four-row preview
+    must not parse every row while holding the process-wide CSV parser lock.
+    This is only a preview; full downloads and qualification retain all rows.
+    """
+    filesystem_path = str(artifact.get("filesystem_path") or "").strip()
+    if not filesystem_path:
+        return load_cached_csv_preview(int(artifact["artifact_id"]), max_rows)
+    path = _windows_extended_path(filesystem_path)
+    with csv_field_limit_for_payload(path.stat().st_size):
+        with path.open("r", encoding="utf-8-sig", errors="replace", newline="") as handle:
+            return read_csv_preview(csv.reader(handle), max_rows)
 
 
 HEADER_REMAP = {
@@ -7046,12 +7077,36 @@ def load_cached_csv_rows(artifact_id: int, max_rows: int) -> tuple[tuple[str, ..
     records: list[tuple[Any, ...]] = []
     for row in rows:
         values: list[Any] = []
-        for idx, _name in enumerate(header):
+        for idx, name in enumerate(header):
             raw = row[idx] if idx < len(row) else ""
-            numeric = coerce_numeric(raw)
-            values.append(numeric if numeric is not None else raw)
+            values.append(coerce_csv_cell(name, raw))
         records.append(tuple(values))
     return tuple(header), tuple(records)
+
+
+def coerce_csv_cell(name: str, raw: Any) -> Any:
+    """Honor literal evidence schemas before interpreting numeric values.
+
+    Keep this contract aligned with sixgr.util.csvReadTable. A decimal-only
+    hex payload, digest, bit vector or 48-bit contention identity is still
+    text. Once converted to float its bytes cannot be reconstructed.
+    """
+    key = str(name).lower()
+    literal = key.endswith(("hex", "sha256", "digest", "hash", "bitvector",
+                            "biterrorvector", "bitsjson", "contentionidentity"))
+    literal = literal or key in {
+        "receivedidentity", "expectedidentity", "ueidentity",
+        "contentionidentitytx", "contentionidentityrx",
+        "posteqsinrperlayer_db", "agedposteqsinrperlayer_db",
+        "predictedpuschposteqsinrperlayer_db", "residualinterlayerpowerperlayer",
+        "evmperlayer_rms", "layersinrdb", "perlayersinr_db",
+        "selectedlayersinr_db", "layersinr_db", "measuredperlayersinr_db",
+        "beamscorevector_db", "topbeamindexset", "topbeamgainset_db",
+    }
+    if literal:
+        return raw
+    numeric = coerce_numeric(raw)
+    return numeric if numeric is not None else raw
 
 
 def coerce_numeric(value: str) -> float | None:
@@ -7566,7 +7621,7 @@ def group_config_fields(fields: list[dict[str, Any]]) -> list[tuple[str, list[di
     return ordered
 
 
-def infer_browser_truth_modes(config_payload: dict[str, Any]) -> dict[str, str]:
+def infer_browser_truth_modes(config_payload: dict[str, Any]) -> dict[str, Any]:
     browser_mode = str(path_get(config_payload, "run_control.execution_mode", "LLS") or "LLS").strip().upper()
     if browser_mode not in BROWSER_EXECUTION_MODE_OPTIONS:
         browser_mode = "LLS"
@@ -7592,7 +7647,18 @@ def infer_browser_truth_modes(config_payload: dict[str, Any]) -> dict[str, str]:
     pbch_required = bool(path_get(config_payload, "control_gating.pbch_required", path_get(config_payload, "reference_signals.pbch_enabled", False)))
     prach_required = bool(path_get(config_payload, "control_gating.prach_required", path_get(config_payload, "random_access.enabled", False)))
     pdcch_required = bool(path_get(config_payload, "control_gating.pdcch_required", path_get(config_payload, "control.pdcch_enabled", False)))
-    srs_required = bool(path_get(config_payload, "control_gating.srs_required", path_get(config_payload, "reference_signals.srs_enabled", False)))
+    # Signal generation and a global scheduler-admission gate are distinct.
+    # H4 enables causal SRS reception without requiring SRS for every DL
+    # grant. Neither configuration flag proves a successful reception.
+    srs_enabled = _truthy_value(path_get(config_payload, "reference_signals.srs_enabled",
+                                        path_get(config_payload, "reference_signals.srs.enabled", None)))
+    srs_required = _truthy_value(path_get(config_payload, "control_gating.srs_required", srs_enabled)) is True
+    if srs_enabled is True:
+        srs_mode = "srs_freshness_csi_gate" if srs_required else "configured_srs_without_global_scheduler_gate"
+    elif srs_enabled is False:
+        srs_mode = "disabled_with_required_gate_configuration_conflict" if srs_required else "disabled"
+    else:
+        srs_mode = "required_gate_signal_configuration_unavailable" if srs_required else "configuration_unavailable"
     control_mode = "runtime_control_access_state_gated" if execution_model == "slot_coupled_truth" and any((pbch_required, prach_required, pdcch_required, srs_required)) else "independent_signal_bundle"
     sweep_enabled = bool(path_get(config_payload, "sweeps_and_matrix.snr_sweep.enabled", False))
     noise_mode = str(
@@ -7619,7 +7685,8 @@ def infer_browser_truth_modes(config_payload: dict[str, Any]) -> dict[str, str]:
         "pbch_mode": "runtime_cell_search_gate" if pbch_required else "disabled",
         "prach_mode": "runtime_four_step_ra_msg1_to_msg4_shared_channel_gated" if prach_required else "disabled",
         "pdcch_mode": "grant_coupled_pdcch_dci_gating" if pdcch_required else "disabled",
-        "srs_mode": "srs_freshness_csi_gate" if srs_required else "disabled",
+        "srs_mode": srs_mode,
+        "configured_srs_enabled": srs_enabled,
         "pbch_gating_active": pbch_required,
         "prach_gating_active": prach_required,
         "pdcch_gating_active": pdcch_required,
@@ -9530,19 +9597,15 @@ def load_small_csv_rows(artifacts: list[dict[str, Any]], logical_path: str, *, m
     filesystem_path = str(art.get("filesystem_path") or "").strip()
     if filesystem_path:
         try:
-            header, rows_raw = parse_csv_bytes(
-                _windows_extended_path(filesystem_path).read_bytes(),
-                max_rows=max_rows,
-            )
+            header, rows_raw = load_artifact_csv_preview(art, max_rows)
         except OSError:
             return []
         rows = []
         for raw_row in rows_raw:
             values: list[Any] = []
-            for idx, _name in enumerate(header):
+            for idx, name in enumerate(header):
                 raw = raw_row[idx] if idx < len(raw_row) else ""
-                numeric = coerce_numeric(raw)
-                values.append(numeric if numeric is not None else raw)
+                values.append(coerce_csv_cell(name, raw))
             rows.append(tuple(values))
     else:
         header, rows = load_cached_csv_rows(int(art["artifact_id"]), max_rows)
@@ -11398,7 +11461,14 @@ DATA_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("EqualizationAvailable", "Equalization available"),
         ("InjectedCFO_Hz", "Injected CFO (Hz)"),
         ("EstimatedCFO_PreCorrection_Hz", "Estimated CFO (Hz)"),
-        ("ResidualCFO_PostCorrection_Hz", "Residual CFO (Hz)"),
+        ("CFOCorrectionApplied", "CFO correction applied"),
+        ("CFOCorrectionApplied_Hz", "Applied CFO correction (Hz)"),
+        ("ResidualCFO_PostCorrection_Hz", "Simulation-reference residual CFO (Hz)"),
+        ("ResidualCFO_EstimatedPostCorrection_Hz", "Post-correction frequency estimate (Hz)"),
+        ("ResidualCFOEstimateRole", "Residual estimate evidence role"),
+        ("ResidualCFOReusesAcquisitionObservation", "Reuses acquisition observation"),
+        ("ResidualCFOEstimateSource", "Residual estimator source"),
+        ("ResidualCFOEstimateAvailable", "Residual estimate available"),
         ("CFOEstimateAvailability", "CFO estimate availability"),
         ("EstimatedTimingOffset_PreCorrection_samples", "Timing estimate (samples)"),
         ("AppliedTimingCorrection_samples", "Applied timing correction (samples)"),
@@ -11470,7 +11540,14 @@ DATA_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("EqualizationAvailable", "Equalization available"),
         ("InjectedCFO_Hz", "Injected CFO (Hz)"),
         ("EstimatedCFO_PreCorrection_Hz", "Estimated CFO (Hz)"),
-        ("ResidualCFO_PostCorrection_Hz", "Residual CFO (Hz)"),
+        ("CFOCorrectionApplied", "CFO correction applied"),
+        ("CFOCorrectionApplied_Hz", "Applied CFO correction (Hz)"),
+        ("ResidualCFO_PostCorrection_Hz", "Simulation-reference residual CFO (Hz)"),
+        ("ResidualCFO_EstimatedPostCorrection_Hz", "Post-correction frequency estimate (Hz)"),
+        ("ResidualCFOEstimateRole", "Residual estimate evidence role"),
+        ("ResidualCFOReusesAcquisitionObservation", "Reuses acquisition observation"),
+        ("ResidualCFOEstimateSource", "Residual estimator source"),
+        ("ResidualCFOEstimateAvailable", "Residual estimate available"),
         ("CFOEstimateAvailability", "CFO estimate availability"),
         ("EstimatedTimingOffset_PreCorrection_samples", "Timing estimate (samples)"),
         ("AppliedTimingCorrection_samples", "Applied timing correction (samples)"),
@@ -11518,14 +11595,20 @@ PROCEDURE_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("FallbackFlag", "Fallback"), ("SourceArtifact", "Source artifact"),
     ],
     "msg1_detection": [
-        ("UEId", "UE"), ("Slot", "Slot"),
+        ("UEId", "UE"), ("Frame", "Frame"), ("Slot", "Slot in frame (0-based)"),
+        ("Msg1ScheduledSlot", "Absolute slot (0-based)"),
         ("AssociatedSSBIndex", "Associated SSB beam"),
         ("AssociatedSSBMeasurement_dB", "Associated SSB measurement dB"),
         ("AssociatedSSBSelectionSource", "SSB/beam authority"),
         ("Msg1BeamPolicy", "Msg1 beam policy"),
         ("RootSequenceIndex", "Root sequence index (RSI)"),
         ("PreambleIndexTx", "TX preamble"),
-        ("PreambleIndexDetected", "Detected preamble"),
+        ("PreambleIndexDetected", "Strongest detected preamble"),
+        ("DetectedPreambleSet", "Received preamble set"),
+        ("DetectedPreambleSetAvailable", "Received set available"),
+        ("MissedDetection", "Target preamble missed"),
+        ("FalseAlarm", "False alarm"), ("FalseAlarmStatus", "False alarm applicability"),
+        ("DetectionPopulationScope", "Detection population"),
         ("PreambleDetectionMetric", "Detection metric"),
         ("PreambleDetectionThreshold", "Threshold"),
         ("FrequencyEstimationEnabled", "Frequency estimate enabled"),
@@ -11551,6 +11634,7 @@ PROCEDURE_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("Msg2RARNTIDetected", "Msg2 RA-RNTI detected"),
         ("Msg2DCICrcPass", "Msg2 DCI CRC"),
         ("Msg2PDSCHCrcPass", "Msg2 PDSCH CRC"),
+        ("RAPIDDecoded", "Decoded RAR RAPID"), ("RAPIDMatches", "RAR RAPID matches UE"),
         ("Msg3PUSCHCrcPass", "Msg3 PUSCH CRC"),
         ("Msg4PDCCHCrcPass", "Msg4 PDCCH CRC"),
         ("Msg4PDSCHCrcPass", "Msg4 PDSCH CRC"),
@@ -11565,6 +11649,10 @@ PROCEDURE_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
     "ra_stage_waveforms": [
         ("UEId", "UE"), ("StageName", "Stage"),
         ("StageSlot", "Absolute slot (0-based)"),
+        ("TxPortCount", "Prepared TX ports"),
+        ("RuntimeChannelPhysicalTxElements", "Physical TX dimensions"),
+        ("RxPortCount", "Received RX dimensions"),
+        ("TxPortToElementMappingSource", "TX port-to-element mapping"),
         ("TxBeamId", "TX beam"),
         ("TxSSBAssociationJSON", "SSB association"),
         ("RuntimeStageWaveformUsed", "Waveform used"),
@@ -11682,6 +11770,15 @@ def summarize_procedure_preview_rows(procedure_key: str, rows: list[dict[str, An
     """Curate exact procedure evidence without filling absent measurements."""
     if not rows:
         return []
+    if procedure_key == "msg1_detection":
+        rows = [dict(row) for row in rows]
+        for row in rows:
+            if str(row.get("FalseAlarm", "")).strip().lower() in {"nan", "<missing>", "null"}:
+                row["FalseAlarm"] = None
+            for canonical, actual in (("PreambleDetectionMetric", "DetectionMetric"),
+                                      ("PreambleDetectionThreshold", "DetectionThreshold")):
+                if normalize_preview_value(row.get(canonical)) is None and actual in row:
+                    row[canonical] = row[actual]
     specs = PROCEDURE_PREVIEW_COLUMNS.get(procedure_key) or []
     if not specs:
         return rows
@@ -12039,8 +12136,52 @@ def _config_get_nested(config: dict[str, Any], path: str, default: Any = None) -
     return current
 
 
+def _independent_phy_calibration_scope(config: dict[str, Any]) -> bool:
+    """Mirror standalonePHYCalibrationEvidenceScope, never infer from missing CSVs."""
+    source = _config_get_nested(config, "lls6g.resolvedConfig", config)
+    if not isinstance(source, dict):
+        return False
+    required = {
+        "scenario.runner_profile": "waveform_bundle",
+        "users.execution_model": "independent_link_sweep",
+        "pdsch.execution_profile": "phy_calibration",
+        "pusch.execution_profile": "phy_calibration",
+    }
+    if any(_config_get_nested(source, key) != value for key, value in required.items()):
+        return False
+    # Missing/malformed required gates and conflicting installed authority
+    # remain strict. PUSCH-UCI is optional and defaults false in the builder.
+    gates = {
+        "pbch_required": "pbchRequired", "prach_required": "prachRequired",
+        "pdcch_required": "pdcchRequired", "pucch_required": "pucchRequired",
+        "srs_required": "srsRequired", "trs_required": "trsRequired",
+        "pusch_uci_required": "puschUCIRequired",
+    }
+    def explicitly_false(value: Any) -> bool:
+        return isinstance(value, (bool, int, float)) and value == 0
+
+    for key, runtime_key in gates.items():
+        default = False if key == "pusch_uci_required" else None
+        if not explicitly_false(_config_get_nested(source, "control_gating." + key, default)):
+            return False
+        installed = _config_get_nested(config, "run.controlGating." + runtime_key)
+        if installed is not None and not explicitly_false(installed):
+            return False
+    for key, expected in {
+        "lls6g.users.execution_model": "independent_link_sweep",
+        "run.pdschExecutionProfile": "phy_calibration",
+        "phy.pdsch.executionProfile": "phy_calibration",
+        "phy.pusch.executionProfile": "phy_calibration",
+    }.items():
+        installed = _config_get_nested(config, key)
+        if installed is not None and installed != expected:
+            return False
+    return True
+
+
 def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
     config = parse_config_json(run_row)
+    independent_phy_calibration = _independent_phy_calibration_scope(config)
     runner_profile = ""
     for runner_path in (
         "scenario.runner_profile",
@@ -12578,6 +12719,7 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
     )
     pbch_runtime_required = config_bool(
         "run.controlGating.pbchRequired",
+        "control_gating.pbch_required",
         "canonical_control.control.pbch_required",
         "lls6g.resolvedConfig.control_gating.pbch_required",
         default=initial_access_enabled,
@@ -12650,6 +12792,7 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
     )
     scheduler_runtime_enabled = bool(
         not fixed_link_campaign_only
+        and not independent_phy_calibration
         and config_bool(
             "run_control.save_scheduler_decisions",
             "lls6g.resolvedConfig.run_control.save_scheduler_decisions",
@@ -12658,6 +12801,7 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
     )
     traffic_runtime_enabled = bool(
         not fixed_link_campaign_only
+        and not independent_phy_calibration
         and config_text(
             "traffic.model",
             "lls6g.resolvedConfig.traffic.model",
@@ -12681,22 +12825,16 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "lls6g.resolvedConfig.output.backend",
         default="mysql_web" if system_default else "filesystem",
     ).lower()
-    channel_model = str(
-        _config_get_nested(
-            config,
-            "channel.model",
-            _config_get_nested(
-                config,
-                "lls6g.resolvedConfig.channels.profile",
-                _config_get_nested(config, "lls6g.resolvedConfig.channels.model_type", "AWGN"),
-            ),
-        )
-        or "AWGN"
-    ).strip().upper()
+    channel_model = config_text(
+        "channel.model", "channels.profile", "channels.model_type",
+        "lls6g.resolvedConfig.channels.profile",
+        "lls6g.resolvedConfig.channels.model_type", default="AWGN",
+    ).upper()
     fading_enabled = channel_model not in {"", "AWGN", "NONE", "OFF"}
     num_ues = scenario_user_count(config)
     return {
         "runner_profile": runner_profile,
+        "independent_phy_calibration": independent_phy_calibration,
         "sweep_base_profile": sweep_base_profile,
         "cross_feature_qualification": cross_feature_qualification,
         "ai_enabled": ai_enabled,
@@ -13498,6 +13636,7 @@ def infer_runtime_truth_modes(config: dict[str, Any], operating_mode: list[dict[
                 "pdcch_mode": "disabled",
                 "pucch_mode": "disabled",
                 "srs_mode": "disabled",
+                "configured_srs_enabled": False,
                 "trs_mode": "disabled",
                 "pbch_gating_active": False,
                 "prach_gating_active": False,
@@ -14608,7 +14747,9 @@ def extract_metric_cards(run_row: dict[str, Any], artifacts: list[dict[str, Any]
     for art in summary_candidates[:6]:
         path = art["logical_path"].lower()
         if path.endswith(".json"):
-            raw = fetch_artifact_bytes(int(art["artifact_id"]))
+            filesystem_path = str(art.get("filesystem_path") or "").strip()
+            raw = (_windows_extended_path(filesystem_path).read_bytes() if filesystem_path
+                   else fetch_artifact_bytes(int(art["artifact_id"])))
             try:
                 obj = json.loads(raw.decode("utf-8", errors="replace"))
             except json.JSONDecodeError:
@@ -14621,7 +14762,7 @@ def extract_metric_cards(run_row: dict[str, Any], artifacts: list[dict[str, Any]
                 metrics.append({"label": label, "value": f"{value:.4g}", "source": art["logical_path"]})
                 seen.add(label)
         elif path.endswith(".csv"):
-            header, rows = load_cached_csv_preview(int(art["artifact_id"]), 2)
+            header, rows = load_artifact_csv_preview(art, 2)
             if not header or not rows:
                 continue
             first_row = rows[0]
@@ -15722,7 +15863,7 @@ def annotate_realtime_logs(logs: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def build_numeric_chart_from_artifact(artifact: dict[str, Any]) -> dict[str, Any] | None:
-    header, rows = load_cached_csv_preview(int(artifact["artifact_id"]), MAX_ACTIVITY_POINTS)
+    header, rows = load_artifact_csv_preview(artifact, MAX_ACTIVITY_POINTS)
     if not rows or not header:
         return None
     lowered = [str(name).strip().lower() for name in header]
@@ -15737,7 +15878,7 @@ def build_numeric_chart_from_artifact(artifact: dict[str, Any]) -> dict[str, Any
             )
         )
     ):
-        expanded_header, expanded_rows = load_cached_csv_preview(int(artifact["artifact_id"]), 12000)
+        expanded_header, expanded_rows = load_artifact_csv_preview(artifact, 12000)
         if expanded_header:
             header, rows = expanded_header, expanded_rows
             lowered = [str(name).strip().lower() for name in header]
@@ -16415,7 +16556,7 @@ def map_table_rows(artifacts: list[dict[str, Any]], keywords: tuple[str, ...], m
     coord_mode_names = {"coordinatemode", "coordinate_mode"}
     anchor_names = {"mapanchorlabel", "map_anchor_label", "anchorlabel", "anchor_label"}
     for art in candidates[:4]:
-        header, rows = load_cached_csv_preview(int(art["artifact_id"]), 500)
+        header, rows = load_artifact_csv_preview(art, 500)
         normalized = {re.sub(r"[^a-z0-9]+", "", name.lower()): idx for idx, name in enumerate(header)}
         lat_idx = next((idx for key, idx in normalized.items() if key in lat_names), None)
         lon_idx = next((idx for key, idx in normalized.items() if key in lon_names), None)
@@ -16428,6 +16569,9 @@ def map_table_rows(artifacts: list[dict[str, Any]], keywords: tuple[str, ...], m
             record = {header[idx]: row[idx] if idx < len(row) else "" for idx in range(len(header))}
             if lat_idx >= len(row) or lon_idx >= len(row):
                 continue
+            # Bind the actual accepted header aliases before resolving the
+            # coordinate plane; Latitude/Longitude must not silently vanish.
+            record["Lat"], record["Lon"] = row[lat_idx], row[lon_idx]
             lat, lon = resolve_row_coordinates(record)
             if lat is None or lon is None:
                 continue
@@ -20360,9 +20504,9 @@ window.addEventListener('DOMContentLoaded', function () {
       {id:'waveform_quality', title:'Waveform quality by physical channel', columns:['Channel','Direction','Slot','UE','EVM rms','EVM percent','EVM applicable','EVM reference source','EVM status','NMSE dB','NMSE scoring available','NMSE reference source','Channel estimate available','Channel estimate source','Equalization available','Observation samples','Sample rate (Hz)','Waveform executed','Waveform hash','Status'], rows:waveformQualityRows, sourcePath:'exact per-channel receiver trial rows; unavailable fields are not substituted'},
       {id:'prach_rach', title:'PRACH / RACH detection', columns:['Frame','Slot','UE','Configured SNR (dB)','TX preamble (audit)','Detected preamble','Detection attempted','Preamble detected','Metric','Threshold','Peak/noise (dB)','Peaks above threshold','Missed detection','False alarm','False alarm definition','DTX','Qualification status','Status'], rows:recent(controlPreviews.prach_trials), sourcePath:selectedPath(controlSelection.prach_trials)},
       {id:'prach_timing', title:'PRACH timing / RAR timing advance', columns:['Slot','UE','Detected preamble','Raw timing (samples)','Propagation timing (samples)','PRACH sample rate (Hz)','Timing valid','Timing source','RAR TA command','TA NTA (Tc units)','TA (samples)','TA (us)','TA source','Msg3 TA applied','TA out of range'], rows:recent(controlPreviews.prach_trials), sourcePath:selectedPath(controlSelection.prach_trials)},
-      {id:'prach_identity', title:'PRACH Msg1 identity / beam / timing-frequency evidence', columns:['UE','Slot','Associated SSB beam','Associated SSB measurement dB','SSB/beam authority','Msg1 beam policy','Root sequence index (RSI)','TX preamble','Detected preamble','Detection metric','Threshold','Frequency estimate enabled','Detected frequency offset Hz','Frequency estimate valid','Frequency estimator','Raw timing samples','Propagation timing samples','Injected timing samples','Timing error samples','Timing source','RAR TA command','TA role','Timing sample rate Hz','RA-RNTI','Status'], rows:msg1Rows, sourcePath:selectedPath(procedureSelection.msg1_detection)},
-      {id:'ra_attempt', title:'Four-step RA received outcomes', columns:['UE','Attempt','TX preamble','Detected preamble','RA-RNTI','Temporary C-RNTI','Final C-RNTI','Msg2 RA-RNTI detected','Msg2 DCI CRC','Msg2 PDSCH CRC','Msg3 PUSCH CRC','Msg4 PDCCH CRC','Msg4 PDSCH CRC','RAR TA command','TA NTA (Tc units)','TA source','RA complete','Physical stage waveforms','Shared channel state','Runtime stages'], rows:raAttemptRows, sourcePath:selectedPath(procedureSelection.ra_attempt)},
-      {id:'ra_stage_waveforms', title:'RA / RRC physical stage waveforms', columns:['UE','Stage','Runtime slot (1-based)','Absolute slot (0-based)','TX beam','SSB association','Waveform used','Channel state used','Fading execution','TX RF status','TX RF stages','RX front-end status','RX RF stages'], rows:raStageRows, sourcePath:selectedPath(procedureSelection.ra_stage_waveforms)},
+      {id:'prach_identity', title:'PRACH Msg1 identity / beam / timing-frequency evidence', columns:['UE','Frame','Slot in frame (0-based)','Absolute slot (0-based)','Associated SSB beam','Associated SSB measurement dB','SSB/beam authority','Msg1 beam policy','Root sequence index (RSI)','TX preamble','Strongest detected preamble','Received preamble set','Received set available','Target preamble missed','False alarm','False alarm applicability','Detection population','Detection metric','Threshold','Frequency estimate enabled','Detected frequency offset Hz','Frequency estimate valid','Frequency estimator','Raw timing samples','Propagation timing samples','Injected timing samples','Timing error samples','Timing source','RAR TA command','TA role','Timing sample rate Hz','RA-RNTI','Status'], rows:msg1Rows, sourcePath:selectedPath(procedureSelection.msg1_detection)},
+      {id:'ra_attempt', title:'Four-step RA received outcomes', columns:['UE','Attempt','TX preamble','Detected preamble','RA-RNTI','Temporary C-RNTI','Final C-RNTI','Msg2 RA-RNTI detected','Msg2 DCI CRC','Msg2 PDSCH CRC','Decoded RAR RAPID','RAR RAPID matches UE','Msg3 PUSCH CRC','Msg4 PDCCH CRC','Msg4 PDSCH CRC','RAR TA command','TA NTA (Tc units)','TA source','RA complete','Physical stage waveforms','Shared channel state','Runtime stages'], rows:raAttemptRows, sourcePath:selectedPath(procedureSelection.ra_attempt)},
+      {id:'ra_stage_waveforms', title:'RA / RRC physical stage waveforms', columns:['UE','Stage','Runtime slot (1-based)','Absolute slot (0-based)','Prepared TX ports','Physical TX dimensions','Received RX dimensions','TX port-to-element mapping','TX beam','SSB association','Waveform used','Channel state used','Fading execution','TX RF status','TX RF stages','RX front-end status','RX RF stages'], rows:raStageRows, sourcePath:selectedPath(procedureSelection.ra_stage_waveforms)},
       {id:'rrc_attach', title:'RRC / UE attach lifecycle', columns:['Step','UE','RNTI','Cell','Frame','Runtime slot (1-based)','Stage','Event','State','Status','Start runtime slot (1-based)','End runtime slot (1-based)','Delay ms','Complete','Placeholder','Fallback','Source artifact'], rows:rrcRows, sourcePath:selectedPath(procedureSelection.initial_access_lifecycle)},
       {id:'rrc_parameters', title:'RRC setup parameters decoded for the UE', columns:['UE','RNTI','Temporary C-RNTI','Final C-RNTI','RRC transaction ID','SRB1 LCID','RRC setup request decoded','RRC setup decoded','SRB1 installed','RRC setup-complete CRC','RRC setup-complete decoded','Decoded UE identity','RRC connected','RA complete'], rows:recent(controlPreviews.prach_trials), sourcePath:selectedPath(controlSelection.prach_trials)},
       {id:'initial_access', title:'Acquisition / Initial Access summary', columns:['Procedure','Frame','Slot','Endpoint','Outcome','Status'], rows:initialAccessRows, sourcePath:'canonical PBCH + PRACH trial rows'},

@@ -37,6 +37,63 @@ assert(actual.CSIRSObservation.CSIMeasurementStateAvailable && ...
 assert(isfinite(actual.CSIRSObservation.ReferenceMeasuredSINR_dB));
 assert(~isfield(actual,'CRCPass') && ~isfield(actual,'HARQResults') && ...
     ~isfield(actual,'TransportBlock'));
+% Capture time is not the callback/processing time. Reusing a UE context
+% from another slot must not refresh an old CSI observation or move it to
+% a different frame. CSI-RS sequence and calendar repeat in this fixture;
+% check that explicitly before using the same actual received samples.
+clockedCarrier=carrier; clockedCarrier.NFrame=3;
+[clockedIndices,clockedSymbols]=sixgr.phy.refsig.csirs(clockedCarrier,cfg);
+assert(isequal(indices,clockedIndices) && isequal(symbols,clockedSymbols));
+captureSlot=clockedCarrier.NFrame*clockedCarrier.SlotsPerFrame+clockedCarrier.NSlot+1;
+lateCfg=cfg; lateCfg.lls6g.userContext.RuntimeCurrentSlot=captureSlot+7;
+late=sixgr.phy.refsig.receiveCSIRSFromGrid(clockedCarrier,lateCfg,received,options);
+assert(late.CSIMeasurementState.Slot==captureSlot, ...
+    'test:CSIRSCaptureClock','CSI time must describe the capture, not its later callback.');
+noContext=cfg; noContext.lls6g.userContext=rmfield(noContext.lls6g.userContext,'RuntimeCurrentSlot');
+sameClock=sixgr.phy.refsig.receiveCSIRSFromGrid(clockedCarrier,noContext,received,options);
+assert(sameClock.CSIMeasurementState.Slot==captureSlot && ...
+    late.CSIMeasurementState.MeasurementID==sameClock.CSIMeasurementState.MeasurementID && ...
+    isequal(late.CSIRSChannelEstimate,sameClock.CSIRSChannelEstimate));
+late.CSIMeasurementState.validateAt(captureSlot+late.CSIMeasurementState.MaxAgeSlots);
+staleRejected=false;
+try
+    late.CSIMeasurementState.validateAt(captureSlot+late.CSIMeasurementState.MaxAgeSlots+1);
+catch cause
+    assert(strcmp(cause.identifier,'sixgr:mimo:StaleMeasurementState'));
+    staleRejected=true;
+end
+assert(staleRejected,'A late callback must not extend the measured CSI freshness window.');
+% The actual power application now declares normalized samples explicitly.
+% Its receiver must agree numerically with the independently checked legacy
+% unit conversion, without a fake absolute power context or another decode.
+normalizedCfg=cfg;
+[unchanged,normalizedCfg.lls6g.runtimePowerContext]=sixgr.rf.applyPowerContext( ...
+    waveform,normalizedCfg,'DL',struct('OFDM',ofdm),'ApplyPA',false);
+assert(isequal(waveform,unchanged));
+normalized=sixgr.phy.refsig.receiveCSIRSFromGrid(carrier,normalizedCfg,received,options);
+for field=["MeasurementRSRP_dB_re_UnitOccupiedRE_Es", ...
+        "MeasurementRSSI_dB_re_UnitOccupiedRE_Es","MeasurementRSRQ_dB", ...
+        "ReferenceMeasuredSINR_dB"]
+    assert(abs(actual.CSIRSObservation.(field)-normalized.CSIRSObservation.(field))<1e-8);
+end
+assert(isequaln(actual.CSIRSChannelEstimate,normalized.CSIRSChannelEstimate) && ...
+    actual.CSIMeasurementState.Digest==normalized.CSIMeasurementState.Digest && ...
+    isnan(normalized.CSIRSObservation.MeasurementRSRP_dBm));
+missingPlane=rmfield(options,'PhysicalMeasurementGrid');
+frontEndCfg=normalizedCfg;
+frontEndCfg.lls6g.receiverMeasurement.CompositeReceiverFrontEndApplied=true;
+missing=sixgr.phy.refsig.receiveCSIRSFromGrid(carrier,frontEndCfg,received,missingPlane);
+assert(~startsWith(missing.CSIRSObservation.PhysicalMeasurementStatus,"available") && ...
+    missing.CSIRSObservation.MeasurementSource=="" && ...
+    isnan(missing.CSIRSObservation.MeasurementRSRP_dB_re_UnitOccupiedRE_Es), ...
+    'Post-front-end samples cannot replace a missing antenna-plane measurement.');
+bad=normalizedCfg; bad.lls6g.runtimePowerContext.PhysicalDevicePowerClaim=true;
+try
+    sixgr.phy.refsig.receiveCSIRSFromGrid(carrier,bad,received,options);
+    error('test:MissingPowerGuard','Reject an inconsistent normalized amplitude contract.');
+catch cause
+    assert(strcmp(cause.identifier,'sixgr:rf:WaveformAmplitudeAuthorityMismatch'));
+end
 % A rejected or corrupted PDSCH command has no authority over the configured
 % periodic reference receiver. No TX reference symbols are supplied to it.
 poison=received;

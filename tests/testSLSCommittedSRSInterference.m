@@ -141,11 +141,15 @@ state=struct('TTI',1,'AbsoluteSlot0',0,'ServingCells',[1 1],'RNTIByUE',[4660 466
 for slot=0:5
     state.TTI=slot+1; state.AbsoluteSlot0=slot;
     provider.commitSlotPopulation(state);
+    % Capture at source-slot commitment and complete only after the receive
+    % window exists. A one-off poll after slot 5 cannot create slot 4 pilots.
+    o=provider.observeSRS(state);
+    if slot<5, assert(isempty(o)); end
 end
 e=provider.committedSRSEmissions(5);
 assert(numel(e)==2 && isequal([e.ResourceID],[0 37]) && all([e.SRI]==0));
 assert(isempty(intersect(e(1).Coordinates0Based,e(2).Coordinates0Based,'rows')));
-o=provider.observeSRS(state); assert(numel(o)==2);
+assert(numel(o)==2);
 for u=1:2
     one=o([o.UEIndex]==u);
     assert(isscalar(one) && one.SRI==0 && one.ReferenceResourceID==e(u).ResourceID && ...

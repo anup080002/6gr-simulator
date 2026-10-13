@@ -11,19 +11,31 @@ ip.addRequired("cfg", @(x)isstruct(x) && isscalar(x));
 ip.addRequired("runFolder", @(x)ischar(x) || isstring(x));
 ip.addParameter("Config", struct(), @(x)isstruct(x) && isscalar(x));
 ip.addParameter("WriteArtifacts", true, @(x)islogical(x) || (isnumeric(x) && isscalar(x)));
+ip.addParameter("RecoveryOnly", false, @(x)islogical(x) && isscalar(x));
 ip.parse(cfg, runFolder, varargin{:});
 opt = ip.Results;
 
 validationCfg = localResolveConfig(cfg, opt.Config);
 layout = sixgr.report.resultLayout(runFolder);
-checkpointT = localCheckpointResumeEvidence(cfg, validationCfg, layout);
-determinismT = localSerialParallelEvidence(validationCfg);
+checkpointPath = fullfile(layout.ReportCSVDir,"checkpoint_resume_equivalence.csv");
+determinismPath = fullfile(layout.ReportCSVDir,"serial_parallel_determinism.csv");
+if opt.RecoveryOnly
+    % Recovery cannot execute new waveforms or overwrite an earlier result.
+    % Missing receipts describe non-execution, never a measured comparison.
+    checkpointT = localRecoveryEvidence(checkpointPath,"checkpoint",validationCfg);
+    determinismT = localRecoveryEvidence(determinismPath,"determinism",validationCfg);
+else
+    checkpointT = localCheckpointResumeEvidence(cfg, validationCfg, layout);
+    determinismT = localSerialParallelEvidence(validationCfg);
+end
 
 if logical(opt.WriteArtifacts)
-    sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, ...
-        "checkpoint_resume_equivalence.csv"), checkpointT);
-    sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, ...
-        "serial_parallel_determinism.csv"), determinismT);
+    if ~opt.RecoveryOnly || ~isfile(checkpointPath)
+        sixgr.util.csvWriteTable(checkpointPath, checkpointT,"PreserveSchema",true);
+    end
+    if ~opt.RecoveryOnly || ~isfile(determinismPath)
+        sixgr.util.csvWriteTable(determinismPath, determinismT,"PreserveSchema",true);
+    end
 end
 
 out = struct( ...
@@ -36,6 +48,23 @@ out = struct( ...
         "SerialParallelDeterminismOk"));
 out.AllPassed = out.CheckpointResumeEquivalenceOk && ...
     out.SerialParallelDeterminismOk;
+end
+
+function T = localRecoveryEvidence(path,kind,validationCfg)
+if isfile(path)
+    T = sixgr.util.csvReadTable(path);
+    return;
+end
+reason = "recovery_no_executed_comparison_receipt";
+if ~validationCfg.Enabled
+    reason = "validation_disabled";
+end
+if kind=="checkpoint"
+    T=localCheckpointRow(false,"NOT_EVALUATED",reason,"","",0,0,0,0,"","");
+else
+    T=localDeterminismRow(false,"NOT_EVALUATED",reason,"","",0,0,0,"");
+end
+T.EvidenceSource(:)="recovery_nonexecution_receipt_not_waveform_evidence";
 end
 
 function validationCfg = localResolveConfig(cfg, overlay)

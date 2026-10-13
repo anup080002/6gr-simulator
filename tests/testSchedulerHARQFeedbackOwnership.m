@@ -70,6 +70,7 @@ for schedulerName=["PF","RR"]
         end
     end
 end
+localProposedGrantHistory(cfg);
 try
     sixgr.l2.mac.SchedulerPF(cfg,'HARQFeedbackOwner','unknown');
     error('test:ExpectedError','Unknown feedback owner must be rejected.');
@@ -78,6 +79,79 @@ catch cause
 end
 ok=true;
 fprintf('SCHEDULER_HARQ_FEEDBACK_OWNERSHIP_PASS cases=%d declared_MAC_only=1\n',cases);
+end
+
+function localProposedGrantHistory(cfg)
+% Real scheduling and tentative HARQ allocation, with declared MAC feedback.
+cfg=withCanonicalSchedulerTiming(cfg);
+cfg.mac.scheduler.alpha=.9;
+cfg.mac.scheduler.maxUEPerSlot=1;
+cfg.mac.scheduler.minPRBPerUE=4;
+cfg.mac.scheduler.maxPRBAllocationPerUE=12;
+ue=struct('RNTI',321,'UEIndex',1,'ServingCell',1,'CQI',8,'RI',1, ...
+    'DLBufferBytes',50000,'ULBufferBytes',50000, ...
+    'ControlEligible',true,'GrantControlState','ok');
+budget=struct('PRBSet',0:11,'SymbolAllocation',[0 14]);
+cases=0;
+for kind=["PF","RR"]
+    for direction=["DL","UL"]
+        for owner=["scheduler","coupled_runtime"]
+            for outcome=["ACK","NACK","DTX"]
+                if owner=="coupled_runtime" && direction=="UL" && outcome=="DTX", continue; end
+                h=sixgr.l2.mac.HARQEntity(cfg,'Direction',direction);
+                constructor=str2func("sixgr.l2.mac.Scheduler"+kind);
+                scheduler=constructor(cfg,'Direction',direction,'HARQ',h,'HARQFeedbackOwner',owner);
+                scheduler.prewarmUEAverage(ue,1);
+                before=scheduler.getUEStats();
+                [g,~]=scheduler.schedule(3,ue,budget);
+                assert(isscalar(g),'One active UE must receive exactly one tentative grant.');
+                state=struct('DLHarq',h,'ULHarq',h);
+                state=sixgr.truth.CoupledTruthRuntime.cancelUnexecutedHARQGrantRuntime( ...
+                    state,g,direction,'DCINotIssued',true);
+                after=scheduler.getUEStats();
+                assert(after.AvgThroughput_bps==before.AvgThroughput_bps ...
+                    && after.NumScheduledSlots==0 && ~after.LastAck && after.LastTBSBits==0, ...
+                    'test:ProposedGrantCredited','A rejected proposal must not be credited as successful service.');
+                [g,~]=scheduler.schedule(5,ue,budget);
+                assert(isscalar(g));
+                after=scheduler.getUEStats();
+                assert(after.AvgThroughput_bps==before.AvgThroughput_bps && after.NumScheduledSlots==0);
+                harqID=double(g.HARQ.HarqID);
+                h.onTx(321,harqID,ones(g.TBSBits,1,'uint8'),g,5);
+                row=struct2table(struct('RNTI',321,'UEIndex',1,'HarqID',harqID, ...
+                    'Direction',direction,'FeedbackForDirection',direction, ...
+                    'SourceSlot',5,'DueSlot',6,'ServingCell',1,'TBSBits',g.TBSBits, ...
+                    'RV',0,'IsRetransmission',false,'Ack',outcome=="ACK", ...
+                    'Processed',false,'PUCCHGrantId',"declared-scheduled-owner",'UCIType',"harq_ack"));
+                if owner=="coupled_runtime"
+                    state.CfgMobility=struct();
+                    state.DLSchedulers={scheduler}; state.ULSchedulers={scheduler};
+                    state.DLCombinedLLR={[]}; state.ULCombinedLLR={[]};
+                    state.PUCCHGrantTraceTable=table(); state.PendingFeedbackTable=table();
+                    state.ControlTrials=struct('PUCCH',table());
+                    observed=struct('DecodeOk',outcome~="DTX",'DTXFlag',outcome=="DTX", ...
+                        'DecodedBits',int8(outcome=="ACK"));
+                    state=localApply(state,row,observed,direction);
+                else
+                    feedback=table2struct(row); feedback.Outcome=outcome;
+                    scheduler.updateAfterRx(feedback);
+                end
+                after=scheduler.getUEStats();
+                expected=.9*before.AvgThroughput_bps + .1*double(outcome=="ACK")*g.TBSBits/scheduler.SlotDuration_s;
+                assert(abs(after.AvgThroughput_bps-expected)<1e-7 && after.NumScheduledSlots==1, ...
+                    'test:DoubleServiceCredit','Exactly one accepted feedback must update service history.');
+                if owner=="coupled_runtime"
+                    localApply(state,row,observed,direction);
+                else
+                    scheduler.updateAfterRx(feedback);
+                end
+                assert(isequaln(after,scheduler.getUEStats()),'Duplicate feedback must not update history.');
+                cases=cases+1;
+            end
+        end
+    end
+end
+fprintf('SCHEDULE_CANCEL_TX_FEEDBACK_HISTORY_PASS cases=%d declared_MAC_only=1\n',cases);
 end
 
 function state=localApply(state,row,observed,direction)

@@ -20,7 +20,9 @@ buffer.append(sixgr.phy.waveform.WaveformChunk(x(split+1:end,:),origin+split),p.
 profile clear;
 profile on;
 cleanup=onCleanup(@()profile('off')); %#ok<NASGU>
-completed=sixgr.link.completeTRSReception(p,buffer,r.Replay,r.ChannelState);
+completed=sixgr.link.completeTRSReception(p,buffer,r.Replay,r.ChannelState, ...
+    'DesiredReferenceObservation',r.DesiredReferenceObservation, ...
+    'RecordedReceiverTimingOffset_samples',r.RecordedReceiverTimingOffset_samples);
 profile off;
 stats=profile('info');
 assert(isequaln(rmfield(baseline,"ComputeLatency_ms"), ...

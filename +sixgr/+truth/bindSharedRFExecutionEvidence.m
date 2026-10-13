@@ -14,6 +14,40 @@ assert(tx.isComplete() && pre.isComplete() && post.isComplete() && ...
     'sixgr:truth:RFObservationClock','RX before/after RF must share the actual capture clock.');
 txRecords=localRecords(planes(itx),extractBefore(ids(itx),':tx'),'TX');
 rxRecords=localRecords(planes(ipost),extractBefore(ids(ipost),':post_rf'),'RX');
+[txMetadata,txAudit]=sixgr.truth.summarizeSharedRFEndpoint(planes(itx),"TX");
+[rxMetadata,rxAudit]=sixgr.truth.summarizeSharedRFEndpoint(planes(ipost),"RX");
+T.TxRFEndpointMetadataJSON=string(jsonencode(txMetadata));
+T.RxRFEndpointMetadataJSON=string(jsonencode(rxMetadata));
+T.TxRFEndpointMetadataAuditJSON=string(jsonencode(txAudit));
+T.RxRFEndpointMetadataAuditJSON=string(jsonencode(rxAudit));
+T.RFMetadataAppliedFlagScope=rxAudit.AppliedFlagScope;
+% These legacy flat columns have explicit endpoint owners. Never copy
+% preparation-time placeholders or a different UE's RF replay into them.
+for field=["CFOApplied","TimingOffsetApplied","PhaseNoiseConfigured", ...
+        "PhaseNoiseApplied","IQImbalanceConfigured","IQImbalanceApplied", ...
+        "SampleClockOffsetEnabled","SampleClockOffsetApplied","AGCEnabled", ...
+        "AGCApplied","ADCQuantizationApplied","ADCBits","ADCFullScale", ...
+        "ADCQuantizationExecuted","ADCClippingRatio","ADCClippedSampleCount", ...
+        "ADCClippingSampleCount","ADCDitherRMSConfigured", ...
+        "ADCApertureJitterSecondsConfigured","ADCINLLSBConfigured", ...
+        "ADCDNLLSBConfigured","ADCSeedConfigured"]
+    T.(field)=double(sixgr.util.structGet(rxMetadata,field,NaN));
+end
+for field=["PAEnabled","PAApplied","PABackoff_dB","DACBits", ...
+        "DACQuantizationApplied","DACQuantizationExecuted", ...
+        "DACClippingRatio","DACClippedSampleCount","DACClippingSampleCount"]
+    T.(field)=double(sixgr.util.structGet(txMetadata,field,NaN));
+end
+for field=["ADCClippingPopulation","ADCClippingSource","ADCClippingThresholdRule", ...
+        "ADCClippingStatus","ADCConventionConfigured"]
+    T.(field)=string(sixgr.util.structGet(rxMetadata,field,"unavailable"));
+end
+for field=["PAModel","DACClippingPopulation","DACClippingSource", ...
+        "DACClippingThresholdRule","DACClippingStatus"]
+    T.(field)=string(sixgr.util.structGet(txMetadata,field,"unavailable"));
+end
+T.TxRFExecutionStatus=txMetadata.RFExecutionStatus;
+T.RxRFExecutionStatus=rxMetadata.RFExecutionStatus;
 T.RxRFInputWaveformSHA256=string(sixgr.rf.waveformSHA256(pre.readComplete()));
 T.RxRFOutputWaveformSHA256=string(sixgr.rf.waveformSHA256(post.readComplete()));
 T.TxRFOutputWaveformSHA256=string(sixgr.rf.waveformSHA256(tx.readComplete()));

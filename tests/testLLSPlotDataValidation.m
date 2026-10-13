@@ -143,6 +143,16 @@ runtimeTrials = table( ...
     [0; 1; 2], zeros(3, 1), zeros(3, 1), ...
     'VariableNames', ["Direction","UEID","SNR_dB","Frame","Slot", ...
     "PostEqSINR_dB","BLER","BER"]);
+% Deliberately different scoring-reference and measured residuals prove
+% that report projection must not substitute one frequency plane for the other.
+runtimeTrials.ResidualCFO_PostCorrection_Hz = [19;21;NaN];
+runtimeTrials.ResidualCFO_EstimatedPostCorrection_Hz = [-0.5;0.25;NaN];
+runtimeTrials.CFOCorrectionApplied_Hz = [41;39;NaN];
+runtimeTrials.CFOCorrectionApplied = [true;true;false];
+runtimeTrials.ResidualCFOEstimateAvailable = [true;true;false];
+runtimeTrials.ResidualCFOEstimateSource = ["dmrs_receiver";"cp_receiver";"unavailable"];
+runtimeTrials.ResidualCFOEstimateDomain = repmat("receiver_measured_common_frequency_after_correction",3,1);
+runtimeTrials.ResidualCFOReferenceDefinition = repmat("simulation_scoring_reference_only",3,1);
 writetable(runtimeTrials, ...
     fullfile(tmpConstRuntime, "air_interface", "csv", "dl_pdsch_trials.csv"));
 runtimeBeamStats = table( ...
@@ -226,6 +236,16 @@ assert(all(ismember(["SourceRow","UEID","RNTI","TransportBlockId"], ...
     string(trackingT.Properties.VariableNames))) && ...
     height(unique(trackingT, "rows", "stable")) == height(trackingT), ...
     "Tracking trace rows must preserve source event/UE/TB identity even when measured values coincide.");
+dlTracking = trackingT(trackingT.TraceSource=="DL",:);
+assert(height(dlTracking)==3);
+for field=["ResidualCFO_PostCorrection_Hz","ResidualCFO_EstimatedPostCorrection_Hz", ...
+        "CFOCorrectionApplied_Hz","CFOCorrectionApplied","ResidualCFOEstimateAvailable"]
+    assert(isequaln(double(dlTracking.(field)),double(runtimeTrials.(field))), ...
+        'CFO reporting changed the source value or filled a missing receiver estimate.');
+end
+for field=["ResidualCFOEstimateSource","ResidualCFOEstimateDomain","ResidualCFOReferenceDefinition"]
+    assert(isequal(string(dlTracking.(field)),runtimeTrials.(field)));
+end
 
 prov = sixgr.truth.buildLLSReportingProvenanceTables(tmp, struct(), struct(), table(), struct("run_id", 0));
 latencyRow = prov.plot_manifest(strcmp(string(prov.plot_manifest.PlotId), "latency_cdf"), :);

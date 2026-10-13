@@ -26,7 +26,39 @@ det = sixgr.rach.PRACHDetector(rxWaveform(observationGuard+1:end,:), prachCfg, .
     "EnableFrequencyEstimationMetric", enableFrequencyEstimate, ...
     "DetectionThresholdMode", sixgr.util.structGet(cfg, "random_access.detection_threshold_mode", "fixed"), ...
     "DetectionThreshold", double(sixgr.util.structGet(cfg, "random_access.detection_threshold", 0.02)));
+policy=string(sixgr.util.structGet(cfg,'random_access.preamble_detection_policy','strongest'));
+assert(any(policy==["strongest","awgn_sic_unrestricted"]), ...
+    'sixgr:phy:ra:InvalidPRACHDetectionPolicy','Unknown configured PRACH detection policy.');
+if policy=="awgn_sic_unrestricted"
+    [candidates,background]=sixgr.rach.detectUnrestrictedPreambles( ...
+        rxWaveform(observationGuard+1:end,:),prachCfg,occasion,det, ...
+        sixgr.util.structGet(cfg,'random_access.multi_preamble_max_delay_us',[]));
+    timed=cell(numel(candidates),1);
+    for k=1:numel(candidates)
+        timed{k}=localTiming(candidates(k),filterDelay,observationGuard,enableFrequencyEstimate);
+    end
+    if ~isempty(timed), candidates=vertcat(timed{:}); end
+    if ~isempty(candidates)
+        [~,best]=max([candidates.PeakMetric]); det=candidates(best);
+    else
+        det.Detected=false; det.DetectedPreambleIndex=NaN; det.TimingOffsetSamples=NaN;
+        det.NoiseFloorEvidence=background; det.PDPNoiseFloor=background.NoiseFloor;
+        % The native-template peak uses a different metric; do not divide it
+        % by the SIC background or publish its trace as a SIC measurement.
+        det.PeakToNoiseRatio=NaN; det.PeakToNoiseRatio_dB=NaN;
+        det.CorrelationTrace=struct();
+    end
+    det=localTiming(det,filterDelay,observationGuard,enableFrequencyEstimate);
+    det.Detections=candidates;
+    det.MultiCandidateAboveThreshold=numel(candidates)>1;
+    det.CandidatesAboveThreshold=numel(candidates);
+else
+    det=localTiming(det,filterDelay,observationGuard,enableFrequencyEstimate);
+end
 det.RAPIDMatchesTx = logical(det.Detected) && double(det.DetectedPreambleIndex) == double(raCfg.PreambleIndex);
+end
+
+function det=localTiming(det,filterDelay,observationGuard,enableFrequencyEstimate)
 % nrPRACHDetect returns timing relative to the start of the supplied PRACH
 % occasion waveform. Legacy aligned observations already removed the
 % implementation filter delay; untrimmed shared observations have not.
@@ -46,12 +78,15 @@ if logical(det.Detected) && isfinite(det.RawTimingOffsetSamples)
     end
     det.PropagationTimingOffsetSamples = max(0,calibrated);
     det.PropagationTimingEstimateValid = true;
-    det.PropagationTimingEstimateSource = "nrPRACHDetect_relative_to_resolved_occasion";
+    backend=string(det.DetectorBackend);
+    source="nrPRACHDetect";
+    if ~contains(backend,"nrPRACHDetect"), source=backend; end
+    det.PropagationTimingEstimateSource = source+"_relative_to_resolved_occasion";
     if filterDelay>0
-        det.PropagationTimingEstimateSource="nrPRACHDetect_untrimmed_arrival_minus_known_implementation_filter_delay";
+        det.PropagationTimingEstimateSource=source+"_untrimmed_arrival_minus_known_implementation_filter_delay";
     end
     if observationGuard>0
-        det.PropagationTimingEstimateSource="nrPRACHDetect_measured_round_trip_relative_gnb_common_offset_window";
+        det.PropagationTimingEstimateSource=source+"_measured_round_trip_relative_gnb_common_offset_window";
     end
 else
     det.PropagationTimingOffsetSamples = NaN;

@@ -1,0 +1,29 @@
+# Reusable rank policy only; the parent owns bandwidth, arrays and control.
+# Rank is fixed, but CQI/PMI/CRI and HARQ remain receiver-derived. Restrict
+# the CSI search/wire to rank four instead of reusing another rank's PMI/CQI.
+mimo:
+  n_layers: 4
+  max_dl_layers: 4
+  max_ul_layers: 4
+  rank_adaptation_policy: fixed
+  phase07_strict:
+    max_rank: 4
+    rank_domain: [4]
+canonical_control:
+  mimo:
+    n_layers: 4
+    max_dl_layers: 4
+    max_ul_layers: 4
+  pdsch:
+    layer_count: 4
+    rank: 4
+pdsch:
+  layer_count: 4
+  rank: 4
+pusch:
+  layer_count: 4
+  num_layers: 4
+link_adaptation:
+  rank_adaptation_policy: fixed
+mimo_and_beam_management:
+  rank_set: [4]

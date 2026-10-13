@@ -1,15 +1,15 @@
 function ok = testH4100SharedBroadcastReception()
 %TESTH4100SHAREDBROADCASTRECEPTION Receive the H4 four-beam burst on its shared RF clock.
 %
-% The configured active Case-B candidates 0:3 and the Type-0/SIB1
-% occasion are all contained in subframe zero.  This focused regression
-% therefore executes the complete physical observation in two 30-kHz
+% The configured active Case-B candidates 0:3 and their four Type-0/SIB1
+% occasions end in subframe seven. This focused regression
+% therefore executes the complete physical observation in fourteen 30-kHz
 % slots without launching the 200-slot scenario.
 
 setup6GRSimToolkit("Verbose",false);
-testRoot = tempname;
+testRoot = fullfile(pwd,'results','lls','h4_100_shared_broadcast_reception', ...
+    char(datetime('now','Format','yyyyMMdd_HHmmss_SSS')));
 mkdir(testRoot);
-cleanup = onCleanup(@()localCleanup(testRoot)); %#ok<NASGU>
 scenario = sixgr.lls6g.config.loadScenarioConfig(fullfile( ...
     "simulator","configs","scenarios", ...
     "h4_100_cdlc100_connected_impaired_40db_gate.yaml"));
@@ -30,7 +30,7 @@ state.CurrentServingIdx(:) = 1;
 
 prototype = sixgr.link.runCellSearch_MIB_SIB1(dl, ...
     "PrepareOnly",true,"UseRuntimeChannel",true,"RuntimeSlot",0, ...
-    "NumSubframes",1);
+    "NumSubframes",7);
 assert(isfield(prototype,"PreparedBroadcast"), ...
     "H4 shared broadcast preparation failed: %s", ...
     string(sixgr.util.structGet(prototype,"FailureReason","")));
@@ -46,10 +46,10 @@ for ssbIndex = 0:3
         "Executed SSB %d must own one exact physical precoder hash.",ssbIndex);
 end
 prepared = prototype.PreparedBroadcast;
-assert(prepared.NumSamples == round(prepared.SampleRateHz*1e-3), ...
-    "The focused H4 observation must occupy exactly subframe zero.");
-assert(double(prepared.Tx.SIB1AbsoluteSlot)==0, ...
-    "The focused observation must retain the TDD-legal slot-0 SIB1.");
+assert(prepared.NumSamples == round(prepared.SampleRateHz*7e-3), ...
+    "The focused H4 observation must cover every emitted SI beam occasion.");
+assert(isequal([prepared.Tx.SIB1Transmissions.SIB1AbsoluteSlot],10:13), ...
+    "The focused observation must retain TDD-legal SI for all four SSB beams.");
 active = double(sixgr.util.structGet(dl, ...
     "phy.ssb.activeCandidateIndices0Based",[]));
 assert(isequal(active(:).',0:3), ...
@@ -60,14 +60,14 @@ context = struct("Config",dl,"Slot",1,"Frame",1,"RNTI",1, ...
     "TrackingOnly",false);
 stream.queueDownlink("PBCH",1,prepared,context);
 completed = struct("Kind",{},"UE",{},"Context",{},"Planes",{});
-for slot = 1:2
+for slot = 1:14
     state.CurrentSlot = slot;
     [state,items] = stream.advanceSlot(state,cfg);
     completed = [completed,items]; %#ok<AGROW>
 end
 hit = find(string({completed.Kind})=="PBCH");
 assert(isscalar(hit), ...
-    "Exactly one complete H4 PBCH observation must finish after subframe zero.");
+    "Exactly one complete H4 PBCH observation must finish after the four SI beam occasions.");
 item = completed(hit);
 [~,pre,tx,replay,post] = sixgr.truth.sharedObservationEvidence(item.Planes);
 channelState = stream.channelState(1,"DL");
@@ -91,6 +91,9 @@ for candidate = 1:numel(received.CandidateResults)
     rows(candidate) = localRow(result);
 end
 evidence = struct2table(rows,"AsArray",true);
+writetable(evidence,fullfile(testRoot,'receiver_cases.csv'));
+save(fullfile(testRoot,'configuration.mat'),'cfg');
+fprintf('H4_BROADCAST_EVIDENCE=%s\n',testRoot);
 disp(evidence);
 assert(height(evidence)==4 && isequal(double(evidence.SSBIndex(:)).',0:3), ...
     "The shared receiver must return one row for every active H4 SSB candidate.");
@@ -163,10 +166,4 @@ row = struct( ...
     "TrueTimingOffset_samples",double(sixgr.util.structGet( ...
         result,"TrueTimingOffset_samples",NaN)), ...
     "FailureReason",string(sixgr.util.structGet(result,"FailureReason","")));
-end
-
-function localCleanup(path)
-if isfolder(path)
-    rmdir(path,"s");
-end
 end

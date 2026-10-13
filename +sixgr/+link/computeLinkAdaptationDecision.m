@@ -11,6 +11,9 @@ if direction ~= "DL" && direction ~= "UL"
     error("sixgr:link:LinkAdaptation:BadDirection", ...
         "Direction must be 'DL' or 'UL'.");
 end
+if direction == "DL"
+    sixgr.link.validateCSIRecoveryCadence(cfg);
+end
 
 if nargin < 3 || isempty(metrics)
     metrics = struct();
@@ -19,7 +22,8 @@ end
 mode = lower(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.mode", "fixed")));
 policyPath = localPolicyPath(direction);
 policy = lower(string(sixgr.util.structGet(cfg, policyPath, "fixed")));
-rankPolicy = lower(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.rankPolicy", "fixed")));
+rankControl = sixgr.mimo.resolveRankPolicy(cfg);
+rankPolicy = rankControl.Policy;
 beamPolicy = lower(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.beamPolicy", "fixed")));
 
 base = localBaseState(cfg, direction);
@@ -33,7 +37,7 @@ adaptationDomain = sixgr.link.resolveLinkAdaptationDomain(cfg, direction);
 [resetState, resetReason] = localShouldResetState(adaptationState, metrics, cfg);
 
 decision = struct( ...
-    "Enabled", localPolicyEnabled(mode) && (localPolicyEnabled(policy) || localPolicyEnabled(rankPolicy) || localPolicyEnabled(beamPolicy)), ...
+    "Enabled", localPolicyEnabled(mode) && (localPolicyEnabled(policy) || rankControl.AdaptiveRank || localPolicyEnabled(beamPolicy)), ...
     "Direction", char(direction), ...
     "Mode", char(mode), ...
     "Policy", char(policy), ...
@@ -146,6 +150,21 @@ if ~decision.Enabled
     return;
 end
 
+% TS 38.214 CSI quality and precoder indications are conditional on the
+% reported rank. A fixed-rank campaign may not reuse rank-1 CQI/PMI as
+% rank-4 evidence. Keep the raw RI/PMI/CRI in this decision, but hold the
+% complete prior operating point before updating ILLA/OLLA temporal state.
+if rankControl.FixedRankAnchor && isfinite(decision.RI) && ...
+        decision.RI ~= base.NumLayers
+    decision.RankUpdateStatus = "held_fixed_rank_feedback_mismatch";
+    decision.RankUpdateBlockedReason = "reported_ri_differs_from_configured_fixed_rank";
+    decision.Reason = decision.RankUpdateStatus;
+    decision.CausalFeedbackUsable = false;
+    decision.CausalFeedbackStatus = decision.RankUpdateBlockedReason;
+    decision.MCSValueStatus = "unavailable_rank_mismatched_feedback";
+    return;
+end
+
 if localPolicyEnabled(policy)
     % TS 38.214 CQI index 0 explicitly reports that the channel is out of
     % range.  It is feedback, not a schedulable minimum-MCS operating
@@ -209,7 +228,7 @@ if localPolicyEnabled(policy)
     end
 end
 
-if localPolicyEnabled(rankPolicy)
+if rankControl.AdaptiveRank
     ri = decision.RI;
     if isfinite(ri)
         maxLayers = localMaxLayers(cfg, direction);
@@ -875,22 +894,7 @@ end
 end
 
 function maxAgeSlots = localMaxCSIAgeSlots(cfg, direction)
-direction = upper(string(direction));
-if direction == "UL"
-    candidates = [ ...
-        "phy.linkAdaptation.ulMaxCSIAgeSlots"
-        "phy.linkAdaptation.maxCSIAgeSlots"
-        "run.controlGating.srsMaxAgeSlots"];
-else
-    candidates = [ ...
-        "phy.linkAdaptation.dlMaxCSIAgeSlots"
-        "phy.linkAdaptation.maxCSIAgeSlots"
-        "run.controlGating.csirsMaxAgeSlots"];
-end
-maxAgeSlots = localFirstFiniteConfigValue(cfg, candidates, inf);
-if ~(isfinite(maxAgeSlots) && maxAgeSlots >= 0)
-    maxAgeSlots = inf;
-end
+maxAgeSlots = sixgr.link.resolveFeedbackMaxAgeSlots(cfg, direction);
 end
 
 function backoff_dB = localResolveDirectionalSINRBackoff(cfg, direction)

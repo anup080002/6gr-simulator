@@ -62,7 +62,17 @@ if ~tx.TransmissionPresent, return; end
 K=12*carrier.NSizeGrid; L=carrier.SymbolsPerSlot;
 assert(size(tx.Grid,3)==1,'sixgr:abstraction:PUCCHEmissionPrecoder', ...
     'This binding is for one logical PUCCH stream, not an inferred multiport mapping.');
-flat=reshape(double(tx.Grid),K*L,1); occupied=find(flat~=0);
+flat=reshape(double(tx.Grid),K*L,1);
+% Native resource mapping, not instantaneous energy, owns the RE set.
+% Transform-precoded format 4 can have exactly zero-valued mapped symbols;
+% dropping those makes resource evidence depend on the transmitted bits.
+occupied=sort(double([tx.PUCCHIndices(:);tx.DMRSIndices(:)]));
+assert(all(isfinite(occupied)) && all(occupied==fix(occupied)) && ...
+    all(occupied>=1 & occupied<=K*L) && numel(unique(occupied))==numel(occupied), ...
+    'sixgr:abstraction:PUCCHEmissionResource','Native data/DMRS indices must be unique valid grid REs.');
+outside=true(K*L,1); outside(occupied)=false;
+assert(~any(flat(outside)~=0),'sixgr:abstraction:PUCCHEmissionResource', ...
+    'Transmitted grid energy outside the native data/DMRS map is not an unowned emission.');
 [k,l]=ind2sub([K L],occupied); coords=[k-1 l-1]; symbols=flat(occupied);
 active=assignment.Resource.Data.StartSymbol+(0:assignment.Resource.Data.NumSymbols-1);
 assert(~isempty(occupied) && all(ismember(coords(:,2),active)), ...

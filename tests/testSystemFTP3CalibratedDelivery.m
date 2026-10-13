@@ -222,12 +222,21 @@ assert(complete && r.Ok && ~r.Details.WaveformBacked && r.Details.ProxyPHYActive
 G=r.Details.SchedulerGrants; F=r.Details.FTP3Files;
 if logical(sixgr.util.structGet(cfg,'system.linkAbstraction.dynamicPUCCH.schedulingRequestMAC.enabled',false))
     sr=r.Details.ModeledSchedulingRequestProcedures;
-    assert(~isempty(sr) && any(sr.Event=="trigger") && all(~sr.WaveformBacked));
-    assert(all(sr.RNTI==params.RNTIByUE(sr.UEIndex)));
+    if direction=="UL"
+        assert(~isempty(sr) && any(sr.Event=="trigger") && all(~sr.WaveformBacked));
+        assert(all(sr.RNTI==params.RNTIByUE(sr.UEIndex)));
+        srCSV=readtable(fullfile(context.RunFolder,'csv','system_modeled_sr_procedure.csv'));
+        assert(height(srCSV)==height(sr) && isequal(string(srCSV.Event),sr.Event));
+    else
+        % DL arrivals do not create a UE UL buffer or a positive SR. Keep
+        % the absence of events honest rather than inventing a trigger.
+        assert(isempty(sr),'DL-only arrivals must not trigger uplink SR.');
+        assert(~isfile(fullfile(context.RunFolder,'csv','system_modeled_sr_procedure.csv')));
+        assert(all(r.Details.DynamicUCICompletions.PositiveSRCount==0) && ...
+            ~any(r.Details.DynamicUCICompletions.SRDeliveryClaimed));
+    end
     assert(string(r.Details.SchedulingRequestMACPolicy.schedulerBufferKnowledge)== ...
         "ideal_instantaneous_unallocated_buffer");
-    srCSV=readtable(fullfile(context.RunFolder,'csv','system_modeled_sr_procedure.csv'));
-    assert(height(srCSV)==height(sr) && isequal(string(srCSV.Event),sr.Event));
     completions=r.Details.DynamicUCICompletions;
     assert(all(completions.SRPayloadKnown(completions.Transport=="PUCCH")) && ...
         ~any(completions.SRDeliveryClaimed(completions.Transport=="PUSCH")));

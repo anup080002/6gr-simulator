@@ -254,13 +254,7 @@ if ~isfinite(total) || total <= 0
     hi = NaN;
     return;
 end
-z = 1.96;
-p = localSafeDivide(fails, total);
-den = 1 + z^2 / total;
-center = (p + z^2 / (2 * total)) / den;
-half = z * sqrt((p * (1 - p) / total) + (z^2 / (4 * total^2))) / den;
-lo = max(0, center - half);
-hi = min(1, center + half);
+[~, ~, lo, hi] = sixgr.stats.wilsonBinomialCI(fails, total, .95);
 end
 
 function cv = localCoefficientOfVariation(x)

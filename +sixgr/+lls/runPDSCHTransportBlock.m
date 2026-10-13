@@ -330,15 +330,17 @@ if ~logical(runtime.CaptureDiagnostic)
 end
 
 function value=localEqualizedSymbolEVM(rx,tx)
-received=double(sixgr.util.structGet(rx,"PDSCHRxSymbolsForEvidence",[]));
+received=double(sixgr.util.structGet(rx,"EqualizedSymbolsForEvidence",[]));
 reference=double(sixgr.util.structGet(tx,"PDSCHSymbolsForEvidence",[]));
 if isempty(reference)
     reference=double(sixgr.util.structGet(tx,"PDSCHSymbols",[]));
 end
+if isempty(received) || isempty(reference), value=NaN; return; end
+assert(string(sixgr.util.structGet(rx,"EqualizedSymbolDomain",""))=="layer" && ...
+    isequal(size(received),size(reference)), ...
+    'sixgr:lls:PDSCHEVMPlaneMismatch', ...
+    'EVM requires matching transmitted and equalized layer-symbol allocations.');
 received=received(:); reference=reference(:);
-n=min(numel(received),numel(reference));
-if n==0, value=NaN; return; end
-received=received(1:n); reference=reference(1:n);
 alpha=(reference'*received)/max(reference'*reference,eps);
 value=sqrt(sum(abs(received-alpha*reference).^2)/max(sum(abs(alpha*reference).^2),eps));
 end

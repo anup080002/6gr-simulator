@@ -1567,6 +1567,11 @@ impairments:
   cfo_enabled: false
   cfo_hz: 40
   cfo_correction_enable: true
+  # Keep this self-contained configuration explicit, including when CFO is off.
+  # These match the inherited baseline; no receiver policy is selected by CRC.
+  cfo_cp_observation_policy: full_prefix
+  cfo_cp_window_fraction: 0.5
+  cfo_cp_false_alarm_probability: 0.001
   phase_noise_enabled: false
   iq_imbalance_enabled: false
   iq_imbalance_correction_enable: true

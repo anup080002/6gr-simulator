@@ -4,6 +4,8 @@ setup6GRSimToolkit('Verbose',false);
 s=sixgr.lls6g.config.loadScenarioConfig( ...
     'simulator/configs/validation/lls_bidirectional_disjoint_ul.yaml');
 cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
+assert(string(cfg.phy.pdcch.jointAdmissionPolicy)=="ul_preschedule_first", ...
+    'The connected two-UE fixture must not bypass joint control admission.');
 sixgr.truth.validateCoupledNoisePowerAuthority(cfg);
 assert(sixgr.rf.isNormalizedFixedSNRPowerReference(cfg), ...
     'The standalone fixed-SNR fixture must use normalized TX power and matching receiver noise.');
@@ -16,6 +18,30 @@ assert(cfg.phy.synchronization.maxReceivedULTimingAgeSlots==4, ...
     'The fix must preserve the original measured-clock freshness limit.');
 strict=sixgr.phy.srs.buildSRSConfigFromScenario(cfg);
 assert(strict.ToolboxSRS.SymbolStart==11);
+assert(numel(cfg.phy.srs.ueResourceBindings)==2);
+multi=struct('Enabled',true,'NumUsers',2,'RNTIStart',201, ...
+    'ExecutionModel','slot_coupled_truth');
+runtime=sixgr.truth.CoupledTruthRuntime.initialize(cfg,tempdir,multi,struct(),50);
+runtime.CurrentServingIdx(:)=1;
+bound=cell(1,2); grids=cell(1,2);
+for ue=1:2
+    [bound{ue},~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,runtime,ue,'UL');
+    binding=bound{ue}.phy.srs.UEFrequencyResourceBinding;
+    assert(binding.UEIndex==ue && binding.RNTI==200+ue && binding.CombOffset==ue-1);
+    native=sixgr.phy.srs.buildSRSConfigFromScenario(bound{ue});
+    % Exercise the installed calendar, not an assumed slot-zero occasion.
+    for slot0=0:2*native.ToolboxCarrier.SlotsPerFrame-1
+        native.ToolboxCarrier.NSlot=mod(slot0,native.ToolboxCarrier.SlotsPerFrame);
+        native.ToolboxCarrier.NFrame=floor(slot0/native.ToolboxCarrier.SlotsPerFrame);
+        if ~isempty(nrSRSIndices(native.ToolboxCarrier,native.ToolboxSRS)), break; end
+    end
+    grids{ue}=nrResourceGrid(native.ToolboxCarrier,native.NumSRSPorts);
+    grids{ue}(nrSRSIndices(native.ToolboxCarrier,native.ToolboxSRS))= ...
+        nrSRS(native.ToolboxCarrier,native.ToolboxSRS);
+end
+assert(any(grids{1}~=0,'all') && any(grids{2}~=0,'all'));
+assert(~any(any(grids{1}~=0,3) & any(grids{2}~=0,3),'all'), ...
+    'Production runtime UE binding must keep the configured SRS combs disjoint.');
 carrier=sixgr.phy.grid.makeCarrier(cfg); p=cfg.phy.pusch;
 grant=struct('UEIndex',1,'PRBSet',double(p.PRBSet), ...
     'SymbolAllocation',double(p.SymbolAllocation),'Modulation',char(string(p.modulation)), ...

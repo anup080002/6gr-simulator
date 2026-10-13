@@ -87,7 +87,10 @@ if measurement.Usable
     rsrp=double(row.RSRP_dBm); filteredRSRP=double(row.UEFilteredRSRP_dBm);
     pathloss=double(power)-filteredRSRP;
     if string(row.Direction)~="DL" || any(~isfinite([rsrp filteredRSRP pathloss])) || pathloss<0
-        error('sixgr:truth:InvalidSSBPowerReference','Selected UE SSB reference must have finite received powers and nonnegative pathloss.');
+        error('sixgr:truth:InvalidSSBPowerReference', ...
+            ['Selected UE SSB reference requires DL finite received powers and nonnegative pathloss. ' ...
+             'Direction=%s, signalled EPRE=%g dBm, measured RSRP=%g dBm, filtered RSRP=%g dBm, pathloss=%g dB.'], ...
+            string(row.Direction),double(power),rsrp,filteredRSRP,pathloss);
     end
     % These fields may legitimately be unavailable; do not gate UE decisions.
     if ismember('ReferenceSignalTxEPRE_dBm',row.Properties.VariableNames), txEPRE=double(row.ReferenceSignalTxEPRE_dBm); end

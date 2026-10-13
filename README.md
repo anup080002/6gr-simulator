@@ -1,17 +1,153 @@
 # SixGR Foundation v2
 
+## Current LLS commands and acceptance status (13 October 2026)
+
+These commands are for **Windows Command Prompt (`cmd.exe`)**, not PowerShell.
+They document the executable entry points; they are **not a claim that every
+scenario is accepted on this revision**. Run one job at a time. Use a new run
+tag and log filename for each scenario execution; never delete active results.
+
+The latest complete-scenario attempt for 4 GHz / 100 MHz TDD stopped at slot
+43/200 with a channel-diagnostic memory failure. The bounded channel-export
+repair, receiver timing/noise/scoring repairs, H4 TRS receiver and causal-audit
+checks have focused passing evidence. Full connected DL/UL, two-report physical
+CSI-to-scheduler confirmation, beam-refinement reporting, symbol-clock exports
+and final CSV/PNG publication still require closure. The 5 MHz scenarios and
+historical 400 MHz benchmarks are not substitutes for that acceptance.
+No full `testAll` is launched by the commands below. Current repair verification
+is limited to affected tests at the operator's request. SLS remains on hold.
+
+### Command Prompt setup and optional WebGUI
+
+Run these two setup lines first (the separate `if` line also works when `logs`
+already exists; do not chain MATLAB behind `&& if not exist ... mkdir ...`):
+
+```bat
+cd /d "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main"
+if not exist "logs" mkdir "logs"
+```
+
+In a **second** Command Prompt, start the existing dashboard without launching
+another simulation:
+
+```bat
+cd /d "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\apps\start_lls_web_dashboard.ps1" -Port 62906
+```
+
+Open `http://127.0.0.1:62906/` and select the exact run tag. MATLAB batch execution
+does not itself start the WebGUI. All commands assume MATLAB R2026a and the
+repository dependencies are installed; a different MATLAB version requires its
+own verification and calibration, not reuse of a version-mismatched dataset.
+
+### 5 MHz TDD: saturated 20 dB or eight-point AWGN sweep
+
+The first YAML retains physical access/control, CSI/SRS and adaptive rank up to
+two. The sweep is a separate YAML with `[40,30,20,10,0,-10,-20,-30]` dB configured
+reference points. Configured SNR is not a measured post-equalization SINR.
+
+```bat
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -wait -logfile "logs\lls_5mhz_20db_manual_01.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/lls_tdd_5mhz_rank2_shared_awgn_20db_saturated.yaml','results','lls_5mhz_20db_manual_01'); disp(out); fprintf('RUN_FOLDER=%s\n',char(out.RunFolder)); assert(out.Ok,'Scenario acceptance failed; preserve results and log.');"
+```
+
+```bat
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -wait -logfile "logs\lls_5mhz_sweep_manual_01.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/lls_tdd_2ghz_5mhz_rank2_shared_awgn_snr_sweep_saturated.yaml','results','lls_5mhz_sweep_manual_01'); disp(out); fprintf('RUN_FOLDER=%s\n',char(out.RunFolder)); assert(out.Ok,'Sweep acceptance failed; preserve parent and child artifacts.');"
+```
+
+### 100 MHz / 4 GHz H4 TDD: single gate before the sweep
+
+The impaired H4 YAML resolves 273 PRBs, 30 kHz SCS, normal CP, 4096 FFT,
+122.88 MSa/s, CDL-C/100 ns, 64 gNB TXRUs, four UE TX/RX chains, four SSB beams,
+eight CSI-RS/data beam states, rank 1/2/4 adaptation, and a 10-DL/2-guard/2-UL
+special slot. The configured RF profiles are research assumptions, not hardware
+qualification. Beam-failure recovery is not enabled; normalized received power
+must not be labelled absolute dBm. **Full scenario acceptance is still pending.**
+
+Dedicated 40 dB diagnostic gate (200 slots; not a short unit test):
+
+```bat
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -wait -logfile "logs\h4_100mhz_40db_manual_01.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_gate.yaml','results','h4_100mhz_40db_manual_01'); disp(out); fprintf('RUN_FOLDER=%s\n',char(out.RunFolder)); assert(out.Ok,'H4 acceptance failed; preserve results and log.');"
+```
+
+After implementation and the single-point gate are accepted, the separate
+eight-point sweep command is:
+
+```bat
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -wait -logfile "logs\h4_100mhz_sweep_manual_01.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_snr_sweep.yaml','results','h4_100mhz_sweep_manual_01'); disp(out); fprintf('RUN_FOLDER=%s\n',char(out.RunFolder)); assert(out.Ok,'H4 sweep acceptance failed; preserve parent and child artifacts.');"
+```
+
+### 400 MHz / 7 GHz research waveform and Keysight package
+
+This is **400 MHz bandwidth at 7 GHz**, not the 4 GHz / 100 MHz connected H4
+scenario. The fixed two-layer, 1024-QAM, rate-0.82 benchmark has idealized
+AWGN/preconfigured control; it does not qualify shared physical PDCCH/PUCCH or
+64-TXRU adaptive beam management. Historical successes need revalidation after
+core changes. The four-layer adaptive alternatives and their calibration
+requirements remain documented under [400 MHz commands](#400-mhz-commands).
+
+```bat
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -wait -logfile "logs\lls_400mhz_iq_manual_01.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/lls_7ghz_400mhz_1024qam_tdd_30db_rate082_iq.yaml','results','lls_400mhz_iq_manual_01'); disp(out); fprintf('RUN_FOLDER=%s\n',char(out.RunFolder)); assert(out.Ok,'400 MHz acceptance failed; preserve results and log.');"
+```
+
+For the separate rank-two VXG/VSA digital handoff workflow (includes Python
+packaging and browser checks; does not enable instrument RF):
+
+```bat
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\run_vxg_vsa_demo.ps1" -MatlabExe "C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -Config "simulator/configs/scenarios/lls_7ghz_400mhz_rank2_1024qam_vxg_vsa.yaml" -RunTag "vxg_vsa_manual_01"
+```
+
+Physical instrument capability remains **UNKNOWN** until actual model/options,
+bandwidth, sample rate and coherent-channel capability are verified.
+
+### Generic LLS BLER/HARQ calibration: bounded collection, not qualification
+
+The existing generic YAML is a **20 MHz-carrier, 24-PRB, SISO QPSK pilot**, with
+AWGN references and TDL-A/30 ns fitting/validation. It does **not** calibrate the
+100 MHz impaired rank-four or 400 MHz 1024-QAM scenarios. Do not start statistical
+collection until the implementation being calibrated is frozen and verified.
+
+```bat
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -wait -logfile "logs\lls_calibration_manual_01_batch_01.log" -batch "setup6GRSimToolkit('Verbose',false); receipt=run_link_calibration('configs/calibration/nr_dl_ul_harq_baseline.yaml','results/calibration','lls_calibration_manual_01'); disp(receipt);"
+```
+
+One invocation collects at most 292 new episodes. Resume with the **same run tag**
+and a **new log filename**, only on matching source/config/MATLAB identity. Do not
+loop until a statistical gate passes: inspect population/domain audits first.
+The current pilot cannot meet production qualification; `PrimaryStudyAccepted`
+remains false. [Calibration assumptions and population rules](#generic-dlul-bler-and-harq-calibration)
+describe the required independent validation and conditional HARQ populations.
+
+### Output locations and preservation
+
+- Ordinary LLS: `results/lls/<scenario_id>/<run_tag>/`; use the printed
+  `RUN_FOLDER` as authority. Sweeps retain child evidence plus joint parent
+  tables/plots; a missing measurement is never manufactured to fill a curve.
+- VXG/VSA package: `results/vxg_vsa/7ghz_400mhz_rank2_1024qam/<run_tag>/`;
+  the launcher resolves the completed manifest and prints the actual folder.
+- Generic calibration: `results/calibration/<run_tag>/`, including `episodes/`,
+  `receipt.json`, source/config snapshots and population/domain/fitting audits.
+- Console/launcher logs: `logs/` as explicitly named in each command.
+
+GitHub contains source, YAMLs, tests and documentation. Runtime logs, results
+and large IQ are intentionally ignored by Git and **must be transferred or
+backed up separately**. A clean Git working tree does not mean those files were
+deleted. Historical recovery stashes and archived patches are preserved; they
+must not be blindly reapplied over newer production code.
+
 ## Current SLS delivery status (2 October 2026)
 
 The repository provides YAML-selected LLS and SLS entry points, a network SLS
 runner, calibration collection, causal CSI/SRS feedback, resource accounting,
 and source-labelled exports. **This is not yet an accepted 21-cell study
 result.** The production SLS template intentionally has no calibration file
-or SHA256. The retained DL/UL SISO calibration is a population-design pilot:
+or SHA256. The historical DL/UL SISO calibration was a population-design pilot:
 292 episodes were collected in v5, 0/336 conditional audit rows qualified, and
 the current v6 design has not been executed. Its SISO/ideal-RF key also cannot
 validate the 4-by-4 network template. Statistical BLER/HARQ coverage, S0 load
 calibration, integrated RF/array qualification and paired confidence intervals
-remain open. Do not fill the empty calibration fields with a test fixture or
+remain open. The operator subsequently deleted the local calibration results;
+the historical counts below are not currently available raw evidence and do
+not establish a resumable or qualified dataset. Do not fill the empty calibration fields with a test fixture or
 interpret an SLS execution receipt as primary-study acceptance.
 
 Use the calibration command below to collect the next *pilot* increment. To
@@ -143,9 +279,11 @@ physical-key binding from the fitted collection before production installation.
 The later v5 source revision retained **292 independent episodes / 440 physical
 attempts**. Its 26 observed target-fit attempts stayed inside the widened
 reference domain, but 0/336 role-specific conditional audit rows qualified.
-It is preserved under `results/calibration/nr_dl_ul_20261002_v5` as an
-unqualified pilot. The population-feasibility correction changed source
-identity, so do not append current-code episodes to v5; use the v6 tag above.
+Its former location was `results/calibration/nr_dl_ul_20261002_v5`; the operator
+deleted that local results folder. Do not claim those episodes are presently
+retained, qualified or resumable. The population-feasibility correction and
+subsequent PHY repairs changed source identity: fresh collection requires a new
+tag, as shown in the current command section, not appending to an old identity.
 
 ## YAML-selected LLS and SLS
 
@@ -487,7 +625,9 @@ Run one H4 waveform scenario (replace the YAML basename with another member
 of the family when required):
 
 ```bat
-cd /d "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main" && if not exist "logs" mkdir "logs" && "C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -logfile "logs\h4_100_beam_refinement_tci.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/h4_100_beam_refinement_tci.yaml','results','h4_100_beam_refinement_tci'); disp(out); assert(out.Ok,'H4 run failed; inspect retained evidence.');"
+cd /d "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main"
+if not exist "logs" mkdir "logs"
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -logfile "logs\h4_100_beam_refinement_tci.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/h4_100_beam_refinement_tci.yaml','results','h4_100_beam_refinement_tci'); disp(out); assert(out.Ok,'H4 run failed; inspect retained evidence.');"
 ```
 
 Run the complete eight-point impaired H4 sweep. Every child retains its own
@@ -495,7 +635,9 @@ truth artifacts under `sweeps/`; consolidated all-point CSVs and PNGs are
 written under the parent run's `reports/csv` and `reports/image` folders:
 
 ```bat
-cd /d "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main" && if not exist "logs" mkdir "logs" && "C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -logfile "logs\h4_100_cdlc100_connected_impaired_snr_sweep.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_snr_sweep.yaml','results','h4_100_cdlc100_connected_impaired_snr_sweep'); disp(out); fprintf('RUN_FOLDER=%s\n',char(out.RunFolder)); assert(out.Ok,'H4 eight-point sweep failed; inspect retained child and parent evidence.');"
+cd /d "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main"
+if not exist "logs" mkdir "logs"
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -logfile "logs\h4_100_cdlc100_connected_impaired_snr_sweep.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_snr_sweep.yaml','results','h4_100_cdlc100_connected_impaired_snr_sweep'); disp(out); fprintf('RUN_FOLDER=%s\n',char(out.RunFolder)); assert(out.Ok,'H4 eight-point sweep failed; inspect retained child and parent evidence.');"
 ```
 
 Start the WebGUI separately from PowerShell so it remains visible while the
@@ -2161,7 +2303,9 @@ does not turn a failed point into a passing point or fill absent measurements wi
 The RAN1#126bis research campaign front door is:
 
 ```cmd
-cd /d "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main" && if not exist "logs" mkdir "logs" && "C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -logfile "logs\ran1_126bis_4ghz_only.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_matrix('simulator/configs/campaigns/ran1_126bis_4ghz_only.yaml','results/ran1_126bis_4ghz_only','qualification_4ghz_v1'); disp(out); assert(out.Ok,'One or more 4 GHz campaign cases failed; inspect retained point evidence.');"
+cd /d "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main"
+if not exist "logs" mkdir "logs"
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -logfile "logs\ran1_126bis_4ghz_only.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_matrix('simulator/configs/campaigns/ran1_126bis_4ghz_only.yaml','results/ran1_126bis_4ghz_only','qualification_4ghz_v1'); disp(out); assert(out.Ok,'One or more 4 GHz campaign cases failed; inspect retained point evidence.');"
 ```
 
 The matrix enforces the resolved physical scope before creating child runs:

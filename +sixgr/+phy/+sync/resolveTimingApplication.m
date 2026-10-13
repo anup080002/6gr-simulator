@@ -34,7 +34,9 @@ raw = localScalarDouble(rawEstimate);
 estimateAvailable = isfinite(raw);
 estimateUsed = logical(opt.SkipRequested) == false && estimateAvailable;
 if ~isempty(opt.EstimateUsed)
-    estimateUsed = logical(opt.EstimateUsed) && estimateAvailable;
+    % An available tracking estimate does not override an explicit bypass.
+    % Preserve its raw value for evidence, but do not apply it to samples.
+    estimateUsed = ~logical(opt.SkipRequested) && logical(opt.EstimateUsed) && estimateAvailable;
 end
 
 mode = lower(strtrim(string(opt.ApplicationMode)));

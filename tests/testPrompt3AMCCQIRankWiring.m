@@ -42,6 +42,9 @@ assert(logical(ollaPolicy.Enabled) && ...
     "The geometry master must resolve an exact 10%%-BLER ACK/NACK OLLA control law.");
 
 cfgDecision = sixgr.config.defaultConfig();
+% The CQI/OLLA inputs below describe an explicit rank-one data link.
+cfgDecision.phy.pdsch.numLayers = 1;
+cfgDecision.phy.pdsch.nLayers = 1;
 cfgDecision = sixgr.util.structSet(cfgDecision, "phy.linkAdaptation.mode", "amc");
 cfgDecision = sixgr.util.structSet(cfgDecision, "phy.linkAdaptation.dlPolicy", "baseline");
 cfgDecision = sixgr.util.structSet(cfgDecision, "phy.linkAdaptation.domain", "cqi");
@@ -103,6 +106,7 @@ assert(~contains(lower(string(csiRuntime.SINRSource)), "receiver_hest"), ...
 cfgRank = sixgr.config.defaultConfig();
 cfgRank.phy.nTxAnt = 2;
 cfgRank.phy.nRxAnt = 2;
+cfgRank.phy.linkAdaptation.rankPolicy = 'measured_ri';
 cfgRank = sixgr.util.structSet(cfgRank, "phy.csi.maxRank", 2);
 cfgRank = sixgr.util.structSet(cfgRank, "phy.csi.pmiCodebookMode", "noncodebook");
 cfgRank = sixgr.util.structSet(cfgRank, "phy.linkAdaptation.rankThreshold", 0.25);

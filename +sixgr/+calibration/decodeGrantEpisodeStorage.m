@@ -2,7 +2,16 @@ function episode=decodeGrantEpisodeStorage(stored,mode)
 %DECODEGRANTEPISODESTORAGE Restore exact native evidence before all validators.
 arguments
     stored (1,1) struct
-    mode (1,1) string {mustBeMember(mode,["raw","lossless_path_gains_xor_v1"])}
+    mode (1,1) string {mustBeMember(mode,["raw","lossless_path_gains_xor_v1","lossless_path_gains_xor_dedup_v1"])}
+end
+if mode=="lossless_path_gains_xor_dedup_v1"
+    assert(all(isfield(stored,{'Schema','Mode','ArrayPool'})) && ...
+        isequal(string(stored.Schema),"sixgr.grant_episode_storage/v1") && ...
+        isequal(string(stored.Mode),mode), ...
+        'sixgr:calibration:EpisodeStorageSchema','Wrong deduplicated evidence envelope.');
+    encoded=sixgr.calibration.decodeEvidenceArrayPool(stored.ArrayPool);
+    episode=sixgr.calibration.decodeGrantEpisodeStorage(encoded,"lossless_path_gains_xor_v1");
+    return;
 end
 if mode=="raw"
     assert(string(stored.Schema)=="sixgr.frozen_grant_calibration_episode/v1", ...

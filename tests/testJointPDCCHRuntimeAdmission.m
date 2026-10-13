@@ -32,6 +32,15 @@ assert(~isfield(state,'PDCCHResourceLedger') || isempty(fieldnames(state.PDCCHRe
     state,d,'DL',"control_blocked_no_nonoverlapping_pdcch_candidate");
 assert(isequal(blocked.PDCCHFailureCount,state.PDCCHFailureCount), ...
     'Pre-transmission candidate exhaustion is not a receiver failure.');
+allocated = state.DLHarq.allocate(rnti,34,100);
+deferred = d; deferred.HARQ = allocated.HARQ;
+beforeStats = state.DLHarq.Stats;
+blocked = sixgr.truth.CoupledTruthRuntime.cancelUnexecutedHARQGrantRuntime( ...
+    blocked,deferred,'DL','DCINotIssued',true);
+next = blocked.DLHarq.allocate(rnti,35,100);
+assert(isequaln(next.HARQ,allocated.HARQ) && ...
+    isequaln(blocked.DLHarq.Stats,beforeStats) && isempty(blocked.DLHarq.getDeliveryLedger()), ...
+    'AL8 admission deferral must preserve the next NDI and create no physical TB history.');
 for name = string(fieldnames(dl)).'
     assert(isequaln(d.(name),dl.(name)) && isequaln(u.(name),ul.(name)), ...
         'Admission must not rewrite an existing grant field.');
@@ -43,8 +52,20 @@ assert(isequal(poisonDL.PDCCHAdmissionCoordinates,d.PDCCHAdmissionCoordinates) &
     'Admission must not depend on a transmitted payload hypothesis.');
 cfgLegacy = rmfield(cfg.phy.pdcch,'jointAdmissionPolicy');
 unchanged = cfg; unchanged.phy.pdcch = cfgLegacy;
-[d,u] = sixgr.truth.resolveJointPDCCHAdmission(state,unchanged,{unchanged},dl,ul);
-assert(isequaln(d,dl) && isequaln(u,ul),'Absent optional policy must preserve legacy behavior.');
+expectMissingPolicy(@()sixgr.truth.resolveJointPDCCHAdmission( ...
+    state,unchanged,{unchanged},dl,ul));
+% Same-direction multi-UE grants also compete for the same CCEs. A missing
+% preference cannot bypass admission merely because the UL group is empty.
+expectMissingPolicy(@()sixgr.truth.resolveJointPDCCHAdmission( ...
+    state,unchanged,{unchanged},[dl;dl],ul([])));
+[d,u] = sixgr.truth.resolveJointPDCCHAdmission(state,unchanged,{unchanged},dl,ul([]));
+assert(isequaln(d,dl) && isempty(u),'A lone control grant needs no joint priority.');
+separateCell=ul; separateCell.ServingCell=2;
+[d,u] = sixgr.truth.resolveJointPDCCHAdmission(state,unchanged,{unchanged},dl,separateCell);
+assert(isequaln(d,dl) && isequaln(u,separateCell), ...
+    'Independent cells do not share a control-resource admission domain.');
+[d,u] = sixgr.truth.resolveJointPDCCHAdmission(state,unchanged,{unchanged},dl([]),ul([]));
+assert(isempty(d) && isempty(u),'Empty admission cannot manufacture grants.');
 code = fileread(which('sixgr.truth.runWaveformLinkBundle'));
 joint = strfind(code,'sixgr.truth.resolveJointPDCCHAdmission(');
 enqueue = strfind(code,'[runtimeState, dlGrants, queuedDL] = localQualifyCoupledGrantsWithPDCCH');
@@ -54,4 +75,16 @@ assert(contains(code,'sixgr:truth:PDCCHAdmissionExecutionMismatch'), ...
     'Actual PDCCH preparation must verify the planned physical allocation.');
 fprintf('JOINT_PDCCH_RUNTIME_ADMISSION_PASS target YAML, AL8 UL protection, grant identity; no PHY acceptance claim.\n');
 ok = true;
+end
+
+function expectMissingPolicy(fn)
+try
+    fn();
+catch ME
+    assert(strcmp(ME.identifier,'sixgr:truth:MissingJointPDCCHAdmissionPolicy'), ...
+        '%s: %s',ME.identifier,ME.message);
+    return;
+end
+error('testJointPDCCHRuntimeAdmission:MissingRejection', ...
+    'Competing grants must not bypass physical candidate admission.');
 end

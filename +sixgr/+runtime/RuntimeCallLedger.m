@@ -85,6 +85,13 @@ methods(Static, Access=private)
                 row.Sequence = state.Sequence;
                 row.TimestampUTC = sixgr.util.utcNowISO8601();
                 row.FunctionName = string(payload.FunctionName);
+                % Bind the source to the executing caller, not to the
+                % supplied function label or a configured source path.
+                % dispatch -> record -> production caller (when present).
+                callerStack = dbstack('-completenames');
+                if numel(callerStack) >= 3
+                    row.SourceFile = string(callerStack(3).file);
+                end
                 row.Component = string(payload.Component);
                 row.Direction = string(payload.Direction);
                 row.Event = "ENTER";
@@ -169,7 +176,7 @@ methods(Static, Access=private)
     end
 
     function row = emptyRow()
-        row = struct("Sequence",NaN,"TimestampUTC","","FunctionName","", ...
+        row = struct("Sequence",NaN,"TimestampUTC","","FunctionName","","SourceFile","", ...
             "Component","","Direction","","Event","","RunId","", ...
             "ExecutionID","","ConfigHash","","ContextSHA256","", ...
             "EvidenceClass","","ApproximationMode","");
@@ -194,6 +201,10 @@ methods(Static, Access=private)
         end
         expected = string(fieldnames( ...
             sixgr.runtime.RuntimeCallLedger.emptyRow())).';
+        if ~ismember("SourceFile", string(T.Properties.VariableNames))
+            % Preserve legacy entries without inventing caller evidence.
+            T.SourceFile = repmat("", height(T), 1);
+        end
         if isempty(T) || ~all(ismember(expected, ...
                 string(T.Properties.VariableNames)))
             error("sixgr:runtime:RuntimeCallLedgerResumeEmpty", ...
@@ -218,7 +229,7 @@ methods(Static, Access=private)
             error("sixgr:runtime:RuntimeCallLedgerResumeSequenceInvalid", ...
                 "Existing runtime-call sequence is not finite, positive, and unique.");
         end
-        T = sortrows(T, "Sequence");
+        T = sortrows(T(:, cellstr(expected)), "Sequence");
         rows = table2struct(T);
         sequence = max(double(T.Sequence));
     end

@@ -114,9 +114,74 @@ out = sixgr.truth.exportCausalPHYChainAudit(runFolder, scfg, cfg, ...
 assert(~out.Ok);
 assert(out.DetailTable.StageOutcome(1) == "DISABLED_BUT_CALLED");
 
+localCheckLedgerAuthority(runFolder, stage, binding);
+
 fprintf('%s\n', char("Causal PHY-chain audit: pass, called-without-measurement, " + ...
     "enabled-not-called, and disabled-bypass gates verified."));
 ok = true;
+end
+
+function localCheckLedgerAuthority(folder, stage, binding)
+% These are audit fixtures, not PHY performance measurements. The caller
+% path must be captured from this execution, not the caller-supplied label.
+layout = sixgr.report.resultLayout(folder);
+profilePath = fullfile(layout.ReportCSVDir,"runtime_function_profile.csv");
+sixgr.util.csvWriteTable(profilePath,table(strings(0,1),'VariableNames',{'FileName'}));
+ledgerPath = fullfile(layout.ReportCSVDir,"runtime_call_ledger.csv");
+sixgr.runtime.RuntimeCallLedger.configure(folder,struct( ...
+    'RunId',"ledger_unit",'ExecutionID',"ledger_execution",'ConfigHash',"unit_hash"));
+cleanup = onCleanup(@()sixgr.runtime.RuntimeCallLedger.reset()); %#ok<NASGU>
+sixgr.runtime.RuntimeCallLedger.record("unit_actual_call","AUDIT","",struct());
+ledger = sixgr.runtime.RuntimeCallLedger.flush();
+assert(ledger.SourceFile==string(mfilename('fullpath')+".m"));
+stage.consumer_source_files="tests/testCausalPHYChainAudit.m";
+stage.consumer_functions="unit_actual_call";
+binding.consumer_source_files=stage.consumer_source_files;
+audit=struct('enabled',true,'required',true,'stages',stage,'parameter_bindings',binding);
+scfg=struct('validation',struct('causal_phy_chain_audit',audit),'timing',struct('k',4));
+cfg=struct('phy',struct('timing',struct('k',4)),'meta',struct('configHash',"unit_hash"));
+out=check(scfg,cfg);
+assert(out.Ok && out.DetailTable.LedgerCallCount==1, ...
+    'A call matching both its function and source file must count once.');
+for field=["RunId","ConfigHash","Event","EvidenceClass","ApproximationMode"]
+    bad=ledger; bad.(field)(1)="wrong_or_proxy";
+    sixgr.util.csvWriteTable(ledgerPath,bad,'PreserveSchema',true);
+    out=check(scfg,cfg);
+    assert(~out.Ok && ~out.DetailTable.ConsumerObserved, ...
+        'Wrong identity, non-entry, or proxy evidence qualified a consumer: %s',field);
+end
+sixgr.util.csvWriteTable(ledgerPath,ledger,'PreserveSchema',true);
+% Empty optional cells inserted by heterogeneous YAML normalization are
+% unconditional. Only an explicitly false, known feature is disabled.
+disabled=binding; disabled.parameter_id="disabled_parameter";
+disabled.feature_authority="disabled_feature";
+scfg.validation.causal_phy_chain_audit.parameter_bindings={binding,disabled};
+cfg.runtime.features.disabled_feature.Enabled=false;
+out=check(scfg,cfg);
+assert(out.Ok && out.ParameterBindingTable.Status(1)=="PASS" && ...
+    out.ParameterBindingTable.RequiredForScenario(1) && ...
+    out.ParameterBindingTable.Status(2)=="DISABLED_BY_YAML");
+disabled.feature_authority="unknown_feature";
+scfg.validation.causal_phy_chain_audit.parameter_bindings={binding,disabled};
+out=check(scfg,cfg);
+assert(~out.Ok && out.ParameterBindingTable.Status(2)=="FEATURE_AUTHORITY_MISSING" && ...
+    out.ParameterBindingFailureCount==1);
+unknown=rmfield(stage,'always_required'); unknown.feature_authority="unknown_feature";
+scfg.validation.causal_phy_chain_audit.stages=unknown;
+out=check(scfg,cfg);
+assert(~out.Ok && out.RequiredStageFailureCount==1 && ...
+    out.DetailTable.StageOutcome=="CONFIG_MAPPING_MISMATCH");
+% Source-file matching must fail when old evidence never captured a caller.
+scfg.validation.causal_phy_chain_audit.stages=rmfield(stage,'consumer_functions');
+scfg.validation.causal_phy_chain_audit.parameter_bindings=binding;
+ledger=removevars(ledger,'SourceFile');
+sixgr.util.csvWriteTable(ledgerPath,ledger,'PreserveSchema',true);
+out=check(scfg,cfg);
+assert(~out.Ok && out.DetailTable.StageOutcome=="ENABLED_NOT_CALLED");
+    function out=check(s,c)
+        out=sixgr.truth.exportCausalPHYChainAudit(folder,s,c, ...
+            'RunId','ledger_unit','WriteArtifacts',false);
+    end
 end
 
 function localCleanup(pathValue)

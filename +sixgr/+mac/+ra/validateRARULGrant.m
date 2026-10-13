@@ -30,7 +30,7 @@ if grant.SymbolStart < 0 || grant.NumSymbols <= 0 || grant.SymbolStart + grant.N
     out.FailureReason = "rar_invalid_ul_grant_time_allocation";
     return;
 end
-if grant.TemporaryCRNTI < 1 || grant.TemporaryCRNTI > 65519
+if grant.TemporaryCRNTI < 1 || grant.TemporaryCRNTI > 65522
     out.FailureReason = "rar_invalid_temporary_crnti";
     return;
 end

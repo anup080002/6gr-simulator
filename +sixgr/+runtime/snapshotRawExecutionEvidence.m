@@ -264,6 +264,22 @@ if isempty(key)
     key = "row_order_only_no_declared_primary_key";
     return;
 end
+% Physical slot/TB coordinates are local to a configured operating point
+% and independent realization. A joint waveform sweep deliberately reuses
+% them. Namespace these keys with producer metadata, never measured SINR,
+% row numbers or a generated ID that could disguise a duplicate trial.
+% Explicit TrialID and fixed-link point/trial/seed keys already declare
+% their own identity and must keep their existing duplicate guards.
+if ~any(ismember(key,["TrialID","FixedLinkPointIndex"]))
+    pointKey = intersect(["ConfiguredSNR_dB","SNR_dB"],vars,"stable");
+    if ~isempty(pointKey)
+        namespace = pointKey(1);
+        if ismember("Seed",vars)
+            namespace(end+1) = "Seed";
+        end
+        key = [namespace(:);key];
+    end
+end
 keyTable = T(:, cellstr(key));
 try
     [~, uniqueIndex] = unique(keyTable, "rows", "stable");

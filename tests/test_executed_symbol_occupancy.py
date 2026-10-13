@@ -117,3 +117,38 @@ def test_independent_audit_rejects_missing_and_duplicate_scopes(tmp_path):
     assert not _executed_symbol_occupancy_failures(tmp_path, points)
     assert "occupancy_executed_scope_coverage_mismatch" in _executed_symbol_occupancy_failures(tmp_path, points[:1])
     assert "duplicate_scope" in "|".join(_executed_symbol_occupancy_failures(tmp_path, points + points[:1]))
+
+
+def test_independent_snr_trials_keep_one_joint_csv_without_combining_grids(tmp_path):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+    from lls_csv_semantics import _executed_symbol_occupancy_failures
+
+    rows = [record(symbol=symbol, subcarrier_start=0, channel="PDSCH", ObservationID=f"observation_{snr}",
+                   ObservationUEIndex=1, ConfiguredSNR_dB=snr, Seed=42, TrialIndex=1,
+                   ExecutionScope="independent_link_execution") for snr, symbol in [(18, 4), (30, 8)]]
+    points = decoded(plot(rows))
+    assert len(points) == 2 and all(point["y_value"] == "1" for point in points)
+    assert {point["ConfiguredSNR_dB"] for point in points} == {"18", "30"}
+    target = tmp_path / SOURCE
+    target.parent.mkdir(parents=True)
+    payload = m._encode_dict_rows(list(rows[0]), rows)
+    target.write_bytes(payload)
+    assert not _executed_symbol_occupancy_failures(tmp_path, points)
+    assert _executed_symbol_occupancy_failures(tmp_path, points[:1])
+    heatmap = m._specialized_chart_materialization("RE occupancy heatmap", {SOURCE: {"artifact_id": 1}}, lambda _: payload, 7)
+    cells = decoded(heatmap)
+    assert len(cells) == 2 and all(float(cell["occupancy_value"]) == 1 for cell in cells)
+    assert {cell["ObservationID"] for cell in cells} == {"observation_18", "observation_30"}
+    assert heatmap["image_status"] == "generated_independent_re_panels_svg"
+    assert all(f"SNR {snr} dB" in heatmap["img_bytes"].decode() for snr in [18, 30])
+    assert m._rasterize_contract_png(heatmap["img_bytes"], source_mime_type="image/svg+xml").startswith(b"\x89PNG")
+
+
+def test_dmrs_map_uses_executed_component_not_parent_channel_name():
+    rows = [record(subcarrier_start=0, channel="PDSCH", component="DM-RS"),
+            record(subcarrier_start=1, channel="PDSCH", component="DATA")]
+    payload = m._encode_dict_rows(list(rows[0]), rows)
+    result = m._specialized_chart_materialization("DMRS/PTRS occupancy map", {SOURCE: {"artifact_id": 1}}, lambda _: payload, 7)
+    assert result is not None
+    points = decoded(result)
+    assert len(points) == 1 and float(points[0]["occupancy_value"]) == 1

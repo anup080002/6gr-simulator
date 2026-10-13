@@ -80,6 +80,11 @@ rxWaveform = rxClean + noise;
     "SkipTimingEstimate", true);
 
 rawSINR = double(rx.PostEqSINRRawEqualizer_dB);
+assert(string(rx.PostEqSINRRawReduction)=="mean_dB_over_data_RE_then_layers");
+equalizerPerRE=rxInfo.Equalizer.EqualizerResult.PostEqSINRPerRE_dB;
+assert(max(abs(rx.PostEqSINRRawEqualizerPerLayer_dB-mean(equalizerPerRE,1)))<1e-10);
+assert(abs(rawSINR-mean(equalizerPerRE,'all'))<1e-10, ...
+    'Raw SINR must remain the original executed equalizer result after all residual bounds.');
 dmrsSINR = double(rx.PostEqSINRDMRSResidual_dB);
 decisionSINR = double(rx.PostEqDecisionResidual_dB);
 measuredSINR = double(rx.PostEqSINR_dB);
@@ -101,6 +106,8 @@ assert(abs(measuredSINR - expectedBound) < 1e-8, ...
     "PUSCH post-eq SINR must equal the conservative receiver-residual bound, not an optimistic raw equalizer value.");
 assert(logical(rx.PostEqSINRDMRSResidualBoundApplied) || rawSINR <= dmrsSINR, ...
     "PUSCH must disclose whether the DM-RS residual constrained the raw equalizer SINR.");
+assert(~rx.PostEqSINRDMRSResidualBoundApplied && rx.PostEqSINRDecisionResidualBoundApplied, ...
+    'This waveform is bounded by data decisions, not DM-RS: retain distinct applied flags.');
 assert(logical(rx.DecodeAttempted) && logical(rx.ULSCHDecodeAvailable) && ...
     logical(rx.Ok) && ~logical(rx.CRCError), ...
     "The high-SNR full-rank rank-2 PUSCH fixture must pass the real UL-SCH decoder.");

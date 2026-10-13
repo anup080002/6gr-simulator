@@ -118,10 +118,17 @@ ssbActive=find(reshape(any(any(ssbGrid~=0,1),3),[],1));
 % Use the same emitted domain as the SSB grid and waveform. A logical
 % waveform has no locally applied physical matrix; its measured port grid
 % is still exact and must not be rejected or expanded into element ports.
-siGrid=sixgr.link.broadcastSIB1WaveformPortGrid(tx);
-siActive=find(reshape(any(any(siGrid~=0,1),3),[],1));
-siAbsolute0=double(tx.SIB1AbsoluteSlot)*symbolsPerSlot+(siActive-1);
-absoluteSymbols0=unique([double(ssbActive-1);siAbsolute0(:)],"sorted");
+transmissions=sixgr.util.structGet(tx,'SIB1Transmissions',tx);
+siGrids=cell(1,numel(transmissions));
+siActive=cell(size(siGrids)); siAbsolute0=cell(size(siGrids));
+absoluteSymbols0=double(ssbActive-1);
+for occasion=1:numel(transmissions)
+    siGrids{occasion}=sixgr.link.broadcastSIB1WaveformPortGrid(transmissions(occasion));
+    siActive{occasion}=find(reshape(any(any(siGrids{occasion}~=0,1),3),[],1));
+    siAbsolute0{occasion}=double(transmissions(occasion).SIB1AbsoluteSlot)*symbolsPerSlot+ ...
+        (siActive{occasion}-1);
+    absoluteSymbols0=union(absoluteSymbols0,siAbsolute0{occasion});
+end
 if isempty(absoluteSymbols0)
     error("sixgr:link:EmptyBroadcastPowerGrid", ...
         "The retained SS/PBCH/SIB1 producer grids contain no transmitted REs.");
@@ -133,9 +140,12 @@ for ordinal=1:numel(ssbActive)
     grid(start1:start1+239,destination,:)= ...
         grid(start1:start1+239,destination,:)+ssbGrid(:,ssbActive(ordinal),:);
 end
-for ordinal=1:numel(siActive)
-    destination=find(absoluteSymbols0==siAbsolute0(ordinal),1);
-    grid(:,destination,:)=grid(:,destination,:)+siGrid(:,siActive(ordinal),:);
+for occasion=1:numel(transmissions)
+    for ordinal=1:numel(siActive{occasion})
+        destination=find(absoluteSymbols0==siAbsolute0{occasion}(ordinal),1);
+        grid(:,destination,:)=grid(:,destination,:)+ ...
+            siGrids{occasion}(:,siActive{occasion}(ordinal),:);
+    end
 end
 if any(~isfinite(grid),"all") || any(~any(grid~=0,[1 3]))
     error("sixgr:link:InvalidBroadcastPowerGrid", ...

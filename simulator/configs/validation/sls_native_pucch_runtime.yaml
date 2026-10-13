@@ -6,6 +6,11 @@ integration:
   power_reference_mode: absolute_calibrated_sqrt_mw
 channel:
   pathlossEnabled: true
+phy:
+  pdsch:
+    # CSI-RS feedback is expressed in its configured element-domain basis.
+    # Freeze PDSCH using that same basis, including the identity-array case.
+    hybridBeamformingEnabled: true
 scenario:
   bs:
     txPower_dBm: 30

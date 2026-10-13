@@ -64,22 +64,25 @@ for cycle=0:period:size(logicalGrid,2)-1
 end
 assert(isequal(used,logicalGrid~=0),'sixgr:truth:UnclassifiedBroadcastGrid', ...
     'Every transmitted SS/PBCH RE must have exact signal ownership.');
-mapping=tx.SIB1SpatialMapping;
-assert(tx.SIB1WaveformStartSample==sixgr.phy.frame.slotStartSample(carrier,tx.SIB1AbsoluteSlot,fs) && ...
-    tx.SIB1WaveformStartSample+size(tx.SIB1Waveform,1)<=prepared.NumSamples, ...
+transmissions=sixgr.util.structGet(tx,'SIB1Transmissions',tx);
+for occasion=1:numel(transmissions)
+si=transmissions(occasion);
+mapping=si.SIB1SpatialMapping;
+assert(si.SIB1WaveformStartSample==sixgr.phy.frame.slotStartSample(carrier,si.SIB1AbsoluteSlot,fs) && ...
+    si.SIB1WaveformStartSample+size(si.SIB1Waveform,1)<=prepared.NumSamples, ...
     'sixgr:truth:SIB1GridTimingMismatch','SIB1 slot must match its committed waveform offset.');
 for channel=["PDCCH","PDSCH"]
-    original=tx.(channel+"Tx"); mapped=original;
+    original=si.(channel+"Tx"); mapped=original;
     if channel=="PDCCH"
         original.PDCCHIndices=original.PDCCHInd;
         original.DMRSIndices=original.DMRSInd;
     end
-    mapped.Grid=sixgr.link.broadcastSIB1WaveformPortGrid(tx,original.Grid);
+    mapped.Grid=sixgr.link.broadcastSIB1WaveformPortGrid(si,original.Grid);
     % Materialize channel components from the retained executed logical TX,
     % then project their exact RE indices onto the actual waveform ports.
     source=sixgr.truth.buildObservedREAllocation(original,'Channel',channel,'Direction','DL', ...
-        'AbsoluteSlot',base+tx.SIB1AbsoluteSlot,'CellID',cellID, ...
-        'AllocationID',"sib1_"+lower(channel)+"_cell_"+cellID+"_burst_"+base);
+        'AbsoluteSlot',base+si.SIB1AbsoluteSlot,'CellID',cellID, ...
+        'AllocationID',"sib1_"+lower(channel)+"_cell_"+cellID+"_burst_"+base+"_ssb_"+mapping.SSBIndex);
     parts=cell(size(mapped.Grid,3),1);
     for port=1:size(mapped.Grid,3)
         keep=true(height(source),1);
@@ -94,6 +97,7 @@ for channel=["PDCCH","PDSCH"]
         parts{port}=localMetadata(part,prepared,txObservation,NaN,mapping.SSBIndex,65535,mapped.Grid);
     end
     T=[T;vertcat(parts{:})]; %#ok<AGROW>
+end
 end
 T=sixgr.truth.deduplicateObservedREAllocation(T);
 end

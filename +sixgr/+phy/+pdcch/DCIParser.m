@@ -159,10 +159,19 @@ classdef DCIParser
                     [rank,tpmi]=sixgr.phy.pdcch.ULPrecodingField.decode(data,combined);
                     derived.precoding_information_and_number_of_layers_tpmi=tpmi;
                     derived.precoding_information_and_number_of_layers_rank_minus1=rank-1;
+                    derived.ul_rank_precoding_source="received_precoding_information_and_number_of_layers";
                 else
                     derived.precoding_information_and_number_of_layers_tpmi = mod(combined, 16);
                     derived.precoding_information_and_number_of_layers_rank_minus1 = floor(combined / 16);
                 end
+            elseif fmt=="0_1" && isfield(data,'ULPrecoding')
+                prec=sixgr.phy.pdcch.ULPrecodingField.resolve(data);
+                assert(prec.Width==0,'sixgr:phy:pdcch:missing_required_field', ...
+                    'Only an explicitly installed one-port codebook has implicit rank and precoding.');
+                [rank,tpmi]=sixgr.phy.pdcch.ULPrecodingField.decode(data,0);
+                derived.precoding_information_and_number_of_layers_tpmi=tpmi;
+                derived.precoding_information_and_number_of_layers_rank_minus1=rank-1;
+                derived.ul_rank_precoding_source="implicit_single_configured_codebook_port";
             end
             if fmt=="1_1" && isfield(data,'DLReferenceSignaling')
                 [ports,groups,rank]=sixgr.phy.pdcch.DLReferenceSignaling.decodeAntenna(data,fields.antenna_ports);

@@ -1,0 +1,106 @@
+function folder=diagnoseH4100ReceivedData(folder,ranks,measuredCase)
+% Bounded full-band receiver investigation, NOT scenario/statistical acceptance.
+% By default CSI/SRS decisions are declared mapping-test boundary fixtures.
+% An optional measuredCase supplies an already-created measured-CSI grant
+% and TX capture; its CSI delivery boundary is still ideal, not PUCCH proof.
+% PDCCH is actually decoded on a separate logical-port unit link. Data uses
+% the production H4 CDL-C/array path; no channel truth or TX coding plan is
+% passed to the connected UE receiver. The ACK is NOT physical PUCCH proof.
+if nargin<1
+    folder=fullfile(pwd,'results','lls','h4_received_data', ...
+        char(datetime('now','Format','yyyyMMdd_HHmmss_SSS')));
+end
+if nargin<2, ranks=[1 2 4]; end
+assert(~isfolder(folder),'test:EvidenceExists','Preserve the earlier diagnostic.');
+mkdir(folder); rows=table();
+fprintf('H4_RECEIVED_DATA_ROOT=%s\n',folder);
+scope="decoded_unit_link_PDCCH_plus_CDL_data_declared_CSI_boundary";
+usesMeasuredCase=nargin>=3;
+if ~usesMeasuredCase
+    testH4100AdaptiveDataMapping(@receive);
+else
+    scope="measured_CSIRS_ideal_delivery_decoded_unit_PDCCH_CDL_data";
+    assert(measuredCase.Feedback.CSIMeasurementSlot<measuredCase.Grant.Slot && ...
+        measuredCase.Grant.NumLayers==measuredCase.Feedback.RI && ...
+        measuredCase.Grant.PMI==measuredCase.Feedback.PMI && ...
+        measuredCase.Grant.CRI==measuredCase.Feedback.CRI);
+    save(fullfile(folder,'measured_feedback.mat'),'measuredCase','-v7.3');
+    receive(measuredCase.Config,"DL",measuredCase.Grant,measuredCase.Frozen, ...
+        measuredCase.Tx,measuredCase.TxInfo);
+end
+assert(height(rows)==numel(ranks));
+disp(rows);
+
+    function receive(cfg,direction,grant,frozen,tx,txInfo)
+        if direction~="DL" || (~usesMeasuredCase && grant.CRI~=0) || ~ismember(grant.NumLayers,ranks), return; end
+        layers=grant.NumLayers;
+        fprintf('H4_RECEIVED_DATA_START rank=%d\n',layers);
+        cfg=sixgr.truth.attachFixedLinkRuntimeAntennaContext(cfg,1,1);
+        multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1, ...
+            'ExecutionModel','slot_coupled_truth');
+        runtime=sixgr.truth.CoupledTruthRuntime.initialize(cfg,folder,multi,struct(),grant.Slot);
+        runtime.CurrentSlot=grant.Slot;
+        cfg=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,runtime,1,'DL');
+        cfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,grant.ControlAbsoluteSlot+1);
+        controlTx=sixgr.link.preparePDCCHTransmission(cfg, ...
+            'DCIBits',grant.DCI.Bits,'RNTI',grant.RNTI);
+        [control,controlInfo]=sixgr.phy.dl.PDCCH_Rx( ...
+            controlTx.TransmitSamples,cfg,'SampleRate_Hz',controlTx.SampleRateHz);
+        assert(control.Ok && isequal(control.DCIBits,grant.DCI.Bits), ...
+            'test:H4ControlDecode','Actual control decoding failed.');
+        a=sixgr.phy.pdcch.materializeConnectedDCI(control,controlInfo,cfg);
+        assert(a.NumLayers==layers && a.NumPRB==273 && a.NumCDMGroupsWithoutData==2);
+        cfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,a.DataAbsoluteSlot+1);
+        assert(sixgr.rf.isNormalizedFixedSNRPowerReference(cfg), ...
+            'This diagnostic must not mislabel unscaled IQ as absolute physical power.');
+        user=cfg.lls6g.userContext;
+        state=sixgr.channel.ChannelFactory.createRuntimeChannelState(cfg,'DL', ...
+            'UEIndex',1,'ServingCell',1,'Seed',5101301);
+        state=sixgr.channel.ChannelFactory.materializeRuntimeChannelState( ...
+            state,cfg,tx.Waveform,txInfo,'NumTxAnt',64,'NumRxAnt',4, ...
+            'TransmitAntennaRuntime',user.RuntimeServingBSAntenna, ...
+            'ReceiveAntennaRuntime',user.RuntimeUEAntenna, ...
+            'TransmitAntennaMeta',user.RuntimeServingBSAntennaMeta, ...
+            'ReceiveAntennaMeta',user.RuntimeUEAntennaMeta);
+        % A declared capture margin, not the injected/true path delay.
+        margin=256;
+        [waveform,replay]=sixgr.channel.ChannelFactory.applyRuntimeChannelState( ...
+            state,[tx.Waveform;zeros(margin,64)], ...
+            'OutputSampleAlignment','continuous_raw_samples');
+        assert(replay.ChannelFadingApplied && size(waveform,2)==4);
+        calibration=sixgr.phy.waveform.calibrateOFDMNoiseTransform(tx.Carrier);
+        snr=double(cfg.channel.snr_dB);
+        energy=sixgr.link.resolveAWGNReferenceEnergy(cfg);
+        gridVariance=energy*10^(-snr/10);
+        sampleVariance=gridVariance/calibration.SampleToGridNoiseVarianceGain;
+        noise=RandStream('mt19937ar','Seed',5101311);
+        waveform=waveform+sqrt(sampleVariance/2)*complex( ...
+            randn(noise,size(waveform)),randn(noise,size(waveform)));
+        before=sixgr.link.ReceivedDLHARQState(cfg,1);
+        % Save the exact call before reception, including failures/exceptions.
+        save(fullfile(folder,sprintf('rank%d_input.mat',layers)), ...
+            'cfg','a','before','waveform','replay','frozen', ...
+            'snr','energy','gridVariance','sampleVariance','-v7.3');
+        [rx,decision,after]=before.receive(cfg,a,waveform, ...
+            'TimingSearchWindowSamples',[0 margin]);
+        originalBits=tx.TransportBlock;
+        save(fullfile(folder,sprintf('rank%d_output.mat',layers)), ...
+            'rx','decision','after','originalBits','-v7.3');
+        if rx.CRCPass
+            assert(isequal(rx.TransportBlock,originalBits), ...
+                'test:H4WrongDecodedTB','A reported CRC pass must recover the actual TB.');
+        end
+        row=table(layers,snr,a.NumPRB,rx.CRCPass,numel(originalBits), ...
+            double(rx.TimingOffset),double(rx.Metrics.EVMPerCodeword(1)), ...
+            string(mat2str(rx.Metrics.MeasuredPostEqualizationSINRdBPerLayer)), ...
+            scope,false, ...
+            'VariableNames',{'Rank','ConfiguredSNR_dB','NumPRB','CRCPass', ...
+            'TBSBits','TimingEstimateSamples','EVM_rms','LayerSINR_dB', ...
+            'Scope','ScenarioAccepted'});
+        row.EVMReference="nearest_constellation_hard_decisions_not_known_transmitted_symbols";
+        rows=[rows;row]; %#ok<AGROW>
+        writetable(rows,fullfile(folder,'received_data.csv'));
+        fprintf('H4_RECEIVED_DATA_RESULT rank=%d CRC=%d TBS=%d timing=%g EVM=%g\n', ...
+            layers,rx.CRCPass,numel(originalBits),rx.TimingOffset,row.EVM_rms);
+    end
+end

@@ -27,12 +27,17 @@ rx = sixgr.pdsch.PDSCHReceiver( ...
     "CodingPlans",tx.CodingPlans,"PrecoderBundle",fixture.PrecoderBundle);
 
 measured = double(rx.Metrics.MeasuredPostEqualizationSINRdBPerLayer);
+receivedGrid = reshape(rx.OFDMGrid,[],size(rx.OFDMGrid,3));
+verifyEqual(testCase,rx.PreEqualizationRxSymbols, ...
+    receivedGrid(double(rx.ResourcePlan.DataIndices)+1,:));
+verifySize(testCase,rx.PreEqualizationRxSymbols, ...
+    [double(rx.ResourcePlan.ExactDataRECount),2]);
 expected = 10*log10(abs(diag(H)).^2/gridNoiseVariance).';
 verifyEqual(testCase,measured,expected,"AbsTol",2.0);
 verifyLessThan(testCase,double(rx.NoiseVarianceUsedForLLR), ...
     gridNoiseVariance);
 verifyEqual(testCase,string(rx.EqualizationInfo.EngineUsed), ...
-    "explicit_unbiased_layer_domain_lmmse");
+    "canonical_equalizeMMSE_unit_desired_gain");
 verifySize(testCase, ...
     rx.EqualizationInfo.PostEqualizationNoiseVariancePerResourceLayer, ...
     [double(rx.ResourcePlan.ExactDataRECount),2]);
@@ -101,6 +106,28 @@ verifyEqual(testCase,string(residual.Source), ...
     "canonical_pdsch_decision_directed_post_equalization_residual");
 end
 
+function testZeroNoiseModelBoundaryDoesNotAbortDecodedEvidence(testCase)
+setup6GRSimToolkit('Verbose',false);
+fixture=StrictPDSCHChainFixture.create(1,'NPRB',4);
+tx=sixgr.pdsch.PDSCHTransmitter(fixture.TransportBlocks,fixture.Assignment, ...
+    fixture.ResourcePlan,fixture.Carrier,fixture.ReferenceConfig);
+receiver=rmfield(fixture.ReceiverConfig,'ReferenceChannelGain');
+receiver.ChannelModel='STATIC-MIMO'; receiver.NoiseVariance=0;
+rx=sixgr.pdsch.PDSCHReceiver(tx.Waveform,fixture.Assignment,fixture.ResourcePlan, ...
+    fixture.Carrier,fixture.ReferenceConfig,receiver,'CodingPlans',tx.CodingPlans);
+verifyTrue(testCase,rx.CRCPass);
+verifyEqual(testCase,rx.TransportBlocks,fixture.TransportBlocks);
+verifyEqual(testCase,rx.EqualizationInfo.DisturbanceCovariance,0);
+verifyEqual(testCase,rx.EqualizationInfo.PreEqualizationNoiseVariance,0);
+verifyEqual(testCase,rx.Metrics.MeasuredPostEqualizationSINRdBPerLayer,Inf);
+verifyEqual(testCase,rx.Metrics.PostEqualizationSINRValueStatusPerLayer,"unavailable");
+verifyEqual(testCase,rx.Metrics.PostEqualizationSINRNAReasonPerLayer, ...
+    "nonfinite_post_equalization_model_boundary");
+verifyTrue(testCase,all(isfinite(rx.Metrics.EVMPerCodeword)));
+verifyEqual(testCase,rx.EqualizationInfo.EqualizerResult.PostEqSINRLinear, ...
+    Inf(rx.EqualizationInfo.EqualizerResult.NRE,1));
+end
+
 function symbols = localApplyEqualizerWeights(weights, received)
 weights = complex(double(weights));
 received = complex(double(received));
@@ -152,4 +179,11 @@ for re=1:eq.NRE
     end
 end
 verifyEqual(testCase,e.ResidualInterLayerPowerPerLayer,mean(residual,1),'AbsTol',1e-12);
+% The DL and UL schedulers must receive the same explicitly declared
+% wideband reduction of the *executed* per-RE equalizer SINR. Summing
+% powers before unit-gain normalization instead weights weak REs
+% differently from the symbols that the decoder actually consumed.
+expectedWideband=mean(10*log10(eq.PostEqSINRLinear),1);
+verifyEqual(testCase,rx.PostEqSINRRawEqualizerPerLayer_dB, ...
+    expectedWideband,'AbsTol',1e-10);
 end

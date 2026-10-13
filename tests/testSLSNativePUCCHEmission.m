@@ -22,6 +22,10 @@ for format=0:4
     assert(isequal(reshape(reconstructed,K,L),tx.Grid));
     assert(isequal(sort(double([tx.PUCCHIndices(:);tx.DMRSIndices(:)])),sort(indices)), ...
         'Emit actual data and DMRS REs, not the reserved PRB footprint.');
+    if format==4
+        assert(any(e.Symbols==0), ...
+            'This deterministic format-4 case must retain its zero-valued mapped REs.');
+    end
     resource=f.Assignment.Resource.Data;
     active=resource.StartSymbol+(0:resource.NumSymbols-1);
     perSymbol=accumarray(e.Coordinates0Based(:,2)+1, ...

@@ -38,6 +38,13 @@ beforeSetupComplete = sixgr.truth.deriveInitialAccessProcedureDelay( ...
     rrcTable(1:end-1, :), "RequireRRCSetupComplete", true);
 assert(~any(beforeSetupComplete.CompleteFlag), ...
     "Msg4 must not terminate access when waveform RRCSetupComplete is required.");
+% A prior report may have used the wrong four-step-only policy. Reapplying
+% the installed RRC policy must not trust its stale Msg4 completion flag.
+wrongPolicy = sixgr.truth.deriveInitialAccessProcedureDelay(rrcTable(1:end-1,:));
+revalidated = sixgr.truth.deriveInitialAccessProcedureDelay( ...
+    wrongPolicy,"RequireRRCSetupComplete",true);
+assert(~any(revalidated.CompleteFlag) && all(~isfinite(revalidated.ProcedureDelay_ms)), ...
+    'A stale pre-RRC completion flag must not bypass the installed completion policy.');
 withSetupComplete = sixgr.truth.deriveInitialAccessProcedureDelay( ...
     rrcTable, "RequireRRCSetupComplete", true);
 rrcTerminal = withSetupComplete.EventName == "RRC_SETUP_COMPLETE_ACCEPTED";
@@ -45,6 +52,42 @@ assert(nnz(rrcTerminal) == 1 && logical(withSetupComplete.CompleteFlag(rrcTermin
     "Required waveform RRCSetupComplete must be the terminal access event.");
 assert(abs(withSetupComplete.ProcedureDelay_ms(rrcTerminal) - 17) < 1e-12, ...
     "RRC-complete access delay must use the actual terminal runtime slot.");
+assert(isequaln(withSetupComplete,sixgr.truth.deriveInitialAccessProcedureDelay( ...
+    withSetupComplete,"RequireRRCSetupComplete",true)), ...
+    'Recomputing the same complete event clock must be idempotent.');
+% Missing/invalid group identity must not preserve an old completed sample.
+for invalidIdentity=[NaN Inf 0 -1 1.5]
+    invalid=withSetupComplete;
+    invalid.UEIndex(:)=invalidIdentity;
+    invalid=sixgr.truth.deriveInitialAccessProcedureDelay(invalid,"RequireRRCSetupComplete",true);
+    assert(~any(invalid.CompleteFlag) && all(isnan(invalid.ProcedureDelay_ms)), ...
+        'A completion requires a valid UE identity, not a retained flag or latency.');
+    invalid=withSetupComplete;
+    invalid.SweepPointIndex=repmat(invalidIdentity,height(invalid),1);
+    invalid=sixgr.truth.deriveInitialAccessProcedureDelay(invalid,"RequireRRCSetupComplete",true);
+    assert(~any(invalid.CompleteFlag) && all(isnan(invalid.ProcedureDelay_ms)), ...
+        'A completion requires a valid sweep identity, not a retained flag or latency.');
+end
+
+% Exercise the production control-trace exporter with the live runtime's
+% installed policy, and separately with the persisted immutable snapshot.
+root=tempname; mkdir(root);
+cleanup=onCleanup(@() rmdir(root,'s')); %#ok<NASGU>
+cfg=struct('initial_access',struct('rrc',struct('require_setup_complete',true)));
+runtime=struct('InitialAccessLifecycleTraceTable',wrongPolicy, ...
+    'CoupledRuntime',struct('CfgMobility',cfg));
+trace=sixgr.truth.exportControlPlaneTraces(root,struct(),runtime);
+exported=readtable(trace.InitialAccessLifecycleTraceCSV,'TextType','string');
+assert(~any(exported.CompleteFlag),'Control export must not complete access before required RRC.');
+sixgr.util.ensureFolder(fullfile(root,'meta'));
+sixgr.util.jsonWrite(fullfile(root,'meta','scenario_config_resolved.json'),cfg);
+runtime=struct('InitialAccessLifecycleTraceTable',rrcTable);
+trace=sixgr.truth.exportControlPlaneTraces(root,struct(),runtime);
+exported=readtable(trace.InitialAccessLifecycleTraceCSV,'TextType','string');
+assert(nnz(exported.CompleteFlag)==1 && ...
+    exported.EventName(logical(exported.CompleteFlag))=="RRC_SETUP_COMPLETE_ACCEPTED" && ...
+    abs(exported.ProcedureDelay_ms(logical(exported.CompleteFlag))-17)<1e-12, ...
+    'Snapshot-backed control export must retain the decoded RRC terminal event.');
 
 % Independent sweep points must never borrow an access event from another
 % operating point. Point 1 is complete; point 2 deliberately lacks Msg3.

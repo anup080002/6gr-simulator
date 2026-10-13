@@ -29,6 +29,11 @@ if ~isempty(varargin)
             case "rint"
                 Rint = val;
             case {"rincludesnoise","rintincludesnoise","covarianceincludesnoise"}
+                if ~((islogical(val) || isnumeric(val)) && isscalar(val) && ...
+                        isreal(val) && isfinite(val) && any(val == [0 1]))
+                    error("sixgr:phy:equalizeMMSE:BadNoiseInclusionFlag", ...
+                        "RIncludesNoise must be a scalar logical value.");
+                end
                 RIncludesNoise = logical(val);
             otherwise
                 error("sixgr:phy:equalizeMMSE:UnknownNV", "Unknown name-value: %s", char(string(name)));
@@ -51,7 +56,7 @@ if ~isempty(ind)
 end
 
 [rxSym, hSym, dims] = localNormalizeInputs(rxSym, hSym);
-nVarSafe = localSafeNoiseVariance(nVar, rxSym);
+nVarSafe = localValidateNoiseVariance(nVar);
 if isempty(RIncludesNoise)
     RIncludesNoise = ~isempty(Rint);
 end
@@ -83,11 +88,18 @@ function [rxSym, hSym, dims] = localNormalizeInputs(rxSym, hSym)
 if isempty(rxSym) || isempty(hSym)
     error("sixgr:phy:equalizeMMSE:EmptyInput", "rx and hEst must be non-empty.");
 end
-if isvector(rxSym)
+% A 1-by-NRx row is one multi-antenna RE, not NRx SISO REs.
+if isvector(rxSym) && size(hSym,2)==1 && numel(rxSym)==size(hSym,1)
     rxSym = rxSym(:);
 end
 if ~isnumeric(rxSym) || ~isnumeric(hSym)
     error("sixgr:phy:equalizeMMSE:BadInput", "rx and hEst must be numeric.");
+end
+if ~ismatrix(rxSym) || any(~isfinite(real(rxSym(:)))) || ...
+        any(~isfinite(imag(rxSym(:)))) || any(~isfinite(real(hSym(:)))) || ...
+        any(~isfinite(imag(hSym(:))))
+    error("sixgr:phy:equalizeMMSE:InvalidObservation", ...
+        "Extracted rx/Hest must have finite numeric samples and rx must be a matrix.");
 end
 if ndims(hSym) == 2
     hSym = reshape(hSym, size(hSym, 1), size(hSym, 2), 1);
@@ -129,17 +141,19 @@ covarianceFactorizationCount = 0;
 staticChannelBatch = localIsStaticChannel(hSym) && Rmode ~= "per_re";
 
 if nRx == 1 && nTx == 1 && alg ~= "ZF"
-    H = hSym(:, 1, 1);
+    H = double(hSym(:, 1, 1));
     Rdiag = localSISOCovarianceDiagonal(Rmode, Rstatic, RperRE, nRE, nVar);
     denom = abs(H).^2 + Rdiag;
-    W = conj(H) ./ max(denom, eps);
+    W = complex(zeros(size(H)));
+    observed = denom > 0;
+    W(observed) = conj(H(observed)) ./ denom(observed);
     eqSym(:, 1) = W .* rxSym(:, 1);
     WH = W .* H;
     noiseOut = abs(W).^2 .* Rdiag;
     signal = abs(WH).^2;
-    gamma = signal ./ max(noiseOut, eps);
+    gamma = localPhysicalSINR(signal,noiseOut);
     sinrLin(:, 1) = gamma;
-    reliability(:, 1) = gamma ./ max(1 + gamma, eps);
+    reliability(:, 1) = localReliability(gamma);
     Wout(:, 1, 1) = W;
     WHout(:, 1, 1) = WH;
     residualLayerPower(:, 1) = 0;
@@ -167,11 +181,10 @@ elseif Rmode ~= "per_re" && alg ~= "ZF"
     % thousands of repeated 64-by-64 Cholesky factorizations in 4x64 UL.
     R0 = localCovarianceAt(Rmode, Rstatic, RperRE, 1, nRx, nVar, RIncludesNoise);
     [eqSym, reliability, sinrLin, Wout, WHout, residualLayerPower, ...
-        outputCov, regularized] = localApplyStaticCovariance( ...
+        outputCov, regularized, covarianceFactorizationCount] = localApplyStaticCovariance( ...
         rxSym, hSym, R0, nRE, nTx, nRx);
     solveCount = nRE;
     uniqueSolveCount = nRE;
-    covarianceFactorizationCount = 1;
     engine = "batchedStaticCovarianceVariableChannel";
 else
     engine = "perREStableSolve";
@@ -199,13 +212,17 @@ result = struct();
 result.ContractVersion = "EqualizerResult/v1";
 result.AlgorithmUsed = alg;
 result.EngineUsed = engine;
-result.Equation = "W=(H^H R^-1 H + I)^-1 H^H R^-1";
+if alg == "ZF"
+    result.Equation = "W=(H^H*H)^dagger*H^H; Gram-domain numerical rank tolerance";
+else
+    result.Equation = "W=H^H*(H*H^H+R)^dagger; equivalent whitened solve for positive-definite R";
+end
 result.SymbolCovarianceConvention = "unit_layer_symbol_covariance";
 result.EqualizedSymbols = eqSym;
 result.DemapperReliability = reliability;
 result.CSI = reliability;
 result.PostEqSINRLinear = sinrLin;
-result.PostEqSINRPerRE_dB = 10 .* log10(max(sinrLin, eps));
+result.PostEqSINRPerRE_dB = 10 .* log10(sinrLin);
 result.PerLayerSINR_dB = localGeometricLayerSINR(sinrLin);
 result.W = Wout;
 result.EffectiveResponseWH = WHout;
@@ -213,6 +230,14 @@ result.ResidualInterLayerPower = residualLayerPower;
 result.OutputNoiseInterferenceCovariance = outputCov;
 result.CovarianceIncludesNoise = logical(RIncludesNoise || isempty(Rint));
 result.CovarianceSource = covarianceSource;
+% Retain the validated physical covariance, not a loaded solve matrix.
+% Downstream unit-gain receivers must use this same authority for W*R*W'.
+if Rmode == "per_re"
+    result.DisturbanceCovariance = RperRE;
+else
+    result.DisturbanceCovariance = Rstatic;
+end
+result.DisturbanceCovarianceMode = Rmode;
 result.NoiseAddedExactlyOnce = true;
 result.PreEqualizationNoiseVariance = double(nVar);
 result.NRE = double(nRE);
@@ -224,15 +249,23 @@ result.CovarianceFactorizationCount = double(covarianceFactorizationCount);
 result.StaticChannelBatchApplied = logical(staticChannelBatch);
 result.RegularizationApplied = any(regularized);
 result.RegularizedRECount = double(nnz(regularized));
+result.PhysicalCovarianceModifiedForSolve = false;
+result.NumericalSolvePolicy = "scaled_positive_definite_or_minimum_norm_solve_without_noise_injection";
 end
 
 function [eqSym, reliability, sinrLin, Wout, WHout, ...
-        residualLayerPower, outputCov, regularized] = ...
+        residualLayerPower, outputCov, regularized, covarianceFactorizationCount] = ...
         localApplyStaticCovariance(rxSym, hSym, R, nRE, nTx, nRx)
 % Apply one exact static disturbance-covariance factorization to all REs.
-R = localHermitianPositiveDefinite(R);
-allH = reshape(permute(hSym, [2 3 1]), nRx, nTx*nRE);
-[allRinvH, covarianceRegularized] = localStableLeftSolve(R, allH);
+% R remains the actual physical covariance. A singular covariance uses the
+% equivalent receive-covariance MMSE equation per RE; it is never loaded.
+[L,p] = chol(R,"lower");
+covarianceFactorizationCount = 1;
+canWhiten = p==0;
+if canWhiten
+    allH = reshape(permute(hSym, [2 3 1]), nRx, nTx*nRE);
+    allRinvH = L' \ (L \ allH);
+end
 
 eqSym = complex(zeros(nRE, nTx));
 reliability = zeros(nRE, nTx);
@@ -245,8 +278,14 @@ regularized = false(nRE, 1);
 for kk = 1:nRE
     columns = (kk-1)*nTx + (1:nTx);
     Hk = localHAt(hSym, kk, nRx, nTx);
-    RinvH = reshape(allRinvH(:, columns), nRx, nTx);
-    [core, layerRegularized] = localEqualizerCoreFromRinvH(Hk, R, RinvH);
+    if canWhiten
+        RinvH = reshape(allRinvH(:, columns), nRx, nTx);
+        [core, layerRegularized] = localEqualizerCoreFromRinvH(Hk, R, RinvH);
+    else
+        [solution,layerRegularized] = localStableLeftSolve(Hk*Hk'+R,Hk);
+        core = localEqualizerOutputs(Hk,R,solution');
+        covarianceFactorizationCount = covarianceFactorizationCount+1;
+    end
     rk = rxSym(kk, :).';
     sk = core.W * rk;
     eqSym(kk, :) = sk.';
@@ -256,7 +295,7 @@ for kk = 1:nRE
     WHout(kk, :, :) = core.WH;
     residualLayerPower(kk, :) = core.ResidualInterLayerPower.';
     outputCov(kk, :, :) = core.OutputCovariance;
-    regularized(kk) = covarianceRegularized || layerRegularized;
+    regularized(kk) = layerRegularized;
 end
 end
 
@@ -293,9 +332,13 @@ if ismatrix(Rint) && size(Rint, 1) == nRx && size(Rint, 2) == nRx
     mode = "static";
     Rstatic = localPrepareCovariance(Rint, nVar, logical(RIncludesNoise));
     source = localCovarianceSource(RIncludesNoise);
-elseif ndims(Rint) == 3 && size(Rint, 1) == nRE && size(Rint, 2) == nRx && size(Rint, 3) == nRx
+elseif ndims(Rint) <= 3 && size(Rint, 1) == nRE && size(Rint, 2) == nRx && size(Rint, 3) == nRx
     mode = "per_re";
-    RperRE = Rint;
+    RperRE = complex(zeros(nRE,nRx,nRx));
+    for index=1:nRE
+        value=localPrepareCovariance(reshape(Rint(index,:,:),nRx,nRx),nVar,logical(RIncludesNoise));
+        RperRE(index,:,:) = reshape(value,1,nRx,nRx);
+    end
     source = localCovarianceSource(RIncludesNoise);
 else
     error("sixgr:phy:equalizeMMSE:BadRint", "Rint must be NRx-by-NRx or NRE-by-NRx-by-NRx.");
@@ -310,32 +353,21 @@ else
 end
 end
 
-function R = localCovarianceAt(mode, Rstatic, RperRE, kk, nRx, nVar, RIncludesNoise)
+function R = localCovarianceAt(mode, Rstatic, RperRE, kk, nRx, ~, ~)
 switch string(mode)
     case "white"
         R = Rstatic;
     case "static"
         R = Rstatic;
     otherwise
-        R = localPrepareCovariance(squeeze(RperRE(kk, :, :)), nVar, logical(RIncludesNoise));
-end
-if isempty(R)
-    R = nVar * eye(nRx);
+        R = reshape(RperRE(kk, :, :),nRx,nRx);
 end
 end
 
 function R = localPrepareCovariance(Rin, nVar, includesNoise)
-R = double(Rin);
-if isempty(R)
-    R = [];
-    return;
-end
-R = (R + R') ./ 2;
+R = localPhysicalCovariance(Rin);
 if ~logical(includesNoise)
-    R = R + max(double(nVar), eps) * eye(size(R, 1));
-end
-if any(~isfinite(real(R(:)))) || any(~isfinite(imag(R(:))))
-    R = max(double(nVar), eps) * eye(size(R, 1));
+    R = R + double(nVar)*eye(size(R,1));
 end
 end
 
@@ -344,9 +376,9 @@ switch string(mode)
     case "white"
         Rdiag = repmat(double(nVar), nRE, 1);
     case "static"
-        Rdiag = repmat(max(real(Rstatic(1, 1)), eps), nRE, 1);
+        Rdiag = repmat(real(Rstatic(1, 1)), nRE, 1);
     otherwise
-        Rdiag = max(real(reshape(RperRE(:, 1, 1), [], 1)), eps);
+        Rdiag = real(reshape(RperRE(:, 1, 1), [], 1));
 end
 end
 
@@ -367,22 +399,22 @@ tf = all(flat == flat(1, :), "all");
 end
 
 function [core, regularized] = localEqualizerCore(H, R, alg)
-regularized = false;
 H = double(H);
-R = localHermitianPositiveDefinite(R);
 if alg == "ZF"
-    A = H' * H;
-    B = H';
-    [W, regA] = localStableLeftSolve(A, B);
-    regularized = regA;
+    [W,regularized] = localStableLeftSolve(H'*H,H');
 else
-    [RinvH, regR] = localStableLeftSolve(R, H);
-    A = H' * RinvH + eye(size(H, 2));
-    B = RinvH';
-    [W, regA] = localStableLeftSolve(A, B);
-    regularized = regR || regA;
+    [L,p] = chol(R,"lower");
+    if p==0
+        RinvH = L' \ (L \ H);
+        [core,regularized] = localEqualizerCoreFromRinvH(H,R,RinvH);
+        return;
+    end
+    % Valid semidefinite/zero covariance: use H^H*(H*H^H+R)^dagger,
+    % including the exact minimum-norm zero-noise limit, not invented noise.
+    [solution,regularized] = localStableLeftSolve(H*H'+R,H);
+    W = solution';
 end
-core = localEqualizerOutputs(H, R, W);
+core = localEqualizerOutputs(H,R,W);
 end
 
 function core = localEqualizerOutputs(H, R, W)
@@ -394,9 +426,10 @@ sinr = NaN(nLayers, 1);
 interLayer = NaN(nLayers, 1);
 for layer = 1:nLayers
     signal = abs(WH(layer, layer)).^2;
-    interLayer(layer) = max(sum(abs(WH(layer, :)).^2) - signal, 0);
-    noiseOut = max(real(outCov(layer, layer)), eps);
-    sinr(layer) = signal ./ max(interLayer(layer) + noiseOut, eps);
+    other=[1:layer-1 layer+1:nLayers];
+    interLayer(layer) = sum(abs(WH(layer,other)).^2);
+    noiseOut = max(real(outCov(layer,layer)),0);
+    sinr(layer) = localPhysicalSINR(signal,interLayer(layer)+noiseOut);
 end
 core = struct();
 core.W = W;
@@ -404,48 +437,72 @@ core.WH = WH;
 core.OutputCovariance = outCov;
 core.ResidualInterLayerPower = interLayer;
 core.SINRLinear = sinr;
-core.Reliability = sinr ./ max(1 + sinr, eps);
+core.Reliability = localReliability(sinr);
 end
 
-function R = localHermitianPositiveDefinite(R)
-R = double(R);
-R = (R + R') ./ 2;
-if isempty(R)
-    return;
+function R = localPhysicalCovariance(Rin)
+if ~isnumeric(Rin) || ~ismatrix(Rin) || isempty(Rin) || ...
+        size(Rin,1)~=size(Rin,2) || any(~isfinite(real(Rin(:)))) || ...
+        any(~isfinite(imag(Rin(:))))
+    error("sixgr:phy:equalizeMMSE:InvalidCovariance", ...
+        "Provided physical covariance must be a finite square numeric matrix.");
 end
-diagLoad = max(norm(R, "fro") * 1e-12, eps);
-if any(~isfinite(real(R(:)))) || any(~isfinite(imag(R(:))))
-    R = eye(size(R, 1));
+R = double(Rin);
+scale = norm(R,"fro");
+tolerance = 128*size(R,1)*eps(scale);
+if norm(R-R',"fro")>tolerance
+    error("sixgr:phy:equalizeMMSE:NonHermitianCovariance", ...
+        "Provided physical covariance must be Hermitian.");
 end
-R = R + diagLoad * eye(size(R, 1));
+R = (R+R')/2;
+eigenvalues = real(eig(R));
+if any(eigenvalues < -tolerance)
+    error("sixgr:phy:equalizeMMSE:IndefiniteCovariance", ...
+        "Provided physical covariance must be positive semidefinite.");
+end
 end
 
 function [X, regularized] = localStableLeftSolve(A, B)
 A = double(A);
 B = double(B);
-A = (A + A') ./ 2;
+A = (A+A')/2;
 regularized = false;
 if any(~isfinite(real(A(:)))) || any(~isfinite(imag(A(:)))) || ...
         any(~isfinite(real(B(:)))) || any(~isfinite(imag(B(:))))
-    error("sixgr:phy:equalizeMMSE:NonFiniteSolve", "Equalizer solve input contains non-finite values.");
+    error("sixgr:phy:equalizeMMSE:NonFiniteSolve", ...
+        "Equalizer solve input contains non-finite values.");
 end
-diagLoad = max(norm(A, "fro") * 1e-12, eps);
-if rcond(A) < 1e-10
-    A = A + diagLoad * eye(size(A, 1));
-    diagLoad = diagLoad * 10;
-    regularized = true;
-end
-for attempt = 1:4
-    [L, p] = chol(A, "lower");
-    if p == 0
-        X = L' \ (L \ B);
-        return;
+scale = norm(A,"fro");
+if scale==0
+    if any(B(:)~=0)
+        error("sixgr:phy:equalizeMMSE:InconsistentZeroSolve", ...
+            "A zero system matrix cannot support a nonzero observation mapping.");
     end
-    A = A + diagLoad * eye(size(A, 1));
-    diagLoad = diagLoad * 10;
+    X = zeros(size(B));
     regularized = true;
+    return;
 end
-X = A \ B;
+% Normalize numerical scale only: no physical or solver diagonal loading.
+A = A/scale;
+B = B/scale;
+[L,p] = chol(A,"lower");
+if p==0 && rcond(A)>=1e-10
+    X = L' \ (L \ B);
+    return;
+end
+[V,D] = eig(A,"vector");
+D = real(D);
+tolerance = 128*size(A,1)*eps(max(abs(D)));
+if any(D < -tolerance)
+    error("sixgr:phy:equalizeMMSE:IndefiniteSolve", ...
+        "Equalizer covariance/Gram matrix is not positive semidefinite.");
+end
+keep = D > size(A,1)*eps(max(abs(D)));
+if any(keep)
+    X = V(:,keep)*((V(:,keep)'*B)./D(keep));
+else
+    X = zeros(size(B));
+end
 regularized = true;
 end
 
@@ -465,20 +522,28 @@ nLayers = size(sinrLin, 2);
 perLayer = NaN(1, nLayers);
 for layer = 1:nLayers
     x = double(sinrLin(:, layer));
-    x = x(isfinite(x) & x >= 0);
+    x = x(~isnan(x) & x >= 0);
     if ~isempty(x)
-        perLayer(layer) = 10 * log10(exp(mean(log(max(x, eps)), "omitnan")));
+        perLayer(layer) = mean(10*log10(x),"omitnan");
     end
 end
 end
 
-function nVarSafe = localSafeNoiseVariance(nVar, rxSym)
-nVarSafe = double(nVar);
-if ~(isscalar(nVarSafe) && isfinite(nVarSafe) && nVarSafe > 0)
-    p = mean(abs(rxSym(:)).^2 + eps, "omitnan");
-    if ~(isfinite(p) && p > 0)
-        p = 1;
-    end
-    nVarSafe = 1e-12 * p;
+function value = localValidateNoiseVariance(nVar)
+if ~isnumeric(nVar) || ~isscalar(nVar) || ~isreal(nVar) || ...
+        ~isfinite(nVar) || nVar<0
+    error("sixgr:phy:equalizeMMSE:InvalidNoiseVariance", ...
+        "Noise variance must be a finite real nonnegative scalar.");
 end
+value = double(nVar);
+end
+
+function value = localPhysicalSINR(signal,disturbance)
+value = signal./disturbance;
+value(signal==0 & disturbance==0)=0;
+end
+
+function value = localReliability(sinr)
+value = sinr./(1+sinr);
+value(isinf(sinr) & sinr>0)=1;
 end

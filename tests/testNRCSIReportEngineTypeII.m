@@ -84,6 +84,7 @@ end
 % Exercise the production CSI_Feedback facade on the same captured CSI-RS
 % estimate. Its persisted fields must identify the actual measured report.
 facadeCfg.phy.mimo=struct('strict',true,'N1',2,'N2',1,'O1',4,'O2',1);
+facadeCfg.phy.linkAdaptation.rankPolicy='measured_ri';
 facadeCfg.phy.csi=struct('reportCSI',true,'reportCQI',true,'reportRI',true, ...
     'reportPMI',true,'reportCRI',true,'maxRank',2,'rankDomain',[1 2], ...
     'cqiTable',"table1",'reportConfiguration',request);

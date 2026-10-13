@@ -82,6 +82,12 @@ mkdir(runFolder2);
 scfg = sixgr.lls6g.config.loadScenarioConfig( ...
     fullfile(pwd, "simulator", "configs", "scenarios", "lls_100mhz_tdlc_bidirectional_truth.yaml"));
 cfg = sixgr.lls6g.buildInternalConfig(scfg, runFolder2);
+assert(cfg.phy.csirs.nPorts==2 && isequal(cfg.phy.csirs.rowNumbers,3) && ...
+    isequal(size(cfg.phy.csirs.precoderMatrices),[2 2]) && ...
+    norm(cfg.phy.csirs.precoderMatrices'*cfg.phy.csirs.precoderMatrices-eye(2),'fro')<1e-12, ...
+    'The two-port scheduled PMI must use the same two-port CSI-RS basis.');
+assert(all(ismember(["1_1","0_1"],string(cfg.phy.pdcch.dciFormats))), ...
+    'Codebook grants require installed monitoring of their advanced DL/UL DCI formats.');
 cfg.run.controlGating.trsRequired = false;
 multiUser = struct( ...
     "Enabled", true, ...
@@ -102,11 +108,39 @@ state.ControlTrials.PBCH = localControlTrial("PASS", 1, 1);
 state.ControlTrials.PRACH = localControlTrial("PASS", 1, 1);
 state.ControlTrials.SRS = localControlTrial("PASS", 1, 1);
 state.ControlTrials.TRS = localControlTrial("PASS", 1, 1);
+[state, missingPowerGrants, ~] = sixgr.truth.CoupledTruthRuntime.scheduleDirection(state, cfg, "DL");
+assert(isempty(missingPowerGrants) && ~state.CoverageEligibility(1) && ...
+    state.CoverageOutageState(1)=="outage_sinr_unavailable", ...
+    'A serving-cell label alone must not bypass missing link-budget evidence.');
+% This is a declared report/scheduler fixture, not received PHY evidence.
+% The installed coverage guard consumes the per-link power matrix, not the
+% serving-metric display field. Supply that same fixture's -80-dBm power in
+% its authoritative input; retain both the guard and positive grant check.
+state.LargeScaleState.RxPower_dBm = -80;
+state = sixgr.truth.CoupledTruthRuntime.refreshControlState(state);
 [state, dlGrants, ~] = sixgr.truth.CoupledTruthRuntime.scheduleDirection(state, cfg, "DL");
 assert(~isempty(dlGrants), "Coupled runtime export probe must produce at least one DL grant.");
 [state, ~, ~] = sixgr.truth.CoupledTruthRuntime.applyPDCCHGrantTrial(state, dlGrants(1), "DL", localControlTrial("PASS", double(dlGrants(1).Slot), double(dlGrants(1).Frame)));
 state.ControlTrials.PDCCH = localControlTrial("PASS", double(dlGrants(1).Slot), double(dlGrants(1).Frame));
+raFamilies=["msg1_detected_candidates","contention_monitoring_observations","ue_contention_events"];
+for family=raFamilies
+    state.ControlTrials.RAEvidenceTables.(family)=table(1,"failed_received_fixture", ...
+        'VariableNames',{'UEIndex','Outcome'});
+end
 state = sixgr.truth.CoupledTruthRuntime.writeTables(state, runFolder2);
+for family=raFamilies
+    file=fullfile(runFolder2,'control','csv',family+'.csv');
+    emitted=readtable(file,'TextType','string');
+    assert(height(emitted)==1 && emitted.Outcome=="failed_received_fixture", ...
+        'Live publication must preserve actual negative access observations, not omit them.');
+    state.ControlTrials.RAEvidenceTables.(family)=state.ControlTrials.RAEvidenceTables.(family)([],:);
+end
+state=sixgr.truth.CoupledTruthRuntime.writeTables(state,runFolder2);
+for family=raFamilies
+    emitted=readtable(fullfile(runFolder2,'control','csv',family+'.csv'),'TextType','string');
+    assert(height(emitted)==1 && emitted.Outcome=="failed_received_fixture", ...
+        'Typed-empty publication must not erase a populated access artifact.');
+end
 for signalName = ["pbch","prach","pdcch","srs","trs"]
     canonicalPath = fullfile(runFolder2, "air_interface", "csv", char(signalName + "_trials.csv"));
     assert(exist(canonicalPath, "file") == 2, "Canonical control/reference-signal trial artifact is missing.");

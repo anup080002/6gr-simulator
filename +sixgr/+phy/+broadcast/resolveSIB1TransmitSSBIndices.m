@@ -1,0 +1,19 @@
+function indices = resolveSIB1TransmitSSBIndices(cfg)
+% Cell transmission policy, never a receiving-UE identity or decoded value.
+scope=string(sixgr.util.structGet(cfg,'phy.sib1.transmissionScope', ...
+    sixgr.util.structGet(cfg,'initial_access.sib1_transmission_scope','selected_ssb_occasion')));
+assert(isscalar(scope) && any(scope==["selected_ssb_occasion","all_active_ssb_occasions"]), ...
+    'sixgr:phy:broadcast:InvalidSIB1TransmissionScope', ...
+    'SIB1 transmission scope must be selected_ssb_occasion or all_active_ssb_occasions.');
+timing=sixgr.phy.frame.SSBTimingResolver.resolveFromConfig(cfg, ...
+    'SSBIndex',double(sixgr.util.structGet(cfg,'phy.ssb.runtimeSSBIndex',0)));
+if scope=="selected_ssb_occasion"
+    indices=double(timing.SelectedSSBIndex);
+else
+    plan=sixgr.phy.ia.SSBBurstPlan.fromConfig(cfg,timing, ...
+        'SelectedSSBIndex',double(timing.SelectedSSBIndex));
+    indices=reshape(double(plan.ActiveSSBIndices0Based),1,[]);
+end
+assert(~isempty(indices),'sixgr:phy:broadcast:EmptySIB1TransmitSet', ...
+    'The configured SIB1 transmit scope must contain an active SS/PBCH occasion.');
+end

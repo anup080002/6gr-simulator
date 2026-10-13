@@ -1,6 +1,6 @@
 classdef ULPrecodingField
     % Configuration-owned TS 38.212 7.3.1.1.2 tables -2/-3/-4/-5.
-    % Ordinary two/four-port codebooks; not fullpowerMode1, multi-panel,
+    % Ordinary one/two/four-port codebooks; not fullpowerMode1, multi-panel,
     % non-codebook or eight-port signaling.
     methods (Static)
         function out=resolve(data)
@@ -8,14 +8,22 @@ classdef ULPrecodingField
             required={'num_ports','max_rank','codebook_subset','transmission_scheme','full_power_mode'};
             assert(isstruct(p) && isscalar(p) && all(isfield(p,required)), ...
                 'sixgr:phy:pdcch:MissingULPrecodingContext','UL precoding requires explicit higher-layer configuration.');
-            assert(isscalar(p.num_ports) && any(double(p.num_ports)==[2 4]) && ...
+            assert(isscalar(p.num_ports) && any(double(p.num_ports)==[1 2 4]) && ...
                 isscalar(p.max_rank) && any(double(p.max_rank)==1:double(p.num_ports)) && ...
                 string(p.transmission_scheme)=="codebook" && string(p.full_power_mode)=="not_configured", ...
-                'sixgr:phy:pdcch:UnsupportedULPrecodingContext','This mapping supports ordinary two/four-port codebook operation only.');
+                'sixgr:phy:pdcch:UnsupportedULPrecodingContext','This mapping supports ordinary one/two/four-port codebook operation only.');
             subset=string(p.codebook_subset);
             assert(any(subset==["fullyAndPartialAndNonCoherent","nonCoherent"]) || ...
                 (p.num_ports==4 && subset=="partialAndNonCoherent"), ...
                 'sixgr:phy:pdcch:UnsupportedULPrecodingContext','Unsupported codebook subset.');
+            if p.num_ports==1
+                % TS 38.212 V18.8.0 7.3.1.1.2: zero bits with one
+                % codebook antenna port. Rank one and the identity precoder
+                % follow from installed configuration, not a received field.
+                out=struct('Width',0,'RankTPMI',[1 0],'MaxValue',0,'MaxRank',1, ...
+                    'StandardClause',"3GPP TS 38.212 V18.8.0 7.3.1.1.2 one-port zero-bit field");
+                return;
+            end
             singleRank=logical(data.TransformPrecodingEnabled) || double(p.max_rank)==1;
             if p.num_ports==4
                 if singleRank
@@ -52,6 +60,18 @@ classdef ULPrecodingField
             assert(isscalar(index) && rank<=out.MaxRank,'sixgr:phy:pdcch:InvalidULPrecodingSelection', ...
                 'Scheduled rank/TPMI is not in the configured 38.212 table.');
             value=index-1;
+        end
+
+        function fields=bind(fields,data,rank,tpmi)
+            % Validate even an implicit selection before omitting its field.
+            value=sixgr.phy.pdcch.ULPrecodingField.encode(data,rank,tpmi);
+            out=sixgr.phy.pdcch.ULPrecodingField.resolve(data);
+            name='precoding_information_and_number_of_layers';
+            if out.Width==0
+                if isfield(fields,name), fields=rmfield(fields,name); end
+            else
+                fields.(name)=value;
+            end
         end
 
         function [rank,tpmi]=decode(data,value)

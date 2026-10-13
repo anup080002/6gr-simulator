@@ -1,8 +1,8 @@
 function [y, ctx] = applyPowerContext(x, cfg, direction, txInfo, varargin)
 %APPLYPOWERCONTEXT Scale waveform samples to entity-specific Tx power.
 %
-% Output samples use the PowerContext convention: abs(sample)^2 is mW
-% and mean(sum(abs(x_active).^2, ports)) equals total transmit power.
+% Absolute-power samples use sqrt(mW); normalized fixed-Es samples retain
+% their original dimensionless amplitude and do not claim device power.
 % ApplyPA=false defers the configured nonlinear device to the transmitter's
 % composed waveform owner. It does not disable PA in the resolved config.
 
@@ -21,13 +21,20 @@ end
 [inputTotal_mW, inputPerPort_mW, refInfo] = localTotalActivePower_mW(x, txInfo);
 fixedSNRNormalizedReference = ...
     sixgr.rf.isNormalizedFixedSNRPowerReference(cfg);
+expectedUnit = "sqrt_mW";
+if fixedSNRNormalizedReference, expectedUnit = "normalized_complex_baseband"; end
+assert(isfield(ctx,"WaveformAmplitudeUnit") && ...
+    isscalar(string(ctx.WaveformAmplitudeUnit)) && ...
+    string(ctx.WaveformAmplitudeUnit)==expectedUnit, ...
+    'sixgr:rf:WaveformAmplitudeAuthorityMismatch', ...
+    'The supplied power context must use the configured amplitude domain.');
 if fixedSNRNormalizedReference
     % A configured-SNR LLS uses normalized baseband Es/N0.  Applying a
     % device EIRP, geometry pathloss, or 38.213 power-control result here
     % would silently replace that operating point.  Preserve the actual
-    % IFFT samples and make the arbitrary-but-declared unit mapping
-    % explicit: an occupied grid RE has unit normalized energy; the retained
-    % IFFT sample mapping is |sample|^2 mW, not 1 mW per physical subcarrier.
+    % IFFT samples in normalized complex-baseband units. The occupied-RE
+    % energy and OFDM transform own noise calibration; there is no implicit
+    % conversion from |sample|^2 to physical mW.
     % This branch is limited to the connected FIXED_SNR_SWEEP integration
     % mode; physical-link-budget runs retain the absolute-power path.
     paEnabled=logical(sixgr.util.structGet(cfg, "rf.pa.enable", ...
@@ -79,7 +86,7 @@ if fixedSNRNormalizedReference
     ctx.ExpectedEmittedPower_mW = double(outputTotal_mW);
     ctx.PerPortPowerSumError_mW = ctx.PerPortPowerSum_mW - double(outputTotal_mW);
     ctx.ConversionEquation = ...
-        "x_out=x_ifft; normalized_grid_RE_Es_reference=1; sample_abs2_mapping=mW; no_device_power_scaling";
+        "x_out=x_ifft; normalized_grid_RE_Es_reference=1; sample_abs2_mapping=normalized_baseband_power; no_device_power_scaling";
     ctx.FixedSNRNormalizedReference = true;
     ctx.FixedSNRReferenceEnergyPerOccupiedRE = 1;
     ctx.FixedSNRReferenceEnergyDomain = "normalized_resource_grid_not_physical_subcarrier_mW";

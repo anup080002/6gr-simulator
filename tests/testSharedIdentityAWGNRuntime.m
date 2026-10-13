@@ -1,6 +1,9 @@
-function ok=testSharedIdentityAWGNRuntime()
+function [ok,folder,row,verified]=testSharedIdentityAWGNRuntime(numSamples)
 % Bounded prerequisite: exact four-port identity on a shared physical clock.
 % Not a PDCCH/PUCCH/CSI/SRS or 400-MHz throughput acceptance claim.
+arguments
+    numSamples (1,1) double {mustBeInteger,mustBeGreaterThan(numSamples,337)} = 1001
+end
 setup6GRSimToolkit('Verbose',false,'RunToolboxChecks',false);
 cfg=sixgr.config.defaultConfig();
 cfg.channel.model='AWGN'; cfg.channel.awgnOnly=true;
@@ -29,21 +32,21 @@ reverse=factory(cfg,'UL','UEIndex',1,'ServingCell',1);
 assert(string(reverse.StateKey)==string(initial.StateKey));
 other=factory(cfg,'DL','UEIndex',2,'ServingCell',1);
 assert(string(other.StateKey)~=string(initial.StateKey));
-x=reshape(complex(sin(1:4004),cos(1:4004)),1001,4);
+x=reshape(complex(sin(1:4*numSamples),cos(1:4*numSamples)),numSamples,4);
 [whole,replay,finished,reference]=apply(initial,x,true);
-assert(isequal(whole,x) && finished.CurrentSampleIndex==1001 && ...
+assert(isequal(whole,x) && finished.CurrentSampleIndex==numSamples && ...
     replay.ChannelModelApplied=="AWGN" && ~replay.ChannelFadingApplied);
 assert(reference.Source=="executed_identity_AWGN_operator" && ...
     ~reference.ReceiverEstimatorInput && reference.AdditionalChannelExecutions==0);
 assert(sixgr.channel.isAppliedChannelReference(reference));
 badReference=reference; badReference.PathGains(1,1,1,2)=.01;
 assert(~sixgr.channel.isAppliedChannelReference(badReference));
-state=initial; chunks=cell(1,3); bounds=[0 1 337 1001];
+state=initial; chunks=cell(1,3); bounds=[0 1 337 numSamples];
 for k=1:3
     [chunks{k},r,state]=apply(state,x(bounds(k)+1:bounds(k+1),:),false);
     assert(r.RuntimeChannelStartSample==bounds(k) && r.RuntimeChannelEndSample==bounds(k+1));
 end
-assert(isequal(vertcat(chunks{:}),whole) && state.TotalAppliedSamples==1001);
+assert(isequal(vertcat(chunks{:}),whole) && state.TotalAppliedSamples==numSamples);
 % Exact channel-reference coefficients reconstruct all actually used ports.
 h=reshape(reference.PathGains(1,1,:,:),4,4);
 assert(isequal(h,eye(4)) && isequal(x*h,x) && isequal(reference.PathFilters,1));
@@ -125,7 +128,7 @@ wrongRunner=scenario.toStruct(); wrongRunner.channels.shared_identity_awgn_enabl
 reject(@()sixgr.lls6g.config.validateScenarioConfig(wrongRunner), ...
     'sixgr:lls6g:config:SharedIdentityAWGNRunnerRequired');
 ok=true;
-fprintf('SHARED_IDENTITY_AWGN_RUNTIME_PASS ports=4 Fs=491520000 samples=1001 artifact=%s control_integration=0 throughput_qualification=0\n',folder);
+fprintf('SHARED_IDENTITY_AWGN_RUNTIME_PASS ports=4 Fs=491520000 samples=%d artifact=%s control_integration=0 throughput_qualification=0\n',numSamples,folder);
 end
 
 function [y,replay,state,reference]=apply(state,x,capture)

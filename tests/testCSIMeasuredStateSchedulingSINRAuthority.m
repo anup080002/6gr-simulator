@@ -12,6 +12,7 @@ cfg.phy.csi.reportCQI = true;
 cfg.phy.csi.reportPMI = true;
 cfg.phy.csi.reportRI = true;
 cfg.phy.csi.maxRank = 2;
+cfg.phy.linkAdaptation.rankPolicy = 'measured_ri';
 cfg.phy.pdsch.cqiTable = "table1";
 cfg.phy.pdsch.mcsTable = "qam64_table1";
 

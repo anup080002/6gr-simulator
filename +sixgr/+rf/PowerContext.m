@@ -1,9 +1,11 @@
 function ctx = PowerContext(cfg, direction, varargin)
 %POWERCONTEXT Resolve entity-specific RF power and amplitude units.
 %
-% The simulator convention is:
+% The absolute-power convention is:
 %   mean(sum(abs(x_active).^2, ports)) == total power in mW
 % over useful OFDM samples. Complex sample amplitude is therefore sqrt(mW).
+% Explicit normalized fixed-Es execution instead retains dimensionless
+% complex baseband samples; it must not claim calibrated device power.
 
 if nargin < 1 || ~isstruct(cfg)
     cfg = struct();
@@ -56,6 +58,10 @@ ctx.State = char(string(opt.State));
 ctx.ReferenceImpedance_Ohm = double(r0);
 ctx.WaveformAmplitudeUnit = "sqrt_mW";
 ctx.SamplePowerConvention = "mean_sum_abs2_over_active_ofdm_samples_equals_total_mW";
+if sixgr.rf.isNormalizedFixedSNRPowerReference(cfg)
+    ctx.WaveformAmplitudeUnit = "normalized_complex_baseband";
+    ctx.SamplePowerConvention = "mean_sum_abs2_in_normalized_baseband_units_not_mW";
+end
 ctx.PowerNormalizationPolicy = "active_ofdm_total_power";
 ctx.PowerNormalizationSource = "unresolved_until_applyPowerContext";
 ctx.FullBWPActivityFactor = 1;

@@ -28,6 +28,11 @@ for slot = 1:200
         idx = find([ues.RNTI] == double(grants(g).RNTI), 1);
         if ~isempty(idx)
             tbs(idx) = tbs(idx) + double(grants(g).TBSBits);
+            % This MAC-policy test declares ideal service for each grant;
+            % it is not a waveform or physical HARQ qualification result.
+            sched.updateAfterRx(struct('RNTI',double(grants(g).RNTI), ...
+                'TBSBits',double(grants(g).TBSBits),'Ack',true, ...
+                'SourceSlot',slot,'RV',0,'IsRetransmission',false));
         end
     end
 end

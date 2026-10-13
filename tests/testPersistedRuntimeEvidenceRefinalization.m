@@ -2,9 +2,10 @@ function ok = testPersistedRuntimeEvidenceRefinalization()
 %TESTPERSISTEDRUNTIMEEVIDENCEREFINALIZATION Exact fixed rows feed recovery.
 
 setup6GRSimToolkit("Verbose", false);
-root = tempname;
+root = fullfile(pwd,'results','lls','persisted_refinalization_fixture', ...
+    char(datetime('now','Format','yyyyMMdd_HHmmss_SSS')));
 mkdir(root);
-cleanup = onCleanup(@() localRemove(root)); %#ok<NASGU>
+fprintf('PERSISTED_REDUCER_NUMERICAL_FIXTURE=%s\n',root);
 
 scenarioPath = fullfile(fileparts(fileparts(mfilename("fullpath"))), ...
     "simulator", "configs", "scenarios", "master_sinr_sweep.yaml");
@@ -23,6 +24,10 @@ cfg.interference.inter_cell_execution_mode = "none";
 cfg.interference.intra_cell_execution_mode = "none";
 cfg.interference.interCellEnabled = false;
 cfg.interference.intraCellEnabled = false;
+% Numerical reducer fixtures are not actual in-path Channel/RF captures.
+% Do not inherit that physical qualification requirement from the master.
+requiredRF=cfg.validation.strict_component_evidence;
+cfg.validation.strict_component_evidence.enabled=false;
 
 layout = sixgr.report.resultLayout(root);
 sixgr.util.ensureFolder(layout.AirInterfaceCSVDir);
@@ -44,6 +49,11 @@ result = sixgr.truth.refinalizePersistedLLSRuntimeEvidence( ...
     cfg, root, "RunTag", cfg.run.runTag);
 assert(result.RawEvidencePresent && result.DLTrialRows == 2 && result.ULTrialRows == 2, ...
     "Refinalization must report the exact persisted DL/UL row counts.");
+assert(isempty(fieldnames(result.AppliedDataPrecoderArtifacts)), ...
+    "Recovery must not invent applied beam evidence without executed archives.");
+emptyBeam=sixgr.util.csvReadTable(result.DerivedArtifacts.BeamP2RefinementStatsPath);
+assert(isempty(emptyBeam), ...
+    'No retained beam evidence must remain an empty P2 summary, not a fabricated row.');
 assert(result.FixedLinkCampaignOnly, ...
     ["Refinalization must recognize persisted FixedLinkCampaign runtime " ...
     "rows even when a legacy internal config omitted that authority."]);
@@ -124,6 +134,13 @@ assert(all(endsWith(string(kpi.SourceArtifact), ...
 % Terminal finalization performs the same sanitizer once more.  That pass
 % must not invalidate source widths or hashes already sealed into the KPI
 % manifest.
+beforeManifest=sixgr.util.csvReadTable(fullfile(layout.ReportCSVDir, ...
+    'kpi_source_table_manifest.csv'));
+sourceBytes=strings(height(beforeManifest),1);
+for k=find(localLogical(beforeManifest.Exists)).'
+    file=fullfile(root,strrep(char(beforeManifest.SourceTablePath(k)),'/',filesep));
+    sourceBytes(k)=string(sixgr.phy.waveform.WaveformHash.file(file));
+end
 sixgr.truth.sanitizeLLSArtifactCSVs(root);
 kpiManifest = readtable(fullfile(layout.ReportCSVDir, ...
     "kpi_source_table_manifest.csv"), "VariableNamingRule", "preserve", ...
@@ -136,8 +153,12 @@ for manifestIndex = manifestRows(:).'
         "/", filesep));
     assert(exist(sourcePath, "file") == 2, ...
         "KPI manifest source disappeared after final sanitization: %s", sourcePath);
-    sourceTable = readtable(sourcePath, "FileType", "text", "Delimiter", ",", ...
-        "ReadVariableNames", true, "VariableNamingRule", "preserve");
+    % Use the producer's declared CSV reader, including exact data-line and
+    % serialized-vector contracts. A generic importer need not reconstruct
+    % the same types and therefore need not produce the same semantic hash.
+    sourceTable = sixgr.util.csvReadTable(sourcePath);
+    assert(string(sixgr.phy.waveform.WaveformHash.file(sourcePath))==sourceBytes(manifestIndex), ...
+        'Final sanitization changed already-finalized KPI source bytes: %s.',sourcePath);
     assert(double(kpiManifest.RowCount(manifestIndex)) == height(sourceTable) && ...
         double(kpiManifest.ColumnCount(manifestIndex)) == width(sourceTable), ...
         "KPI manifest dimensions are stale after final sanitization: %s", sourcePath);
@@ -164,6 +185,41 @@ catch ME
     assert(string(ME.identifier) == ...
         "sixgr:truth:refinalize:PersistedRunIdentityMismatch", ...
         "Unexpected run-identity mismatch error: %s", ME.identifier);
+end
+
+% An explicitly required physical Channel/RF branch must still reject the
+% same identity-incomplete numerical rows with its original exact cause.
+physicalRequired=cfg;
+physicalRequired.validation.strict_component_evidence=requiredRF;
+assert(requiredRF.enabled && string(requiredRF.execution_scope)=="in_path");
+try
+    sixgr.truth.refinalizePersistedLLSRuntimeEvidence(physicalRequired,root, ...
+        'RefreshBrowserContract',false);
+    error('test:ExpectedFailure','Missing physical Channel/RF identity was accepted.');
+catch err
+    assert(strcmp(err.identifier,'sixgr:truth:refinalize:MissingPrimaryChannelRFIdentity'), ...
+        'The physical identity failure was hidden by another error: %s.',err.identifier);
+end
+
+% Inapplicability above cannot admit beam observations without identity.
+for source=["primary","auxiliary"]
+    beamTrials=localFixedTrials("DL");
+    if source=="primary"
+        beamTrials.SelectedBeamIndex=ones(height(beamTrials),1);
+    else
+        sixgr.util.ensureFolder(layout.BeamformingCSVDir);
+        sixgr.util.csvWriteTable(fullfile(layout.BeamformingCSVDir, ...
+            'beam_precoder_table.csv'),table(1,'VariableNames',{'SelectedBeamIndex'}));
+    end
+    sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, ...
+        'dl_fixed_link_campaign_trials.csv'),beamTrials,'PreserveSchema',true);
+    try
+        sixgr.truth.refinalizePersistedLLSRuntimeEvidence(cfg,root,'RefreshBrowserContract',false);
+        error('test:ExpectedFailure','Beam evidence without execution identity was accepted.');
+    catch err
+        assert(strcmp(err.identifier,'sixgr:truth:MissingBeamAuthorityIdentity'), ...
+            'Unexpected %s beam identity failure: %s.',source,err.identifier);
+    end
 end
 
 ok = true;
@@ -268,11 +324,5 @@ elseif isnumeric(values)
 else
     token = lower(strtrim(string(values(:))));
     tf = token == "1" | token == "true" | token == "yes" | token == "pass" | token == "ok";
-end
-end
-
-function localRemove(pathValue)
-if isfolder(pathValue)
-    rmdir(pathValue, "s");
 end
 end

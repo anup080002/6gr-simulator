@@ -3,9 +3,10 @@ function ok = testLLSCFOEstimateLineage()
 
 setup6GRSimToolkit("Verbose", false);
 
-tmp = tempname;
+tmp = fullfile(pwd,'results','lls','cfo_lineage', ...
+    char(datetime('now','Format','yyyyMMdd_HHmmss_SSS')));
 mkdir(tmp);
-c = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
+fprintf('CFO_LINEAGE_EVIDENCE_ROOT=%s\n',tmp);
 
 scfg = sixgr.lls6g.config.loadScenarioConfig( ...
     fullfile(pwd, "simulator", "configs", "scenarios", "lls_700mhz_20mhz_3bs_30ue_tdlc_browser_coupled.yaml"));
@@ -16,6 +17,21 @@ sdata = scfg.toStruct();
 sdata.impairments.cfo_correction_enable = false;
 sdata.impairments.cfo_estimation_method = "none";
 sdata.reference_signals.csi_rs_enabled = false;
+% This test intentionally has no tracking receiver. The multicell parent
+% enables TRS without a complete standalone resource set; do not invoke
+% that unrelated path or weaken its exact-resource reservation guard.
+sdata.reference_signals.trs_enabled = false;
+sdata.reference_signals.tracking_rs_enabled = false;
+sdata.reference_signals.trs.enabled = false;
+sdata.control_gating.trs_required = false;
+% Only a data waveform is generated below; do not reserve an untransmitted
+% parent SS/PBCH burst on the standalone slot-zero PDSCH DM-RS.
+sdata.reference_signals.ssb_enabled = false;
+sdata.reference_signals.ssb.enabled = false;
+sdata.reference_signals.pbch_enabled = false;
+sdata.initial_access.sib1.enabled = false;
+sdata.mimo.beam_sweep_enabled = false;
+sdata.control_gating.pbch_required = false;
 scfg = sixgr.lls6g.config.ScenarioConfig(sdata, ...
     "SourceFiles", scfg.SourceFiles, "ConfigPath", scfg.ConfigPath, ...
     "ConfigHash", "cfo_lineage_no_estimator_authority", "Kind", scfg.Kind);
@@ -65,6 +81,7 @@ cfgUL.phy.pusch.executionProfile = "phy_calibration";
 cfgUL.run.puschExecutionProfile = "phy_calibration";
 cfgUL.phy.pusch.dmrs.DMRSTypeAPosition = 3;
 cfgUL.phy.pusch.dmrs.typeAPosition = 3;
+save(fullfile(tmp,'configuration.mat'),'cfgDL','cfgUL','sdata','-v7.3');
 
 dl = sixgr.link.runDLPDSCHThroughput(cfgDL, ...
     "NumFrames", 1, ...
@@ -77,6 +94,8 @@ ul = sixgr.link.runULPUSCHThroughput(cfgUL, ...
     "ExecutionProfile", "phy_calibration", ...
     "InterferenceBundle", struct([]));
 
+% Keep both actual receiver outcomes even if a lineage assertion fails.
+save(fullfile(tmp,'receiver_results.mat'),'dl','ul','cfgDL','cfgUL','-v7.3');
 localAssertCFOLineage(dl.TrialTable, "DL");
 localAssertCFOLineage(ul.TrialTable, "UL");
 ok = true;
@@ -123,9 +142,17 @@ function localAssertCFOLineage(T, direction)
 assert(istable(T) && height(T) == 1, ...
     "Expected a single %s row for CFO lineage validation.", direction);
 requiredVars = {'InjectedCFO_Hz','TrueCFO_Hz','EstimatedCFO_PreCorrection_Hz','EstimatedCFO_Hz', ...
-    'ResidualCFO_PostCorrection_Hz','CFOError_Hz','CFOEstimateAvailability','CFOErrorDefinition','CFOValueStatus'};
+    'ResidualCFO_PostCorrection_Hz','CFOError_Hz','CFOEstimateAvailability','CFOErrorDefinition','CFOValueStatus', ...
+    'ResidualCFO_EstimatedPostCorrection_Hz','ResidualCFOEstimateSource','ResidualCFOEstimateAvailable','CFOCorrectionApplied', ...
+    'ResidualCFOEstimateRole','ResidualCFOReusesAcquisitionObservation','ResidualCFOEstimatorConsistency_Hz'};
 assert(all(ismember(requiredVars, T.Properties.VariableNames)), ...
     "Raw %s trial rows must expose explicit CFO lineage fields.", direction);
+assert(~T.CFOCorrectionApplied && ~T.ResidualCFOEstimateAvailable && ...
+    isnan(T.ResidualCFO_EstimatedPostCorrection_Hz), ...
+    'A disabled estimator must not acquire a fabricated zero measured residual.');
+assert(all(string(T.ResidualCFOEstimateRole)=="unavailable") && ...
+    all(isnan(T.ResidualCFOEstimatorConsistency_Hz)), ...
+    'A disabled residual estimator cannot publish a consistency observation.');
 assert(isfinite(double(T.InjectedCFO_Hz(1))) && isfinite(double(T.TrueCFO_Hz(1))), ...
     "Raw %s trial row must preserve the injected/true CFO reference.", direction);
 assert(~isfinite(double(T.EstimatedCFO_PreCorrection_Hz(1))) && ~isfinite(double(T.EstimatedCFO_Hz(1))), ...

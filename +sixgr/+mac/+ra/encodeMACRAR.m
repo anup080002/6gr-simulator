@@ -16,7 +16,7 @@ opt = p.Results;
 
 rapid = localInteger(opt.RAPID, 0, 63, "RAPID");
 ta = localInteger(opt.TimingAdvanceCommand, 0, 3846, "TimingAdvanceCommand");
-tcRnti = localInteger(opt.TemporaryCRNTI, 1, 65519, "TemporaryCRNTI");
+tcRnti = localInteger(opt.TemporaryCRNTI, 1, 65522, "TemporaryCRNTI"); % TS 38.321 Table 7.1-1.
 grant = opt.ULGrant;
 if ~isfield(grant, "BitVector") || numel(grant.BitVector) ~= 27 || ...
         ~isreal(grant.BitVector) || any(~isfinite(grant.BitVector(:))) || ...

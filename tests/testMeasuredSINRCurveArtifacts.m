@@ -15,7 +15,7 @@ for i = 1:numel(legacyFiles)
     sixgr.util.ensureDir(legacyFiles{i});
     writetable(table(1, 'VariableNames', {'Deprecated'}), legacyFiles{i});
 end
-localWriteLegacyAnalyticsFiles(tmp);
+browserEvidence=localWriteLegacyAnalyticsFiles(tmp);
 
 trialData = struct();
 trialData.dl = localTrialTable("DL");
@@ -155,7 +155,7 @@ assert(strlength(string(plots.LineageCSV)) == 0, ...
 assert(exist(fullfile(tmp, "reports", "csv", ...
     "measurement_sinr_plot_lineage.csv"), "file") ~= 2, ...
     "The obsolete measured-SINR plot lineage CSV must not return.");
-localAssertRelabeledAnalytics(tmp);
+localAssertBrowserOwnedAnalytics(tmp,browserEvidence);
 
 % A configured AWGN SNR campaign and receiver-measured SINR analytics are
 % two different axes over the same real trials. Generating the latter must
@@ -281,7 +281,7 @@ assert(ismember("KPIFormulaVersion", string(T.Properties.VariableNames)) && ...
     "Gate CSV %s must carry measured_posteq_sinr_v2.", fileName);
 end
 
-function localWriteLegacyAnalyticsFiles(tmp)
+function evidence=localWriteLegacyAnalyticsFiles(tmp)
 csvDir = fullfile(tmp, "analytics", "csv");
 imgDir = fullfile(tmp, "analytics", "image");
 sixgr.util.ensureFolder(csvDir);
@@ -290,36 +290,32 @@ legacy = [
     "contract__error-reliability-analytics__bler-vs-snr", "BLER vs SNR";
     "contract__throughput-goodput-spectral-efficiency-analytics__throughput-vs-snr", "throughput vs SNR"
     ];
+evidence=table(strings(0,1),strings(0,1),'VariableNames',{'Path','SHA256'});
 for i = 1:size(legacy, 1)
     T = table(repmat(legacy(i, 2), 2, 1), [0; 1], [0.5; 0.25], ...
         'VariableNames', {'chart_name','SNR_dB','MetricValue'});
     writetable(T, fullfile(csvDir, legacy(i, 1) + ".csv"));
     imwrite(uint8(repmat(reshape([8 122 112], 1, 1, 3), 24, 32, 1)), ...
         fullfile(imgDir, legacy(i, 1) + ".png"));
+    for path=[fullfile(csvDir,legacy(i,1)+".csv"),fullfile(imgDir,legacy(i,1)+".png")]
+        evidence=[evidence;table(path,sixgr.phy.waveform.WaveformHash.file(path), ...
+            'VariableNames',{'Path','SHA256'})]; %#ok<AGROW>
+    end
 end
 end
 
-function localAssertRelabeledAnalytics(tmp)
-csvDir = fullfile(tmp, "analytics", "csv");
-imgDir = fullfile(tmp, "analytics", "image");
-specs = [
-    "contract__error-reliability-analytics__bler-vs-snr", "contract__error-reliability-analytics__bler-vs-measured-sinr";
-    "contract__throughput-goodput-spectral-efficiency-analytics__throughput-vs-snr", "contract__throughput-goodput-spectral-efficiency-analytics__throughput-vs-measured-sinr"
-    ];
-for i = 1:size(specs, 1)
-    for stem = specs(i, :)
-        csvPath = fullfile(csvDir, stem + ".csv");
-        assert(exist(csvPath, "file") == 2, "Missing relabeled analytics CSV: %s", stem);
-        T = readtable(csvPath, "VariableNamingRule", "preserve", "TextType", "string");
-        assert(contains(lower(string(T.chart_name(1))), "measured") && ...
-            ismember("PostEqSINR_dB", string(T.Properties.VariableNames)) && ...
-            ~ismember("SNR_dB", string(T.Properties.VariableNames)), ...
-            "Analytics CSV must be relabeled to measured PostEq SINR without SNR_dB injection axis: %s", stem);
-        pngPath = fullfile(imgDir, stem + ".png");
-        info = sixgr.visual.inspectVisualArtifactFile(pngPath);
-        assert(exist(pngPath, "file") == 2 && string(info.actual_mime_type) == "image/png", ...
-            "Missing valid relabeled analytics PNG: %s", stem);
-    end
+function localAssertBrowserOwnedAnalytics(tmp,evidence)
+% A different measurement axis requires re-rendering from its own data.
+% Rewriting labels or copying an existing raster would falsify that claim.
+for i=1:height(evidence)
+    assert(sixgr.phy.waveform.WaveformHash.file(evidence.Path(i))==evidence.SHA256(i), ...
+        'Measured-SINR reduction mutated an existing browser-owned plot/source.');
+end
+for stem=["contract__error-reliability-analytics__bler-vs-measured-sinr", ...
+        "contract__throughput-goodput-spectral-efficiency-analytics__throughput-vs-measured-sinr"]
+    assert(~isfile(fullfile(tmp,"analytics","csv",stem+".csv")) && ...
+        ~isfile(fullfile(tmp,"analytics","image",stem+".png")), ...
+        'Measured-SINR reporting must not fabricate relabeled raster aliases.');
 end
 end
 

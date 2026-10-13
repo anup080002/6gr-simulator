@@ -117,7 +117,7 @@ end
 for ordinal = reshape(grantOrdinals, 1, [])
     state = sixgr.truth.CoupledTruthRuntime. ...
         cancelUnexecutedHARQGrantRuntime( ...
-        state, pendingULGrants(ordinal), "UL");
+        state, pendingULGrants(ordinal), "UL", 'DCINotIssued', true);
 end
 keepMask = true(numel(pendingULGrants), 1);
 keepMask(grantOrdinals) = false;

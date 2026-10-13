@@ -34,6 +34,12 @@ cfg = localConfig();
 [tx, rxWave, rx, constellationT, context] = localTrialEvidence();
 snapshot = sixgr.link.buildPHYSignalDiagnosticSnapshot( ...
     cfg, "DL", tx, rxWave, rx, constellationT, context);
+legacyRx=rmfield(rx,'PDSCHRxSymbolsEvidencePlane');
+legacySnapshot=sixgr.link.buildPHYSignalDiagnosticSnapshot( ...
+    cfg,"DL",tx,rxWave,legacyRx,constellationT,context);
+assert(~legacySnapshot.Available && ...
+    legacySnapshot.Reason=="pre_equalization_data_re_plane_unverified", ...
+    'An unverified legacy equalized-codeword field must not be plotted as raw received REs.');
 
 % Production shared-stream reception withholds executed coefficients from
 % the practical receiver and appends them only after CRC completion.
@@ -61,6 +67,75 @@ assert(any(augmentedPanels=="true_channel_impulse_response") && ...
     augmentedSnapshot.SnapshotID==practicalSnapshot.SnapshotID, ...
     'Post-decode augmentation must add actual channel and post-channel waveform evidence without changing trial identity.');
 
+% The production bounded-memory exporter uses complete effective-link IQ,
+% not path-gain tensors. Exercise that distinct contract with declared array
+% fixtures; these checks are not new channel/CRC performance observations.
+waveContext=context;
+waveContext.ExecutedChannelEvidenceRepresentation="complete_sample_indexed_desired_link_IQ_not_path_gain_tensor";
+waveContext.RuntimeChannelPathGains=complex([]);
+waveContext.RuntimeChannelPathDelays_s=[];
+waveContext.RuntimeChannelPathGainSampleTimes_s=[];
+waveContext.RuntimeChannelPathGainsSHA256="";
+waveContext.RuntimeChannelStartSample=0;
+waveContext.RuntimeChannelEndSample=size(waveContext.PostChannelWaveform,1);
+waveContext.RuntimeChannelCanonicalInputSamples=size(waveContext.PostChannelWaveform,1);
+waveContext.RuntimeChannelObjectClockExact=true;
+waveContext.ReceiverEstimatorInput=false;
+waveContext.AdditionalChannelExecutions=0;
+waveContext.AdditionalRFExecutions=0;
+waveContext.RuntimeChannelAngleEvidenceAvailable=false;
+waveContext.PostChannelWaveformSource="actual_desired_link_after_tx_rf_channel_and_large_scale_loss_before_sum_noise_and_rx_rf";
+waveContext.PostChannelWaveformSHA256=string(sixgr.channel.ChannelFactory.runtimeNumericArraySHA256(waveContext.PostChannelWaveform));
+for model=["AWGN","TDL-C","CDL-C"]
+    for direction=["DL","UL"]
+        practical=practicalSnapshot;
+        practical.Direction=direction;
+        practical.Metadata.Direction=direction;
+        practical.Metadata.ChannelModel=model;
+        practical.Metadata.DelayProfile=model;
+        practical.SourceTable.Direction(:)=direction;
+        practical.SourceTable.ChannelModel(:)=model;
+        practical.SourceTable.DelayProfile(:)=model;
+        waveContext.RuntimeChannelReciprocityExact=false;
+        waveformOnly=sixgr.link.buildPHYSignalDiagnosticSnapshot( ...
+            cfg,direction,struct(),[],struct(),table(),waveContext,practical);
+        observed=waveformOnly.SourceTable;
+        selected=observed.Panel=="time_domain" & observed.Series=="post_channel";
+        assert(isequal(complex(observed.IValue(selected),observed.QValue(selected)), ...
+            waveContext.PostChannelWaveform(observed.SampleIndex(selected),1)));
+        assert(~any(ismember(observed.Panel,["true_channel_impulse_response", ...
+            "true_channel_frequency_response","time_varying_channel_impulse_response", ...
+            "doppler_spectrum","runtime_channel_angles"])), ...
+            'Effective IQ is not a replacement for channel coefficients, angles or Doppler samples.');
+        measurementFields={'Panel','Series','SampleIndex','PointIndex','XValue','YValue', ...
+            'IValue','QValue','GridKind','GridSHA256'};
+        before=practical.SourceTable(practical.SourceTable.Panel=="channel_estimate",measurementFields);
+        after=observed(observed.Panel=="channel_estimate",measurementFields);
+        assert(isequaln(before,after) && waveformOnly.SnapshotID==practical.SnapshotID);
+        assert(all(observed.ExecutedChannelEvidenceRepresentation==waveContext.ExecutedChannelEvidenceRepresentation) && ...
+            all(observed.ExecutedPathGainStatus=="not_in_effective_link_waveform_representation"));
+        repeated=sixgr.link.buildPHYSignalDiagnosticSnapshot( ...
+            cfg,direction,struct(),[],struct(),table(),waveContext,waveformOnly);
+        assert(isequaln(repeated,waveformOnly), ...
+            'Rebinding the same captured waveform must be idempotent.');
+    end
+end
+% An undeclared/malformed absence must still fail. Do not turn the original
+% required-coefficient assertion into an unconditional missing-data rescue.
+undeclared=rmfield(waveContext,'ExecutedChannelEvidenceRepresentation');
+localAssertAugmentFailure(cfg,practicalSnapshot,undeclared,'sixgr:link:PHYDiagnosticExecutedChannelUnavailable');
+corrupt=waveContext; corrupt.PostChannelWaveform(1)=corrupt.PostChannelWaveform(1)+1;
+localAssertAugmentFailure(cfg,practicalSnapshot,corrupt,'sixgr:link:PHYDiagnosticExecutedWaveformUnavailable');
+truncated=waveContext; truncated.PostChannelWaveform=truncated.PostChannelWaveform(1:end-1,:);
+truncated.PostChannelWaveformSHA256=string(sixgr.channel.ChannelFactory.runtimeNumericArraySHA256(truncated.PostChannelWaveform));
+localAssertAugmentFailure(cfg,practicalSnapshot,truncated,'sixgr:link:PHYDiagnosticExecutedWaveformUnavailable');
+reexecuted=waveContext; reexecuted.AdditionalChannelExecutions=1;
+localAssertAugmentFailure(cfg,practicalSnapshot,reexecuted,'sixgr:link:PHYDiagnosticExecutedWaveformUnavailable');
+wrongClock=waveContext; wrongClock.RuntimeChannelObjectClockExact=false;
+localAssertAugmentFailure(cfg,practicalSnapshot,wrongClock,'sixgr:link:PHYDiagnosticExecutedWaveformUnavailable');
+receiverInput=waveContext; receiverInput.ReceiverEstimatorInput=true;
+localAssertAugmentFailure(cfg,practicalSnapshot,receiverInput,'sixgr:link:PHYDiagnosticExecutedWaveformUnavailable');
+
 assert(logical(snapshot.Available), ...
     "Complete runtime PHY arrays from one trial must produce a diagnostic snapshot.");
 T = snapshot.SourceTable;
@@ -85,6 +160,70 @@ assert(isequal(double(txTime.SampleIndex), (1:height(txTime)).') && ...
 txSpectrum = T(string(T.Panel) == "spectrum" & string(T.Series) == "tx", :);
 assert(height(txSpectrum) == 256 && all(isfinite(double(txSpectrum.XValue))), ...
     "FFT evidence must be computed from the bounded contiguous sample window.");
+
+% Reproduce a scheduled data waveform with silent leading symbols. This is
+% a capture/export contract fixture, not a decoded PHY qualification trial.
+% TX, RX and post-channel samples must retain a common original sample clock.
+delayedTx=tx; delayedTx.Waveform(1:256,:)=0;
+delayedContext=context;
+delayedContext.PostChannelWaveform(1:256,:)=0;
+delayedSnapshot=sixgr.link.buildPHYSignalDiagnosticSnapshot( ...
+    cfg,"DL",delayedTx,rxWave,rx,constellationT,delayedContext);
+delayedRows=delayedSnapshot.SourceTable;
+for series=["tx","rx","post_channel"]
+    selected=delayedRows(delayedRows.Panel=="time_domain" & delayedRows.Series==series,:);
+    assert(isequal(selected.SampleIndex,(257:512).'), ...
+        'Diagnostic capture must include actual transmitted samples, not only leading silence.');
+    if series=="tx", expected=delayedTx.Waveform(257:512);
+    elseif series=="rx", expected=rxWave(257:512);
+    else, expected=delayedContext.PostChannelWaveform(257:512); end
+    assert(max(abs(complex(selected.IValue,selected.QValue)-expected))<1e-12);
+    assert(max(abs(selected.XValue-(selected.SampleIndex-1)/context.SampleRate_Hz))<1e-15);
+end
+delayedSpectrum=delayedRows(delayedRows.Panel=="spectrum" & delayedRows.Series=="tx",:);
+assert(max(delayedSpectrum.YValue)>-50, ...
+    'An active TX waveform must not become an all-zero diagnostic spectrum.');
+assert(delayedSnapshot.Metadata.OFDMFFTLength==tx.OFDMInfo.Nfft && ...
+    delayedSnapshot.Metadata.FFTLength==256 && ...
+    delayedSnapshot.Metadata.WaveformWindowStartSample==257, ...
+    'Report the actual modulator FFT separately from the diagnostic FFT and window origin.');
+augmentedDelayed=sixgr.link.buildPHYSignalDiagnosticSnapshot( ...
+    cfg,"DL",struct(),[],struct(),table(),delayedContext,delayedSnapshot);
+postDelayed=augmentedDelayed.SourceTable( ...
+    augmentedDelayed.SourceTable.Panel=="time_domain" & ...
+    augmentedDelayed.SourceTable.Series=="post_channel",:);
+assert(isequal(postDelayed.SampleIndex,(257:512).') && ...
+    max(abs(complex(postDelayed.IValue,postDelayed.QValue)- ...
+    delayedContext.PostChannelWaveform(257:512)))<1e-12, ...
+    'Post-decode channel augmentation must preserve the selected sample window.');
+previewContext=delayedContext;
+previewContext.PostChannelWaveform=delayedContext.PostChannelWaveform(257:512,:);
+previewContext.PostChannelWaveformStartSample=257;
+previewSnapshot=sixgr.link.buildPHYSignalDiagnosticSnapshot( ...
+    cfg,"DL",delayedTx,rxWave,rx,constellationT,previewContext);
+previewPost=previewSnapshot.SourceTable(previewSnapshot.SourceTable.Panel=="time_domain" & ...
+    previewSnapshot.SourceTable.Series=="post_channel",:);
+assert(isequal(previewPost.SampleIndex,postDelayed.SampleIndex) && ...
+    isequal(previewPost.IValue,postDelayed.IValue) && isequal(previewPost.QValue,postDelayed.QValue), ...
+    'Bounded post-channel previews must carry their original-clock sample origin.');
+cpDelayed=delayedRows(delayedRows.Panel=="ofdm_symbol_cp_samples",:);
+symbolEnds=cumsum(tx.OFDMInfo.SymbolLengths(:));
+for k=1:height(cpDelayed)
+    symbol=find(cpDelayed.SampleIndex(k)<=symbolEnds,1);
+    start=1; if symbol>1, start=symbolEnds(symbol-1)+1; end
+    assert(cpDelayed.OFDMSymbolIndex(k)==symbol-1 && ...
+        cpDelayed.SymbolSampleIndex(k)==cpDelayed.SampleIndex(k)-start && ...
+        cpDelayed.IsCyclicPrefix(k)== ...
+        (cpDelayed.SampleIndex(k)-start<tx.OFDMInfo.CyclicPrefixLengths(symbol)));
+end
+assert(~isempty(cpDelayed),'The selected window must retain executed CP/symbol ownership.');
+silentTx=tx; silentTx.Waveform(:)=0;
+silentSnapshot=sixgr.link.buildPHYSignalDiagnosticSnapshot( ...
+    cfg,"DL",silentTx,rxWave,rx,constellationT,context);
+silentSpectrum=silentSnapshot.SourceTable(silentSnapshot.SourceTable.Panel=="spectrum" & ...
+    silentSnapshot.SourceTable.Series=="tx",:);
+assert(all(isinf(silentSpectrum.YValue) & silentSpectrum.YValue<0), ...
+    'Exact zero TX spectrum must remain -Inf, not a fabricated finite dB floor.');
 
 postChannelT = T(string(T.Panel) == "time_domain" & ...
     string(T.Series) == "post_channel", :);
@@ -300,6 +439,24 @@ diagnostics = struct( ...
     "DL", snapshot, ...
     "UL", localUnavailableSnapshot("UL"));
 artifacts = sixgr.truth.exportPHYSignalDiagnostic(tmp, cfg, diagnostics);
+delayedArtifacts=sixgr.truth.exportPHYSignalDiagnostic( ...
+    fullfile(tmp,'nonzero_window'),cfg,struct('DL',delayedSnapshot),false);
+assert(delayedArtifacts.DLAvailable, ...
+    'Exporter must accept a matched contiguous original-clock window starting after sample one.');
+wrongClock=delayedSnapshot;
+wrongClock.SourceTable.XValue(wrongClock.SourceTable.Panel=="time_domain" & ...
+    wrongClock.SourceTable.Series=="rx")=0;
+badClockArtifacts=sixgr.truth.exportPHYSignalDiagnostic( ...
+    fullfile(tmp,'wrong_clock'),cfg,struct('DL',wrongClock),false);
+assert(~badClockArtifacts.DLAvailable, ...
+    'A shifted capture must not permit an inconsistent RX time axis.');
+wrongPlane=delayedSnapshot;
+wrongPlane.SourceTable.GridKind(wrongPlane.SourceTable.Panel=="pre_equalization_re_cloud")="";
+badPlaneArtifacts=sixgr.truth.exportPHYSignalDiagnostic( ...
+    fullfile(tmp,'unverified_plane'),cfg,struct('DL',wrongPlane),false);
+assert(~badPlaneArtifacts.DLAvailable && ...
+    badPlaneArtifacts.DLReason=="snapshot_pre_equalization_re_plane_unverified", ...
+    'Retained legacy codeword clouds must not be republished as raw pre-EQ measurements.');
 layout = sixgr.report.resultLayout(tmp);
 assert(logical(artifacts.DLAvailable) && ~logical(artifacts.ULAvailable), ...
     "Only directions with complete same-trial runtime evidence may render normally.");
@@ -380,6 +537,16 @@ assert(height(dopplerRow) == 1 && ...
 ok = true;
 end
 
+function localAssertAugmentFailure(cfg,snapshot,context,identifier)
+try
+    sixgr.link.buildPHYSignalDiagnosticSnapshot(cfg,"DL",struct(),[],struct(),table(),context,snapshot);
+catch cause
+    assert(strcmp(cause.identifier,identifier),'Expected %s, got %s: %s',identifier,cause.identifier,cause.message);
+    return;
+end
+error('test:MissingDiagnosticRejection','Expected %s.',identifier);
+end
+
 function cfg = localConfig()
 cfg = struct();
 cfg.run = struct("runTag", "test_phy_signal_diagnostic");
@@ -434,6 +601,7 @@ rx = struct( ...
     "ChannelEstimateEngine", "matlab_5g_toolbox", ...
     "ChannelEstimateInterpolationMethod", "2d_dmrs_interpolation", ...
     "PDSCHRxSymbolsForEvidence", preEq, ...
+    "PDSCHRxSymbolsEvidencePlane", "received_data_RE_by_RX_antenna", ...
     "PostEqSINR_dB", 12.3, ...
     "PostEqSINRSource", "pdsch_receiver_hest_noise_estimate", ...
     "PostEqSINRValueRole", "receiver_derived", ...

@@ -925,9 +925,9 @@ classdef ChannelFactory
                     "OutputSampleAlignment must be grant_delay_aligned or continuous_raw_samples.");
             end
             continuousOutput = outputAlignment == "continuous_raw_samples";
-            if captureReference && (~continuousOutput || ~projectedInput || nargout<4)
+            if captureReference && (~projectedInput || nargout<4)
                 error("ChannelFactory:InvalidChannelReferenceRequest", ...
-                    "Retain the fourth output and request actual continuous materialized-port samples for channel scoring.");
+                    "Retain the fourth output and request actual materialized-port samples for channel scoring.");
             end
             if (continuousOutput || projectedInput) && (~isstruct(state) || ~isscalar(state) || ...
                     ~isfield(state, "ContractVersion") || ...
@@ -969,6 +969,10 @@ classdef ChannelFactory
                 if isa(object,'nrTDLChannel') && string(object.PathGainSampleRate)~="signal"
                     error("ChannelFactory:ChannelReferenceSnapshotCoverage", ...
                         "Independent continuous scoring requires one applied fading snapshot per actual sample.");
+                end
+                if isa(object,'nrCDLChannel') && ~isinf(object.SampleDensity)
+                    error("ChannelFactory:ChannelReferenceSnapshotCoverage", ...
+                        "Independent scoring requires per-sample CDL fading; sparse snapshots cannot replace executed FFT-window coefficients.");
                 end
                 referenceFilters = getPathFilters(object);
             end
@@ -1178,6 +1182,8 @@ classdef ChannelFactory
             end
             replay.ChannelFadingExecutionStatus = "attempted";
             replay.ChannelFadingObjectClass = class(state.Obj);
+            exactStreamPartition=isa(state.Obj,'nrTDLChannel') || ...
+                (isa(state.Obj,'nrCDLChannel') && isinf(state.Obj.SampleDensity));
             if isprop(state.Obj,'DelayProfile')
                 replay.ChannelModelApplied = string(state.Obj.DelayProfile);
             end
@@ -1240,7 +1246,7 @@ classdef ChannelFactory
                 replay.RuntimeChannelPathGainCaptureRequested = true;
                 replay.RuntimeChannelPathGainCapturePolicy = "explicit_same_execution_full_channel_reference";
                 replay.RuntimeChannelPathGainCaptureScope = "complete_executed_physical_interval";
-            elseif capturePathGains && continuousOutput
+            elseif capturePathGains && (continuousOutput || exactStreamPartition)
                 replay.RuntimeChannelPathGainCaptureScope = ...
                     "first_executed_sample_exact_bounded_diagnostic";
             end
@@ -1253,7 +1259,9 @@ classdef ChannelFactory
             if captureReference
                 % Exactly one state advance. Do not catch and call this
                 % persistent channel again if an output contract fails.
-                [yHead, pathGains, sampleTimes] = state.Obj(xChannel);
+                [yHead, pathGains, sampleTimes] = ...
+                    sixgr.channel.ChannelFactory.localApplyProjectedContinuousChannel( ...
+                    state, xChannel, true, true);
                 if size(pathGains,1)~=size(xChannel,1) || ...
                         size(pathGains,3)~=state.NumTxAnt || size(pathGains,4)~=state.NumRxAnt || ...
                         size(referenceFilters,2)~=size(pathGains,2) || ...
@@ -1275,31 +1283,29 @@ classdef ChannelFactory
                     'StateKey',string(state.StateKey),'AdditionalChannelExecutions',0, ...
                     'ReceiverEstimatorInput',false,'LargeScaleLossApplied',false, ...
                     'PhysicalPortMappingApplied',false,'RFIncluded',false);
+                reference.OutputSampleAlignment=outputAlignment;
+                reference.AppliedAlignmentTrimSamples=0;
+                reference.AlignmentLookaheadSamples=0;
+                reference.CanonicalEndSampleExclusive=reference.EndSampleExclusive;
+                reference.InputWaveformSHA256=replay.RuntimeChannelInputWaveformSHA256;
             elseif elementExpansion
                 [yHead, pathGains, sampleTimes] = ...
                     sixgr.channel.ChannelFactory.localApplyElementExpandedChannel( ...
                     state, xChannel, capturePathGains);
-            elseif capturePathGains && continuousOutput
+            elseif capturePathGains && (continuousOutput || exactStreamPartition)
                 % The shared clock cannot retry a stateful channel call.
                 % A path-gain tensor scales as
                 % Ns-by-Npath-by-Nray/element-by-Ntx for CDL.  Requesting
                 % diagnostic output for an entire 100 MHz, 64-element slot
                 % can allocate tens of gigabytes even though the persisted
                 % evidence budget is only a few thousand elements.  Capture
-                % one exact temporal slice from the SAME persistent call,
-                % then continue the remaining samples through the same
-                % object with waveform output only.  nrCDL/nrTDL streaming
-                % is chunk invariant; no clone, replay, interpolation or
-                % receiver oracle is introduced.
-                [yFirst, pathGains, sampleTimes] = state.Obj(xChannel(1,:));
-                if size(xChannel,1)>1
-                    yRest=sixgr.channel.ChannelFactory. ...
-                        localApplyProjectedContinuousChannel( ...
-                        state,xChannel(2:end,:));
-                    yHead=[yFirst;yRest];
-                else
-                    yHead=yFirst;
-                end
+                % one exact temporal slice from the SAME persistent call.
+                % Use the identical partition with capture disabled/full:
+                % diagnostic flags must not change even rounding in the
+                % waveform or the state of subsequent physical execution.
+                [yHead, pathGains, sampleTimes] = ...
+                    sixgr.channel.ChannelFactory.localApplyProjectedContinuousChannel( ...
+                    state, xChannel, true, false);
             elseif capturePathGains
                 try
                     [yHead, pathGains, sampleTimes] = state.Obj(xChannel);
@@ -1314,7 +1320,7 @@ classdef ChannelFactory
                     end
                 end
             else
-                if continuousOutput
+                if continuousOutput || exactStreamPartition
                     yHead=sixgr.channel.ChannelFactory. ...
                         localApplyProjectedContinuousChannel(state,xChannel);
                 else
@@ -1333,10 +1339,29 @@ classdef ChannelFactory
             if padSamples > 0
                 tailState = sixgr.channel.ChannelFactory.forkRuntimeChannelState(state);
                 tailInput = zeros(padSamples, size(xChannel, 2), 'like', xChannel);
-                if elementExpansion
+                if captureReference
+                    [yTail,tailGains,tailTimes]= ...
+                        sixgr.channel.ChannelFactory.localApplyProjectedContinuousChannel( ...
+                        tailState,tailInput,true,true);
+                    assert(size(tailGains,1)==padSamples && ...
+                        size(tailGains,2)==size(pathGains,2) && ...
+                        size(tailGains,3)==state.NumTxAnt && size(tailGains,4)==state.NumRxAnt && ...
+                        isequal(size(tailTimes),[padSamples 1]) && ...
+                        all(isfinite(tailGains),'all') && all(isfinite(tailTimes)) && ...
+                        all(abs(diff([sampleTimes;tailTimes])*state.SampleRate_Hz-1)<1e-6), ...
+                        'ChannelFactory:IncompleteAppliedChannelReference', ...
+                        'Retain the exact coefficients from the existing alignment-tail execution.');
+                    reference.PathGains=cat(1,pathGains,tailGains);
+                    reference.SampleTimes_s=[sampleTimes;tailTimes];
+                    reference.EndSampleExclusive=reference.EndSampleExclusive+padSamples;
+                    reference.AlignmentLookaheadSamples=padSamples;
+                elseif elementExpansion
                     [yTail, ~, ~] = ...
                         sixgr.channel.ChannelFactory.localApplyElementExpandedChannel( ...
                         tailState, tailInput, false);
+                elseif continuousOutput || exactStreamPartition
+                    yTail=sixgr.channel.ChannelFactory.localApplyProjectedContinuousChannel( ...
+                        tailState,tailInput);
                 else
                     yTail = tailState.Obj(tailInput);
                 end
@@ -1362,6 +1387,12 @@ classdef ChannelFactory
                 end
             end
             replay.ChannelFadingApplied = true;
+            if captureReference
+                reference.AppliedAlignmentTrimSamples= ...
+                    replay.RuntimeChannelAppliedAlignmentTrimSamples;
+                reference.OutputWaveformSHA256= ...
+                    sixgr.channel.ChannelFactory.runtimeNumericArraySHA256(y);
+            end
             replay.ChannelFadingExecutionStatus = "applied_persistent_runtime_channel_object";
             replay.ChannelPathGainsAvailable = ~isempty(pathGains);
             replay.RuntimeChannelPathGainCaptureSatisfied = ...
@@ -1540,16 +1571,31 @@ classdef ChannelFactory
             if isfinite(materializedTx) && materializedTx >= 1
                 numTx = max(double(numTx), round(materializedTx));
             end
-            if isempty(prototype)
-                z = zeros(n, max(1, round(double(numTx))));
-            else
-                z = zeros(n, max(1, round(double(numTx))), 'like', prototype);
+            chunkSamples=double(sixgr.util.structGet(state,"ElementExpansionChunkSamples",4096));
+            validateattributes(chunkSamples,{'numeric'},{'scalar','finite','integer','positive'});
+            if n>chunkSamples && isa(state.Obj,'nrCDLChannel') && ~isinf(state.Obj.SampleDensity)
+                error('ChannelFactory:ContinuousCDLRequiresPerSampleFading', ...
+                    ['Bounded idle advancement requires channels.per_sample_fading_enabled=true; ' ...
+                     'finite CDL snapshot sampling depends on call boundaries.']);
             end
-            try
-                state.Obj(z);
-            catch
-                [~, ~] = state.Obj(z);
+            % Silence advances the same physical fading/filter state as a
+            % waveform. Bound BOTH input and backend path/ray tensors; never
+            % allocate the entire idle gap or reset/jump the channel clock.
+            count=0;
+            for first=1:chunkSamples:n
+                take=min(chunkSamples,n-first+1);
+                if isempty(prototype)
+                    z=zeros(take,max(1,round(double(numTx))));
+                else
+                    z=zeros(take,max(1,round(double(numTx))),'like',prototype);
+                end
+                % Consume once. A backend error must propagate, not retry
+                % a possibly advanced handle with the same input samples.
+                [~]=state.Obj(z);
+                count=count+1;
             end
+            state.LastIdlePhysicalChunkCount=count;
+            state.LastIdlePhysicalMaxChunkSamples=min(n,chunkSamples);
             state.TotalObjectInputSamples = double(sixgr.util.structGet(state, "TotalObjectInputSamples", 0)) + n;
         end
 
@@ -1614,20 +1660,52 @@ classdef ChannelFactory
             runtimeMeta.PortToElementExpansionEnabled = true;
         end
 
-        function yRaw=localApplyProjectedContinuousChannel(state,xPhysical)
+        function [yRaw,pathGains,sampleTimes]= ...
+                localApplyProjectedContinuousChannel(state,xPhysical,captureFirst,captureFull)
             % Bound the backend's internal Ns-by-path/ray-by-array tensor.
             % Every chunk advances the same persistent System object; this
             % is exact stream partitioning, not independent realization,
             % replay, approximation or scalar channel substitution.
+            % Always isolate the first sample, including when no evidence
+            % is requested. Native filtering may differ at rounding level
+            % when partitioned differently. Capture is observational only.
+            if nargin<3, captureFirst=false; end
+            if nargin<4, captureFull=false; end
             chunkSamples=max(1,round(double(sixgr.util.structGet( ...
                 state,"ElementExpansionChunkSamples",4096))));
             nRows=size(xPhysical,1);
-            nChunks=ceil(nRows/chunkSamples);
+            if nRows==0
+                yRaw=zeros(0,state.NumRxAnt,'like',xPhysical);
+                pathGains=[]; sampleTimes=[];
+                return;
+            end
+            nChunks=1+ceil((nRows-1)/chunkSamples);
             parts=cell(nChunks,1);
+            pathGains=[]; sampleTimes=[];
             for chunkIndex=1:nChunks
-                firstRow=(chunkIndex-1)*chunkSamples+1;
-                lastRow=min(nRows,chunkIndex*chunkSamples);
-                parts{chunkIndex}=state.Obj(xPhysical(firstRow:lastRow,:));
+                if chunkIndex==1
+                    firstRow=1; lastRow=1;
+                else
+                    firstRow=2+(chunkIndex-2)*chunkSamples;
+                    lastRow=min(nRows,firstRow+chunkSamples-1);
+                end
+                if captureFull || (captureFirst && chunkIndex==1)
+                    [parts{chunkIndex},gains,times]= ...
+                        state.Obj(xPhysical(firstRow:lastRow,:));
+                    if captureFull
+                        if chunkIndex==1
+                            pathGains=zeros(nRows,size(gains,2),size(gains,3), ...
+                                size(gains,4),'like',gains);
+                            sampleTimes=zeros(nRows,1,'like',times);
+                        end
+                        pathGains(firstRow:lastRow,:,:,:)=gains;
+                        sampleTimes(firstRow:lastRow)=times;
+                    else
+                        pathGains=gains; sampleTimes=times;
+                    end
+                else
+                    parts{chunkIndex}=state.Obj(xPhysical(firstRow:lastRow,:));
+                end
             end
             yRaw=vertcat(parts{:});
         end

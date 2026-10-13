@@ -678,21 +678,6 @@ for p = string(paths)
 end
 end
 
-function [lo, hi] = localWilsonCI(fails, total)
-if ~isfinite(total) || total <= 0
-    lo = NaN;
-    hi = NaN;
-    return;
-end
-z = 1.96;
-p = localSafeDivide(fails, total);
-den = 1 + z^2 / total;
-center = (p + z^2 / (2 * total)) / den;
-half = z * sqrt((p * (1 - p) / total) + (z^2 / (4 * total^2))) / den;
-lo = max(0, center - half);
-hi = min(1, center + half);
-end
-
 function status = localAvailabilityStatus(tf, missingReason)
 if tf
     status = "derived_from_runtime_rows";

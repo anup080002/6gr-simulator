@@ -400,6 +400,7 @@ classdef SharedWaveformPhysicalRuntime < handle
                     replay.NoiseStreamSeed=node.NoiseSeed;
                     replay.NoiseBandwidth_Hz=node.NoiseReplay.NoiseBandwidth_Hz;
                     replay.NoiseOperatingMode=node.NoiseReplay.NoiseOperatingMode;
+                    replay.WaveformAmplitudeUnit=string(node.NoiseReplay.PowerContextAmplitudeUnit);
                     replay.ThermalSampleNoiseBandwidth_Hz=node.NoiseReplay.ThermalSampleNoiseBandwidth_Hz;
                     replay.ThermalNoisePSD_mWPerHz=node.NoiseReplay.ThermalNoisePSD_mWPerHz;
                     replay.RequestedAWGNReferenceSNR_dB=double(sixgr.util.structGet( ...

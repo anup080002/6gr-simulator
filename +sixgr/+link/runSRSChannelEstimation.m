@@ -1,5 +1,7 @@
-function out = runSRSChannelEstimation(cfg, varargin)
+function [out, capture] = runSRSChannelEstimation(cfg, varargin)
 %RUNSRSCHANNELESTIMATION SRS Tx/Rx channel-estimation smoke case.
+% Optional capture retains this exact execution for independent scoring.
+capture = struct();
 
 p = inputParser;
 p.addParameter("Logger", [], @(x) isempty(x) || isa(x,"sixgr.core.Logger"));
@@ -351,6 +353,11 @@ try
         noiseVarArgs{:}, ...
         "StrictNoiseVarianceRequired", strictNoiseVarianceRequired);
     out.ReceiveTiming=rx.Timing;
+    if nargout>1
+        capture=struct('Tx',tx,'Rx',rx,'RxInfo',rxInfo,'ReceiverConfig',cfgSRS, ...
+            'Replay',replay,'ReceivedWaveform',rxWave, ...
+            'ScoringReferenceWaveform',txWaveForReference);
+    end
     out.EstimatedTimingOffset_samples=rx.Timing.TimingOffsetSamples;
     out.AppliedTimingCorrection_samples=rx.Timing.AppliedTimingCorrectionSamples;
     out.TimingEstimateSource=rx.Timing.TimingSource;
@@ -461,7 +468,35 @@ try
     out.NMSEReferenceAGCGain_dB=double(sixgr.util.structGet(replay,'NMSEReferenceAGCGain_dB',NaN));
     nmse = localNormalizedMSE(hEst, hTrue);
     sharedScoringAvailable=false;
-    if received && ~isempty(txWaveForReference)
+    if ~received && double(tx.SRS.NumSRSPorts)==1 && ~isempty(txWaveForReference)
+        % A single logical port has an exact noiseless pilot-ratio reference
+        % on EVERY receive antenna. Score actual Hest, not the legacy raw
+        % pilot ratio averaged across antennas (which can cancel channels).
+        referenceRxGrid=sixgr.phy.waveform.ofdmDemodulate(tx.Carrier,txWaveForReference);
+        K=size(rx.Hest,1); L=size(rx.Hest,2); R=size(rx.Hest,3);
+        assert(size(referenceRxGrid,1)==K && size(referenceRxGrid,2)==L && ...
+            size(referenceRxGrid,3)==R && size(rx.Hest,4)==1, ...
+            'sixgr:link:SRS:ReferenceGridMismatch','Score all actual pilot/RX dimensions.');
+        referenceGrid=complex(nan(size(rx.Hest),'like',rx.Hest));
+        pilotIndices=double(tx.SRSIndices(:));
+        for receiveBranch=1:R
+            at=pilotIndices+(receiveBranch-1)*K*L;
+            referenceGrid(at)=referenceRxGrid(at)./tx.SRSSymbols(:);
+        end
+        score=sixgr.phy.srs.pilotChannelNMSE(rx.Hest,referenceGrid,pilotIndices);
+        out.RawChannelNMSEScoring=score;
+        out.RawChannelNMSE_dB=score.dB;
+        out.ChannelNMSEScoring=score;
+        out.ChannelNMSEReferenceEvidence=struct( ...
+            'ReferencePlane',"single_port_noiseless_pilot_response_on_recorded_RX_timing_and_gain_plane", ...
+            'ReceiverEstimatorInput',false,'GainOrPhaseFitted',false, ...
+            'AdditionalChannelExecutions',0, ...
+            'RecordedReceiverTimingOffset_samples',replay.NMSEReferenceTimingOffset_samples);
+        nmse=score.Linear;
+        nmseReferenceSource= ...
+            "applied_channel_gain_truth_single_port_pilot_ratio_with_recorded_agc_gain_and_rx_timing";
+        sharedScoringAvailable=true;
+    elseif received && ~isempty(txWaveForReference)
         % Score after the practical receiver from the exact independently
         % retained desired-link IQ.  This executes no channel/RF model and
         % never becomes an estimator input.
@@ -999,8 +1034,16 @@ referenceWaveform = desiredWaveform;
 replay = sixgr.link.applyCompositeFrontEndVarianceReplay(replay);
 % The channel reference above precedes RX AGC, whereas SRS_Rx observes its
 % output. Carry the RECORDED gain into that reference; do not estimate a
-% best-fit multiplier from Hest. Other receiver impairments/errors remain in
-% the NMSE residual. This is not a second RF execution or a noiseless replay.
+% best-fit multiplier from Hest. Match the recorded receiver timing clock
+% as well; other RF errors remain in the NMSE residual. These references
+% never enter SRS_Rx and do not rerun the channel or RF chain.
+referenceDelay=0;
+if replay.TimingOffsetApplied
+    referenceDelay=double(replay.InjectedTimingOffset_samples);
+    validateattributes(referenceDelay,{'numeric'},{'scalar','real','finite'});
+    referenceWaveform=sixgr.util.applyFractionalSampleDelay(referenceWaveform,referenceDelay);
+end
+replay.NMSEReferenceTimingOffset_samples=referenceDelay;
 referenceGain_dB=0;
 if logical(sixgr.util.structGet(replay,'AGCApplied',false))
     referenceGain_dB=double(sixgr.util.structGet(replay,'AGCGain_dB',NaN));
@@ -1009,7 +1052,7 @@ if logical(sixgr.util.structGet(replay,'AGCApplied',false))
 end
 referenceWaveform=referenceWaveform.*cast(10^(referenceGain_dB/20),'like',referenceWaveform);
 replay.NMSEReferenceAGCGain_dB=referenceGain_dB;
-replay.NMSEReferenceSource='applied_channel_gain_truth_before_receiver_impairments_with_recorded_agc_gain';
+replay.NMSEReferenceSource='applied_channel_gain_truth_with_recorded_agc_gain_and_rx_timing_before_other_receiver_impairments';
 nVar = double(sixgr.util.structGet(replay, ...
     "InjectedNoiseVariancePostCompositeFrontEnd",preFrontEndNVar));
 end

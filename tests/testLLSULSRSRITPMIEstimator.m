@@ -9,6 +9,9 @@ if exist("nrPUSCHCodebook", "file") ~= 2
 end
 
 cfg = sixgr.config.defaultConfig();
+% This test searches the measured rank domain; fixed-rank behavior is
+% verified independently in testFixedRankSRSSelection.
+cfg.phy.linkAdaptation.rankPolicy = 'measured_ri';
 cfg.phy.nRxAnt = 2;
 cfg.phy.nTxAnt = 2;
 cfg = sixgr.util.structSet(cfg, "phy.pusch.transmissionScheme", "codebook");

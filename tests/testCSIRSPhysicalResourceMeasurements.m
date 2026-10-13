@@ -34,9 +34,28 @@ for scs=[15 30 60]
     changed=grid; changed(1:72,:,:)=100; changed(:,1:6,:)=100;
     other=sixgr.phy.refsig.measureCSIRSPhysicalResource(carrier,csirs,changed);
     assert(isequaln(measured,other));
+    % The same analytic resource in unit-RE coordinates must execute the
+    % estimator, retain relative powers, and never claim calibrated dBm.
+    normalized=sixgr.phy.refsig.measureCSIRSPhysicalResource( ...
+        carrier,csirs,grid*1e5,struct(),struct(),"relative_to_unit_occupied_RE_Es");
+    assert(normalized.Available && all(isnan(normalized.RSRPPerAntenna_dBm)) && ...
+        all(isnan(normalized.RSSIPerAntenna_dBm)));
+    assert(max(abs(normalized.RSRPPerAntenna_dB_re_UnitOccupiedRE_Es- ...
+        (10*log10(watts)+100)))<1e-10);
+    assert(max(abs(normalized.RSSIPerAntenna_dB_re_UnitOccupiedRE_Es- ...
+        (measured.RSSIPerAntenna_dBm+70)))<1e-10);
+    assert(max(abs(normalized.RSRQPerAntenna_dB-measured.RSRQPerAntenna_dB))<1e-10);
+    assert(normalized.SINR.PowerUnit=="relative_to_unit_occupied_RE_Es");
+    selected=sixgr.phy.refsig.selectCSIRSBranchMeasurements(normalized);
+    assert(isnan(selected.RSRP_dBm) && isnan(selected.RSSI_dBm) && ...
+        abs(selected.RSRP_dB_re_UnitOccupiedRE_Es)<1e-10 && ...
+        selected.RSRPReceiveBranch1Based==2);
     csirs.CSIRSPeriod=[4 1];
     absent=sixgr.phy.refsig.measureCSIRSPhysicalResource(carrier,csirs,grid);
     assert(~absent.Available && isempty(absent.SymbolIndices0Based));
+    absentNormalized=sixgr.phy.refsig.measureCSIRSPhysicalResource( ...
+        carrier,csirs,grid*1e5,struct(),struct(),"relative_to_unit_occupied_RE_Es");
+    assert(~absentNormalized.Available && isempty(absentNormalized.SymbolIndices0Based));
 end
 ok=true;
 disp('CSIRS_PHYSICAL_RESOURCE_MEASUREMENTS_PASS');

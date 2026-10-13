@@ -84,6 +84,13 @@ sixgr.util.csvWriteTable(channelPath,channelTable, ...
 channelBefore=fileread(channelPath);
 channelHash=sixgr.phy.waveform.WaveformHash.file(channelPath);
 
+controlDir=fullfile(runFolder,"control","csv");
+mkdir(controlDir);
+controlPath=fullfile(controlDir,"pdcch_channel_estimates.csv");
+sixgr.util.csvWriteTable(controlPath,channelTable, ...
+    'PreserveSchema',true,'RoundTripNumericText',true);
+controlBefore=fileread(controlPath);
+
 % A generic-sweep point is an independent execution.  Parent annotation
 % and visual verification must not mutate or claim any artifact below it.
 childReportDir = fullfile(runFolder, "sweeps", "point_1", "reports", "csv");
@@ -145,6 +152,38 @@ sixgr.report.annotateScenarioCSVArtifacts(runFolder, ...
     "scenario_unit", "hash_unit", "waveform_bundle");
 assert(strcmp(fileread(channelPath),channelBefore), ...
     'Repeated finalization must preserve exact receiver channel-resource bytes.');
+assert(strcmp(fileread(controlPath),controlBefore), ...
+    'PDCCH receiver channel captures must not be rewritten by scenario annotation.');
+
+% A source modified outside annotation is stale, even if it still parses.
+% Rehashing it here would certify an old image against new measurements.
+staleHash=lineageAfter.SourceCSV_SHA256(1);
+statAnnotated.Value(:)=statAnnotated.Value+1;
+sixgr.util.csvWriteTable(statSource,statAnnotated,'PreserveSchema',true);
+again=sixgr.report.annotateScenarioCSVArtifacts(runFolder, ...
+    "scenario_unit","hash_unit","waveform_bundle");
+stale=readtable(statLineage,'TextType','string');
+assert(again.RefreshedLineageCount==0 && stale.SourceCSV_SHA256(1)==staleHash, ...
+    'Unrelated source changes must remain visible to the visual integrity gate.');
+visual=sixgr.visual.verifyVisualArtifacts(runFolder,table());
+assert(~visual.IntegrityOk(visual.PlotId=="prach_plot"));
+
+% Also refuse a stale hash when the same source still needs annotation.
+unannotated=fullfile(statCSV,"unannotated_trials.csv");
+unannotatedImage=fullfile(statFigures,"unannotated_plot.png");
+unannotatedLineage=fullfile(statCSV,"unannotated_plot_lineage.csv");
+sixgr.util.csvWriteTable(unannotated,table(7,'VariableNames',{'Value'}));
+imwrite(uint8(zeros(8,8,3)),unannotatedImage);
+bound=sixgr.visual.writeComponentPlotLineage(statRoot,unannotatedLineage, ...
+    "unannotated_plot",unannotatedImage,unannotated,"numerical_fixture");
+sixgr.util.csvWriteTable(unannotated,table(8,'VariableNames',{'Value'}));
+sixgr.report.annotateScenarioCSVArtifacts(runFolder, ...
+    "scenario_unit","hash_unit","waveform_bundle");
+retained=readtable(unannotatedLineage,'TextType','string');
+assert(retained.SourceCSV_SHA256(1)==bound.SourceCSV_SHA256(1));
+visual=sixgr.visual.verifyVisualArtifacts(runFolder,table());
+assert(~visual.IntegrityOk(visual.PlotId=="unannotated_plot"), ...
+    'Metadata annotation must not hide a prior measurement change.');
 
 % Prove the unchanged runtime file still accepts the next versioned event.
 bus.stageEnd("annotation_guard");

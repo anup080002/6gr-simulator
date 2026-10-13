@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 import hashlib
 import os
@@ -14,6 +15,177 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "apps"))
 
 import lls_web_dashboard as dash  # noqa: E402
+
+
+@pytest.mark.parametrize("limit", [0, 1, 4])
+def test_csv_preview_stops_after_requested_logical_records(monkeypatch, limit):
+    original_reader = csv.reader
+    consumed = []
+
+    def bounded_reader(*args, **kwargs):
+        for row in original_reader(*args, **kwargs):
+            consumed.append(row)
+            assert len(consumed) <= limit + 1, "Preview parsed unrequested CSV rows"
+            yield row
+
+    monkeypatch.setattr(dash.csv, "reader", bounded_reader)
+    raw = b'!Slot,Notes\n1,"first\nsecond"\n2,OK\n3,FAIL\n4,OK\n5,extra\n'
+    header, rows = dash.parse_csv_bytes(raw, max_rows=limit)
+    assert header == ["Slot", "Notes"]
+    assert len(rows) == limit
+    if rows:
+        assert rows[0] == ["1", "first\nsecond"]
+    assert len(consumed) == limit + 1
+
+
+def test_filesystem_preview_streams_known_path_and_preserves_evidence(tmp_path, monkeypatch):
+    path = tmp_path / "receiver_summary.csv"
+    vector = "0" * 150000
+    path.write_bytes((
+        'Slot,ReceivedIdentity,CRCPass,MeasuredLDPCParityCheckVector,Notes\n'
+        f'1,000000000001,0,{vector},"failed\nretained"\n'
+        '2,000000000002,1,0,OK\n'
+    ).encode("utf-8"))
+    artifact = {"logical_path": "receiver_summary.csv", "filesystem_path": str(path),
+                "artifact_id": 9900000001, "byte_size": path.stat().st_size}
+
+    def unexpected_read(*args, **kwargs):
+        pytest.fail("Known filesystem preview must not read all bytes or rescan other runs")
+
+    monkeypatch.setattr(Path, "read_bytes", unexpected_read)
+    monkeypatch.setattr(dash, "filesystem_artifact_by_id", unexpected_read)
+    original_reader = csv.reader
+
+    def bounded_reader(*args, **kwargs):
+        for index, row in enumerate(original_reader(*args, **kwargs)):
+            assert index <= 1, "Filesystem preview parsed unrequested rows"
+            yield row
+
+    monkeypatch.setattr(dash.csv, "reader", bounded_reader)
+    original_limit = csv.field_size_limit()
+    rows = dash.load_small_csv_rows([artifact], "receiver_summary.csv", max_rows=1)
+    assert csv.field_size_limit() == original_limit
+    assert rows[0]["ReceivedIdentity"] == "000000000001"
+    assert rows[0]["CRCPass"] == 0
+    assert rows[0]["Notes"] == "failed\nretained"
+    assert dash.load_artifact_csv_preview(artifact, 1)[1][0][3] == vector
+
+
+def test_live_metric_and_chart_use_known_filesystem_artifact(tmp_path, monkeypatch):
+    path = tmp_path / "runtime_summary.csv"
+    path.write_text("Slot,ThroughputMbps\n1,0\n2,15.5\n", encoding="utf-8")
+    artifact = {"logical_path": "reports/csv/runtime_summary.csv", "filesystem_path": str(path),
+                "artifact_id": 9900000001, "byte_size": path.stat().st_size}
+
+    def unexpected_lookup(*args, **kwargs):
+        pytest.fail("Already inventoried artifacts must not rediscover unrelated runs")
+
+    monkeypatch.setattr(dash, "filesystem_artifact_by_id", unexpected_lookup)
+    monkeypatch.setattr(dash, "load_cached_csv_preview", unexpected_lookup)
+    cards = dash.extract_metric_cards({"run_id": 9000000001}, [artifact], {"stage": {}})
+    assert any(card["source"] == artifact["logical_path"] for card in cards)
+    chart = dash.build_numeric_chart_from_artifact(artifact)
+    assert chart and chart["artifact_id"] == artifact["artifact_id"]
+    # The live preview is bounded; the saved source CSV remains unchanged.
+    assert path.read_text(encoding="utf-8") == "Slot,ThroughputMbps\n1,0\n2,15.5\n"
+
+
+@pytest.mark.parametrize("coordinates", ["Latitude,Longitude", "Lat,Lon"])
+def test_live_map_uses_known_filesystem_coordinates(tmp_path, monkeypatch, coordinates):
+    path = tmp_path / "sites.csv"
+    path.write_text(f"SiteID,{coordinates}\n1,26.0,73.0\n", encoding="utf-8")
+    artifact = {"logical_path": "reports/csv/sites.csv", "filesystem_path": str(path),
+                "artifact_id": 9900000001, "byte_size": path.stat().st_size}
+
+    def unexpected_lookup(*args, **kwargs):
+        pytest.fail("Map must not rediscover a known artifact through other runs")
+
+    monkeypatch.setattr(dash, "load_cached_csv_preview", unexpected_lookup)
+    markers = dash.map_table_rows([artifact], ("sites.csv",), "site")
+    assert len(markers) == 1
+    assert markers[0]["lat"] == 26.0 and markers[0]["lon"] == 73.0
+    assert markers[0]["source"] == artifact["logical_path"]
+
+
+@pytest.mark.parametrize("authority", ["completed", "failed", "live"])
+def test_evidenced_run_does_not_probe_preflight_processes(
+    tmp_path, monkeypatch, authority
+):
+    """Run-list polling must not spawn a process query for each stored run."""
+    run_folder = tmp_path / "known_run"
+    meta = run_folder / "meta"
+    reports = run_folder / "reports" / "csv"
+    meta.mkdir(parents=True)
+    reports.mkdir(parents=True)
+    (meta / "scenario_config_identity.json").write_text(
+        json.dumps({"ScenarioID": "known_scenario"}), encoding="utf-8"
+    )
+    (meta / "scenario_config_resolved.json").write_text(
+        json.dumps({"scenario": {"runner_profile": "waveform_bundle"}}),
+        encoding="utf-8",
+    )
+    if authority == "live":
+        (reports / "live_stage_status.csv").write_text(
+            "Stage,CurrentSlot,TotalSlots\nphysical_execution,5,200\n",
+            encoding="utf-8",
+        )
+    else:
+        (meta / "scenario_manifest.json").write_text(
+            json.dumps({"ScenarioID": "known_scenario", "RunCompletion": authority,
+                        "ResultOk": authority == "completed"}),
+            encoding="utf-8",
+        )
+
+    def unexpected_process_probe(_row):
+        pytest.fail("Authoritative run evidence must not invoke preflight process discovery")
+
+    monkeypatch.setattr(dash, "local_run_process_active", unexpected_process_probe)
+    assert dash._is_discoverable_filesystem_run_folder(run_folder)
+    row = dash.filesystem_run_row_from_folder(run_folder)
+    assert row is not None
+    assert row["status_text"] == ("running" if authority == "live" else authority)
+    status = json.loads(row["status_json"])
+    if authority == "live":
+        assert status["current_slot"] == 5
+        assert status["result_ok"] is None
+    else:
+        assert status["result_ok"] is (authority == "completed")
+
+
+@pytest.mark.parametrize("backend", ["filesystem", "database"])
+def test_csv_loaders_preserve_literal_receiver_evidence(tmp_path, monkeypatch, backend):
+    # These are the exact forms corrupted by generic numeric inference in
+    # the two-UE run. This test exercises the loader, not just the preview.
+    header = ["PayloadHex", "ReceivedIdentity", "Msg4ContentionIdentity",
+              "UCIDecodedBitVector", "AssignmentDigest", "LayerSINRdB",
+              "RNTI", "MeasuredSINR_dB", "CRCPass"]
+    values = ["020000000000011234320001", "000000000001", "000000000001",
+              "00001101", "0" * 63 + "1", "21", "4660", "20.25", "1"]
+    missing = [""] * 6 + ["4661", "", "0"]
+    payload = (",".join(header) + "\n" + ",".join(values) + "\n" +
+               ",".join(missing) + "\n").encode("utf-8")
+    logical_path = "control/csv/receiver_literal_fixture.csv"
+    if backend == "filesystem":
+        path = tmp_path / "receiver.csv"
+        path.write_bytes(payload)
+        artifacts = [{"logical_path": logical_path, "filesystem_path": str(path)}]
+    else:
+        monkeypatch.setattr(dash, "load_cached_csv_preview",
+                            lambda *_args: dash.parse_csv_bytes(payload))
+        dash.load_cached_csv_rows.cache_clear()
+        artifacts = [{"logical_path": logical_path, "artifact_id": 987654321}]
+    try:
+        rows = dash.load_small_csv_rows(artifacts, logical_path)
+        assert len(rows) == 2
+        for name, expected in zip(header[:6], values[:6]):
+            assert rows[0][name] == expected
+            assert rows[1][name] == ""  # CRC failure has no decoded bytes.
+        assert rows[0]["RNTI"] == 4660
+        assert rows[0]["MeasuredSINR_dB"] == 20.25
+        assert rows[0]["CRCPass"] == 1 and rows[1]["CRCPass"] == 0
+        assert dash.normalize_preview_value(rows[0]["ReceivedIdentity"]) == "000000000001"
+    finally:
+        dash.load_cached_csv_rows.cache_clear()
 
 
 def test_dashboard_reads_run_authority_beyond_windows_max_path(tmp_path) -> None:

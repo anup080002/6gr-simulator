@@ -30,6 +30,7 @@ classdef PreparedUplinkControlTransmission
             assert(isfield(options,'TimingAdvanceSamples') && isfinite(options.TimingAdvanceSamples), ...
                 'sixgr:link:MissingPreparedULControlTiming','Explicit timing-advance authority is required.');
             pc=rxCfg.lls6g.runtimePowerContext;
+            sixgr.rf.appliedWaveformAmplitudeUnit(rxCfg,pc);
             assert(~pc.PAApplied && (~pc.PAEnabled || pc.PAExecutionDeferred), ...
                 'sixgr:link:ULControlPreparationAppliedRF','Defer PA until node composition.');
             origin=sixgr.phy.frame.slotStartSample(tx.Carrier,slot0,fs);

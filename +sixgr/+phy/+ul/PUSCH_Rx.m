@@ -209,6 +209,7 @@ sixgr.config.assertRuntimeFeatureUse(cfg, ...
     localProcedureFeature("transform_precoding", executionProfile), ...
     logical(localObjectValue(pusch, "TransformPrecoding", false)), ...
     "PUSCH_Rx." + executionProfile + ".nrPUSCHConfig.TransformPrecoding");
+sixgr.phy.rx.resolveCFOCPObservation(cfg); % Installed receiver policy is authoritative.
 sixgr.config.assertRuntimeFeatureUse(cfg, "ptrs_cpe_correction", ...
     sixgr.util.structGet(cfg, "phy.pusch.ptrs.enableCPECorrection", false), ...
     "PUSCH_Rx.ptrsCPECorrection");
@@ -316,14 +317,21 @@ trackingCorrection = localResolveReceiverTrackingCorrection(opt.ReceiverTracking
 captureOriginCFOCorrectionHz = 0;
 sampleRateHz = localCarrierSampleRateHz(carrier);
 knownTimingDelaySamples = localResolveKnownTimingDelaySamples(cfg, trackingCorrection, sampleRateHz);
-if logical(trackingCorrection.CFOEstimateAvailable) && isfinite(double(trackingCorrection.EstimatedCFO_Hz)) && ...
+cfoCorrectionEnabled = logical(sixgr.util.structGet(cfg,"phy.rx.cfoCorrectionEnabled", ...
+    sixgr.util.structGet(cfg,"phy.impairments.cfoCorrectionEnabled",false)));
+if cfoCorrectionEnabled && logical(trackingCorrection.CFOEstimateAvailable) && isfinite(double(trackingCorrection.EstimatedCFO_Hz)) && ...
         isfinite(sampleRateHz) && sampleRateHz > 0
     rxWaveform = localApplyFrequencyCorrection(rxWaveform, sampleRateHz, -double(trackingCorrection.EstimatedCFO_Hz));
     captureOriginCFOCorrectionHz = double(trackingCorrection.EstimatedCFO_Hz);
     trackingCorrection.CFOCorrectionApplied = true;
     trackingCorrection.CFOCorrectionApplied_Hz = double(trackingCorrection.EstimatedCFO_Hz);
 elseif logical(trackingCorrection.CFOEstimateAvailable)
-    trackingCorrection.CFONAReason = "receiver_tracking_cfo_estimate_present_but_sample_rate_unavailable";
+    if ~cfoCorrectionEnabled
+        trackingCorrection.Status = "available_measurement_only";
+        trackingCorrection.CFONAReason = "cfo_correction_disabled_by_config";
+    else
+        trackingCorrection.CFONAReason = "receiver_tracking_cfo_estimate_present_but_sample_rate_unavailable";
+    end
 end
 
 receiveTiming = struct();
@@ -350,11 +358,9 @@ rawTimingEstimate = NaN;
 timingEstimateUsed = false;
 timingEstimateSource = "unavailable";
 runtimeAlignedTimingBypass = localRuntimeAlignedTimingBypass(cfg);
-% RuntimeWaveformSampleAligned is asserted only after the channel wrapper
-% has removed the materialized channel delay.  Preserve a receiver-local
-% tracking observation in the tracking state, but do not apply that same
-% delay a second time.  This boundary is identical for FDD and TDD; an
-% explicitly injected timing offset disables the aligned-waveform bypass.
+% Preserve actual upstream receiver alignment without applying it twice.
+% Removing a channel implementation delay alone does not establish this
+% contract. Injection audit metadata never decides whether to acquire.
 if runtimeAlignedTimingBypass
     timingEstimateSource = "runtime_aligned_waveform_no_timing_reacquisition";
     trackingCorrection.TimingCorrectionApplied = false;
@@ -368,6 +374,11 @@ elseif ~useFastAWGNPath && ~logical(opt.SkipTimingEstimate)
         rawTimingEstimate = double(nrTimingEstimate(carrier, rxWaveform, dmrsInd, dmrsSym));
         timingEstimateUsed = true;
         timingEstimateSource = "nrTimingEstimate_dmrs";
+        % This fresh correlation is relative to the actual receiver input,
+        % after any upstream channel trimming/precompensation. Subtracting
+        % that metadata again can erase the independently measured offset.
+        % Supplied tracking observations retain their separate convention.
+        knownTimingDelaySamples = 0;
     catch
         rawTimingEstimate = NaN;
         timingEstimateUsed = false;
@@ -395,12 +406,14 @@ end
 
 % OFDM demod
 [rxGrid, ofdmInfo] = sixgr.phy.waveform.ofdmDemodulate(carrier, rxWaveform);
+currentCaptureFrequencyAcquisition=false;
 if ~logical(trackingCorrection.CFOEstimateAvailable)
     cfoEstimationMethod = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.impairments.cfoEstimationMethod", "cyclic_prefix"))));
     if any(cfoEstimationMethod == ["dmrs_two_symbol", "dmrs", "reference_symbol_phase_slope"])
         [dmrsCFOHz, dmrsCFOInfo] = sixgr.phy.rx.estimateCFOFromReferenceSymbols( ...
             rxGrid, dmrsInd, dmrsSym, carrier, sampleRateHz);
         if logical(dmrsCFOInfo.EstimateAvailable)
+            currentCaptureFrequencyAcquisition=true;
             trackingCorrection.CFOEstimateAvailable = true;
             trackingCorrection.EstimatedCFO_Hz = double(dmrsCFOHz);
             trackingCorrection.Status = "available";
@@ -411,7 +424,10 @@ if ~logical(trackingCorrection.CFOEstimateAvailable)
         end
     end
     if ~logical(trackingCorrection.CFOEstimateAvailable) && any(cfoEstimationMethod == ["cyclic_prefix", "cp"])
-        [cpCFOHz, cpCFOInfo] = sixgr.phy.rx.estimateCFOFromCyclicPrefix(rxWaveform, ofdmInfo, sampleRateHz);
+        [cpCFOHz, cpCFOInfo] = sixgr.phy.rx.estimateCFOFromCyclicPrefix(rxWaveform, ofdmInfo, sampleRateHz, ...
+            sixgr.phy.rx.resolveCFOCPObservation(cfg));
+        trackingCorrection.CFOObservation=cpCFOInfo;
+        currentCaptureFrequencyAcquisition=logical(cpCFOInfo.EstimateAvailable);
         if logical(cpCFOInfo.EstimateAvailable)
             trackingCorrection.CFOEstimateAvailable = true;
             trackingCorrection.EstimatedCFO_Hz = double(cpCFOHz);
@@ -420,6 +436,10 @@ if ~logical(trackingCorrection.CFOEstimateAvailable)
             trackingCorrection.NAReason = "";
             trackingCorrection.CFOCorrectionApplied = false;
             trackingCorrection.CFOCorrectionApplied_Hz = NaN;
+        else
+            trackingCorrection.Status="not_available";
+            trackingCorrection.Source="cyclic_prefix_cfo_estimator";
+            trackingCorrection.NAReason=char(cpCFOInfo.Status);
         end
     elseif ~logical(trackingCorrection.CFOEstimateAvailable)
         trackingCorrection.Status = "not_available";
@@ -435,6 +455,7 @@ receiverChannelOperator = struct('ReceiveCombiningMatrix',receiveCombinerInfo.Ma
     'AlignedOriginCFOCorrection_Hz',double(sixgr.util.structGet( ...
         trackingCorrection,'AlignedOriginCFOCorrection_Hz',0)), ...
     'AppliedTimingCorrection_samples',double(timingResolution.AppliedCorrection_samples), ...
+    'TimingApplicationPolicy',string(timingResolution.ApplicationPolicy), ...
     'SampleRateHz',sampleRateHz, ...
     'Source',"actual_PUSCH_receiver_sample_operations_not_estimated_channel_fit");
 syncState = sixgr.phy.sync.resolveSynchronizationState( ...
@@ -443,6 +464,7 @@ syncState = sixgr.phy.sync.resolveSynchronizationState( ...
     "EstimatedCFO_Hz", double(sixgr.util.structGet(trackingCorrection, "EstimatedCFO_Hz", NaN)), ...
     "AppliedCFOCorrection_Hz", double(sixgr.util.structGet(trackingCorrection, "CFOCorrectionApplied_Hz", NaN)), ...
     "ResidualCFOEstimate_Hz", double(sixgr.util.structGet(trackingCorrection, "ResidualCFOEstimate_Hz", NaN)), ...
+    "ResidualCFOReusesAcquisitionObservation",logical(currentCaptureFrequencyAcquisition), ...
     "EstimatedCommonFrequency_Hz", double(sixgr.util.structGet(trackingCorrection, "EstimatedCommonFrequency_Hz", NaN)), ...
     "PhysicalDoppler_Hz", double(sixgr.util.structGet(trackingCorrection, "PhysicalDoppler_Hz", NaN)), ...
     "InjectedTimingOffset_samples", localResolveInjectedTimingOffsetSamples(cfg), ...
@@ -538,6 +560,9 @@ if ~logical(noiseStatus.IsValid)
         cinfo, ofdmInfo, estInfo, trackingCorrection, timingResolution, ...
         nVar, noiseStatus, logical(opt.CompactOutput), chEstDMRSInd, ...
         chEstDMRSSym, dmrsInfo);
+    [rx.MeasuredPreEqualizationNoiseVariance,rx.MeasuredPreEqualizationNoiseVarianceSource]= ...
+        sixgr.phy.rx.receiverNoiseMeasurement(nVarEst,estInfo, ...
+        "pusch_dmrs_channel_estimator",'UnitAWGNShortcut',useFastAWGNPath);
     rx.ReceiveTiming = receiveTiming;
     rx.DMRSEPREDifference = dmrsPowerInfo;
     rx.DMRSDataToDMRSEPREDifference_dB = double(dmrsPowerInfo.DataToDMRSEPREDifference_dB);
@@ -848,7 +873,7 @@ if ~isempty(opt.UCIReceiveContext) && ~all(uciOnPUSCH.ULSCHMappingResolved)
     rx.EqualizerType=char(string(equalizerInfo.AlgorithmUsed));
     rx.EqualizerEngine=char(string(equalizerInfo.EngineUsed));
     rx.MeasuredInterferenceCovarianceTrace=localCovarianceTraceMean(Rint);
-    rx.MeasuredPreEqualizationNoiseVariance=double(nVar);
+    rx=localAnnotateNoiseAuthority(rx,nVar,nVarEst,noiseStatus,estInfo,useFastAWGNPath);
     rx.EqualizedSymbolsForEvidence=layerEqSym;
     rx.LayerEqualizedSymbolsForEvidence=layerEqSym;
     rx.PortEqualizedSymbolsForEvidence=eqSym;
@@ -926,6 +951,7 @@ if nCodewords == 2
         knownTimingDelaySamples, timingEstimateForCorrection, timingEstimateSource, ...
         decodeLatency_s, maxIter, alg, llrCSIInfo, uciOnPUSCH, ...
         enablePTRSCPECorrection, opt.CompactOutput);
+    rx=localAnnotateNoiseAuthority(rx,nVar,nVarEst,noiseStatus,estInfo,useFastAWGNPath);
     rx.ReceiveTiming = receiveTiming;
     if hasPHYGrant
         rx.PHYGrant = phyGrant;
@@ -1147,6 +1173,7 @@ rx.HARQSoftCombiningOverlapPositionCount = double(sixgr.util.structGet(harqCombi
 rx.HARQSoftBuffer = sixgr.util.structGet(harqCombiningInfo, "SoftBuffer", struct());
 rx.CFOEstimateAvailable = logical(trackingCorrection.CFOEstimateAvailable);
 rx.EstimatedCFO_Hz = double(trackingCorrection.EstimatedCFO_Hz);
+rx.CFOObservation = sixgr.util.structGet(trackingCorrection,"CFOObservation",struct());
 rx.EstimatedCommonFrequency_Hz = double(sixgr.util.structGet(syncState, "EstimatedCommonFrequency_Hz", NaN));
 rx.PhysicalDoppler_Hz = double(sixgr.util.structGet(syncState, "PhysicalDoppler_Hz", NaN));
 rx.CFOCorrectionApplied = logical(trackingCorrection.CFOCorrectionApplied);
@@ -1155,6 +1182,9 @@ rx.ResidualCFO_PostCorrection_Hz = double(sixgr.util.structGet(syncState, "Resid
 rx.ResidualCFO_EstimatedPostCorrection_Hz = double(sixgr.util.structGet(syncState, "ResidualCFO_EstimatedPostCorrection_Hz", NaN));
 rx.ResidualCFOEstimateSource = char(string(sixgr.util.structGet( ...
     trackingCorrection, "ResidualCFOEstimateSource", "")));
+rx.ResidualCFOEstimateRole=syncState.ResidualCFOEstimateRole;
+rx.ResidualCFOReusesAcquisitionObservation=syncState.ResidualCFOReusesAcquisitionObservation;
+rx.ResidualCFOEstimatorConsistency_Hz=syncState.ResidualCFOEstimatorConsistency_Hz;
 rx.ResidualTimingError_PostCorrection_samples = double(sixgr.util.structGet(syncState, "ResidualTimingError_PostCorrection_samples", NaN));
 rx.ReceiverTrackingCorrectionSource = char(string(trackingCorrection.Source));
 rx.ReceiverTrackingCorrectionStatus = char(string(trackingCorrection.Status));
@@ -1175,7 +1205,13 @@ interLayer=sixgr.phy.rx.interLayerEvidence(equalizerResultForSINR);
 for field=string(fieldnames(interLayer)).', rx.(field)=interLayer.(field); end
 rx.PostEqSINRRawEqualizer_dB = double(sixgr.util.structGet(postEqSINRInfo, "RawEqualizerSINR_dB", ...
     sixgr.util.structGet(postEqSINRInfo, "RawSINR_dB", NaN)));
+rx.PostEqSINRRawEqualizerPerLayer_dB = double(sixgr.util.structGet( ...
+    postEqSINRInfo, "RawPerLayerSINR_dB", NaN));
+rx.PostEqSINRRawReduction = string(sixgr.util.structGet( ...
+    postEqSINRInfo, "RawReduction", "unavailable"));
 rx.PostEqSINRDMRSResidualBoundApplied = logical(sixgr.util.structGet(postEqSINRInfo, "DMRSResidualBoundApplied", false));
+rx.PostEqSINRDecisionResidualBoundApplied = logical(sixgr.util.structGet( ...
+    postEqSINRInfo, "DecisionResidualBoundApplied", false));
 rx.DMRSResidualPostEqSINRBoundEnabled = logical(dmrsResidualBoundEnabled);
 rx.DecisionDirectedPostEqSINRBoundEnabled = logical(decisionDirectedBoundEnabled);
 rx.PostEqSINRDMRSResidual_dB = double(sixgr.util.structGet(pilotPostEqInfo, "SINR_dB", NaN));
@@ -1208,7 +1244,7 @@ rx.InterferenceCovarianceDomain = char(string(sixgr.util.structGet(rintInfo, "Do
 % used by the exact shared-slot receiver; it is measured receiver evidence,
 % not a value reconstructed by reporting.
 rx.MeasuredInterferenceCovarianceTrace = localCovarianceTraceMean(Rint);
-rx.MeasuredPreEqualizationNoiseVariance = double(nVar);
+rx=localAnnotateNoiseAuthority(rx,nVar,nVarEst,noiseStatus,estInfo,useFastAWGNPath);
 rx.ChannelEstimateAttempted = true;
 rx.ChannelEstimateAvailable = ~isempty(Hest);
 rx.ChannelEstimateSource = "pusch_dmrs_channel_estimate";
@@ -2072,19 +2108,9 @@ end
 end
 
 function tf = localRuntimeAlignedTimingBypass(cfg)
-runtimeAligned = logical(sixgr.util.structGet(cfg, ...
+% Explicit already-aligned producer input, independent of injected truth.
+tf = logical(sixgr.util.structGet(cfg, ...
     "lls6g.receiverSync.RuntimeWaveformSampleAligned", false));
-injectedTiming = localResolveInjectedTimingOffsetSamples(cfg);
-hasInjectedTiming = isfinite(injectedTiming) && abs(double(injectedTiming)) > 1e-9;
-% RuntimeWaveformSampleAligned is asserted only after the link wrapper has
-% applied the materialized channel and its exact sample trim.  A zero-delay
-% AWGN channel is therefore just as aligned as a fading channel with a
-% nonzero filter delay.  Requiring a nonzero trim here caused a second blind
-% DM-RS acquisition on AWGN waveforms; for multi-port PUSCH that acquisition
-% can lock to a later OFDM-symbol replica and shift the entire slot.  An
-% explicitly injected timing offset remains the YAML-owned way to exercise
-% receiver timing acquisition/correction.
-tf = runtimeAligned && ~hasInjectedTiming;
 end
 
 function value = localFirstFiniteValue(varargin)
@@ -2130,13 +2156,6 @@ if ~(logical(sixgr.util.structGet(tracking, "CFOEstimateAvailable", false)) && .
         isfinite(estimatedCFOHz) && isfinite(double(sampleRateHz)) && double(sampleRateHz) > 0)
     return;
 end
-if localSuppressBlindCFOCorrectionForRuntimeAligned(cfg, tracking)
-    tracking.CFOCorrectionApplied = false;
-    tracking.CFOCorrectionApplied_Hz = NaN;
-    tracking.Status = "available_measurement_only";
-    tracking.CFONAReason = "runtime_aligned_zero_injected_cfo_blind_correction_suppressed";
-    return;
-end
 correctedWaveform = localApplyFrequencyCorrection(rxWaveform, sampleRateHz, -estimatedCFOHz);
 tracking.AlignedOriginCFOCorrection_Hz = estimatedCFOHz;
 [rxGrid, ofdmInfo] = sixgr.phy.waveform.ofdmDemodulate(carrier, correctedWaveform);
@@ -2148,18 +2167,6 @@ tracking.CFONAReason = "";
 tracking = localEstimateResidualCFOAfterCorrection( ...
     correctedWaveform, rxGrid, carrier, dmrsInd, dmrsSym, ofdmInfo, ...
     sampleRateHz, tracking, cfg, "post_receiver_correction");
-end
-
-function tf = localSuppressBlindCFOCorrectionForRuntimeAligned(cfg, tracking)
-runtimeAligned = logical(sixgr.util.structGet(cfg, ...
-    "lls6g.receiverSync.RuntimeWaveformSampleAligned", false));
-forceBlindCorrection = logical(sixgr.util.structGet(cfg, ...
-    "phy.rx.applyBlindCFOCorrectionOnAlignedRuntimeWaveform", false));
-injectedCFOHz = localResolveInjectedCFOHz(cfg);
-hasInjectedCFO = isfinite(injectedCFOHz) && abs(double(injectedCFOHz)) > 1e-9;
-source = lower(strtrim(string(sixgr.util.structGet(tracking, "Source", ""))));
-sourceIsBlindEstimator = any(contains(source, ["cyclic_prefix", "dmrs_reference_symbol_phase_slope", "reference_symbol_phase_slope"]));
-tf = runtimeAligned && ~forceBlindCorrection && ~hasInjectedCFO && sourceIsBlindEstimator;
 end
 
 function tracking = localEstimateResidualCFOAfterCorrection( ...
@@ -2183,7 +2190,7 @@ try
     elseif any(method == ["cyclic_prefix", "cp"])
         [residualHz, residualInfo] = ...
             sixgr.phy.rx.estimateCFOFromCyclicPrefix( ...
-            rxWaveform, ofdmInfo, sampleRateHz);
+            rxWaveform, ofdmInfo, sampleRateHz,sixgr.phy.rx.resolveCFOCPObservation(cfg));
         tracking.ResidualCFOEstimateSource = ...
             "cyclic_prefix_" + string(source);
     else
@@ -2919,58 +2926,9 @@ end
 
 function [postEqSINR_dB, postEqSINRPerRE_dB, info] = localApplyPUSCHDMRSPostEqSINRBound( ...
         postEqSINR_dB, postEqSINRPerRE_dB, info, dmrsInfo)
-if ~(isstruct(dmrsInfo) && logical(sixgr.util.structGet(dmrsInfo, "Available", false)))
-    return;
-end
-dmrsSINR = double(sixgr.util.structGet(dmrsInfo, "SINR_dB", NaN));
-if ~(isscalar(dmrsSINR) && isfinite(dmrsSINR))
-    return;
-end
-boundKind = char(string(sixgr.util.structGet(dmrsInfo, "BoundKind", "dmrs_residual")));
-boundToken = char(string(sixgr.util.structGet(dmrsInfo, "BoundSourceToken", boundKind)));
-boundDescription = char(string(sixgr.util.structGet(dmrsInfo, "BoundDescription", boundKind)));
-oldSINR = double(postEqSINR_dB);
-oldSource = string(sixgr.util.structGet(info, "Source", "post_equalization_sinr_from_equalizer_channel_estimate"));
-oldStatus = string(sixgr.util.structGet(info, "ValueStatus", "unavailable"));
-oldReason = string(sixgr.util.structGet(info, "NAReason", ""));
-if ~(isscalar(oldSINR) && isfinite(oldSINR)) || dmrsSINR < oldSINR
-    if ~(isscalar(oldSINR) && isfinite(oldSINR))
-        oldSINR = NaN;
-    end
-    postEqSINR_dB = double(dmrsSINR);
-    if ~isempty(postEqSINRPerRE_dB)
-        postEqSINRPerRE_dB = min(double(postEqSINRPerRE_dB), double(dmrsSINR));
-    end
-    perLayer = double(sixgr.util.structGet(info, "PerLayerSINR_dB", NaN));
-    dmrsPerLayer = double(sixgr.util.structGet(dmrsInfo, "PerLayerSINR_dB", NaN));
-    if ~isempty(dmrsPerLayer) && any(isfinite(dmrsPerLayer(:)))
-        if isscalar(perLayer) && ~(isfinite(perLayer))
-            perLayer = dmrsPerLayer;
-        elseif numel(perLayer) == numel(dmrsPerLayer)
-            perLayer = min(perLayer, dmrsPerLayer);
-        else
-            perLayer = repmat(double(dmrsSINR), 1, max(1, numel(perLayer)));
-        end
-    else
-        perLayer = repmat(double(dmrsSINR), 1, max(1, numel(perLayer)));
-    end
-    info.PerLayerSINR_dB = double(perLayer);
-    info.SINR_dB = double(postEqSINR_dB);
-    info.RawEqualizerSINR_dB = double(oldSINR);
-    info.UnboundedSource = char(oldSource);
-    info.UnboundedValueStatus = char(oldStatus);
-    info.UnboundedNAReason = char(oldReason);
-    info.Source = "post_equalization_sinr_from_" + string(boundToken) + "_bounded_equalizer_channel_estimate";
-    info.ValueRole = "measured_post_equalization_scheduling_input";
-    info.ValueStatus = "OK_" + string(boundKind) + "_bounded";
-    info.NAReason = sprintf("equalizer_sinr_%s_dB_bounded_by_%s_%.6g_dB", ...
-        localFiniteDisplay(oldSINR), boundDescription, double(dmrsSINR));
-    info.DMRSResidualBoundApplied = true;
-    info.DMRSResidualSINR_dB = double(dmrsSINR);
-    info.DMRSResidualNoiseVariance = double(sixgr.util.structGet(dmrsInfo, "NoiseVariance", NaN));
-    info.ReceiverResidualBoundKind = char(string(boundKind));
-    info.ReceiverResidualBoundSource = char(string(sixgr.util.structGet(dmrsInfo, "Source", "")));
-end
+[postEqSINR_dB, postEqSINRPerRE_dB, info] = ...
+    sixgr.phy.rx.applyPostEqSINRResidualBound( ...
+        postEqSINR_dB, postEqSINRPerRE_dB, info, dmrsInfo);
 end
 
 function [nVarOut, info] = localApplyPUSCHDMRSPostEqNoiseBound(nVarIn, info, dmrsInfo)
@@ -2997,14 +2955,6 @@ if ~(isscalar(nVarOut) && isfinite(nVarOut) && nVarOut > 0) || dmrsNVar > nVarOu
     info.DMRSResidualNoiseVariance = double(dmrsNVar);
     info.UnboundedPostEqualizationNoiseVar = double(old);
     info.ReceiverResidualBoundKind = char(string(boundKind));
-end
-end
-
-function txt = localFiniteDisplay(value)
-if isscalar(value) && isfinite(value)
-    txt = sprintf("%.6g", double(value));
-else
-    txt = "NaN";
 end
 end
 
@@ -3987,6 +3937,7 @@ rx.DecodeLatency_s = NaN;
 rx.MaxDecoderIterations = NaN;
 rx.CFOEstimateAvailable = logical(trackingCorrection.CFOEstimateAvailable);
 rx.EstimatedCFO_Hz = double(trackingCorrection.EstimatedCFO_Hz);
+rx.CFOObservation = sixgr.util.structGet(trackingCorrection,"CFOObservation",struct());
 rx.CFOCorrectionApplied = logical(trackingCorrection.CFOCorrectionApplied);
 rx.CFOCorrectionApplied_Hz = double(trackingCorrection.CFOCorrectionApplied_Hz);
 rx.ReceiverTrackingCorrectionSource = char(string(trackingCorrection.Source));
@@ -4177,4 +4128,20 @@ switch lower(strtrim(string(executionProfile)))
     otherwise
         featureName = string(baseName);
 end
+end
+
+function rx=localAnnotateNoiseAuthority(rx,used,estimated,status,estInfo,unitAWGNShortcut)
+% The executed equalizer variance and the independent DM-RS estimate are
+% different observations. A configured/unit-channel or oracle value must
+% never populate a field claiming receiver-measured noise.
+rx.PreEqualizationNoiseVariance=double(used);
+rx.PreEqualizationNoiseVarianceDomain="resource_grid_pre_equalization";
+rx.PreEqualizationNoiseVarianceSource=char(string(status.Source));
+rx.PostEqSINRScalarNoiseVariance=double(used);
+rx.PostEqSINRScalarNoiseVarianceSource=string(status.Source);
+rx.PostEqSINRModelScope= ...
+    "executed_equalizer_channel_and_disturbance_model_not_total_received_error";
+[rx.MeasuredPreEqualizationNoiseVariance,rx.MeasuredPreEqualizationNoiseVarianceSource]= ...
+    sixgr.phy.rx.receiverNoiseMeasurement(estimated,estInfo, ...
+    "pusch_dmrs_channel_estimator",'UnitAWGNShortcut',logical(unitAWGNShortcut));
 end

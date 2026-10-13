@@ -76,7 +76,7 @@ payloadBits=localBytesToBits(bytes(2:8));
 ta=localBitsToInt(payloadBits(2:13));
 grantBits=int8(payloadBits(14:40));
 tcRnti=localBitsToInt(payloadBits(41:56));
-if payloadBits(1)~=0 || ta>3846 || tcRnti<1 || tcRnti>65519
+if payloadBits(1)~=0 || ta>3846 || tcRnti<1 || tcRnti>65522
     error('sixgr:mac:ra:InvalidMACRARField','Reserved bit, TA command, or Temporary C-RNTI is invalid.');
 end
 grant=sixgr.mac.ra.RARULGrantCodec.decode(grantBits,raCfg);

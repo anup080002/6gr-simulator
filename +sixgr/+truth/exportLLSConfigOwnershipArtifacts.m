@@ -1942,6 +1942,7 @@ entries = [ ...
     ];
 
 rows = repmat(localValueSourceAuditPrototype(ctx), numel(entries), 1);
+executionScope=sixgr.truth.standalonePHYCalibrationEvidenceScope(ctx.ScenarioConfig,ctx.Config);
 for i = 1:numel(entries)
     spec = entries(i);
     observedValue = localResolveAuditObservation(ctx, spec);
@@ -1966,6 +1967,17 @@ for i = 1:numel(entries)
         rows(i).ConsistencyStatus = "observed";
     else
         rows(i).ConsistencyStatus = "unavailable";
+    end
+    if executionScope.IndependentPHY && ...
+            ismember(string(spec.FieldName),executionScope.ConnectedFields) && ...
+            strlength(observedValue)==0
+        rows(i).ValueSource="configured_execution_scope";
+        rows(i).ValueRole="not_applicable";
+        rows(i).ValueStatus="NOT_APPLICABLE";
+        rows(i).NAReason=executionScope.Reason;
+        rows(i).PlaceholderFlag=false;
+        rows(i).FallbackFlag=false;
+        rows(i).ConsistencyStatus="not_applicable";
     end
 end
 T = struct2table(rows);

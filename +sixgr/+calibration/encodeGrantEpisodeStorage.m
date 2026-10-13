@@ -5,12 +5,18 @@ function stored=encodeGrantEpisodeStorage(episode,mode)
 % All other waveform/decoder evidence is retained without modification.
 arguments
     episode (1,1) struct
-    mode (1,1) string {mustBeMember(mode,["raw","lossless_path_gains_xor_v1"])}
+    mode (1,1) string {mustBeMember(mode,["raw","lossless_path_gains_xor_v1","lossless_path_gains_xor_dedup_v1"])}
 end
 assert(string(episode.Schema)=="sixgr.frozen_grant_calibration_episode/v1", ...
     'sixgr:calibration:EpisodeStorageSchema','Require an original waveform episode.');
 stored=episode;
 if mode=="raw", return; end
+if mode=="lossless_path_gains_xor_dedup_v1"
+    encoded=sixgr.calibration.encodeGrantEpisodeStorage(episode,"lossless_path_gains_xor_v1");
+    stored=struct('Schema',"sixgr.grant_episode_storage/v1",'Mode',mode, ...
+        'ArrayPool',sixgr.calibration.encodeEvidenceArrayPool(encoded));
+    return;
+end
 for k=1:numel(stored.Captures)
     gains=stored.Captures{k}.Propagation.PathGains;
     assert((isa(gains,'double') || isa(gains,'single')) && ~issparse(gains), ...

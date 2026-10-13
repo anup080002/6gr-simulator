@@ -1,0 +1,112 @@
+# Explicit UE/cell/UL-BWP associations for one installed CSI report per UE.
+# These are configuration bindings, not measured reception or implicit PRI.
+pucch_resources:
+  # Per-UE installation is the sole report-resource authority in this
+  # fragment. Do not inherit a parallel global CSI/SR association.
+  csi_resource_ids: []
+  sr_resource_ids: []
+  scheduling_request_resources: []
+  resource_sets:
+    - id: 0
+      max_payload_bits: 2
+      resource_ids: [0, 1]
+    - id: 1
+      max_payload_bits: 1706
+      resource_ids: [10, 11]
+  multi_user_assignment:
+    mode: ue_ordinal_modulo_resource_set
+    resource_set_id: 0
+    max_simultaneous_ues: 2
+    require_unique_simultaneous_ues: true
+  resources:
+    - id: 0
+      format: 0
+      starting_prb: 0
+      nrof_prbs: 1
+      starting_symbol: 12
+      nrof_symbols: 2
+      intra_slot_hopping: false
+      second_hop_start_prb: []
+      initial_cyclic_shift: 0
+      occ_length: 1
+      occ_index: 0
+      additional_dmrs: false
+      pi2_bpsk: false
+      nid: 1
+      hopping_id: 1
+    - id: 1
+      format: 0
+      starting_prb: 1
+      nrof_prbs: 1
+      starting_symbol: 12
+      nrof_symbols: 2
+      intra_slot_hopping: false
+      second_hop_start_prb: []
+      initial_cyclic_shift: 0
+      occ_length: 1
+      occ_index: 0
+      additional_dmrs: false
+      pi2_bpsk: false
+      nid: 1
+      hopping_id: 1
+    - id: 10
+      format: 2
+      starting_prb: 4
+      nrof_prbs: 2
+      starting_symbol: 12
+      nrof_symbols: 2
+      intra_slot_hopping: false
+      second_hop_start_prb: []
+      initial_cyclic_shift: 0
+      occ_length: 2
+      occ_index: 0
+      additional_dmrs: false
+      pi2_bpsk: false
+      nid: 1
+      hopping_id: 1
+    - id: 11
+      format: 2
+      starting_prb: 6
+      nrof_prbs: 2
+      starting_symbol: 12
+      nrof_symbols: 2
+      intra_slot_hopping: false
+      second_hop_start_prb: []
+      initial_cyclic_shift: 0
+      occ_length: 2
+      occ_index: 0
+      additional_dmrs: false
+      pi2_bpsk: false
+      nid: 1
+      hopping_id: 1
+  ue_report_bindings:
+    - ue_index: 1
+      rnti: 1
+      serving_cell_id: 1
+      component_carrier_id: 0
+      ul_bwp_id: 0
+      csi_report_config_id: csi-report-0
+      csi_resource_id: 10
+      scheduling_request_resources:
+        - scheduling_request_resource_id: 1
+          scheduling_request_id: 0
+          resource_id: 0
+          periodicity_slots: 5
+          offset_slots: 3
+          priority_index: 0
+          additional_periodicity_capability: false
+    - ue_index: 2
+      rnti: 2
+      serving_cell_id: 1
+      component_carrier_id: 0
+      ul_bwp_id: 0
+      csi_report_config_id: csi-report-0
+      csi_resource_id: 11
+      scheduling_request_resources:
+        - scheduling_request_resource_id: 1
+          scheduling_request_id: 0
+          resource_id: 1
+          periodicity_slots: 5
+          offset_slots: 3
+          priority_index: 0
+          additional_periodicity_capability: false

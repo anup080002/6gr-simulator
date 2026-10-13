@@ -9,18 +9,22 @@ p.parse(varargin{:});
 opt = p.Results;
 
 if isempty(opt.ContentionIdentity)
-    seed = uint64(1125899906842597) + uint64(round(double(opt.UEId)));
+    % This is the explicitly bounded codec, not ASN.1 UL-CCCH. Preserve a
+    % distinct, exact 48-bit local identity for each configured UE. The old
+    % double-valued LCG lost every UE-specific low bit before its modulus.
+    validateattributes(opt.UEId,{'numeric'}, ...
+        {'scalar','real','finite','integer','positive','<=',2^48-1});
+    identity = uint64(opt.UEId);
     bytes = zeros(6, 1, "uint8");
     for ii = 1:6
-        seed = uint64(mod(double(seed) * 6364136223846793005 + 1, 2^53));
-        bytes(ii) = uint8(mod(double(bitshift(seed, -8)), 256));
+        bytes(ii) = uint8(bitand(bitshift(identity,-8*(6-ii)),uint64(255)));
     end
+    identitySource="bounded_codec_exact_configured_UE_identity_not_NR_CCCH";
 else
-    raw = uint8(opt.ContentionIdentity(:));
-    if numel(raw) < 6
-        raw(end+1:6) = 0;
-    end
-    bytes = raw(1:6);
+    validateattributes(opt.ContentionIdentity,{'numeric'}, ...
+        {'vector','numel',6,'real','finite','integer','>=',0,'<=',255});
+    bytes = uint8(opt.ContentionIdentity(:));
+    identitySource="explicit_local_48_bit_identity";
 end
 payload = uint8([1; 6; bytes(:)]);
 ueIdentity = string(opt.UEIdentity);
@@ -42,6 +46,7 @@ msg3.PayloadBits = localBytesToBits(payload);
 msg3.PayloadHex = upper(string(reshape(dec2hex(payload(:), 2).', 1, [])));
 msg3.ContentionIdentityBytes = bytes(:);
 msg3.ContentionIdentity = upper(string(reshape(dec2hex(bytes(:), 2).', 1, [])));
+msg3.ContentionIdentitySource = identitySource;
 msg3.RRCSetupRequestPresent = logical(opt.RRCSetupRequest);
 msg3.RRCSetupRequest = struct( ...
     "MessageType", "RRCSetupRequest", ...

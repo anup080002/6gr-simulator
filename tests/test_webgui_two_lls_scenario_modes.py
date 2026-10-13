@@ -175,3 +175,29 @@ def test_home_page_surfaces_scenario_validation_mode_panel() -> None:
     assert "Scenario Validation Mode" in page
     assert SNR_SWEEP_SCENARIO in page
     assert "Fixed SNR/SINR Sweep" in page
+
+
+def test_h4_connected_configuration_retains_fullband_adaptive_authority() -> None:
+    # Configuration transport only; this is not waveform/rank qualification.
+    for name in (
+        "h4_100_cdlc100_connected_impaired_40db_gate.yaml",
+        "h4_100_cdlc100_connected_impaired_snr_sweep.yaml",
+    ):
+        payload, _ = dash.load_resolved_config_payload(name)
+        for _ in range(2):
+            payload = dash.canonicalize_browser_config_payload(payload)
+            for key in ("system.scheduler.maxPRBAllocationPerUE",
+                        "scheduler.max_prbs_per_grant"):
+                assert dash.path_get(payload, key) == 273
+            assert dash.path_get(payload, "traffic.flows") == []
+            assert dash.path_get(payload, "traffic.targetRate_Mbps") == 10000
+            assert dash.path_get(payload, "canonical_control.mimo.max_dl_layers") == 4
+            assert dash.path_get(payload, "canonical_control.mimo.max_ul_layers") == 4
+            assert dash.path_get(payload, "link_adaptation.inner_loop_flag") is True
+            assert dash.path_get(payload, "link_adaptation.outer_loop_flag") is True
+            assert dash.path_get(payload, "link_adaptation.rank_adaptation_policy") == "measured_ri"
+            assert dash.path_get(payload, "mimo_and_beam_management.ssb_beam_count") == 4
+            assert dash.path_get(payload, "mimo_and_beam_management.csi_rs_beam_count") == 8
+            assert dash.path_get(payload, "antenna_and_array.bs_num_txrus") == 64
+            assert dash.path_get(payload, "antenna_and_array.ue_num_rxrus") == 4
+            assert dash.path_get(payload, "antenna_and_array.ue_num_txrus") == 4

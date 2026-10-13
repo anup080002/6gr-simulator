@@ -15,6 +15,66 @@ import lls_contract_materializer as materializer  # noqa: E402
 import lls_web_dashboard as dash  # noqa: E402
 
 
+def test_independent_phy_scope_requires_explicit_execution_and_keeps_physical_evidence() -> None:
+    import copy
+
+    source = {
+        "scenario": {"runner_profile": "waveform_bundle"},
+        "users": {"execution_model": "independent_link_sweep"},
+        "pdsch": {"execution_profile": "phy_calibration"},
+        "pusch": {"execution_profile": "phy_calibration"},
+        "channels": {"profile": "TDL-C"},
+        "control_gating": {key + "_required": False for key in
+                           ("pbch", "prach", "pdcch", "pucch", "srs", "trs")},
+        "run_control": {"save_scheduler_decisions": True, "raw_grid_capture_enable": True},
+        "traffic": {"model": "full_buffer"},
+        "reference_signals": {"csi_reporting_enabled": True, "srs_enabled": True},
+    }
+    for config in (source, {"lls6g": {"resolvedConfig": source}}):
+        policy = dash.extract_run_feature_policy({"config_json": json.dumps(config)})
+        assert policy["independent_phy_calibration"]
+        assert policy["fading_enabled"] and not policy["pbch_runtime_required"]
+        assert not policy["scheduler_runtime_enabled"] and not policy["traffic_runtime_enabled"]
+        assert materializer.contract_artifact_is_policy_filtered(
+            "reports/csv/live_queue_state.csv", policy)
+        for path in ("air_interface/csv/dl_pdsch_trials.csv",
+                     "air_interface/csv/ul_pusch_trials.csv", "air_interface/csv/pdcch_trials.csv",
+                     "reports/csv/live_prb_allocation_snapshot.csv",
+                     "reports/csv/live_re_allocation_snapshot.csv",
+                     "reports/csv/live_pdsch_mapping_table.csv",
+                     "reports/csv/live_prach_native_allocation_snapshot.csv",
+                     "analytics/csv/resource_grid_analytics.csv"):
+            assert not materializer.contract_artifact_is_policy_filtered(path, policy)
+        assert not materializer.contract_artifact_is_policy_filtered(
+            "reports/csv/contract__channel__estimated_h.png", policy, contract_name="estimated H(k,l)")
+
+    for field, value in (("users", {"execution_model": "slot_coupled_truth"}),
+                         ("pdsch", {"execution_profile": "scheduler_truth"}),
+                         ("run", {"controlGating": {"pdcchRequired": True}})):
+        bad = copy.deepcopy(source)
+        bad[field] = value
+        policy = dash.extract_run_feature_policy({"config_json": json.dumps(bad)})
+        assert not policy["independent_phy_calibration"]
+        assert not materializer.contract_artifact_is_policy_filtered(
+            "reports/csv/live_queue_state.csv", policy)
+    for gate in source["control_gating"]:
+        for value in (None, True, "false", [], float("nan")):
+            bad = copy.deepcopy(source)
+            bad["control_gating"][gate] = value
+            assert not dash._independent_phy_calibration_scope(bad)
+    bad = copy.deepcopy(source)
+    bad["control_gating"]["pusch_uci_required"] = True
+    assert not dash._independent_phy_calibration_scope(bad)
+
+
+def test_fading_policy_uses_saved_scenario_profile_and_installed_authority() -> None:
+    for profile in ("TDL-A", "TDL-C", "CDL-C"):
+        config = {"channels": {"profile": profile}}
+        assert dash.extract_run_feature_policy({"config_json": json.dumps(config)})["fading_enabled"]
+        config["channel"] = {"model": "AWGN"}
+        assert not dash.extract_run_feature_policy({"config_json": json.dumps(config)})["fading_enabled"]
+
+
 def test_live_scenario_overview_adapts_master_yaml_schema_without_blank_radio_fields() -> None:
     config = {
         "scenario": {

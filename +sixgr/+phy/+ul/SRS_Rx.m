@@ -101,6 +101,9 @@ try
         [Hest, nVarEst, estInfo] = localEstimateSRSNoHop( ...
             carrier, rxGrid, srsInd, srsSym, cdmLengths, avgWindow);
     end
+    % Publish the executed successful path explicitly as well as failures.
+    % Consumers must not have to interpret a missing provenance field.
+    estInfo.PrimaryEstimatorFallbackUsed = false;
 catch primaryCause
     try
         [Hest, nVarEst, estInfo] = sixgr.phy.rx.channelEstimate(carrier, rxGrid, srsInd, srsSym);
@@ -120,8 +123,12 @@ catch primaryCause
     end
 end
 end
+[configuredOccupied, exclusionEvidence] = ...
+    sixgr.phy.srs.configuredNullREExclusions(cfg,carrier);
 [nullRENoise, nullRENoiseInfo] = localEstimateSRSNullREDisturbance( ...
-    rxGrid, srsInd, double(srs.NumSRSPorts));
+    rxGrid, srsInd, double(srs.NumSRSPorts), configuredOccupied);
+nullRENoiseInfo.ConfiguredResourceExclusions = exclusionEvidence;
+estInfo.NullREDisturbance = nullRENoiseInfo;
 if estimator=="nr_channel_estimate" && isfinite(nullRENoise) && nullRENoise>=0
     % nrChannelEstimate's residual is a channel-estimator diagnostic.  On a
     % frequency-selective multiport SRS it can contain interpolation/CDM
@@ -145,6 +152,11 @@ configuredNoiseTransformInfo = struct( ...
 if isempty(noiseCandidate)
     noiseCandidate = nVarEst;
     noiseSource = "runtime_channel_estimate";
+    if estimator=="nr_channel_estimate"
+        % If configured pilots cover the comb, retain the native received
+        % pilot residual. This is not a thermal-noise-only measurement.
+        noiseSource = "received_srs_channel_estimator_residual";
+    end
     if estimator=="nr_channel_estimate" && ...
             string(sixgr.util.structGet(nullRENoiseInfo,"Status",""))=="available"
         noiseSource = "received_srs_inband_null_re_disturbance";
@@ -249,11 +261,11 @@ info.ConfiguredNoiseVarianceTransform = configuredNoiseTransformInfo;
 
 end
 
-function [noiseVariance,info] = localEstimateSRSNullREDisturbance(rxGrid,srsInd,numPorts)
+function [noiseVariance,info] = localEstimateSRSNullREDisturbance(rxGrid,srsInd,numPorts,configuredOccupied)
 % Estimate effective disturbance on receiver-observed, unoccupied comb REs.
-% SRS_Rx owns an SRS-only physical reception.  Any energy on these same-
-% symbol, same-band null REs is therefore noise, ICI, or interference; it is
-% not inferred from injected noise metadata or channel truth.
+% A different configured UE comb is not a null population for the desired
+% pilots. Exclude installed resources without inferring actual activity.
+% Remaining energy is received disturbance, not injected noise metadata.
 noiseVariance = NaN;
 info = struct("Status","not_available_no_inband_null_re", ...
     "Source","received_srs_inband_null_re_disturbance", ...
@@ -272,6 +284,7 @@ for ii=1:numel(symbols)
     if isempty(occupied), continue; end
     inBand=(min(occupied):max(occupied)).';
     nullRE=setdiff(inBand,occupied,"stable");
+    nullRE=nullRE(~configuredOccupied(nullRE,sym));
     if isempty(nullRE), continue; end
     samples=rxGrid(nullRE,sym,:);
     values=abs(samples(:)).^2;

@@ -10,6 +10,15 @@ cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
 multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
 state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,tempname,multi,struct(),58);
 state.CurrentServingIdx(:)=1;
+% A cold-access UE must not acquire connected CSI obligations or payloads.
+% The later calendar checks use explicitly declared preconnected state,
+% not fabricated received PRACH/RRC evidence or weakened production gating.
+assert(state.ControlGating.PRACHRequired && state.AccessState(1)=="pending");
+blocked=sixgr.truth.CoupledTruthRuntime.startSlot(state,cfg,'DL',1,1,2,58,12);
+assert(isempty(blocked.PendingCSITable) && ...
+    isempty(sixgr.util.structGet(blocked,'CSIReportObligationTable',table())));
+state.ControlGating.PRACHRequired=false;
+state.AccessState(:)="not_required";
 state=sixgr.truth.CoupledTruthRuntime.startSlot(state,cfg,'DL',1,1,2,58,12);
 assert(isempty(state.PendingCSITable),'No measurement means no invented CSI payload.');
 assert(height(state.CSIReportObligationTable)==11 && all(state.CSIReportObligationTable.ULResourceAvailable));
@@ -19,6 +28,11 @@ measurement=table(1,true,true,true,true,true,true,10,1,0,0,0,18.5, ...
     'ResourceExtractionAvailable','ChannelEstimateAvailable','CSIMeasurementAvailable', ...
     'CQI','RI','PMI','CRI','LI','SINR_dB','MeasurementSource'});
 state=sixgr.truth.CoupledTruthRuntime.applyCSIRSTrial(state,1,measurement);
+blocked=sixgr.truth.CoupledTruthRuntime.applyCSIRSTrial(blocked,1,measurement);
+blocked=sixgr.truth.CoupledTruthRuntime.startSlot(blocked,cfg,'DL',1,1,5,58,12);
+assert(~isempty(blocked.ControlTrials.CSIRS) && isempty(blocked.PendingCSITable) && ...
+    isempty(sixgr.util.structGet(blocked,'CSIReportObligationTable',table())), ...
+    'Even received CSI cannot authorize connected reporting before required access.');
 state.CSIFeedbackSlots=90; % Deliberate competing AMC delay, not report timing.
 state=sixgr.truth.CoupledTruthRuntime.startSlot(state,cfg,'DL',1,1,5,58,12);
 report=state.PendingCSITable;

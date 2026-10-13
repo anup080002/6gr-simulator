@@ -37,5 +37,20 @@ catch ME
 end
 assert(threw, ...
     "A four-port CSI-RS row under two-port YAML authority must fail closed.");
+% The 100-MHz 2x2 parent previously inherited its one-layer DMRS count as
+% CSI-RS port count and authored row 2, despite scheduling a two-port PMI.
+% Verify the actual pilot generator now executes the declared two-port row;
+% DMRS layer count remains independent of the sounded CSI port capability.
+parent=sixgr.lls6g.config.loadScenarioConfig(fullfile(pwd,'simulator', ...
+    'configs','scenarios','lls_100mhz_tdlc_bidirectional_truth.yaml'));
+parentCfg=sixgr.lls6g.buildInternalConfig(parent,tempdir);
+parentCarrier=sixgr.phy.grid.makeCarrier(parentCfg);
+parentCarrier.NFrame=0; parentCarrier.NSlot=0;
+parentCfg.lls6g.runtime.AbsoluteSlotIndex0=0;
+[parentIndices,parentSymbols,parentInfo]=sixgr.phy.refsig.csirs(parentCarrier,parentCfg);
+assert(parentCfg.phy.csirs.nPorts==2 && parentCfg.phy.pdsch.dmrs.nPorts==1 && ...
+    all([parentInfo.Resources.NumPorts]==2) && all([parentInfo.Resources.RowNumber]==3) && ...
+    ~isempty(parentIndices) && numel(parentIndices)==numel(parentSymbols), ...
+    'The 100-MHz parent must sound two CSI ports without inventing a second data layer.');
 ok = true;
 end

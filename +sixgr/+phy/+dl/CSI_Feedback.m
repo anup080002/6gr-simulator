@@ -53,10 +53,32 @@ end
 
 method = lower(string(opt.Method));
 direction = localNormalizeDirection(opt.Direction);
-Hwb = localWidebandChannelMatrix(hEst, cfg);
+measurement = opt.MeasurementState;
+hasMeasuredState = isa(measurement, "sixgr.phy.mimo.CSIMeasurementState");
 nVar = double(nVar);
-if ~isfinite(nVar) || nVar < 0
-    nVar = 0;
+if hasMeasuredState
+    if sixgr.phy.mimo.MatrixContract.digest(hEst) ~= measurement.Digest
+        error("sixgr:mimo:MeasurementIdentityMismatch", ...
+            "CSI input channel differs from the immutable measured state.");
+    end
+    measuredNoise = double(measurement.NoiseVariance);
+    if ~(isscalar(nVar) && isreal(nVar) && isfinite(nVar) && nVar >= 0) || ...
+            ~(isscalar(measuredNoise) && isreal(measuredNoise) && ...
+            isfinite(measuredNoise) && measuredNoise >= 0) || ...
+            abs(nVar - measuredNoise) > 1e-12 * max(1, abs(measuredNoise))
+        error("sixgr:mimo:MeasurementIdentityMismatch", ...
+            "CSI input noise variance differs from the immutable measured state.");
+    end
+    % The validated state already declares Nrx-by-NlogicalPort-by-Nsnapshot.
+    % Logical ports can be beamformed over a different number of physical
+    % TX chains. Never infer this tensor's axes from phy.nTxAnt or average
+    % complex snapshots before the per-snapshot receiver objective.
+    Hwb = double(hEst);
+else
+    Hwb = localWidebandChannelMatrix(hEst, cfg);
+    if ~isfinite(nVar) || nVar < 0
+        nVar = 0;
+    end
 end
 
 % Hwb can retain an explicit CSI-RS snapshot axis.  MATLAB's two-output
@@ -97,30 +119,20 @@ if any(~isfinite(rankLimits) | rankLimits < 1 | ...
         "CSI rank authorities must be finite positive integers.");
 end
 maxRank = max(1, min(rankLimits));
-svdRank = localEstimateRIFromSVD(hEst, cfg, maxRank);
+svdRank = localEstimateRIFromSVD(Hwb, cfg, maxRank);
+reportRequest = opt.ReportConfiguration;
+if isempty(reportRequest)
+    reportRequest = sixgr.util.structGet(cfg,"phy.csi.reportConfiguration",struct());
+end
+[rankDomain,rankControl] = localRankSearchDomain(cfg,reportRequest,maxRank,direction);
 
 csiMode = string(sixgr.util.structGet(cfg, "phy.csi.channelStateInformationMode", ...
     sixgr.util.structGet(cfg, "phy.csi.feedbackMode", "PMI+CQI+RI")));
 codebookMode = string(sixgr.util.structGet(cfg, "phy.csi.pmiCodebookMode", "type1_su_mimo"));
 codebookType = string(sixgr.util.structGet(cfg, "phy.csi.codebookType", localPMIType(codebookMode)));
 
-best = localSelectBestWidebandPrecoder(Hwb, nVar, cfg, maxRank, codebookMode);
+best = localSelectBestWidebandPrecoder(Hwb, nVar, cfg, rankDomain, codebookMode,rankControl);
 criInfo = localSelectCRI(Hwb, nVar, cfg);
-
-measurement = opt.MeasurementState;
-hasMeasuredState = isa(measurement, "sixgr.phy.mimo.CSIMeasurementState");
-if hasMeasuredState
-    if sixgr.phy.mimo.MatrixContract.digest(hEst) ~= measurement.Digest
-        error("sixgr:mimo:MeasurementIdentityMismatch", ...
-            "CSI input channel differs from the immutable measured state.");
-    end
-    measuredNoise = double(measurement.NoiseVariance);
-    if ~(isscalar(measuredNoise) && isfinite(measuredNoise) && measuredNoise >= 0) || ...
-            abs(nVar - measuredNoise) > 1e-12 * max(1, abs(measuredNoise))
-        error("sixgr:mimo:MeasurementIdentityMismatch", ...
-            "CSI input noise variance differs from the immutable measured state.");
-    end
-end
 
 modelSinrLin = double(best.EffectiveSINR);
 if ~isfinite(modelSinrLin) || modelSinrLin < 0
@@ -228,6 +240,8 @@ csi.PMI = localReportedScalar(best.PMI, reportPMI);
 csi.CRI = localReportedScalar(criInfo.CRI, reportCRI);
 csi.RankSelectionMethod = "wideband_codebook_post_equalization_mi";
 csi.RankSelectionObjective = "sum_log2_one_plus_layer_sinr";
+csi.RankPolicy = rankControl.Policy;
+csi.AllowedRanks = rankDomain;
 csi.SVDRankEstimate = double(svdRank);
 csi.SINR_dB = double(sinr_dB);
 csi.Direction = char(direction);
@@ -373,17 +387,13 @@ info.Hints = struct( ...
     "AddCRISelection", true);
 end
 
-function ri = localEstimateRIFromSVD(hEst, cfg, maxRank)
+function ri = localEstimateRIFromSVD(Hwb, cfg, maxRank)
 ri = NaN;
 if nargin < 3 || isempty(maxRank) || ~(isfinite(double(maxRank)) && double(maxRank) >= 1)
     maxRank = double(sixgr.util.structGet(cfg, "phy.csi.maxRank", 1));
 end
 
 maxRank = max(1, round(double(maxRank)));
-if isempty(hEst)
-    return;
-end
-Hwb = localWidebandChannelMatrix(hEst, cfg);
 if isempty(Hwb)
     return;
 end
@@ -465,7 +475,7 @@ if ~(isscalar(targetBLER) && isfinite(targetBLER) && targetBLER > 0)
 end
 end
 
-function best = localSelectBestWidebandPrecoder(Hwb, nVar, cfg, maxRank, codebookMode)
+function best = localSelectBestWidebandPrecoder(Hwb, nVar, cfg, rankDomain, codebookMode,rankControl)
 numTxPorts = size(Hwb, 2);
 if isempty(Hwb)
     best = struct( ...
@@ -494,7 +504,7 @@ best = struct( ...
     "LayerSINR_dB", NaN, ...
     "NumCandidates", 0);
 
-for rankIdx = 1:maxRank
+for rankIdx = rankDomain
     if codebookMode == "noncodebook"
         W = localDominantRightSingularVectors(Hwb, rankIdx);
         layerSINR = localLayerMMSESINR(Hwb, W, nVar);
@@ -550,13 +560,52 @@ for rankIdx = 1:maxRank
             "Candidate", winner, ...
             "CodebookInfo", cbInfo);
     end
-    if ~localRankCandidateAllowed(candidate, Hwb, cfg)
+    % These are adaptive rank-admission heuristics, not permission to
+    % change a fixed operating point. Score its weak layers honestly.
+    if rankControl.AdaptiveRank && ~localRankCandidateAllowed(candidate, Hwb, cfg)
         continue;
     end
     if candidate.Metric > best.Metric + 1e-9
         best = candidate;
     end
 end
+assert(isfinite(best.Metric), 'sixgr:phy:csi:NoEligibleRankCandidate', ...
+    'No CSI candidate is eligible in the installed rank domain; do not fabricate rank one.');
+end
+
+function [ranks,policy] = localRankSearchDomain(cfg,reportRequest,maxRank,direction)
+% The rank restriction applies before PMI/CQI scoring. A report for a
+% different rank is not a substitute for the configured fixed-rank link.
+policy=sixgr.mimo.resolveRankPolicy(cfg);
+reportMax=double(sixgr.util.structGet(reportRequest,'MaxRank',maxRank));
+assert(isscalar(reportMax) && isfinite(reportMax) && reportMax>=1 && ...
+    reportMax==fix(reportMax),'sixgr:phy:csi:InvalidRankAuthority', ...
+    'The installed CSI report MaxRank must be a positive integer.');
+maxRank=min(maxRank,reportMax);
+ranks=1:maxRank;
+restrictions={sixgr.util.structGet(cfg,'phy.csi.rankDomain',[]), ...
+    sixgr.util.structGet(reportRequest,'AllowedRanks',[])};
+for index=1:numel(restrictions)
+    restriction=double(restrictions{index});
+    if isempty(restriction), continue; end
+    assert(isvector(restriction) && all(isfinite(restriction) & ...
+        restriction>=1 & restriction==fix(restriction)), ...
+        'sixgr:phy:csi:InvalidRankAuthority','CSI rank domains must contain positive integer ranks.');
+    ranks=intersect(ranks,restriction(:).','stable');
+end
+if policy.FixedRankAnchor
+    root="phy.pdsch";
+    if upper(string(direction))=="UL", root="phy.pusch"; end
+    configured=double(sixgr.util.structGet(cfg,root+".numLayers", ...
+        sixgr.util.structGet(cfg,root+".nLayers",1)));
+    assert(isscalar(configured) && isfinite(configured) && ...
+        configured==fix(configured) && ismember(configured,ranks), ...
+        'sixgr:phy:csi:UnsupportedFixedCSIRank', ...
+        'Configured fixed rank must fit the measured dimensions and installed CSI rank domain.');
+    ranks=configured;
+end
+assert(~isempty(ranks),'sixgr:phy:csi:EmptyRankDomain', ...
+    'Measured dimensions and installed CSI restrictions have no common rank.');
 end
 
 function tf = localRankCandidateAllowed(candidate, Hwb, cfg)
@@ -1407,8 +1456,8 @@ if isempty(runtime.MaxRank)
     runtime.MaxRank = double(sixgr.util.structGet(cfg,"phy.csi.maxRank", ...
         min(size(measurement.ChannelEstimate,1),size(measurement.ChannelEstimate,2))));
 end
-runtime.RankDomain = double(sixgr.util.structGet(cfg,"phy.csi.rankDomain", ...
-    1:runtime.MaxRank));
+runtime.RankDomain = localRankSearchDomain(cfg,reportRequest, ...
+    min([runtime.MaxRank,size(measurement.ChannelEstimate,1),nTx]),opt.Direction);
 runtime.NoiseVariance = double(measurement.NoiseVariance);
 runtime.InterferenceCovariance = measurement.InterferenceCovariance;
 runtime.Receiver = string(sixgr.util.structGet(cfg,"phy.rx.detector","MMSE"));

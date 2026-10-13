@@ -52,7 +52,9 @@ def test_complex_samples_and_failed_decode_survive_export(kind, monkeypatch):
 
 
 @pytest.mark.parametrize("field,value", [("HReal", "nan"), ("Magnitude", 42),
-                                        ("RxPortIndex0", 0.5), ("ChannelEstimateSource", "")])
+                                        ("RxPortIndex0", 0.5), ("ChannelEstimateSource", ""),
+                                        ("UEIndex", "nan"), ("UEIndex", 0), ("ServingCell", 1.5),
+                                        ("SNR_dB", "inf"), ("GrantDirection", "unknown")])
 def test_invalid_capture_is_not_replaced(field, value):
     rows = samples()
     rows[0][field] = value
@@ -64,6 +66,38 @@ def test_invalid_capture_is_not_replaced(field, value):
 def test_missing_capture_has_no_aggregate_fallback():
     with pytest.raises(ValueError, match="retain actual receiver Hest"):
         m._pdcch_control_chart_materialization("PDCCH channel-estimate phase", {}, lambda _: b"", 1)
+
+
+def test_independent_repeated_clock_preserves_all_trials_but_does_not_mix_preview(monkeypatch):
+    rows = []
+    for snr in [-10, 20]:
+        for trial in [1, 2]:
+            for row in samples()[:6]:
+                rows.append({**row, "SNR_dB": snr, "TrialIndex": trial,
+                             "ReceiverAccepted": trial == 1})
+    existing, fetch = source(rows)
+    observed = {}
+    def render(title, subtitle, series, summary, **kwargs):
+        observed["series"] = series
+        return b"<svg/>"
+    monkeypatch.setattr(m, "_render_multi_series_svg", render)
+    result = m._pdcch_control_chart_materialization("PDCCH channel-estimate phase", existing, fetch, 1)
+    exported = list(csv.DictReader(io.StringIO(result["csv_bytes"].decode())))
+    assert len(exported) == len(rows) == 24
+    selected = [row for row in exported if row["preview_selected"] == "True"]
+    assert len(selected) == 12 and {row["TrialIndex"] for row in selected} == {"2"}
+    assert {row["SNR_dB"] for row in selected} == {"-10", "20"}
+    assert len(observed["series"]) == 4
+    assert all(len(series["points"]) == 3 and "trial=2" in series["name"]
+               and "accepted=0" in series["name"] for series in observed["series"])
+
+
+@pytest.mark.parametrize("trial", [0, -1, 1.5, "nan", "bad"])
+def test_invalid_independent_trial_is_not_silently_merged(trial):
+    rows = [{**row, "TrialIndex": trial} for row in samples()]
+    existing, fetch = source(rows)
+    with pytest.raises(ValueError, match="independent trial identity"):
+        m._pdcch_control_chart_materialization("PDCCH channel-estimate phase", existing, fetch, 1)
 
 
 def test_phase_branch_cut_does_not_reject_equivalent_phase():

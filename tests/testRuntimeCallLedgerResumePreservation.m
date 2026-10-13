@@ -35,6 +35,19 @@ persisted = readtable(fullfile(root, "reports", "csv", ...
 assert(height(persisted) == 3 && ...
     all(string(persisted.EvidenceClass) == "ACTUAL_RUNTIME_ENTRY"));
 
+% Older retained ledgers have no caller path. Resume preserves them, but
+% must not invent source-file execution proof from their function labels.
+legacy=removevars(persisted,'SourceFile');
+sixgr.util.csvWriteTable(fullfile(root,'reports','csv','runtime_call_ledger.csv'),legacy, ...
+    'PreserveSchema',true);
+sixgr.runtime.RuntimeCallLedger.reset();
+sixgr.runtime.RuntimeCallLedger.configure(root,resumeIdentity);
+legacyReload=sixgr.runtime.RuntimeCallLedger.snapshot();
+assert(height(legacyReload)==3 && all(legacyReload.SourceFile==""));
+sixgr.runtime.RuntimeCallLedger.record("new_call","REPORT","",struct());
+legacyReload=sixgr.runtime.RuntimeCallLedger.flush();
+assert(height(legacyReload)==4 && strlength(legacyReload.SourceFile(4))>0);
+
 sixgr.runtime.RuntimeCallLedger.reset();
 badIdentity = resumeIdentity;
 badIdentity.ExecutionID = "different_execution";

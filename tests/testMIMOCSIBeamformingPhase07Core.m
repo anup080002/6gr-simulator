@@ -278,6 +278,7 @@ cfg.phy.mimo.N1 = 1; cfg.phy.mimo.N2 = 1;
 cfg.phy.mimo.O1 = 1; cfg.phy.mimo.O2 = 1;
 cfg.phy.csi.maxRank = 2;
 cfg.phy.csi.rankDomain = [1 2];
+cfg.phy.linkAdaptation.rankPolicy = 'measured_ri';
 cfg.phy.csi.enable = true;
 cfg.phy.csi.reportCSI = true;
 cfg.phy.csi.reportCQI = true;

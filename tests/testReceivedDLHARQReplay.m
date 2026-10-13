@@ -3,7 +3,7 @@ function ok=testReceivedDLHARQReplay()
 setup6GRSimToolkit('Verbose',false);
 root=fullfile('docs','lls','evidence_20260913','received_dl_harq_calendar_03');
 s=sixgr.lls6g.config.loadScenarioConfig( ...
-    'simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml');
+    'simulator/configs/fixtures/received_dl_harq_calendar_20260913.yaml');
 installed=sixgr.lls6g.buildInternalConfig(s,tempname);
 for k=1:4
     saved=load(fullfile(root,sprintf('attempt_%d.mat',k)));

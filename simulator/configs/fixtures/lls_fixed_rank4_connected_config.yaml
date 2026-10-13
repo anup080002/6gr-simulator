@@ -1,0 +1,7 @@
+# Configuration/feedback-contract fixture, not a completed full scenario.
+inherits:
+  - ../scenarios/h4_100_cdlc100_connected_adaptive.yaml
+  - ../mimo/fixed_rank4_measured_feedback.yaml
+meta:
+  scenario_id: lls_fixed_rank4_connected_config
+  description: Rank-four configuration and causal-feedback binding test on the connected 64-element/four-chain runtime; not 400-MHz acceptance.

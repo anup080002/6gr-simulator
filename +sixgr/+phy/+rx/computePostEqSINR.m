@@ -12,7 +12,9 @@ ip.addParameter("Rint", [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter("Layers", [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x >= 1));
 ip.addParameter("MaxTrustedSINR_dB", NaN, @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter("EqualizerResult", struct(), @(x) isempty(x) || isstruct(x));
-ip.addParameter("RIncludesNoise", [], @(x) isempty(x) || islogical(x) || isnumeric(x));
+ip.addParameter("RIncludesNoise", [], @(x) isempty(x) || ...
+    ((islogical(x) || isnumeric(x)) && isscalar(x) && isreal(x) && ...
+    isfinite(x) && any(x == [0 1])));
 ip.parse(varargin{:});
 opt = ip.Results;
 
@@ -29,7 +31,7 @@ if ~(isstruct(eqResult) && isfield(eqResult, "PostEqSINRLinear") && ~isempty(eqR
         return;
     end
     nVar = double(nVar);
-    if ~(isscalar(nVar) && isfinite(nVar) && nVar > 0)
+    if ~(isscalar(nVar) && isreal(nVar) && isfinite(nVar) && nVar >= 0)
         info.NAReason = "invalid_or_unavailable_noise_variance";
         sixgr.perf.TimeProfiler.markSkipped("sixgr.phy.rx.computePostEqSINR", ...
             "post_equalization_sinr", info.NAReason);
@@ -69,24 +71,20 @@ else
 end
 
 [sinrLin, layerCount] = localExtractSINR(eqResult, opt.Layers);
-valid = isfinite(sinrLin) & sinrLin >= 0;
+valid = ~isnan(sinrLin) & sinrLin >= 0;
 if ~any(valid(:))
     info.NAReason = "no_valid_post_equalization_sinr_samples";
     return;
 end
 
 perLayer = localGeometricLayerSINR(sinrLin);
-validLayers = perLayer(isfinite(perLayer));
-if isempty(validLayers)
-    info.NAReason = "no_valid_post_equalization_sinr_layers";
-    return;
-end
-
 rawPerLayer = double(perLayer);
-rawSINR_dB = mean(validLayers, "omitnan");
+% Retain extended-real boundaries and undefined layer reductions. Do not
+% drop a zero/infinite-SINR layer merely to publish a finite result.
+rawSINR_dB = mean(perLayer);
 sinr_dB = double(rawSINR_dB);
-sinr_per_re_dB = 10 .* log10(max(sinrLin, eps));
-sinr_per_re_dB(~valid) = NaN;
+sinr_per_re_dB = NaN(size(sinrLin));
+sinr_per_re_dB(valid) = 10 .* log10(sinrLin(valid));
 
 maxTrustedSINR = double(opt.MaxTrustedSINR_dB);
 if ~(isscalar(maxTrustedSINR) && isfinite(maxTrustedSINR) && maxTrustedSINR > 0)
@@ -99,6 +97,7 @@ if isfinite(maxTrustedSINR)
 end
 
 info.SINR_dB = double(sinr_dB);
+info.RawReduction = "mean_dB_over_data_RE_then_layers";
 info.ValueStatus = "OK";
 info.NAReason = "";
 info.Method = char(lower(string(sixgr.util.structGet(eqResult, "AlgorithmUsed", opt.Method))));
@@ -106,11 +105,20 @@ info.PerLayerSINR_dB = double(perLayer);
 info.RawSINR_dB = double(rawSINR_dB);
 info.RawPerLayerSINR_dB = double(rawPerLayer);
 info.MaxTrustedSINR_dB = double(maxTrustedSINR);
-if isfinite(maxTrustedSINR) && isfinite(rawSINR_dB) && rawSINR_dB > maxTrustedSINR
+if isfinite(maxTrustedSINR) && ~isnan(rawSINR_dB) && rawSINR_dB > maxTrustedSINR
     info.ValueStatus = "OK_dynamic_range_limited";
     info.NAReason = sprintf("raw_post_eq_sinr_%.6g_dB_limited_to_max_trusted_%.6g_dB", ...
         double(rawSINR_dB), double(maxTrustedSINR));
 end
+if isnan(rawSINR_dB)
+    info.ValueStatus = "unavailable";
+    info.NAReason = "undefined_post_equalization_geometric_reduction";
+elseif ~isfinite(sinr_dB)
+    info.ValueStatus = "unavailable";
+    info.NAReason = "nonfinite_post_equalization_boundary_not_finite_scheduling_input";
+end
+info.ValidSINRSampleCount = nnz(valid);
+info.InvalidSINRSampleCount = nnz(~valid);
 info.NRE = double(size(sinrLin, 1));
 info.NumRxAnt = double(sixgr.util.structGet(eqResult, "NumRxAnt", NaN));
 info.NumTxPorts = double(sixgr.util.structGet(eqResult, "NumTxPorts", NaN));
@@ -144,12 +152,15 @@ info = struct( ...
     "NAReason", "not_computed", ...
     "PerLayerSINR_dB", NaN, ...
     "NRE", NaN, ...
+    "ValidSINRSampleCount", 0, ...
+    "InvalidSINRSampleCount", 0, ...
     "NumRxAnt", NaN, ...
     "NumTxPorts", NaN, ...
     "NumLayers", NaN, ...
     "NoiseVariance", NaN, ...
     "RawSINR_dB", NaN, ...
     "RawPerLayerSINR_dB", NaN, ...
+    "RawReduction", "unavailable", ...
     "MaxTrustedSINR_dB", NaN, ...
     "ImpairmentCovarianceUsed", false, ...
     "ImpairmentCovarianceSource", "", ...
@@ -303,9 +314,11 @@ if isempty(sinrLin)
     layerCount = 0;
     return;
 end
-if isvector(sinrLin)
-    sinrLin = sinrLin(:);
+if ~ismatrix(sinrLin) || ~isreal(sinrLin)
+    error("sixgr:phy:rx:PostEqSINR:BadResultShape", ...
+        "EqualizerResult.PostEqSINRLinear must be a real NRE-by-NLayers matrix.");
 end
+% A one-RE, multi-layer result is a row. Its columns are layer identity.
 maxLayers = size(sinrLin, 2);
 if isempty(layers)
     layerCount = maxLayers;
@@ -320,9 +333,9 @@ nLayers = size(sinrLin, 2);
 perLayer = NaN(1, nLayers);
 for layer = 1:nLayers
     x = double(sinrLin(:, layer));
-    x = x(isfinite(x) & x >= 0);
+    x = x(~isnan(x) & x >= 0);
     if ~isempty(x)
-        perLayer(layer) = 10 * log10(exp(mean(log(max(x, eps)), "omitnan")));
+        perLayer(layer) = mean(10 .* log10(x));
     end
 end
 end
@@ -347,10 +360,7 @@ if isempty(x) || ~isnumeric(x)
     y = [];
     return;
 end
-if isvector(x)
-    y = x(:);
-    return;
-end
+% Preserve the NRE-by-NLayers contract even when NRE is one.
 n = min(size(x, 2), max(1, round(double(layerCount))));
 y = x(:, 1:n);
 end

@@ -132,7 +132,11 @@ if logical(options.UseRuntimeChannel)
         rec.MeasuredReferenceSignalPathlossSource = "";
     end
 end
-rec=sixgr.link.normalizeReceivedSSBPowerReference(rec,cfg);
+if logical(sixgr.util.structGet(rec,'SSPowerReferenceNormalized',false))
+    rec=sixgr.link.normalizeReceivedSSBPowerReference(rec,cfg,"transmit");
+else
+    rec=sixgr.link.normalizeReceivedSSBPowerReference(rec,cfg);
+end
 rec = sixgr.phy.broadcast.attachSIB1ValidationComparison(tx, rec);
 out.ComputeLatency_ms = 1e3 * toc(tStart);
 out.ProcedureDelay_ms = NaN;
@@ -161,6 +165,11 @@ out.DecodeAttempted = logical(sixgr.util.structGet(rec, "DecodeAttempted", false
 out.LLRAvailable = logical(sixgr.util.structGet(rec, "LLRAvailable", false));
 out.LLRFinite = logical(sixgr.util.structGet(rec, "LLRFinite", false));
 out.BLER = double(~out.Ok);
+if string(rec.SIB1ObservationStatus)=="incomplete_capture"
+    % Acquisition is not complete, but there was no SI receive trial whose
+    % block error could be counted. PBCH's actual CRC remains in out.PBCH.
+    out.BLER=NaN;
+end
 out.Sync = struct("NCellID", double(rec.NCellID), "TimingOffset", double(rec.TimingOffset), ...
     "FreqOffset_Hz", double(rec.FrequencyOffsetHz));
 out.PBCH = struct("Ok", logical(rec.BCHCrcPass), "ErrFlag", double(~logical(rec.BCHCrcPass)), ...

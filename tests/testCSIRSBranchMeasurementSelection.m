@@ -10,6 +10,22 @@ assert(s.RSRQ_dB==-9 && s.RSRQReceiveBranch1Based==2 && ...
 assert(s.RSRQ_dB>=max(m.RSRQPerAntenna_dB) && ...
     abs(s.RSRQ_dB-(10*log10(s.NumRB)+s.RSRQNumeratorRSRP_dBm-s.RSRQDenominatorRSSI_dBm))<1e-12);
 assert(s.MeasurementSource==m.Source,'A unit record must not acquire a measured-PHY source label.');
+relative=m;
+relative.PowerUnit="relative_to_unit_occupied_RE_Es";
+relative.RSRPPerAntenna_dB_re_UnitOccupiedRE_Es=[0 -3];
+relative.RSSIPerAntenna_dB_re_UnitOccupiedRE_Es=[23 16];
+relative.RSRPPerAntenna_dBm=[NaN NaN];
+relative.RSSIPerAntenna_dBm=[NaN NaN];
+t=sixgr.phy.refsig.selectCSIRSBranchMeasurements(relative);
+assert(isnan(t.RSRP_dBm) && isnan(t.RSSI_dBm) && ...
+    t.RSRP_dB_re_UnitOccupiedRE_Es==0 && t.RSRPReceiveBranch1Based==1 && ...
+    t.RSRQReceiveBranch1Based==2 && t.RSRQ_dB==-9 && ...
+    t.RSRQNumeratorRSRP_dB_re_UnitOccupiedRE_Es==-3 && ...
+    t.RSRQDenominatorRSSI_dB_re_UnitOccupiedRE_Es==16);
+bad=relative; bad.RSRQPerAntenna_dB(1)=-3;
+reject(@()sixgr.phy.refsig.selectCSIRSBranchMeasurements(bad),'sixgr:phy:CSIRSBranchRSRQClosure');
+bad=relative; bad.PowerUnit="unknown";
+reject(@()sixgr.phy.refsig.selectCSIRSBranchMeasurements(bad),'sixgr:phy:CSIRSMeasurementPowerUnit');
 for n=[1 4 8]
     q=m; q.NumReceiveAntennas=n;
     q.RSRPPerAntenna_dBm=repmat(-80,1,n);

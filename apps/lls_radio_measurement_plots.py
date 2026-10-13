@@ -462,7 +462,12 @@ def _scored_data_channel_nmse(m, row, existing, fetch):
         raise ValueError("Invalid channel NMSE resource path")
     source = m._row_text(row, "NMSESource")
     plane = m._row_text(row, "ChannelEstimateReferencePlane")
-    observation = m._row_text(row, "ChannelObservationID")
+    # An isolated post-decode score is not a shared physical-channel/path-gain
+    # archive. Retain its own identity; do not invent a ChannelObservationID
+    # that would falsely assert the stronger shared-channel evidence contract.
+    identity_field = ("ChannelEstimateObservationID" if m._row_text(row, "ChannelEstimateObservationID")
+                      else "ChannelObservationID")
+    observation = m._row_text(row, identity_field)
     count = m._row_float(row, "ChannelEstimateComparedValues")
     value = m._row_float(row, "NMSE_dB")
     if m._row_text(row, "NMSE_dB").lower() == "-inf":
@@ -483,7 +488,7 @@ def _scored_data_channel_nmse(m, row, existing, fetch):
     error_energy = reference_energy = 0.0
     coordinates = set()
     for sample in samples:
-        if (m._row_text(sample, "ChannelObservationID") != observation
+        if (m._row_text(sample, identity_field) != observation
                 or m._row_text(sample, "ChannelReferenceSource") != source
                 or m._row_text(sample, "ChannelReferencePlane") != plane
                 or m._row_flag(sample, "ReferenceUsedByReceiver") is not False

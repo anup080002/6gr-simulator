@@ -7,6 +7,14 @@ meta:
   purpose: Normal combined receiver and publication regression; inherited high-margin component point is not 12 dB qualification.
   research_class: optional_research_experiment
 
+# This bounded component installs the connected UE/TAG context explicitly;
+# it executes real SS/PBCH timing, DL control/data, CSI-RS and UCI, but no RA.
+# Do not inherit a cold-access gate that would correctly suppress UE CSI
+# while this fixture manually queues connected DL traffic. Production H4
+# and causal-access scenarios retain their required physical access gate.
+control_gating:
+  prach_required: false
+
 # One actual slot-6 DL supplies HARQ and CSI-RS. At equal 15 kHz
 # numerology and one configured resource, slot 6 is the reference for
 # the periodic slot-10 report (TS 38.214 5.2.2.5).

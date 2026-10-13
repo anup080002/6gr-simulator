@@ -251,7 +251,21 @@ for item=items
         double(grant.Slot),grant.SymbolAllocation), ...
         'sixgr:truth:UnresolvedScheduledPUSCHReceiveHypothesis');
     [post,~,~,~,receiver]=sixgr.truth.sharedObservationEvidence(item.Planes,p);
-    [rx,info]=sixgr.link.completePDCCHReception(p,receiver);
+    % This fixture declares a known-candidate codec experiment, not
+    % connected blind monitoring. Use the receiver's explicit-K API rather
+    % than the production completion API, which must independently derive
+    % its candidate/format/length from the installed connected context.
+    % Retain actual capture limits and physical decode outcomes unchanged.
+    samples=receiver.readComplete();
+    [rx,info]=sixgr.phy.dl.PDCCH_Rx(samples,p.ReceiverConfig, ...
+        'Carrier',p.Tx.Carrier,'PDCCH',p.Tx.PDCCH,'K',numel(p.Tx.DCIBits), ...
+        'RNTI',p.TxInfo.RNTI,'PDCCHScramblingRNTI',p.TxInfo.PDCCHScramblingRNTI, ...
+        'ExpectedDCIBits',p.Tx.DCIBits,'SampleRate_Hz',p.SampleRateHz, ...
+        'TimingSearchWindowSamples',[0 size(samples,1)-p.MinimumReceiveSamples]);
+    assert(~info.ReceiverConfiguredMonitoring, ...
+        'Known-candidate component reception must not claim connected monitoring.');
+    info.ObservationStartSample=receiver.StartSample;
+    info.ObservationEndSampleExclusive=receiver.EndSampleExclusive;
     timing=info.TimingEstimate;
     window=timing.SearchWindowSamples;
     [~,peak]=max(timing.SearchMetric);

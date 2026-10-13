@@ -1,0 +1,86 @@
+function T=replayPersistedPRACHBackground(runFolder)
+% Replay ONLY the completed received Msg1 samples; no waveform generation,
+% channel, noise injection, RA progression, or alteration of original rows.
+% The new diagnostic is explicitly offline, not an original in-path result.
+root=string(runFolder);
+files=dir(fullfile(root,'air_interface','mat','ra_received_observations','*Msg1*.mat'));
+assert(~isempty(files),'sixgr:truth:MissingPRACHReplayCapture', ...
+    'A PRACH background replay requires an actual retained received capture.');
+T=table();
+implementationPaths=[string(mfilename('fullpath'))+".m", ...
+    string(which('sixgr.phy.ra.detectMsg1PRACH')), ...
+    string(which('sixgr.rach.detectUnrestrictedPreambles')), ...
+    string(which('sixgr.rach.measurePRACHRepetitionBackground'))];
+implementationHashes=strings(size(implementationPaths));
+for j=1:numel(implementationPaths), implementationHashes(j)=localHash(implementationPaths(j)); end
+implementationHash=lower(sixgr.util.sha256Hex(unicode2native(char(join(implementationHashes,"|")),'UTF-8')));
+for k=1:numel(files)
+    file=fullfile(files(k).folder,files(k).name); before=localHash(file);
+    saved=load(file,'capture'); c=saved.capture; checkpoint=c.ReceiverContinuation;
+    assert(c.Source=="actual_shared_physical_RA_stage_observation" && ...
+        size(c.RXAfterDigitalGainCompensation,1)==c.EndSampleExclusive-c.StartSample, ...
+        'sixgr:truth:InvalidPRACHReplayCapture','Expected the complete actual receiver plane.');
+    assert(string(checkpoint.Config.random_access.preamble_detection_policy)=="awgn_sic_unrestricted", ...
+        'sixgr:truth:UnsupportedPRACHBackgroundReplay','Do not switch the installed detector policy during replay.');
+    original=c.ReceivedResult.DetectedPRACHPreambles;
+    assert(~isempty(original),'sixgr:truth:MissingPRACHReplayReceiverContext', ...
+        'This legacy replay needs retained receiver clock metadata; do not infer it from signal peaks.');
+    guard=unique([original.ObservationSearchGuard_samples]);
+    filterDelay=unique([original.ImplementationFilterDelay_samples]);
+    assert(isscalar(guard) && isscalar(filterDelay) && all(isfinite([guard filterDelay])), ...
+        'sixgr:truth:AmbiguousPRACHReplayClock','Receiver implementation-clock context differs between candidates.');
+    [configuredGuard,~]=sixgr.phy.sync.resolveTimingSearchGuard(checkpoint.Config,c.SampleRateHz);
+    assert(guard==configuredGuard,'sixgr:truth:PRACHReplayGuardMismatch', ...
+        'Retained receiver search guard must match the installed configuration.');
+    % These are the original public capture guard and implementation filter
+    % delay, NOT the estimated arrival or injected propagation/RF offset.
+    cfg=checkpoint.Config;
+    cfg.lls6g.receiverSync.ReceivedWaveformTimingPlane='untrimmed_shared_physical_receive_stream';
+    cfg.lls6g.receiverSync.ULObservationSearchGuard_samples=guard;
+    cfg.lls6g.receiverSync.ChannelFilterDelay_samples=filterDelay;
+    d=sixgr.phy.ra.detectMsg1PRACH(c.RXAfterDigitalGainCompensation,cfg, ...
+        checkpoint.RAConfig,checkpoint.PreparedContext.Occasion);
+    expected=sort([original.DetectedPreambleIndex]); actual=sort([d.Detections.DetectedPreambleIndex]);
+    assert(isequal(expected,actual),'sixgr:truth:PRACHReplayDecisionChanged', ...
+        'Background-only reanalysis changed detected set: original=%s, replay=%s.',mat2str(expected),mat2str(actual));
+    assert(d.Threshold==c.ReceivedResult.PreambleDetectionThreshold, ...
+        'sixgr:truth:PRACHReplayThresholdChanged','Retain the original threshold.');
+    assert(localHash(file)==before,'sixgr:truth:PRACHReplayCaptureChanged','Capture changed while being read.');
+    waveformHash=sixgr.phy.waveform.WaveformHash.runtimeArray(c.RXAfterDigitalGainCompensation);
+    key=string(waveformHash)+":"+c.StartSample+":"+c.EndSampleExclusive+":"+c.SampleRateHz;
+    source="air_interface/mat/ra_received_observations/"+string(files(k).name);
+    bg=d.NoiseFloorEvidence;
+    if ~isempty(T)
+        duplicate=find(T.ObservationKey==key,1);
+        if ~isempty(duplicate)
+            assert(isequaln(T.PDPAverageNoiseFloor(duplicate),bg.NoiseFloor) && ...
+                T.DetectedPreambleSet(duplicate)==string(mat2str(actual)), ...
+                'sixgr:truth:PRACHReplayDuplicateConflict','Duplicate capture has conflicting receiver evidence.');
+            T.SourceCapturePaths(duplicate)=T.SourceCapturePaths(duplicate)+"|"+source;
+            T.SourceCaptureSHA256(duplicate)=T.SourceCaptureSHA256(duplicate)+"|"+before;
+            T.CaptureCount(duplicate)=T.CaptureCount(duplicate)+1;
+            continue;
+        end
+    end
+    row=struct('ObservationKey',key,'ObservationStartSample',double(c.StartSample), ...
+        'ObservationEndSampleExclusive',double(c.EndSampleExclusive),'SampleRate_Hz',double(c.SampleRateHz), ...
+        'ReceiverCaptureGuard_samples',double(guard),'ReceiverFilterDelay_samples',double(filterDelay), ...
+        'PDPAverageNoiseFloor',bg.NoiseFloor,'NoiseFloorEstimator',bg.Estimator, ...
+        'NoiseFloorDefinition',bg.Definition,'NoiseFloorStatus',bg.Status,'NoiseFloorPairCount',bg.PairCount, ...
+        'RxAntennaCount',bg.RxAntennaCount,'SampleEquivalentResidualVariance',bg.SampleEquivalentVariance, ...
+        'DetectionThreshold',double(d.Threshold),'DetectedPreambleSet',string(mat2str(actual)), ...
+        'OriginalDetectionSetUnchanged',true,'CaptureCount',1, ...
+        'Source',"actual_received_IQ_offline_reanalysis",'ExecutionBackend',"retained_physical_capture_receiver_replay", ...
+        'EvidenceScope',"offline_reanalysis_not_original_in_path_row", ...
+        'MeasurementImplementationSHA256',implementationHash,'MATLABRelease',string(version('-release')), ...
+        'SourceCapturePaths',source,'SourceCaptureSHA256',before,'ReceiverIQSHA256',string(waveformHash));
+    T=[T;struct2table(row)]; %#ok<AGROW>
+end
+sixgr.util.csvWriteTable(fullfile(root,'reports','csv','prach_background_replay.csv'),T,'PreserveSchema',true);
+end
+
+function h=localHash(path)
+fid=fopen(path,'rb'); assert(fid>=0,'sixgr:truth:PRACHReplayRead','Cannot read capture.');
+closeFile=onCleanup(@()fclose(fid));
+h=lower(sixgr.util.sha256Hex(fread(fid,Inf,'*uint8')));
+end

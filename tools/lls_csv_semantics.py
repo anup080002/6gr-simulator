@@ -19,6 +19,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import statistics
 import sys
 from dataclasses import asdict, dataclass
@@ -65,6 +66,11 @@ CONTROL_TABLES = (
     "air_interface/csv/srs_trials.csv",
     "air_interface/csv/trs_trials.csv",
 )
+RA_LITERAL_TABLES = tuple("control/csv/" + name + ".csv" for name in (
+    "msg2_rar_trials", "msg3_pusch_trials", "msg4_contention_resolution",
+    "msg4_trials", "contention_monitoring_observations", "ue_contention_events",
+    "prach_table", "prach_trials",
+)) + ("air_interface/csv/prach_trials.csv",)
 COMPONENT_ONLY_RUNNER_PROFILES = {
     "prach_detection",
     "prach_strict_validation",
@@ -6072,6 +6078,41 @@ def _audit_dynamic_tdd_runtime_channel_reciprocity(
     return checks
 
 
+def _audit_ra_literal_evidence(run_root: Path) -> list[AuditCheck]:
+    """Reject lossy numeric serialization, without reconstructing lost bytes.
+
+    This is a literal-format check, not proof of decoded payload correctness.
+    Missing decoded values remain absent; CRC/ownership checks retain their
+    own authority. RNTI, UEId and other numeric identity fields are untouched.
+    """
+    checks = []
+    for relative in RA_LITERAL_TABLES:
+        header, rows = _read_rows(run_root / relative)
+        literal = [name for name in header if name.lower().endswith(
+            ("hex", "contentionidentity")) or name.lower() in {
+                "receivedidentity", "expectedidentity",
+                "contentionidentitytx", "contentionidentityrx"}]
+        if not literal:
+            continue
+        failures = []
+        for index, row in enumerate(rows, 1):
+            for name in literal:
+                value = str(row.get(name, "")).strip()
+                if value.lower() in {"", "nan", "<missing>", "null"}:
+                    continue
+                key = name.lower()
+                valid = re.fullmatch(r"[0-9a-fA-F]+", value) is not None
+                if not key.endswith("hex"):
+                    valid = valid and len(value) == 12  # Six received identity octets.
+                elif key.endswith(("payloadhex", "rarbyteshex")):
+                    valid = valid and len(value) % 2 == 0
+                if not valid:
+                    failures.append(f"row={index}:{name}:corrupted_literal_encoding")
+        checks.append(_check("domain_runtime", relative,
+                             "ra_literal_receiver_evidence", rows, failures))
+    return checks
+
+
 def _audit_prach_detection_trials(run_root: Path) -> list[AuditCheck]:
     relative = "components/prach/csv/prach_detection_trials.csv"
     header, rows = _read_rows(run_root / relative)
@@ -6098,21 +6139,59 @@ def _audit_prach_detection_trials(run_root: Path) -> list[AuditCheck]:
         threshold = _number(row, "Threshold")
         tx_index = _number(row, "PreambleIndexTx")
         rx_index = _number(row, "PreambleIndexDetected")
-        if None in {detected, false_alarm, missed, ambiguous}:
+        if None in {detected, missed, ambiguous}:
             value_failures.append(prefix + ":invalid_detection_boolean")
         if peak is None or threshold is None or peak < 0 or threshold < 0:
             value_failures.append(prefix + ":invalid_peak_or_threshold")
         elif detected is not (peak >= threshold):
             value_failures.append(prefix + ":Detected_not_equal_peak_threshold_decision")
-        expected_missed = detected is False
+        set_available = _boolean(row, "DetectedPreambleSetAvailable")
+        shared = set_available is True
+        received_set: set[int] = set()
+        if "DetectedPreambleSetAvailable" in header or "DetectedPreambleSet" in header:
+            if set_available is None or "DetectedPreambleSet" not in header:
+                value_failures.append(prefix + ":invalid_received_set_availability")
+            raw_set = str(row.get("DetectedPreambleSet", "")).strip()
+            if not shared and raw_set:
+                value_failures.append(prefix + ":unavailable_received_set_has_values")
+            if shared:
+                try:
+                    values = [float(x) for x in raw_set.split("|")] if raw_set else []
+                    if any(not math.isfinite(x) or x != int(x) or not 0 <= x <= 63 for x in values):
+                        raise ValueError("invalid preamble identity")
+                    received_set = {int(x) for x in values}
+                    if len(received_set) != len(values):
+                        raise ValueError("duplicate preamble identity")
+                except ValueError:
+                    value_failures.append(prefix + ":invalid_received_preamble_set")
+                if detected is not bool(received_set) or (detected and rx_index not in received_set):
+                    value_failures.append(prefix + ":received_set_detection_mismatch")
+                if tx_index is None or tx_index != int(tx_index) or not 0 <= tx_index <= 63:
+                    value_failures.append(prefix + ":invalid_target_preamble")
+                if _text(row, "DetectionPopulationScope") != "per_target_shared_occasion_not_independent_trials":
+                    value_failures.append(prefix + ":invalid_shared_detection_population")
+        expected_missed = tx_index not in received_set if shared else detected is False
         if missed is not expected_missed:
             value_failures.append(prefix + ":MissedDetection_inconsistent")
         expected_false_alarm = bool(detected) and (
             tx_index is None or rx_index is None or tx_index != rx_index
         )
-        if false_alarm is not expected_false_alarm:
+        unavailable_alarm = (
+            _text(row, "FalseAlarmStatus") == "unavailable_complete_transmitted_occasion_set_not_retained"
+            and _text(row, "DetectionPopulationScope") in {
+                "per_target_shared_occasion_not_independent_trials", "legacy_single_candidate"
+            }
+        )
+        if shared or unavailable_alarm:
+            # A per-UE target is not the complete transmitted occasion set.
+            # Unknown is neither a zero false alarm nor a qualified trial.
+            if not unavailable_alarm or _text(row, "FalseAlarm"):
+                value_failures.append(prefix + ":FalseAlarm_requires_unavailable_population")
+        elif false_alarm is None:
+            value_failures.append(prefix + ":invalid_detection_boolean")
+        elif false_alarm is not expected_false_alarm:
             value_failures.append(prefix + ":FalseAlarm_inconsistent")
-        if detected and not ambiguous and tx_index != rx_index:
+        if not shared and detected and not ambiguous and tx_index != rx_index:
             value_failures.append(prefix + ":detected_unambiguous_preamble_mismatch")
         if not _text(row, "TrialID") or not _text(row, "OccasionID"):
             value_failures.append(prefix + ":runtime_identity_missing")
@@ -6294,6 +6373,21 @@ def _audit_observed_re_allocation(run_root: Path) -> list[AuditCheck]:
         "missing_columns=" + ",".join(sorted(required_columns - set(header)))
     ] if required_columns - set(header) else []
     resolved = _load_resolved_config(run_root)
+    # Only explicit independent PHY execution has independent local clocks.
+    # A row label alone must not disable shared-slot collision/TDD checks.
+    gates = resolved.get("control_gating", {})
+    independent_config = (
+        resolved.get("scenario", {}).get("runner_profile") == "waveform_bundle"
+        and resolved.get("users", {}).get("execution_model") == "independent_link_sweep"
+        and all(resolved.get(name, {}).get("execution_profile") == "phy_calibration"
+                for name in ("pdsch", "pusch"))
+        and isinstance(gates, dict)
+        and all(isinstance(gates.get(name), (bool, int, float)) and gates[name] == 0
+                for name in ("pbch_required", "prach_required", "pdcch_required",
+                             "pucch_required", "srs_required", "trs_required"))
+        and isinstance(gates.get("pusch_uci_required", False), (bool, int, float))
+        and gates.get("pusch_uci_required", False) == 0
+    )
     frequency = resolved.get("frequency", {}) if isinstance(resolved, dict) else {}
     frame = resolved.get("frame", {}) if isinstance(resolved, dict) else {}
     bwp = resolved.get("bwp", {}) if isinstance(resolved, dict) else {}
@@ -6329,7 +6423,7 @@ def _audit_observed_re_allocation(run_root: Path) -> list[AuditCheck]:
     # directions.  In TDD the configured symbol-direction check above is the
     # authority that prevents simultaneous opposite-direction ownership.
     occupied: dict[
-        tuple[int, str, int, int, int, int], tuple[str, str, int | None]
+        tuple[str, int, str, int, int, int, int], tuple[str, str, int | None]
     ] = {}
     mu_authority = _exact_mu_context_authority(run_root)
     dl_channels = {"PSS", "SSS", "PBCH", "SSB", "PDCCH", "PDSCH", "CSI-RS", "CSIRS", "TRS"}
@@ -6348,6 +6442,28 @@ def _audit_observed_re_allocation(run_root: Path) -> list[AuditCheck]:
         channel = _text(row, "channel").upper()
         ue_id = _number(row, "ue_id")
         cell_id = _number(row, "cell_id")
+        observation = _text(row, "ObservationID")
+        independent_row = _text(row, "ExecutionScope") == "independent_link_execution"
+        independent = independent_config and independent_row
+        if independent_row or observation:
+            values = [_number(row, key) for key in ("ConfiguredSNR_dB", "Seed", "TrialIndex")]
+            if (not independent or not observation or _boolean(row, "SameScenarioInPathEligible") is not False
+                    or values[0] is None or not math.isfinite(values[0])
+                    or not _whole(values[1]) or not _whole(values[2], minimum=1)):
+                value_failures.append(prefix + ":invalid_independent_observation_identity")
+                continue
+            observation_ue = _number(row, "ObservationUEIndex")
+            if not _whole(observation_ue, minimum=1):
+                value_failures.append(prefix + ":invalid_independent_observation_UE")
+                continue
+            identity_values = [direction, cell_id, observation_ue, *values, absolute_slot]
+            expected = "independent_tx|" + "|".join(
+                value if isinstance(value, str) else format(value, ".17g") if value is not None else "NaN"
+                for value in identity_values
+            )
+            if observation != expected:
+                value_failures.append(prefix + ":independent_observation_identity_mismatch")
+                continue
         if not _whole(cell_id, minimum=1):
             value_failures.append(prefix + ":missing_or_invalid_cell_identity")
             continue
@@ -6380,7 +6496,7 @@ def _audit_observed_re_allocation(run_root: Path) -> list[AuditCheck]:
         if channel in {"PDSCH", "PUSCH"} and not _whole(ue_id, minimum=1) and not si_broadcast:
             value_failures.append(prefix + ":data_allocation_missing_UE_identity")
         allowed = _configured_tdd_symbol_direction(resolved, int(absolute_slot), int(symbol))
-        if allowed is not None and allowed != direction:
+        if not independent and allowed is not None and allowed != direction:
             value_failures.append(prefix + f":TDD_symbol_direction={allowed};observed={direction}")
         if not _text(row, "authority").lower().startswith("executed_"):
             value_failures.append(prefix + ":authority_not_executed_runtime")
@@ -6394,7 +6510,7 @@ def _audit_observed_re_allocation(run_root: Path) -> list[AuditCheck]:
         for subcarrier in range(int(start), int(start + count)):
             # Different cells own distinct transmitters/ports. Cochannel
             # inter-cell interference is not duplicate same-cell allocation.
-            key = (int(cell_id), direction, int(absolute_slot), int(symbol), int(port), subcarrier)
+            key = (observation, int(cell_id), direction, int(absolute_slot), int(symbol), int(port), subcarrier)
             previous = occupied.get(key)
             current_ue = int(ue_id) if _whole(ue_id, minimum=1) else None
             current = (channel, allocation, current_ue)
@@ -6843,6 +6959,43 @@ def primary_link_tables(run_root: Path) -> dict[str, str]:
     return dict(FIXED_LINK_PRIMARY_TABLES if fixed_only else PRIMARY_LINK_TABLES)
 
 
+def _persisted_audit_run_identity(run_root: Path, summary: dict[str, str]) -> str:
+    """A report-copy directory is not a new physical run identity.
+
+    Bind the optional audit to independent persisted run/config authority,
+    never to the audit's own receipt. Conflicts remain fail-closed. Integrity
+    of the indexed physical tables is checked by the raw-evidence audit.
+    """
+    expected_hash = _text(summary, "ConfigHash")
+    identities = {
+        value for field in ("RunID", "RunId", "RunTag")
+        if (value := _text(summary, field))
+    }
+    manifest_path = _io_path(run_root / "meta/scenario_manifest.json")
+    if manifest_path.is_file():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            return ""
+        if not isinstance(manifest, dict):
+            return ""
+        tags = {_text(manifest, field) for field in ("RunID", "RunId", "RunTag", "run_tag")}
+        tags.discard("")
+        if tags:
+            if not expected_hash or _text(manifest, "ConfigHash") != expected_hash:
+                return ""
+            identities.update(tags)
+    _header, indexed = _read_rows(run_root / "raw/evidence/raw_evidence_index.csv")
+    for row in indexed:
+        identity = _text(row, "RunID")
+        if not identity or not expected_hash or _text(row, "ConfigHash") != expected_hash:
+            return ""
+        identities.add(identity)
+    if len(identities) > 1:
+        return ""
+    return next(iter(identities)) if identities else run_root.name
+
+
 def _domain_table_applicability(
     relative: str,
     run_root: Path,
@@ -6855,6 +7008,41 @@ def _domain_table_applicability(
     the owning feature is explicitly disabled. Unknown tables remain
     required and fail closed.
     """
+
+    if relative == "control/csv/ra_retry_events.csv":
+        # An isolated PRACH measurement is not a four-step RA procedure.
+        # Only an explicitly disabled access procedure in the calibration
+        # bundle can make this empty procedure ledger non-applicable. A
+        # configured stage requirement or retained RA activity takes
+        # precedence; it must still satisfy the normal zero-retry audit.
+        _header, retry_rows = _read_rows(run_root / relative)
+        _attempt_header, attempts = _read_rows(run_root / "control/csv/ra_attempts.csv")
+        procedure = str(_nested_value(
+            resolved_config, "initial_access.random_access_procedure", ""
+        )).strip().lower()
+        profile = str(_nested_value(
+            resolved_config, "scenario.runner_profile", ""
+        )).strip().lower()
+        execution = str(_nested_value(
+            resolved_config, "pdsch.execution_profile", ""
+        )).strip().lower()
+        stages_required = _truthy_config(resolved_config,
+            "random_access.four_step_ra_required",
+            "random_access.msg4_contention_resolution_required",
+            "validation.random_access_evidence.four_step_ra_required",
+            "validation.random_access_evidence.msg4_contention_resolution_required",
+            "validation.random_access_evidence.contention_resolution_identity_required",
+            "validation.random_access_evidence.msg3_pusch_required",
+            "random_access_evidence.four_step_ra_required",
+            "random_access_evidence.msg4_contention_resolution_required",
+            "random_access_evidence.contention_resolution_identity_required",
+            "random_access_evidence.msg3_pusch_required",
+        )
+        if (not retry_rows and not attempts and not stages_required
+                and procedure == "disabled" and profile == "waveform_bundle"
+                and execution == "phy_calibration"):
+            return False, False
+        return True, True
 
     if relative in {
         "reports/csv/causal_phy_chain_audit.csv",
@@ -6875,9 +7063,9 @@ def _domain_table_applicability(
         )
         if not observed and not requested and len(gates) == 1:
             gate = gates[0]
-            expected_run = _text(scenario_summary, "RunID", "RunId") or run_root.name
+            expected_run = _persisted_audit_run_identity(run_root, scenario_summary)
             identity_matches = (
-                _text(gate, "RunID") == expected_run
+                bool(expected_run) and _text(gate, "RunID") == expected_run
                 and bool(_text(gate, "ConfigHash"))
                 and _text(gate, "ConfigHash") == _text(scenario_summary, "ConfigHash")
             )
@@ -7236,14 +7424,14 @@ def _executed_symbol_occupancy_failures(run_root: Path, points: list[dict[str, s
         if active in {"false", "0"} or width == 0:
             continue
         key = (_text(row, "cell_id"), _text(row, "component_carrier", "component_carrier_id"),
-               _text(row, "bwp_id"), _text(row, "direction").upper(), slot)
+               _text(row, "bwp_id"), _text(row, "direction").upper(), slot, _text(row, "ObservationID"))
         expected.setdefault(key, set()).add(symbol)
     failures = []
     seen = set()
     for ordinal, point in enumerate(points, 1):
         slot = _number(point, "x_value")
         key = (_text(point, "cell_id"), _text(point, "component_carrier"),
-               _text(point, "bwp_id"), _text(point, "direction").upper(), slot)
+               _text(point, "bwp_id"), _text(point, "direction").upper(), slot, _text(point, "ObservationID"))
         if key in seen:
             failures.append(f"occupancy_point={ordinal}:duplicate_scope")
         seen.add(key)
@@ -9617,7 +9805,7 @@ def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
         CONTROL_TABLES + tuple(path.replace("air_interface/", "control/", 1) for path in CONTROL_TABLES)
     ))
     has_control_run_evidence = any(
-        _io_path(run_root / path).is_file() for path in control_paths
+        _io_path(run_root / path).is_file() for path in control_paths + RA_LITERAL_TABLES
     )
     if not (has_primary_run_evidence or has_control_run_evidence or has_chart_contract or has_frc_reference or has_applied_beam):
         return {
@@ -9633,6 +9821,7 @@ def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
             }],
         }
     checks: list[AuditCheck] = []
+    checks.extend(_audit_ra_literal_evidence(run_root))
     checks.extend(_audit_beam_measurement_summaries(run_root))
     checks.extend(_audit_applied_data_precoder(run_root))
     if has_frc_reference:

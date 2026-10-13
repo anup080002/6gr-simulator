@@ -525,7 +525,9 @@ reference_signals:
     port_set: 0
   csi_rs_enabled: true
   csi_rs_periodicity_slots: 5
-  csi_rs_offset_slots: 2
+  # Type-0 SIB1 occupies absolute slots 2+20n. Keep periodic CSI-RS off
+  # those common-data occasions; symbol 6 also avoids Case-A SS/PBCH.
+  csi_rs_offset_slots: 0
   csi_rs_ports: 2
   csi_rs_num_resources: 1
   csi_rs_resource_set_id: 0
@@ -1139,7 +1141,7 @@ validation:
         feature_authority: "ssb"
         required: true
         consumer_source_files: ["+sixgr/+phy/+broadcast/generateSSB_MIB_SIB1_Waveform.m"]
-        measurement_artifact: "control/csv/cell_search_trials.csv"
+        measurement_artifact: "air_interface/csv/pbch_trials.csv"
         measured_fields: ["ChannelModel", "ControlObservationAvailable"]
         measurement_min_rows: 1
       - stage_id: "pss_sss_cell_search"
@@ -1149,7 +1151,7 @@ validation:
         feature_authority: "ssb"
         required: true
         consumer_source_files: ["+sixgr/+phy/+dl/SSB_Rx.m"]
-        measurement_artifact: "control/csv/cell_search_trials.csv"
+        measurement_artifact: "air_interface/csv/pbch_trials.csv"
         measured_fields: ["DetectionAttempted", "DetectionSuccess"]
         measurement_min_rows: 1
         success_field: "DetectionSuccess"
@@ -1161,7 +1163,7 @@ validation:
         feature_authority: "pbch"
         required: true
         consumer_source_files: ["+sixgr/+phy/+dl/SSB_Rx.m"]
-        measurement_artifact: "control/csv/pbch_recovery_trials.csv"
+        measurement_artifact: "air_interface/csv/pbch_trials.csv"
         measured_fields: ["BCHCrcPass", "MIBDecoded"]
         measurement_min_rows: 1
         success_field: "BCHCrcPass"
@@ -1173,7 +1175,7 @@ validation:
         feature_authority: "sib1"
         required: true
         consumer_source_files: ["+sixgr/+phy/+broadcast/recoverSIB1FromWaveform.m"]
-        measurement_artifact: "control/csv/pbch_recovery_trials.csv"
+        measurement_artifact: "air_interface/csv/pbch_trials.csv"
         measured_fields: ["SIB1DCICrcPass", "SIB1DLSCHCrcPass", "SIB1ASN1DecodeOk"]
         measurement_min_rows: 1
         success_field: "SIB1StrictOk"
@@ -1448,13 +1450,13 @@ validation:
     parameter_bindings:
       - parameter_id: "k0_pdcch_to_pdsch"
         subsystem: "timing"
-        scenario_path: "scheduling_timing.pdcch_to_pdsch_k0"
+        scenario_path: "tdd_timing.pdcch_to_pdsch_k0"
         runtime_path: "phy.schedulingTiming.pdcchToPDSCHK0"
         consumer_source_files: ["+sixgr/+phy/+frame/TimingRelationEngine.m"]
         required: true
       - parameter_id: "k2_pdcch_to_pusch"
         subsystem: "timing"
-        scenario_path: "scheduling_timing.pdcch_to_pusch_k2"
+        scenario_path: "tdd_timing.pdcch_to_pusch_k2"
         runtime_path: "phy.schedulingTiming.pdcchToPUSCHK2"
         consumer_source_files: ["+sixgr/+phy/+frame/TimingRelationEngine.m"]
         required: true
@@ -1467,7 +1469,7 @@ validation:
         required: true
       - parameter_id: "k2_ul_grant"
         subsystem: "timing"
-        scenario_path: "scheduling_timing.ul_grant_k2"
+        scenario_path: "tdd_timing.ul_grant_k2"
         runtime_path: "phy.schedulingTiming.ulGrantK2"
         consumer_source_files: ["+sixgr/+phy/+frame/TimingRelationEngine.m"]
         required: true

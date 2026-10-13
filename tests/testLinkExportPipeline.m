@@ -48,5 +48,23 @@ unitT = readtable(fullfile(tmp, "csv", "metric_unit_catalog_fallback.csv"), "Var
 assert(all(ismember(["csv_path","column_name","unit"], string(unitT.Properties.VariableNames))), ...
     "Metric unit catalog must include csv_path, column_name, and unit columns.");
 
+% Unit metadata must never turn relative SINR/power into absolute power, or
+% describe source/status strings as numerical measurements. Header-only
+% exports remain a catalogue of schema, not fabricated measured rows.
+names=["MeasurementRSRP_dBm","MeasurementRSRQNumeratorRSRP_dBm", ...
+    "MeasurementRSRQDenominatorRSSI_dBm","MeasurementRSRP_dB", ...
+    "SINR_linear","SINRStatus","RSRPSource","Throughput_bps"];
+headerOnly=array2table(zeros(0,numel(names)),'VariableNames',cellstr(names));
+writetable(headerOnly,fullfile(tmp,'csv','radio_unit_headers.csv'));
+catalog=sixgr.truth.buildMetricUnitCatalogue(tmp);
+selected=endsWith(string(catalog.csv_path),'radio_unit_headers.csv');
+catalog=catalog(selected,:);
+expected=["dBm","dBm","dBm","dB","ratio","unknown","unknown","bps"];
+for k=1:numel(names)
+    match=string(catalog.column_name)==names(k);
+    assert(nnz(match)==1 && string(catalog.unit(match))==expected(k), ...
+        'Explicit units and evidence metadata must remain distinct: %s',names(k));
+end
+
 ok = true;
 end

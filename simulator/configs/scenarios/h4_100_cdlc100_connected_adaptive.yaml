@@ -10,6 +10,12 @@ meta:
 antenna_and_array:
   require_element_pattern_in_channel: true
 
+# Bound exact failed-receiver captures across the run, per direction. They
+# preserve actual received IQ/arguments and pre-decode HARQ soft state for
+# diagnosis; they do not change decoding, noise, grants or acceptance.
+output_control:
+  receiver_replay_capture_policy: failed
+  receiver_replay_capture_max_trials: 8
+
 output:
   profile: h4_100_cdlc100_connected_adaptive
-

@@ -37,8 +37,24 @@ def validate_samples(weight_rows, pattern_rows):
         raise ValueError("Applied beam requires exact executed weights AND angular samples; PMI is not a matrix")
     matrices = defaultdict(list)
     for row in weight_rows:
-        if row.get("Source") != "executed_data_precoder_mapping_shared_transmission_started" or row.get("ReferencePlane") != "physical_element_data_grid_before_node_rf":
+        source = row.get("Source")
+        expected_plane = {
+            "executed_data_precoder_mapping_shared_transmission_started": "physical_element_data_grid_before_node_rf",
+            "executed_data_precoder_mapping_independent_channel_completed": "composed_data_port_mapping_excluding_rf_distortion",
+        }.get(source)
+        if expected_plane is None or row.get("ReferencePlane") != expected_plane:
             raise ValueError("Applied beam weight provenance is not executed pre-RF data mapping")
+        if source == "executed_data_precoder_mapping_independent_channel_completed":
+            if row.get("ExecutionScope") != "independent_link_execution" or str(row.get("SameScenarioInPathEligible")).lower() not in {"0", "false"}:
+                raise ValueError("Independent applied beam must not claim shared in-path execution")
+            _number(row, "ConfiguredSNR_dB")
+            if _index(row, "TrialIndex") < 1 or _number(row, "UEIndex") <= 0:
+                raise ValueError("Independent applied beam requires actual trial/UE identity")
+            if row.get("SampleClockScope") not in {"independent_trial_local_capture", "runtime_channel_sample_clock"}:
+                raise ValueError("Independent applied beam requires its actual sample-clock scope")
+            digest = row.get("WaveformSHA256", "")
+            if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest.lower()):
+                raise ValueError("Independent applied beam requires the executed waveform digest")
         matrices[_key(row)].append(row)
     metadata = {}
     for key, rows in matrices.items():
@@ -74,6 +90,9 @@ def validate_samples(weight_rows, pattern_rows):
             for name in ("Direction", "Signal", "UEIndex", "PHYGrantContextId", "StartSample", "EndSampleExclusive", "SampleRate_Hz", "Frequency_Hz"):
                 if row.get(name) != rows[0].get(name):
                     raise ValueError(f"Mixed applied beam identity: {name}")
+            for name in ("Source", "ExecutionScope", "ConfiguredSNR_dB", "TrialIndex", "Seed", "WaveformSHA256", "SampleClockScope", "SameScenarioInPathEligible"):
+                if row.get(name) != rows[0].get(name):
+                    raise ValueError(f"Mixed applied beam execution scope: {name}")
         metadata[key] = rows[0], layers, digest
     grids = defaultdict(dict)
     for row in pattern_rows:
@@ -87,7 +106,13 @@ def validate_samples(weight_rows, pattern_rows):
         for name in ("Direction", "Signal", "UEIndex", "PHYGrantContextId", "StartSample", "EndSampleExclusive", "SampleRate_Hz", "Frequency_Hz"):
             if row.get(name) != source.get(name):
                 raise ValueError(f"Angular sample identity mismatch: {name}")
-        if row.get("PatternKind") != "data_precoder_directivity_before_node_rf" or row.get("PatternSource") != "executed_matrix_and_installed_NRRectangularPanelArray":
+        for name in ("ExecutionScope", "ConfiguredSNR_dB", "TrialIndex", "Seed", "WaveformSHA256", "SampleClockScope", "SameScenarioInPathEligible"):
+            if row.get(name) != source.get(name):
+                raise ValueError(f"Angular sample execution scope mismatch: {name}")
+        expected_kind = ("data_precoder_directivity_excluding_rf_distortion"
+                         if source.get("ExecutionScope") == "independent_link_execution"
+                         else "data_precoder_directivity_before_node_rf")
+        if row.get("PatternKind") != expected_kind or row.get("PatternSource") != "executed_matrix_and_installed_NRRectangularPanelArray":
             raise ValueError("Angular samples are not from the actual applied data precoder")
         if str(row.get("SelectedBeamApplied", "")).lower() not in {"1", "true"} or str(row.get("OverTheAirMeasurement", "")).lower() not in {"0", "false"}:
             raise ValueError("Applied pattern/OTA measurement roles are inconsistent")
@@ -141,11 +166,13 @@ def render_surface(grid, source, selected, title):
             polygon = " ".join(f"{x:.3f},{y:.3f}" for x,y,_ in points)
             faces.append((sum(p[2] for p in points)/4, f'<polygon points="{polygon}" fill="{fill}" stroke="#345" stroke-width="0.2"/>'))
     details = f'{source["Signal"]} UE {source["UEIndex"]}; start sample {source["StartSample"]}; PRG/group/layer {selected[1:]}; peak {peak:.3f} dBi'
+    if source.get("ExecutionScope") == "independent_link_execution":
+        details += f'; configured SNR {source["ConfiguredSNR_dB"]} dB, trial {source["TrialIndex"]} (independent)'
     svg = ['<svg xmlns="http://www.w3.org/2000/svg" width="760" height="620" viewBox="0 0 760 620">', '<rect width="760" height="620" fill="white"/>', f'<text x="20" y="28" font-family="sans-serif" font-size="18">{html.escape(title)}</text>', f'<text x="20" y="52" font-family="sans-serif" font-size="12">{html.escape(details)}</text>']
     svg.extend(face for _,face in sorted(faces))
     for label, direction in (("x",(1,0,0)),("y",(0,1,0)),("z",(0,0,1))):
         x,y,_=project(*direction)
         svg.append(f'<line x1="370" y1="300" x2="{x}" y2="{y}" stroke="#222"/><text x="{x+5}" y="{y}" font-family="sans-serif">{label}</text>')
-    svg.append('<text x="20" y="570" font-family="sans-serif" font-size="12">Local-array 3D directivity; pre-node-RF computed pattern, not an OTA measurement.</text>')
+    svg.append('<text x="20" y="570" font-family="sans-serif" font-size="12">Local-array computed directivity; excludes RF distortion, not an OTA measurement.</text>')
     svg.append('<text x="20" y="590" font-family="sans-serif" font-size="12">Radius = power / sampled peak. Color spans -40 to 0 dB relative to sampled peak.</text></svg>')
     return "".join(svg).encode("utf-8")

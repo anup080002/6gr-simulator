@@ -40,11 +40,10 @@ if ~isempty(varargin)
     end
 end
 
-policy = localRankPolicy(cfg);
-fixedAnchor = ismember(policy, ["fixed", "fixed_rank", "fixed_rank_anchor", ...
-    "configured_fixed", "anchor", "no_adaptation"]);
-adaptiveRank = ismember(policy, ["adaptive", "ri", "measured_ri", ...
-    "throughput", "runtime", "runtime_ri"]);
+rankPolicy = sixgr.mimo.resolveRankPolicy(cfg);
+policy = rankPolicy.Policy;
+fixedAnchor = rankPolicy.FixedRankAnchor;
+adaptiveRank = rankPolicy.AdaptiveRank;
 
 [maxLayers, support] = localSupportedLayers(cfg, direction);
 if requestedRank > maxLayers
@@ -92,18 +91,6 @@ decision.NumRxPorts = double(support.NumRxPorts);
 decision.CodebookSupported = logical(support.CodebookSupported);
 decision.TransmissionScheme = char(string(support.TransmissionScheme));
 decision.ValueSource = "sixgr.mimo.resolveRankExecutionPolicy";
-end
-
-function policy = localRankPolicy(cfg)
-policy = lower(strtrim(string(sixgr.util.structGet(cfg, "runtime.link_adaptation.RankPolicy", ...
-    sixgr.util.structGet(cfg, "phy.linkAdaptation.rankPolicy", ...
-    sixgr.util.structGet(cfg, "phy.mimo.rankPolicy", ...
-    sixgr.util.structGet(cfg, "mimo.rank_adaptation_policy", ...
-    sixgr.util.structGet(cfg, "link_adaptation.rank_policy", "fixed"))))))));
-if policy == ""
-    policy = "fixed";
-end
-policy = replace(policy, "-", "_");
 end
 
 function [maxLayers, support] = localSupportedLayers(cfg, direction)

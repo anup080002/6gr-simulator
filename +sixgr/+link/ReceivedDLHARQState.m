@@ -58,9 +58,13 @@ classdef ReceivedDLHARQState
             next=obj; next.Processes{a.HARQProcess+1}=prior;
         end
 
-        function [rx,decision,next,protocol]=receive(obj,installed,a,waveform,varargin)
+        function [rx,decision,next,protocol,receiverArgs]=receive(obj,installed,a,waveform,varargin)
             [prior,fresh]=obj.validateReception(installed,a);
             protocol=struct();
+            % Optional replay evidence is the exact call below, including
+            % this value-semantic PRE-reception entity. A retained ACK does
+            % not invoke PHY and therefore has no receiver argument list.
+            receiverArgs={};
             % Parse even for repeated ACK so legacy/oracle overrides cannot
             % enter unnoticed just because the current TB needs no decoder.
             parser=inputParser;
@@ -98,12 +102,13 @@ classdef ReceivedDLHARQState
                 bundle=sixgr.pdsch.PDSCHCalibrationFacadeAdapter.materializeReceived( ...
                     installed,a,obj.UEId,size(waveform,2),prior.History);
             end
-            rx=sixgr.phy.dl.PDSCH_Rx(waveform,installed, ...
+            receiverArgs={ ...
                 'ExecutionProfile','connected_strict','Assignment',bundle.Assignment, ...
                 'ResourcePlan',bundle.ResourcePlan,'Carrier',bundle.Carrier, ...
                 'ReferenceSignalConfig',bundle.ReferenceConfig,'ReceiverConfig',bundle.ReceiverConfig, ...
                 'CodingPlan',bundle.CodingPlans,'IntegrationContext',bundle.IntegrationContext, ...
-                'ReceiverHARQState',obj,'ReceivedAssignment',a,tracking{:});
+                'ReceiverHARQState',obj,'ReceivedAssignment',a,tracking{:}};
+            rx=sixgr.phy.dl.PDSCH_Rx(waveform,installed,receiverArgs{:});
             if ~fresh
                 assert(~rx.Decode.HARQCombineInfo.ResetPrior && rx.Decode.HARQCombineInfo.Applied, ...
                     'sixgr:link:ReceivedDLHARQCombineRejected', ...

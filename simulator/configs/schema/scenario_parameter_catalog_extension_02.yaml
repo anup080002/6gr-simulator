@@ -191,7 +191,17 @@
       "detection_target": {"required": true, "type": "string"}, "coverage_target": {"required": true, "type": "string"},
       "energy_saving_policy": {"required": true, "type": "string"}
     }},
+    "srs_ue_frequency_binding_object": {"parameters": {
+      "ue_index": {"required": true, "type": "integer", "min": 1},
+      "rnti": {"required": true, "type": "integer", "min": 1, "max": 65535},
+      "serving_cell_id": {"required": true, "type": "integer", "min": 1},
+      "resource_id": {"required": true, "type": "integer", "min": 0},
+      "comb_offset": {"required": true, "type": "integer", "min": 0},
+      "cyclic_shift": {"required": true, "type": "integer", "min": 0},
+      "sequence_id": {"required": true, "type": "integer", "min": 0, "max": 1023}
+    }},
     "reference_signal_object": {"parameters": {
+      "ue_resource_bindings": {"required": false, "type": "struct_array", "item_nested_rule": "srs_ue_frequency_binding_object"},
       "enabled": {"required": true, "type": "boolean"}, "purpose": {"required": true, "type": "string"},
       "baseline_or_candidate_tag": {"required": true, "type": "string"}, "time_density": {"required": true, "type": "string"},
       "frequency_density": {"required": true, "type": "string"}, "periodicity": {"required": true, "type": "string"},

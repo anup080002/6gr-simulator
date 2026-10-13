@@ -2,12 +2,15 @@ function ok=testReceivedDLReportEvidence()
 % Reporting replays real saved captures, without a second decoder or TX plan.
 setup6GRSimToolkit('Verbose',false);
 s=sixgr.lls6g.config.loadScenarioConfig( ...
-    'simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml');
+    'simulator/configs/fixtures/received_dl_harq_calendar_20260913.yaml');
 installed=sixgr.lls6g.buildInternalConfig(s,tempname);
 root=fullfile('docs','lls','evidence_20260913','received_dl_harq_calendar_03');
 for k=[1 2 4]
     saved=load(fullfile(root,sprintf('attempt_%d.mat',k)));
     cfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(installed,saved.a.ControlAbsoluteSlot+1);
+    [~,periodicity]=sixgr.phy.refsig.csirsOccasion(cfg,saved.a.DataAbsoluteSlot);
+    assert(periodicity==string(saved.rx.CSIRSInfo.Periodicity), ...
+        'Retained IQ must not be reinterpreted under a changed CSI calendar.');
     [rx,decision]=saved.before.receive(cfg,saved.a,saved.delayed, ...
         'TimingSearchWindowSamples',[0 60]);
     assert(isequaln(decision,saved.decision));
@@ -29,9 +32,15 @@ for k=[1 2 4]
         rx.PreEqualizationNoiseVariance==rx.EstimatedNoiseVariance);
     assert(rx.PreEqualizationNoiseVarTransformSource== ...
         "received_assignment_native_ofdm_noise_transform");
-    assert(isequaln(rx.Metrics,saved.rx.Metrics) && ...
+    % The retained low-SNR summary used a ratio of pre-normalization sums.
+    % The corrected receiver declares mean-dB over unit-gain data REs.
+    % Verify that changed quantity independently from executed W/H/R below;
+    % all other metrics and the actual equalized samples remain exact replay.
+    sinrField='MeasuredPostEqualizationSINRdBPerLayer';
+    assert(isequaln(rmfield(rx.Metrics,sinrField),rmfield(saved.rx.Metrics,sinrField)) && ...
         isequaln(rx.LayerEqualizedSymbolsForEvidence,saved.rx.LayerSymbols), ...
         'Report construction must not change the canonical measurement.');
+    localAssertExecutedSINR(rx);
     assert(isequal(fieldnames(rx.Decode),fieldnames(saved.rx.Decode)));
     for field=string(fieldnames(rx.Decode)).'
         if any(field==["DecodeLatency_s","DecodeLatencyPerCodeword_s"])
@@ -84,6 +93,38 @@ cfg.phy.csirs.enable=false;
 assert(~sixgr.phy.refsig.csirsOccasion(cfg,10));
 fprintf('RECEIVED_DL_REPORT_CALENDAR_PASS slots=42 guards=8\n');
 ok=true;
+end
+
+function localAssertExecutedSINR(rx)
+eq=rx.EqualizationInfo.EqualizerResult;
+R=rx.EqualizationInfo.DisturbanceCovariance;
+nRE=size(eq.W,1); nLayers=size(eq.W,2); nRx=size(eq.W,3);
+expected=zeros(nRE,nLayers);
+for re=1:nRE
+    covariance=R;
+    if ndims(R)==3, covariance=R(:,:,re); end
+    for layer=1:nLayers
+        w=reshape(eq.W(re,layer,:),1,nRx);
+        response=reshape(eq.EffectiveResponseWH(re,layer,:),1,nLayers);
+        desired=abs(response(layer))^2;
+        interference=sum(abs(response(setdiff(1:nLayers,layer))).^2);
+        noise=real(w*covariance*w');
+        expected(re,layer)=10*log10(desired/(interference+noise));
+    end
+end
+assert(eq.WidebandReduction=="mean_dB_over_data_RE_then_layers");
+assert(max(abs(expected-eq.PostEqSINRPerRE_dB),[],'all')<1e-9);
+wideband=mean(expected,1);
+assert(max(abs(wideband-rx.PostEqSINRRawEqualizerPerLayer_dB))<1e-9);
+for field=["DMRSPostEqualizationResidual","DecisionDirectedPostEqualizationResidual"]
+    bound=rx.(field);
+    if bound.Available
+        finite=isfinite(bound.SINRdBPerLayer);
+        wideband(finite)=min(wideband(finite),bound.SINRdBPerLayer(finite));
+    end
+end
+assert(max(abs(wideband-rx.Metrics.MeasuredPostEqualizationSINRdBPerLayer))<1e-9, ...
+    'Reported SINR must reconcile with executed weights, interference/noise and residual bounds.');
 end
 
 function localReject(fn,id)

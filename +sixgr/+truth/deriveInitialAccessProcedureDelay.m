@@ -31,6 +31,14 @@ T = localEnsureNumericColumn(T, "ProcedureEndSlot", n);
 T = localEnsureNumericColumn(T, "ProcedureDelay_ms", n);
 T = localEnsureNumericColumn(T, "AccessDelay_ms", n);
 T = localEnsureLogicalColumn(T, "CompleteFlag", n);
+% These fields are derived outputs, never authority from an earlier export.
+% Clear them even on rows that cannot join a valid UE/sweep group; otherwise
+% a lost identity leaves an old finite latency falsely counted as measured.
+T.CompleteFlag(:) = false;
+for field = ["ProcedureStartSlot","ProcedureEndSlot", ...
+        "ProcedureDelay_ms","AccessDelay_ms"]
+    T.(field)(:) = NaN;
+end
 
 ueValues = double(T.UEIndex);
 if ismember("SweepPointIndex", string(T.Properties.VariableNames))
@@ -41,7 +49,8 @@ end
 eventNames = upper(strtrim(string(T.EventName)));
 slots = double(T.Slot);
 times_s = double(T.Time_s);
-groupRows = find(isfinite(ueValues) & isfinite(sweepValues));
+groupRows = find(isfinite(ueValues) & ueValues>=1 & ueValues==fix(ueValues) & ...
+    isfinite(sweepValues) & sweepValues>=1 & sweepValues==fix(sweepValues));
 if isempty(groupRows)
     return;
 end
@@ -50,10 +59,10 @@ for groupIdx = 1:size(groups, 1)
     ue = groups(groupIdx, 1);
     sweepPoint = groups(groupIdx, 2);
     ueMask = ueValues == ue & sweepValues == sweepPoint;
-    if any(ueMask & logical(T.CompleteFlag) & ...
-            isfinite(double(T.ProcedureDelay_ms)))
-        continue;
-    end
+    % Completion is a reduction of this group's event clock under the
+    % installed policy, not authority supplied by a previous report. In
+    % particular, a stale Msg4 completion cannot satisfy mandatory RRC
+    % SetupComplete or survive missing/non-causal lifecycle evidence.
     requiredEvents = ["SSB_DETECTED","PBCH_DECODED", ...
         "PRACH_MSG1_DETECTED","MSG2_RAR_DECODED", ...
         "MSG3_PUSCH_COMPLETED"];

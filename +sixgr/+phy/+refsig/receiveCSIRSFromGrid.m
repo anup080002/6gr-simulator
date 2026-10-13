@@ -93,7 +93,8 @@ csirsObservation.HestDimensions = localSizeToken(csirsHest);
 csirsObservation.HestRxPorts = localArrayDimension(csirsHest, 3);
 csirsObservation.HestTxPorts = localArrayDimension(csirsHest, 4);
 csirsObservation.SINRMeasurementDomain = "csi_rs_port3000_reference_re_received_plane";
-if ~isfinite(csirsObservation.MeasurementRSRP_dBm)
+if ~isfinite(csirsObservation.MeasurementRSRP_dBm) && ...
+        ~csirsObservation.MeasurementPowerReferenceNormalized
     csirsObservation.PowerReferencePlane = ...
         "normalized_ofdm_resource_grid_after_receiver_synchronization";
 end
@@ -123,8 +124,12 @@ csirsObservation.CRISelectionSource = string(sixgr.util.structGet( ...
     csirsEstimateInfo, "SelectionSource", ""));
 csirsObservation = localSelectCSIRSRSPResource( ...
     csirsObservation, csirsEstimateInfo);
-csirsObservation = sixgr.phy.refsig.normalizeCSIRSPowerReference( ...
-    csirsObservation, cfg);
+% The normalized-grid producer already measures in unit-RE coordinates.
+% Only legacy sqrt(mW)-grid callers require the one-time FFT conversion.
+if ~csirsObservation.MeasurementPowerReferenceNormalized
+    csirsObservation = sixgr.phy.refsig.normalizeCSIRSPowerReference( ...
+        csirsObservation, cfg);
+end
 if csirsObservation.ChannelEstimateAvailable
     csirsObservation.Consumed = true;
     csirsObservation.Consumer = "dl_csi_ri_pmi_cri_measurement";
@@ -243,17 +248,27 @@ function obs = localMeasurePhysicalCSIRSRSP(obs, carrier, cfg, rxGrid, ...
         physicalGrid, csirsInfo, defaultConfig, ofdmInfo, ...
         physicalOFDMInfo, physicalGridStatus, physicalReferencePlane, ...
         physicalSource,execution)
-% Convert the Toolbox OFDM grid back to physical sqrt(W) before calling the
-% TS 38.215 CSI-RS measurement implementation.  nrOFDMDemodulate uses an
-% unnormalised FFT, so a grid bin is Nfft times the time-domain sample
-% amplitude.  The production PowerContext defines abs(sample)^2 in mW.
+% Select the units from the executed amplitude contract, not configured
+% transmit power. Normalized occupied-RE grids must not be scaled to watts.
 powerContext = sixgr.util.structGet(cfg, "lls6g.runtimePowerContext", struct());
 amplitudeUnit = string(sixgr.util.structGet( ...
     powerContext, "WaveformAmplitudeUnit", ""));
 obs.PhysicalMeasurementStatus = "unavailable_missing_sqrt_mw_power_context";
-obs.PhysicalMeasurementStandard = "3GPP_TS_38.215_via_nrCSIRSMeasurements";
-if ~strcmpi(strtrim(amplitudeUnit), "sqrt_mW")
+obs.PhysicalMeasurementStandard = "3GPP_TS_38.215_port3000_linear_RSRP_and_resource_RSSI";
+relative=amplitudeUnit=="normalized_complex_baseband";
+if relative
+    sixgr.rf.appliedWaveformAmplitudeUnit(cfg,powerContext);
+    obs.MeasurementPowerReferenceNormalized=true;
+    obs.MeasurementPowerReferenceOffset_dB=0;
+    obs.PowerReferencePlane="normalized_fixed_esn0_unit_occupied_re_es";
+elseif ~strcmpi(strtrim(amplitudeUnit), "sqrt_mW")
     return;
+end
+suffix="_dBm";
+powerUnit="W_resource_grid";
+if relative
+    suffix="_dB_re_UnitOccupiedRE_Es";
+    powerUnit="relative_to_unit_occupied_RE_Es";
 end
 receiverMeasurement = sixgr.util.structGet( ...
     cfg, "lls6g.receiverMeasurement", struct());
@@ -313,7 +328,11 @@ if isempty(configs)
 end
 
 scale = nfft * sqrt(1000); % sqrt(mW) grid -> sqrt(W) resource grid
-physicalGrid = physicalGrid ./ cast(scale, "like", physicalGrid);
+if relative
+    scale=NaN; % There is no calibrated conversion to sqrt(W).
+else
+    physicalGrid = physicalGrid ./ cast(scale, "like", physicalGrid);
+end
 resourceAverage = nan(numel(configs),1);
 perAntenna = cell(numel(configs),1);
 physicalResources = cell(numel(configs),1);
@@ -321,10 +340,10 @@ measurementErrors = strings(numel(configs),1);
 for ordinal = 1:numel(configs)
     try
         measured = sixgr.phy.refsig.measureCSIRSPhysicalResource( ...
-            carrier,configs{ordinal},physicalGrid,cfg,execution);
+            carrier,configs{ordinal},physicalGrid,cfg,execution,powerUnit);
         measured.ResourceID=resourceIDs(ordinal);
         physicalResources{ordinal}=measured;
-        branchRSRP = measured.RSRPPerAntenna_dBm;
+        branchRSRP = measured.("RSRPPerAntenna"+suffix);
         perAntenna{ordinal} = branchRSRP;
         if ~measured.Available
             measurementErrors(ordinal) = "unavailable_physical_resource_measurement";
@@ -348,9 +367,9 @@ obs.MeasurementReceiverGainCorrectionSource = ...
 obs.PhysicalMeasurementWaveformStatus = string(physicalGridStatus);
 obs.PhysicalMeasurementWaveformSource = string(physicalSource);
 obs.MeasurementResourceIDs = localNumericVectorToken(resourceIDs);
-obs.MeasurementRSRPPerResource_dBm = localNumericVectorToken(resourceAverage);
-obs.MeasurementRSRPPerResourceValues_dBm = resourceAverage;
-obs.MeasurementRSRPPerAntennaByResource_dBm = perAntenna;
+obs.("MeasurementRSRPPerResource"+suffix) = localNumericVectorToken(resourceAverage);
+obs.("MeasurementRSRPPerResourceValues"+suffix) = resourceAverage;
+obs.("MeasurementRSRPPerAntennaByResource"+suffix) = perAntenna;
 obs.MeasurementPhysicalResources = physicalResources;
 obs.MeasurementPhysicalResourcesJSON = string(jsonencode(sixgr.util.jsonSafeValue(physicalResources)));
 obs.MeasurementErrors = strjoin(measurementErrors(strlength(measurementErrors) > 0), "|");
@@ -360,15 +379,20 @@ if isempty(valid)
     return;
 end
 obs.MeasurementSelectedResourceOrdinal = double(valid);
-obs.MeasurementRSRP_dBm = resourceAverage(valid);
-obs.MeasurementRSRPPerReceiveAntenna_dBm = ...
+obs.("MeasurementRSRP"+suffix) = resourceAverage(valid);
+obs.("MeasurementRSRPPerReceiveAntenna"+suffix) = ...
     localNumericVectorToken(perAntenna{valid});
 obs.MeasurementAntennaAggregation = ...
     "maximum_per_receive_antenna_rsrp_ts_38_215_diversity_rule";
 obs.MeasurementSource = ...
-    "nrCSIRSMeasurements_runtime_pre_front_end_antenna_plane_grid";
+    "received_port3000_linear_RSRP_and_native_RSSI_pre_front_end_grid";
 obs.PowerReferencePlane = string(physicalReferencePlane);
 obs.PhysicalMeasurementStatus = "available";
+if relative
+    obs.MeasurementSource="actual_csirs_re_measurement_relative_to_unit_occupied_re_es";
+    obs.PowerReferencePlane="normalized_fixed_esn0_unit_occupied_re_es";
+    obs.PhysicalMeasurementStatus="available_normalized_fixed_esn0_not_absolute_dbm";
+end
 obs = localSelectCSIRSRSPResource(obs,struct('SelectedResourceOrdinal',valid));
 end
 
@@ -380,9 +404,11 @@ obs.ReferenceMeasuredSINR_dB=NaN;
 obs.ReferenceMeasuredSINRSource="";
 obs.ReferenceMeasuredSINRStatus="unavailable_selected_resource_measurement";
 obs.ReferenceSINRMeasurementJSON="";
-values = sixgr.util.structGet(obs, "MeasurementRSRPPerResourceValues_dBm", []);
+suffix="_dBm";
+if obs.MeasurementPowerReferenceNormalized, suffix="_dB_re_UnitOccupiedRE_Es"; end
+values = sixgr.util.structGet(obs, "MeasurementRSRPPerResourceValues"+suffix, []);
 perAntenna = sixgr.util.structGet(obs, ...
-    "MeasurementRSRPPerAntennaByResource_dBm", {});
+    "MeasurementRSRPPerAntennaByResource"+suffix, {});
 ordinal = double(sixgr.util.structGet(estimateInfo, ...
     "SelectedResourceOrdinal", sixgr.util.structGet(obs, ...
     "MeasurementSelectedResourceOrdinal", 1)));
@@ -392,9 +418,9 @@ if ~(isscalar(ordinal) && isfinite(ordinal) && ordinal >= 1 && ...
 end
 if isfinite(values(ordinal))
     obs.MeasurementSelectedResourceOrdinal = ordinal;
-    obs.MeasurementRSRP_dBm = double(values(ordinal));
+    obs.("MeasurementRSRP"+suffix) = double(values(ordinal));
     if ordinal <= numel(perAntenna) && ~isempty(perAntenna{ordinal})
-        obs.MeasurementRSRPPerReceiveAntenna_dBm = ...
+        obs.("MeasurementRSRPPerReceiveAntenna"+suffix) = ...
             localNumericVectorToken(perAntenna{ordinal});
     end
     resources=sixgr.util.structGet(obs,"MeasurementPhysicalResources",{});
@@ -415,13 +441,13 @@ if isfinite(values(ordinal))
         end
         selected=sixgr.phy.refsig.selectCSIRSBranchMeasurements(measured);
         obs.MeasurementReceiveAntennaIndex1Based=double(selected.RSRPReceiveBranch1Based);
-        obs.MeasurementRSSI_dBm=selected.RSSI_dBm;
+        obs.("MeasurementRSSI"+suffix)=selected.("RSSI"+suffix);
         obs.MeasurementRSRQ_dB=selected.RSRQ_dB;
         obs.MeasurementRSRQReceiveAntennaIndex1Based=double(selected.RSRQReceiveBranch1Based);
-        obs.MeasurementRSRQNumeratorRSRP_dBm=selected.RSRQNumeratorRSRP_dBm;
-        obs.MeasurementRSRQDenominatorRSSI_dBm=selected.RSRQDenominatorRSSI_dBm;
+        obs.("MeasurementRSRQNumeratorRSRP"+suffix)=selected.("RSRQNumeratorRSRP"+suffix);
+        obs.("MeasurementRSRQDenominatorRSSI"+suffix)=selected.("RSRQDenominatorRSSI"+suffix);
         obs.MeasurementRSRQAntennaAggregation=selected.RSRQSelection;
-        obs.MeasurementRSSIPerReceiveAntenna_dBm=localNumericVectorToken(measured.RSSIPerAntenna_dBm);
+        obs.("MeasurementRSSIPerReceiveAntenna"+suffix)=localNumericVectorToken(measured.("RSSIPerAntenna"+suffix));
         obs.MeasurementRSRQPerReceiveAntenna_dB=localNumericVectorToken(measured.RSRQPerAntenna_dB);
         obs.MeasurementNumRB=measured.NumRB;
         obs.MeasurementFirstPRB0Based=measured.FirstPRB0Based;
@@ -434,15 +460,15 @@ if isfinite(values(ordinal))
 else
     % Never retain the first valid resource's power under a different CRI.
     obs.MeasurementSelectedResourceOrdinal=ordinal;
-    obs.MeasurementRSRP_dBm=NaN;
-    obs.MeasurementRSRPPerReceiveAntenna_dBm="";
-    obs.MeasurementRSSI_dBm=NaN;
+    obs.("MeasurementRSRP"+suffix)=NaN;
+    obs.("MeasurementRSRPPerReceiveAntenna"+suffix)="";
+    obs.("MeasurementRSSI"+suffix)=NaN;
     obs.MeasurementRSRQ_dB=NaN;
     obs.MeasurementRSRQReceiveAntennaIndex1Based=NaN;
-    obs.MeasurementRSRQNumeratorRSRP_dBm=NaN;
-    obs.MeasurementRSRQDenominatorRSSI_dBm=NaN;
+    obs.("MeasurementRSRQNumeratorRSRP"+suffix)=NaN;
+    obs.("MeasurementRSRQDenominatorRSSI"+suffix)=NaN;
     obs.MeasurementRSRQAntennaAggregation="";
-    obs.MeasurementRSSIPerReceiveAntenna_dBm="";
+    obs.("MeasurementRSSIPerReceiveAntenna"+suffix)="";
     obs.MeasurementRSRQPerReceiveAntenna_dB="";
     obs.MeasurementReceiveAntennaIndex1Based=NaN;
     obs.MeasurementNumRB=NaN;
@@ -719,6 +745,9 @@ obs.MeasurementRSRP_dBm = NaN;
 obs.MeasurementRSRP_dB_re_UnitOccupiedRE_Es = NaN;
 obs.MeasurementRSRPPerReceiveAntenna_dB_re_UnitOccupiedRE_Es = "";
 obs.MeasurementRSRPPerResource_dB_re_UnitOccupiedRE_Es = "";
+obs.MeasurementRSRPPerResourceValues_dB_re_UnitOccupiedRE_Es = [];
+obs.MeasurementRSRPPerAntennaByResource_dB_re_UnitOccupiedRE_Es = {};
+obs.MeasurementPowerReferenceNormalized = false;
 obs.MeasurementRSSI_dBm = NaN;
 obs.MeasurementRSSI_dB_re_UnitOccupiedRE_Es = NaN;
 obs.MeasurementRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es = "";
@@ -876,12 +905,12 @@ if isscalar(reportPorts) && isfinite(reportPorts) && ...
         "CSI report declares %g ports, but the runtime CSI-RS receiver measured %d ports.", ...
         reportPorts, size(Hwb, 2));
 end
-slotValue = double(sixgr.util.structGet(cfg, ...
-    "lls6g.userContext.RuntimeCurrentSlot", localCarrierSlot(carrier)));
-if ~(isscalar(slotValue) && isfinite(slotValue) && slotValue >= 0)
-    slotValue = 0;
-end
-slotValue = floor(slotValue);
+% The carrier is bound to the received reference-resource occasion. A
+% reused UE context may describe a later completion/processing slot; using
+% that value here makes stale CSI look fresh. Preserve the observation's
+% absolute one-based slot, including its frame, independently of delivery.
+slotValue = double(carrier.NFrame)*double(carrier.SlotsPerFrame) + ...
+    double(carrier.NSlot) + 1;
 maxAgeSlots = double(sixgr.util.structGet(cfg, ...
     "phy.mimo.measurementMaxAgeSlots", 8));
 if ~(isscalar(maxAgeSlots) && isfinite(maxAgeSlots) && ...
@@ -1041,17 +1070,6 @@ if isvector(Hwb) && ismatrix(Hwb)
 end
 if ndims(Hwb) > 3 || isempty(Hwb)
     Hwb = [];
-end
-end
-
-function slotValue = localCarrierSlot(carrier)
-slotValue = 0;
-if isempty(carrier)
-    return;
-end
-try
-    slotValue = double(carrier.NSlot);
-catch
 end
 end
 

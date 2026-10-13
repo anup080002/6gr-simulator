@@ -1,9 +1,26 @@
-function freq = estimateTRSFrequencyOffset(det, cfg, tx, evaluation)
+function freq = estimateTRSFrequencyOffset(det, cfg, tx, evaluation, receiverConfig)
 %ESTIMATETRSFREQUENCYOFFSET Received common phase frequency, not oscillator CFO.
 % Correlate matching subcarriers on the two receiver-known TRS symbols in
 % each slot, on every RX branch. No injected Doppler/CFO enters estimation.
 % The fourth argument is used ONLY for explicitly labeled error scoring.
+% An optional receiver configuration selects received CP correlation instead
+% of the legacy two-TRS-symbol estimator. Neither branch reads injected CFO.
 if nargin<4, evaluation=struct(); end
+if nargin<5, receiverConfig=struct(); end
+method=lower(strtrim(string(sixgr.util.structGet(receiverConfig, ...
+    'phy.impairments.cfoEstimationMethod','reference_symbol_phase_slope'))));
+useCP=any(method==["cyclic_prefix","cp"]);
+assert(isscalar(method) && (useCP || any(method== ...
+    ["dmrs","dmrs_two_symbol","reference_symbol_phase_slope"])), ...
+    'sixgr:phy:trs:UnsupportedFrequencyEstimator','Unsupported configured TRS frequency estimator.');
+estimateSource="trs_reference_phase_slope_frequency_estimator";
+definition="common_phase_frequency_slope_hz_from_trs_reference_symbols";
+cpPolicy=struct();
+if useCP
+    cpPolicy=sixgr.phy.rx.resolveCFOCPObservation(receiverConfig);
+    estimateSource="received_TRS_window_cyclic_prefix_frequency_estimator";
+    definition="common_frequency_hz_from_received_cp_tail_correlation_not_separated_oscillator_cfo";
+end
 rows=repmat(localRow(),numel(det.SlotDetections),1);
 correlations=complex(zeros(numel(rows),1));
 for k=1:numel(rows)
@@ -13,6 +30,7 @@ for k=1:numel(rows)
     row.FromSlot=double(d.Slot); row.ToSlot=double(d.Slot);
     row.FrequencyTrackingAttempted=true;
     row.FrequencyTolerance_Hz=double(cfg.FrequencyToleranceHz);
+    row.FrequencyEstimatorSource=estimateSource;
     if ~d.Detected
         row.Status="frequency_unavailable_no_detected_trs";
         rows(k)=row; continue;
@@ -24,6 +42,28 @@ for k=1:numel(rows)
         ref=d.ReferenceSymbols(:);
         assert(numel(ind)==numel(ref) && numel(unique(ind))==numel(ind), ...
             'sixgr:phy:trs:FrequencyReferenceIdentity','Reference RE identities must be unique and complete.');
+        if useCP
+            assert(isfield(d,'OFDMInfo') && isstruct(d.OFDMInfo), ...
+                'sixgr:phy:trs:MissingCPClock','Received CP estimation requires this captured slot clock.');
+            [hz,cp]=sixgr.phy.rx.estimateCFOFromCyclicPrefix( ...
+                d.CorrectedWaveform,d.OFDMInfo,tx.SampleRateHz,cpPolicy);
+            row.CPObservationEvidenceJSON=string(jsonencode(cp));
+            row.CrossCorrelationOrder="received_tail_times_conj_cp_all_receive_branches";
+            assert(cp.EstimateAvailable && isfinite(hz), ...
+                'sixgr:phy:trs:CPFrequencyUnavailable','Configured received CP estimate unavailable: %s',cp.Status);
+            dt=double(cp.Nfft)/double(cp.SampleRate_Hz);
+            c=cp.CorrelationMagnitude*exp(1i*2*pi*hz*dt);
+            row.DeltaT_s=dt; row.DeltaPhi_rad=angle(c);
+            row.PhaseSampleCount=cp.ObservationPairCount;
+            row.NumReceiveAntennas=size(d.CorrectedWaveform,2);
+            row.CorrelationCoherence=sqrt(cp.ObservationCoherenceSquared);
+            row.UnambiguousHalfRange_Hz=1/(2*dt);
+            row.EstimatedCommonFrequency_Hz=hz; row.EstimatedCFO_Hz=hz;
+            row.TRSCFOEstimateAvailable=true;
+            row.Status="received_common_frequency_available";
+            correlations(k)=c; rows(k)=row;
+            continue;
+        end
         symbols=floor((ind-1)/K);
         pair=unique(symbols);
         assert(numel(pair)==2,'sixgr:phy:trs:FrequencyReferencePair', ...
@@ -87,6 +127,7 @@ freq=struct('Table',struct2table(rows,'AsArray',true), ...
     'EstimatedOscillatorCFO_Hz',NaN,'PhysicalDoppler_Hz',NaN, ...
     'UnambiguousHalfRange_Hz',halfRange, ...
     'FrequencyEstimateDomain',"received_TRS_common_phase_frequency", ...
+    'FrequencyEstimatorSource',estimateSource,'FrequencyEstimatorDefinition',definition, ...
     'FrequencyReferenceForScoring_Hz',reference, ...
     'FrequencyReferenceForScoringSource',source,'FrequencyError_Hz',common-reference);
 end
@@ -119,6 +160,7 @@ row=struct('RunId',"",'ConfigHash',"",'FromSlot',NaN,'ToSlot',NaN, ...
     'PhaseSampleCount',0,'NumReceiveAntennas',NaN,'CorrelationCoherence',NaN, ...
     'UnambiguousHalfRange_Hz',NaN,'DeltaPhi_rad',NaN,'DeltaT_s',NaN, ...
     'CrossCorrelationOrder',"late_times_conj_early_same_subcarrier_and_receive_branch", ...
+    'FrequencyEstimatorSource',"",'CPObservationEvidenceJSON',"", ...
     'FrequencyEstimateDomain',"received_TRS_common_phase_frequency", ...
     'Status',"",'TruthStatus',"real_lls_evidence");
 end

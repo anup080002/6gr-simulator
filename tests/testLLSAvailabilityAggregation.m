@@ -26,6 +26,10 @@ pucch=table([NaN;0;1],[0;1;1],[0;1;1],[0;1;1], ...
     'VariableNames',{'UCIContentMatch','BitsCompared','ExpectedBitCount', ...
     'PUCCHTransmissionPrepared','DTXFlag','DetectionUsable','DetectionAttempted','Crash'});
 sixgr.util.csvWriteTable(fullfile(runFolder,'air_interface','csv','pucch_trials.csv'),pucch);
+% A PRACH-only duration is not end-to-end UE attachment latency. This
+% report-only fixture mirrors the standalone diagnostic's 74-ms field.
+prach=table(74,'VariableNames',{'ProcedureDelay_ms'});
+sixgr.util.csvWriteTable(fullfile(runFolder,'air_interface','csv','prach_trials.csv'),prach);
 sixgr.truth.exportLLSReportingBundle(runFolder, scfg, cfg, ...
     struct("Ok", false), manifest, ...
     struct("StartedUTC", "test", "ElapsedSeconds", 0), ...
@@ -136,6 +140,57 @@ for paprFixture = {nan(3,1),[3;6;9;NaN]}
     end
 end
 disp('UL_PAPR_MEASUREMENT_AVAILABILITY_PASS');
+% Positive report-only lifecycle fixture: incomplete and explicitly proxy
+% rows must not enter the plotted CDF, even if their delays are finite.
+% Provide the real lifecycle schema and causal event clock; let the
+% production reducer derive the terminal duration rather than supplying a
+% precomputed CompleteFlag/delay that would bypass that calculation.
+life=table();
+for ue=1:5
+    events=["SSB_DETECTED";"PBCH_DECODED";"PRACH_MSG1_DETECTED"; ...
+        "MSG2_RAR_DECODED";"MSG3_PUSCH_COMPLETED";"MSG4_PDSCH_COMPLETED"];
+    terminalSlots=[4,8,7,12,20];
+    slots=[0;0;1;2;3;terminalSlots(ue)];
+    if ue==3
+        events(end)="MSG4_PENDING";
+    end
+    part=table(repmat(ue,6,1),events,slots,slots*.001,repmat(.001,6,1), ...
+        repmat(ue==4,6,1),repmat(ue==5,6,1),'VariableNames', ...
+        {'UEIndex','EventName','Slot','Time_s','SlotDuration_s', ...
+        'PlaceholderFlag','FallbackFlag'});
+    life=[life;part]; %#ok<AGROW>
+end
+sixgr.util.csvWriteTable(fullfile(runFolder,'control','csv','initial_access_lifecycle_trace.csv'),life);
+rrcData=scfg.toStruct();
+rrcData.initial_access.rrc.require_setup_complete=true;
+rrcScfg=sixgr.lls6g.config.ScenarioConfig(rrcData);
+rrcCfg=cfg;
+rrcCfg.initial_access.rrc.require_setup_complete=true;
+sixgr.truth.exportLLSReportingBundle(runFolder,rrcScfg,rrcCfg,struct('Ok',false),manifest, ...
+    struct('StartedUTC','test','ElapsedSeconds',0), ...
+    struct('RunCompletion','failed','ResultOk',false));
+assert(~isfile(fullfile(runFolder,'reports','csv','access_delay_cdf_plot.csv')), ...
+    'Msg4 alone must not count as completed access when RRCSetupComplete is required.');
+% Reset the declared raw fixture before testing the four-step-only policy.
+sixgr.util.csvWriteTable(fullfile(runFolder,'control','csv','initial_access_lifecycle_trace.csv'),life);
+sixgr.truth.exportLLSReportingBundle(runFolder,scfg,cfg,struct('Ok',false),manifest, ...
+    struct('StartedUTC','test','ElapsedSeconds',0), ...
+    struct('RunCompletion','failed','ResultOk',false));
+plotted=readtable(fullfile(runFolder,'reports','csv','access_delay_cdf_plot.csv'), ...
+    'TextType','string','VariableNamingRule','preserve');
+assert(isequal(plotted.latency_ms,[5;9]) && isequal(plotted.cdf_probability,[.5;1]) && ...
+    all(plotted.source_table=="control/csv/initial_access_lifecycle_trace.csv"));
+% Stale-producer-artifact fixture, not a measured plot: even with MATLAB
+% raster rendering disabled, loss of eligible evidence must retire it.
+stalePath=fullfile(runFolder,'reports','image','access_delay_cdf.png');
+imwrite(uint8([0,255;255,0]),stalePath);
+life.FallbackFlag(:)=true;
+sixgr.util.csvWriteTable(fullfile(runFolder,'control','csv','initial_access_lifecycle_trace.csv'),life);
+sixgr.truth.exportLLSReportingBundle(runFolder,scfg,cfg,struct('Ok',false),manifest, ...
+    struct('StartedUTC','test','ElapsedSeconds',0), ...
+    struct('RunCompletion','failed','ResultOk',false));
+assert(~isfile(fullfile(runFolder,'reports','csv','access_delay_cdf_plot.csv')) && ~isfile(stalePath), ...
+    'No eligible lifecycle evidence must leave no stale access-CDF data or PNG.');
 ok = true;
 end
 

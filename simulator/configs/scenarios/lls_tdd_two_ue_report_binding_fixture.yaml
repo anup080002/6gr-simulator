@@ -1,0 +1,16 @@
+inherits:
+  - ./lls_tdd_5mhz_rank2_shared_awgn_20db.yaml
+  - ../validation/pucch_two_ue_report_bindings.yaml
+
+meta:
+  scenario_id: lls_tdd_two_ue_report_binding_fixture
+  description: Two-UE installed CSI/SR and HARQ resource-ownership configuration fixture.
+  purpose: Focused configuration and independent receive-calendar checks; not multi-UE waveform qualification.
+  research_class: optional_research_experiment
+  tags: [lls, tdd, two_ue, pucch, csi, sr, configuration_fixture]
+
+users:
+  n_users: 2
+
+deployment_topology:
+  num_ues: 2

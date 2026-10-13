@@ -60,6 +60,29 @@ class AppliedBeamTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "exact executed weights"):
             _runtime_beam_pattern_chart("beam pattern 3d", {}, lambda _: b"PMI\n0\n", 1)
 
+    def test_independent_execution_scope_is_explicit_and_bound_to_patterns(self):
+        # Schema fixture based on retained real matrices, not new PHY evidence.
+        weights, patterns = copy.deepcopy(self.weights), copy.deepcopy(self.patterns)
+        for row in weights + patterns:
+            row.update(ExecutionScope="independent_link_execution",
+                       SameScenarioInPathEligible="0", ConfiguredSNR_dB="18",
+                       TrialIndex="1", Seed="17", WaveformSHA256="a" * 64,
+                       SampleClockScope="independent_trial_local_capture")
+        for row in weights:
+            row["Source"] = "executed_data_precoder_mapping_independent_channel_completed"
+            row["ReferencePlane"] = "composed_data_port_mapping_excluding_rf_distortion"
+        for row in patterns:
+            row["PatternKind"] = "data_precoder_directivity_excluding_rf_distortion"
+        self.assertEqual(validate_samples(weights, patterns)[0],
+                         validate_samples(self.weights, self.patterns)[0])
+        patterns[0]["ConfiguredSNR_dB"] = "30"
+        with self.assertRaisesRegex(ValueError, "execution scope mismatch"):
+            validate_samples(weights, patterns)
+        patterns[0]["ConfiguredSNR_dB"] = "18"
+        weights[0]["SameScenarioInPathEligible"] = "1"
+        with self.assertRaisesRegex(ValueError, "must not claim shared"):
+            validate_samples(weights, patterns)
+
     @staticmethod
     def outage_sources():
         # Declared publisher fixture, not a simulated acquisition campaign.

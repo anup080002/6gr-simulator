@@ -2621,16 +2621,12 @@ localApplyRunRandomness(scfg);
 localDBLog("INFO", "Preparing LLS run: scenario=%s runTag=%s runFolder=%s", ...
     char(string(scfg.ScenarioID)), char(string(runTag)), char(string(runFolder)));
 
-cfg = sixgr.lls6g.buildInternalConfig(scfg, runFolder);
 % The contract registry is intentionally per execution and memory-only.
 % Production subsystems may register only tables/renderers they generated
 % during this run; no finalizer is allowed to ingest stale files.
 artifactEvidence = sixgr.artifact.EvidenceRegistry();
-cfg.run.runTag = char(string(runTag));
 executionIdentity = sixgr.runtime.resolveExecutionIdentity( ...
     runFolder, string(runTag), string(scfg.ConfigHash), executionOptions);
-    cfg.run.executionID = char(executionIdentity.ExecutionID);
-    cfg.meta.executionID = char(executionIdentity.ExecutionID);
     sixgr.runtime.RuntimeCallLedger.configure(runFolder, struct( ...
         "RunId", string(runTag), ...
         "ExecutionID", string(executionIdentity.ExecutionID), ...
@@ -2638,6 +2634,12 @@ executionIdentity = sixgr.runtime.resolveExecutionIdentity( ...
         "PreserveExisting", logical(executionIdentity.ResumeRequested)));
     runtimeCallLedgerCleanup = onCleanup(@() ...
         sixgr.runtime.RuntimeCallLedger.flush()); %#ok<NASGU>
+% The canonical frame builder executes during configuration construction.
+% Open the actual-entry ledger first; never recreate a call at finalization.
+cfg = sixgr.lls6g.buildInternalConfig(scfg, runFolder);
+cfg.run.runTag = char(string(runTag));
+cfg.run.executionID = char(executionIdentity.ExecutionID);
+cfg.meta.executionID = char(executionIdentity.ExecutionID);
 configuredProfile = lower(strtrim(string(scfg.get("scenario.runner_profile"))));
 cfg.run.configuredRunnerProfile = char(configuredProfile);
 cfg.run.runnerProfile = char(configuredProfile);

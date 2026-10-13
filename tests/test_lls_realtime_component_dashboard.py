@@ -10,6 +10,28 @@ sys.path.insert(0, str(ROOT / "apps"))
 import lls_web_dashboard as dashboard  # noqa: E402
 
 
+def test_data_cfo_preview_separates_receiver_measurement_from_simulation_reference() -> None:
+    for direction in ("dl_trials", "ul_trials"):
+        labels = dict(dashboard.DATA_TRIAL_PREVIEW_COLUMNS[direction])
+        assert labels["ResidualCFO_PostCorrection_Hz"] == "Simulation-reference residual CFO (Hz)"
+        assert labels["ResidualCFO_EstimatedPostCorrection_Hz"] == "Post-correction frequency estimate (Hz)"
+        assert labels["ResidualCFOEstimateRole"] == "Residual estimate evidence role"
+        assert labels["ResidualCFOReusesAcquisitionObservation"] == "Reuses acquisition observation"
+        assert labels["ResidualCFOEstimateSource"] == "Residual estimator source"
+        assert labels["CFOCorrectionApplied_Hz"] == "Applied CFO correction (Hz)"
+        role = "same_observation_estimator_consistency_not_independent_residual"
+        preview = dashboard.summarize_data_trial_preview_rows(direction, [{
+            "ResidualCFO_PostCorrection_Hz": -70,
+            "ResidualCFO_EstimatedPostCorrection_Hz": 0,
+            "ResidualCFOEstimateRole": role,
+            "ResidualCFOReusesAcquisitionObservation": 1,
+        }])[0]
+        assert preview["Simulation-reference residual CFO (Hz)"] == -70
+        assert preview["Post-correction frequency estimate (Hz)"] == 0
+        assert preview["Residual estimate evidence role"] == role
+        assert preview["Reuses acquisition observation"] == 1
+
+
 def test_ul_preview_keeps_codebook_ports_distinct_from_spatial_beams() -> None:
     labels = dict(dashboard.DATA_TRIAL_PREVIEW_COLUMNS["ul_trials"])
     assert labels["AppliedPrecoderPMI"] == "Applied TPMI"
@@ -41,11 +63,11 @@ def test_access_and_beam_previews_retain_exact_runtime_identity() -> None:
     )
     assert msg1 == [{
         "UE": 1,
-        "Slot": 9,
+        "Slot in frame (0-based)": 9,
         "Associated SSB beam": 1,
         "Root sequence index (RSI)": 7,
         "TX preamble": 11,
-        "Detected preamble": 11,
+        "Strongest detected preamble": 11,
         "Frequency estimate enabled": 1,
         "Detected frequency offset Hz": -125.0,
         "Frequency estimate valid": 1,
@@ -73,6 +95,56 @@ def test_access_and_beam_previews_retain_exact_runtime_identity() -> None:
     assert beam[0]["Measured RS/beam"] == "CSI-RS-3"
     assert beam[0]["Activated TCI state"] == 3
     assert beam[0]["Geometry oracle used"] == 0
+
+
+def test_ra_waveform_preview_separates_prepared_ports_and_physical_dimensions() -> None:
+    rows = [
+        {"StageName": "Msg2", "TxPortCount": 1,
+         "RuntimeChannelPhysicalTxElements": 64, "RxPortCount": 4,
+         "TxPortToElementMappingSource": "selected_ssb_beam"},
+        {"StageName": "Msg3", "TxPortCount": 4,
+         "RuntimeChannelPhysicalTxElements": 4, "RxPortCount": 64,
+         "TxPortToElementMappingSource": "runtime_antenna_mapping"},
+    ]
+    views = dashboard.summarize_procedure_preview_rows("ra_stage_waveforms", rows)
+    by_stage = {row["Stage"]: row for row in views}
+    assert by_stage["Msg2"]["Prepared TX ports"] == 1
+    assert by_stage["Msg2"]["Physical TX dimensions"] == 64
+    assert by_stage["Msg2"]["Received RX dimensions"] == 4
+    assert by_stage["Msg2"]["TX port-to-element mapping"] == "selected_ssb_beam"
+    assert by_stage["Msg3"]["Prepared TX ports"] == 4
+    assert by_stage["Msg3"]["Physical TX dimensions"] == 4
+    assert by_stage["Msg3"]["Received RX dimensions"] == 64
+    missing = dashboard.summarize_procedure_preview_rows(
+        "ra_stage_waveforms", [{"StageName": "Msg2", "TxPortCount": 1}],
+    )[0]
+    assert "Physical TX dimensions" not in missing
+    assert "Received RX dimensions" not in missing
+    # The browser has a separate explicit column list; payload-only coverage
+    # would pass while leaving the newly available evidence invisible.
+    rendered = next(line for line in dashboard.product_frontend_script().splitlines()
+                    if "id:'ra_stage_waveforms'" in line)
+    for label in ("Prepared TX ports", "Physical TX dimensions",
+                  "Received RX dimensions", "TX port-to-element mapping"):
+        assert f"'{label}'" in rendered
+
+
+def test_shared_msg1_preview_keeps_set_target_and_unknown_false_alarm_separate() -> None:
+    row = dict(UEId=1, Frame=1, Slot=4, Msg1ScheduledSlot=14,
+               PreambleIndexTx=0, PreambleIndexDetected=1, DetectedPreambleSet="1|0",
+               DetectedPreambleSetAvailable=1, MissedDetection=0, FalseAlarm="NaN",
+               FalseAlarmStatus="unavailable_complete_transmitted_occasion_set_not_retained",
+               DetectionMetric=0.4983, DetectionThreshold=0.0144)
+    view = dashboard.summarize_procedure_preview_rows("msg1_detection", [row])[0]
+    assert view["Strongest detected preamble"] == 1
+    assert view["TX preamble"] == 0 and view["Received preamble set"] == "1|0"
+    assert view["Target preamble missed"] == 0
+    assert view["Detection metric"] == 0.4983 and view["Threshold"] == 0.0144
+    assert "False alarm" not in view
+    assert view["False alarm applicability"] == row["FalseAlarmStatus"]
+    assert view["Frame"] == 1 and view["Slot in frame (0-based)"] == 4
+    assert view["Absolute slot (0-based)"] == 14
+    assert dashboard.summarize_procedure_preview_rows("msg1_detection", [{}]) == [{}]
 
 
 def test_ssb_sync_preview_separates_injection_estimate_correction_and_residual() -> None:
@@ -434,6 +506,43 @@ def test_blank_runtime_truth_flags_do_not_become_negative_claims() -> None:
     assert "interference_path_uses_same_array_assumptions" not in truth
     assert "trs_influenced_decision" not in truth
     assert "parallel_execution_active" not in truth
+
+
+def test_srs_signal_enablement_is_not_global_scheduler_admission() -> None:
+    # The selected H4 scenario deliberately has SRS on and the global gate
+    # off. This must not present the physical SRS feature as disabled.
+    cfg = {"users": {"execution_model": "slot_coupled_truth"},
+           "reference_signals": {"srs_enabled": True},
+           "control_gating": {"srs_required": False}}
+    truth = dashboard.infer_browser_truth_modes(cfg)
+    assert truth["configured_srs_enabled"] is True
+    assert truth["srs_mode"] == "configured_srs_without_global_scheduler_gate"
+    assert truth["srs_gating_active"] is False
+    assert "srs_valid" not in truth  # Configuration is not received evidence.
+    cfg["control_gating"]["srs_required"] = True
+    assert dashboard.infer_browser_truth_modes(cfg)["srs_mode"] == "srs_freshness_csi_gate"
+    cfg["reference_signals"]["srs_enabled"] = False
+    assert "configuration_conflict" in dashboard.infer_browser_truth_modes(cfg)["srs_mode"]
+    cfg["control_gating"]["srs_required"] = "false"
+    cfg["reference_signals"]["srs_enabled"] = "false"
+    truth = dashboard.infer_browser_truth_modes(cfg)
+    assert truth["srs_mode"] == "disabled" and truth["srs_gating_active"] is False
+    absent = dashboard.infer_browser_truth_modes({})
+    assert absent["configured_srs_enabled"] is None
+    assert absent["srs_mode"] == "configuration_unavailable"
+
+
+def test_srs_runtime_evidence_overrides_mode_not_configuration() -> None:
+    cfg = {"reference_signals": {"srs_enabled": True},
+           "control_gating": {"srs_required": False}}
+    truth = dashboard.infer_runtime_truth_modes(cfg, [{
+        "SRSMode": "received_causal_srs", "SRSGatingActive": "0"}])
+    assert truth["srs_mode"] == "received_causal_srs"
+    assert truth["configured_srs_enabled"] is True
+    assert truth["srs_gating_active"] is False
+    native = dashboard.infer_runtime_truth_modes({**cfg, "schemaVersion": "sixgr.lls.config/v1"}, [])
+    assert native["srs_mode"] == "disabled"
+    assert native["configured_srs_enabled"] is False
 
 
 def test_artifact_content_version_changes_for_stable_id_in_place_update(tmp_path: Path) -> None:

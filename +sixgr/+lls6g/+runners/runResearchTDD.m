@@ -138,7 +138,7 @@ if physical
     meta.PhysicalArray=spatial.Manifest;
     meta.CenterFrequencyUse="CDL_carrier_and_array_wavelength_no_passband_upconversion";
     meta.WaveformScope="independent_static_CDL_bursts_on_configured_TDD_clock";
-    sixgr.phy.research.PhysicalArrayLink.export(root,spatial);
+    sixgr.phy.research.PhysicalArrayLink.export(root,spatial,logical(p.save_plots));
 end
 sourcePaths=[string(mfilename('fullpath'))+".m", ...
     string(which('sixgr.phy.research.SharedChannelLink')), ...

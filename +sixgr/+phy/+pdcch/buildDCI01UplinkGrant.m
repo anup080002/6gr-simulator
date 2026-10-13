@@ -35,8 +35,8 @@ fields.csi_request = 0;
 
 context = sixgr.phy.pdcch.resolveDCIContext(pdcchCfg, "0_1");
 if isfield(context.Data,'ULPrecoding')
-    fields.precoding_information_and_number_of_layers= ...
-        sixgr.phy.pdcch.ULPrecodingField.encode(context.Data,double(opt.NumLayers),double(opt.TPMI));
+    fields=sixgr.phy.pdcch.ULPrecodingField.bind( ...
+        fields,context.Data,double(opt.NumLayers),double(opt.TPMI));
 end
 if isfield(context.Data,'ULReferenceSignaling')
     fields=sixgr.phy.pdcch.ULReferenceSignaling.bindSRI(fields,context.Data,double(opt.SRSResourceIndicator));

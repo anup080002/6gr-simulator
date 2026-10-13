@@ -5,11 +5,11 @@ if nargin<1, outputRoot=tempname; end
 assert(~isfolder(outputRoot),'test:EvidenceAlreadyExists','Preserve previous evidence.');
 setup6GRSimToolkit('Verbose',false);
 s=sixgr.lls6g.config.loadScenarioConfig( ...
-    'simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml');
+    'simulator/configs/fixtures/received_dl_harq_calendar_20260913.yaml');
 installed=sixgr.lls6g.buildInternalConfig(s,tempname);
 % Pre-calendar-repair captures have different RE/rate-matching maps. Keep
-% that historical evidence unchanged; use the separately generated current
-% calendar fixture, never pad/crop/reinterpret its symbols to fit a new map.
+% that historical evidence unchanged; bind its explicitly frozen replay
+% calendar, never pad/crop/reinterpret its symbols to fit a new map.
 sourceRoot=fullfile('docs','lls','evidence_20260913','received_dl_harq_calendar_03');
 mkdir(outputRoot); fprintf('RECEIVED_DL_HARQ_EVENT_OUTPUT=%s\n',outputRoot);
 rows=table();

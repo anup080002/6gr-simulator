@@ -19,9 +19,9 @@ classdef TRSResultDelivery
                     'Pending TRS evidence must retain its actual serving cell and receiving UE.');
             end
             items = sixgr.truth.TRSResultDelivery.pending(state);
-            if any([items.ServingCell]==servingCell)
+            if any([items.ServingCell]==servingCell & [items.UEIndex]==ueIdx)
                 error('sixgr:truth:DuplicatePendingTRS', ...
-                    'Cell %d already has an undelivered TRS observation.',servingCell);
+                    'UE %d already has an undelivered TRS observation for cell %d.',ueIdx,servingCell);
             end
             item = struct('ServingCell',double(servingCell),'UEIndex',double(ueIdx), ...
                 'Trial',trial,'Config',cfg,'ObservedRE',observedRE,'CompletionTime_s',completion);

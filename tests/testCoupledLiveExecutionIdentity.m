@@ -15,6 +15,21 @@ for profile=["lls_causal_access_to_data_wiring_tdd.yaml","lls_causal_access_to_d
         assert(bound.RunID==cfg.run.runTag && bound.ExecutionID==cfg.run.executionID);
         assert(isequaln(bound(:,row.Properties.VariableNames),row));
         assert(isequaln(bound,sixgr.truth.bindCoupledExecutionIdentity(bound,cfg,signal)));
+        assert(~ismember("EvidenceScope",string(bound.Properties.VariableNames)), ...
+            'A generic identity bind must not invent integrated provenance.');
+        produced=sixgr.truth.bindCoupledExecutionIdentity(row,cfg,signal,true);
+        assert(produced.EvidenceScope=="in_path" && produced.SameScenarioInPathEligible);
+        assert(isequaln(produced, ...
+            sixgr.truth.bindCoupledExecutionIdentity(produced,cfg,signal,true)));
+        component=bound; component.EvidenceScope="component_anchor";
+        component.SameScenarioInPathEligible=false;
+        localMustFail(@()sixgr.truth.bindCoupledExecutionIdentity(component,cfg,signal,true), ...
+            "sixgr:truth:CoupledRuntimeEvidenceScopeMismatch");
+        for invalid=[0 NaN 2]
+            badEligibility=produced; badEligibility.SameScenarioInPathEligible=invalid;
+            localMustFail(@()sixgr.truth.bindCoupledExecutionIdentity(badEligibility,cfg,signal,true), ...
+                "sixgr:truth:CoupledRuntimeEvidenceEligibilityInvalid");
+        end
         if any(signal==["DL","UL"])
             csvPath=fullfile(root,signal+"_live_identity_fixture.csv");
             sixgr.util.csvWriteTable(csvPath,bound,'PreserveSchema',true);
@@ -35,6 +50,7 @@ for profile=["lls_causal_access_to_data_wiring_tdd.yaml","lls_causal_access_to_d
     database.RunID=42;
     localMustFail(@() sixgr.truth.bindCoupledExecutionIdentity(database,cfg,"SRS"));
     assert(isequaln(row,sixgr.truth.bindCoupledExecutionIdentity(row,struct(),"SRS")));
+    assert(isequaln(row,sixgr.truth.bindCoupledExecutionIdentity(row,struct(),"SRS",true)));
 
     % Exercise the real live writer, before bundle terminal identity binding.
     multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',8101, ...
@@ -67,6 +83,11 @@ for profile=["lls_causal_access_to_data_wiring_tdd.yaml","lls_causal_access_to_d
             'Delimiter',',','ReadVariableNames',true,'NumHeaderLines',0);
         assert(T.RunID==cfg.run.runTag && T.ExecutionID==cfg.run.executionID);
         assert(T.ConfigHash==cfg.meta.configHash && T.ScenarioID==cfg.run.scenarioID);
+        assert(all(ismember(["EvidenceScope","SameScenarioInPathEligible"], ...
+            string(T.Properties.VariableNames))), ...
+            'testCoupledLiveExecutionIdentity:MissingLiveEvidenceScope', ...
+            'Live control rows must retain producer scope before terminal finalization.');
+        assert(T.EvidenceScope=="in_path" && T.SameScenarioInPathEligible==1);
     end
     state.ControlTrials.PBCH.ExecutionID="another_execution";
     localMustFail(@() sixgr.truth.CoupledTruthRuntime.writeTables(state,root));
@@ -75,11 +96,12 @@ ok=true;
 fprintf('PASS testCoupledLiveExecutionIdentity\n');
 end
 
-function localMustFail(fn)
+function localMustFail(fn,expected)
+if nargin<2, expected="sixgr:truth:CoupledControlIdentityMismatch"; end
 try
     fn();
 catch ME
-    assert(string(ME.identifier)=="sixgr:truth:CoupledControlIdentityMismatch",'%s: %s',ME.identifier,ME.message);
+    assert(string(ME.identifier)==expected,'%s: %s',ME.identifier,ME.message);
     return;
 end
 error('testCoupledLiveExecutionIdentity:ExpectedFailure','Identity conflict was not rejected.');

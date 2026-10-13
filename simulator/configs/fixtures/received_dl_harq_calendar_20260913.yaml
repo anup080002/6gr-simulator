@@ -1,0 +1,18 @@
+inherits:
+  - ../scenarios/lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml
+
+meta:
+  scenario_id: received_dl_harq_calendar_20260913
+  description: >
+    Receiver replay configuration for committed received_dl_harq_calendar_03
+    IQ. The captures record CSI-RS Periodicity 5:2, symbol 6, row 3 and 25 RBs.
+    This freezes their resource map; it is not a connected-run scenario and
+    does not change the current production calendar that avoids common SI.
+
+reference_signals:
+  csi_rs_periodicity_slots: 5
+  csi_rs_offset_slots: 2
+  csi_rs_resource_symbol_locations: [6]
+  csi_rs_resource_row_numbers: [3]
+  csi_rs_resource_rb_offsets: [0]
+  csi_rs_resource_num_rbs: [25]

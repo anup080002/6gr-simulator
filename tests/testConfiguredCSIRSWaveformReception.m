@@ -1,8 +1,9 @@
-function ok=testConfiguredCSIRSWaveformReception()
+function ok=testConfiguredCSIRSWaveformReception(cases)
 % Actual CSI-only OFDM with unknown capture offset, no PDSCH/DCI authority.
-% Cover the 5 MHz and 400 MHz carrier grids, including the higher-numerology
+% Cover 5, 100 and 400 MHz grids, including the higher-numerology
 % short-CP slot. These remain receiver components, not scenario acceptance.
-cases=[15 25;120 264];
+if nargin<1, cases=[15 25;30 273;120 264]; end
+validateattributes(cases,{'numeric'},{'2d','ncols',2,'integer','positive','finite'});
 for index=1:size(cases,1)
     localCase(cases(index,1),cases(index,2));
 end

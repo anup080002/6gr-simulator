@@ -5,6 +5,8 @@ arguments
     options.AbsoluteSlot (1,1) double=0
     options.RetryCollection (1,1) logical=false
     options.SubcarrierSpacing (1,1) double=30
+    options.ChannelEvolution (1,1) string {mustBeMember(options.ChannelEvolution, ...
+        ["persistent_link_absolute_slot","independent_attempt_realizations"])}="persistent_link_absolute_slot"
 end
 cfg=localConfig();
 cfg.channel.doppler_Hz=options.DopplerHz;
@@ -140,7 +142,7 @@ for k=1:2
     base.PHYGrant=sixgr.phy.grant.freezePHYGrant(cfg,"UL",base,'Frame',frame,'Slot',slot);
     seeds=struct('Bits',8000+10*k,'Noise',8001+10*k,'Channel',8002+10*k, ...
         'ControlNoise',8003+10*k,'RF',8004+10*k, ...
-        'ChannelEvolution','persistent_link_absolute_slot');
+        'ChannelEvolution',options.ChannelEvolution);
     role="fit"; if k==2, role="validation"; end
     planEntries{k}=struct('EpisodeID',"receiver_binding_"+k,'Role',role, ...
         'Grants',{{base}},'SNRdB',30,'Seeds',seeds);
@@ -155,6 +157,9 @@ for k=1:2
         planEntries{k}.Grants={base,retry}; planEntries{k}.SNRdB=[-40 40];
         planEntries{k}.Seeds.Noise=[seeds.Noise seeds.Noise+100];
         planEntries{k}.Seeds.Channel=[seeds.Channel seeds.Channel];
+        if options.ChannelEvolution=="independent_attempt_realizations"
+            planEntries{k}.Seeds.Channel(2)=seeds.Channel+100;
+        end
         planEntries{k}.Seeds.ControlNoise=[seeds.ControlNoise seeds.ControlNoise+100];
         planEntries{k}.Seeds.RF=[seeds.RF seeds.RF+100];
     end
@@ -176,7 +181,9 @@ for k=1:height(rows)
     if options.RetryCollection
         attempts=saved.episode.Attempts;
         assert(numel(attempts)==2 && attempts(1).CRCError && ~attempts(2).CRCError && ...
-            attempts(2).HARQSoftCombiningApplied && attempts(1).ChannelSeed==attempts(2).ChannelSeed && ...
+            attempts(2).HARQSoftCombiningApplied && ...
+            (isequal(attempts(1).ChannelSeed,attempts(2).ChannelSeed)== ...
+            (options.ChannelEvolution=="persistent_link_absolute_slot")) && ...
             attempts(2).ChannelInitialTime_s-attempts(1).ChannelInitialTime_s>0 && ...
             saved.episode.Delivered && saved.episode.StopReason=="crc_success");
     end
@@ -188,9 +195,12 @@ assert(proof.AllPlannedEpisodesPresent && proof.VerifiedEpisodes==2 && ...
     all(fittingRows.ConfigurationSHA256==retained.CalibrationKeySHA256));
 if options.RetryCollection
     [retryRows,retryProof]=sixgr.calibration.readGrantCalibrationFeatureRows(folder,retained.CalibrationKey,2);
-    assert(height(retryRows)==2 && retryProof.ChannelEvolution=="persistent_link_absolute_slot" && ...
+    assert(height(retryRows)==2 && retryProof.ChannelEvolution==options.ChannelEvolution && ...
         all(cellfun(@(v)isequal(v,[0 2]),retryRows.RVSequence)) && ~any(retryRows.CRCError));
-    fprintf('SLS_PERSISTENT_HARQ_REAL_RETRY_PASS episodes=2 unchanged_TB=1 combining=1\n');
+    fprintf('SLS_HARQ_REAL_RETRY_PASS evolution=%s episodes=2 unchanged_TB=1 combining=1\n',options.ChannelEvolution);
+end
+if options.ChannelEvolution=="independent_attempt_realizations" && absoluteSlot>0
+    localVerifyClockRejection(folder,rows.EpisodeRelativePath(1),retained.CalibrationKey);
 end
 unmatched=retained.CalibrationKey; unmatched.Rank=unmatched.Rank+1;
 [absent,missingProof]=sixgr.calibration.readGrantCalibrationFeatureRows(folder,unmatched,1);
@@ -208,6 +218,60 @@ assert(resumed.NewEpisodes==0);
 fprintf('SLS_RECEIVER_BINDING_RAW_COLLECTION episodes=2 qualification=0 folder=%s\n',folder);
 ok=true;
 fprintf('SLS_WAVEFORM_CHANNEL_IDENTITY_PASS statistical_calibration_qualified=0\n');
+end
+
+function localVerifyClockRejection(folder,relative,key)
+% Mutate only this test's freshly generated evidence, resealing it so the
+% semantic clock validator (not merely the file digest) must reject it.
+path=fullfile(folder,relative);
+original=load(path);
+% A MAT re-save changes its file identity even with identical contents.
+% Restore the original bytes so subsequent CSV-independence assertions
+% compare the same immutable episode, including its SHA256 provenance.
+backup=string(tempname(folder))+"_clock_evidence_original.mat";
+copyfile(path,backup);
+restore=onCleanup(@()localRestoreTestEpisode(path,backup)); %#ok<NASGU>
+for plane=["attempt","replay","propagation"]
+    for mutation=["zero","missing"]
+        altered=original;
+        switch plane
+            case "attempt"
+                if mutation=="missing"
+                    altered.episode.Attempts=rmfield(altered.episode.Attempts,'ChannelInitialTime_s');
+                else
+                    altered.episode.Attempts(1).ChannelInitialTime_s=0;
+                end
+            case "replay"
+                if mutation=="missing"
+                    altered.episode.Replays{1}=rmfield(altered.episode.Replays{1},'ReplayChannelInitialTime_s');
+                else
+                    altered.episode.Replays{1}.ReplayChannelInitialTime_s=0;
+                end
+            case "propagation"
+                if mutation=="missing"
+                    altered.episode.Captures{1}.Propagation=rmfield(altered.episode.Captures{1}.Propagation,'ChannelInitialTime_s');
+                else
+                    altered.episode.Captures{1}.Propagation.ChannelInitialTime_s=0;
+                end
+        end
+        localWriteTestEpisode(path,altered);
+        localReject(@()sixgr.calibration.readGrantCalibrationFeatureRows(folder,key,1), ...
+            'sixgr:calibration:GrantFeatureChannelTime');
+    end
+end
+fprintf('GRANT_CLOCK_EVIDENCE_REJECTION_PASS zero_or_missing_planes=6\n');
+end
+
+function localRestoreTestEpisode(path,backup)
+copyfile(backup,path,'f');
+sixgr.util.jsonWrite(string(path)+".sha256.json", ...
+    struct('SHA256',sixgr.csi.studyFileSHA256(path)));
+end
+
+function localWriteTestEpisode(path,saved)
+save(path,'-struct','saved','-v7.3');
+sixgr.util.jsonWrite(string(path)+".sha256.json", ...
+    struct('SHA256',sixgr.csi.studyFileSHA256(path)));
 end
 
 function localReject(fn,identifier)

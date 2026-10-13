@@ -143,6 +143,45 @@ assert(~any(missingEnabledCoverage.Registered) && ...
     contains(missingEnabledCoverage.Reason(1), "PRACHRawEvidenceMissingColumns"), ...
     "An enabled estimator with no measured estimate column must still fail closed.");
 
+% One actual shared observation can contain both UE targets even when only
+% the other UE is the strongest candidate. This is not a false alarm.
+shared = raw(1:2,:);
+shared.PRACHOccasionID(:) = "frame=1|slot=4|symbol=7|frequency=0";
+shared.PreambleIndexTx = [0;1]; shared.PreambleIndexDetected(:) = 1;
+shared.DetectedPreambleSet = ["1|0";"1|0"];
+shared.DetectedPreambleSetAvailable = true(2,1);
+shared.PreambleAmbiguityDetected(:) = true;
+shared.FalseAlarm = NaN(2,1);
+shared.FalseAlarmClassification = repmat("unavailable_complete_transmitted_occasion_set_not_retained",2,1);
+shared.Msg1ScheduledSlot = [14;14];
+sharedRegistry = sixgr.artifact.EvidenceRegistry();
+sharedCoverage = sixgr.artifact.registerInitialAccessEvidence(sharedRegistry, ...
+    struct('Link',struct('RawTrials',struct('PRACH',shared))),scfg,cfg,identity);
+assert(all(sharedCoverage.Registered), strjoin(sharedCoverage.Reason,' | '));
+[found, sharedTable] = sharedRegistry.resolveTable('initial_access','base','prach_detection_trials.csv');
+assert(found && all(isnan(sharedTable.FalseAlarm)) && all(sharedTable.DetectedPreambleSet=="1|0") ...
+    && ~any(sharedTable.MissedDetection) && all(sharedTable.Msg1ScheduledSlot==14));
+[missed,wrong,scope] = sixgr.report.prachTargetDetectionEvidence(shared);
+assert(all(missed==0) && all(wrong==0) && all(scope=="per_target_shared_occasion_not_independent_trials"));
+absent = shared(1,:); absent.PreambleIndexTx=2; absent.MissedDetection=true;
+[missed,wrong] = sixgr.report.prachTargetDetectionEvidence(absent);
+assert(missed==1 && wrong==1,'A genuinely absent target must remain a miss.');
+empty = shared(1,:); empty.DetectedPreambleSet=""; empty.PreambleDetected=false;
+empty.PreambleIndexDetected=NaN;
+[missed,wrong] = sixgr.report.prachTargetDetectionEvidence(empty);
+assert(missed==1 && isnan(wrong),'Known empty detection is not a wrong-identity trial.');
+for invalidSet = ["1|1","64","-1","1|NaN","1|0.5","1|"]
+    bad = shared; bad.DetectedPreambleSet(1)=invalidSet;
+    badRegistry = sixgr.artifact.EvidenceRegistry();
+    c = sixgr.artifact.registerInitialAccessEvidence(badRegistry, ...
+        struct('Link',struct('RawTrials',struct('PRACH',bad))),scfg,cfg,identity);
+    assert(~any(c.Registered) && contains(c.Reason,'InvalidPRACHDetectionSet'));
+end
+bad=shared; bad.FalseAlarm(:)=0;
+c=sixgr.artifact.registerInitialAccessEvidence(sixgr.artifact.EvidenceRegistry(), ...
+    struct('Link',struct('RawTrials',struct('PRACH',bad))),scfg,cfg,identity);
+assert(~any(c.Registered) && contains(c.Reason,'InvalidPRACHFalseAlarm'), ...
+    'Unknown false alarms must not be coerced to zero.');
 ok = true;
 end
 

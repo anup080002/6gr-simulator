@@ -28,6 +28,9 @@ def symbol_occupancy_chart(existing, fetch_artifact_bytes, run_id):
 
     symbols = defaultdict(set)
     counts = defaultdict(int)
+    observation_context = {}
+    if any(m._row_text(row, 'ObservationID') for row in rows) and not all(m._row_text(row, 'ObservationID') for row in rows):
+        raise ValueError('Mixed or unbound independent RE observations')
     for number, row in enumerate(rows, 1):
         if m._row_text(row, "evidence_scope") != "runtime_observed_tx_occupancy":
             raise ValueError(f"Occupancy row {number} is not executed TX evidence")
@@ -55,7 +58,16 @@ def symbol_occupancy_chart(existing, fetch_artifact_bytes, run_id):
         # invent carrier/BWP identifiers when a legacy exporter omitted them.
         carrier = m._row_text(row, "component_carrier", "component_carrier_id")
         bwp = m._row_text(row, "bwp_id")
-        key = (cell, carrier, bwp, direction, slot)
+        observation = m._row_text(row, "ObservationID")
+        if observation:
+            context = {name: m._row_text(row, name) for name in
+                       ("ObservationID", "ObservationUEIndex", "ConfiguredSNR_dB", "Seed", "TrialIndex", "ExecutionScope")}
+            if context["ExecutionScope"] != "independent_link_execution":
+                raise ValueError("Independent RE observation has incompatible execution scope")
+            if observation in observation_context and observation_context[observation] != context:
+                raise ValueError("Independent RE observation has conflicting context")
+            observation_context[observation] = context
+        key = (cell, carrier, bwp, direction, slot, observation)
         symbols[key].add(symbol)
         counts[key] += 1
     if not symbols:
@@ -65,8 +77,12 @@ def symbol_occupancy_chart(existing, fetch_artifact_bytes, run_id):
 
     csv_rows = []
     series_points = defaultdict(list)
-    for (cell, carrier, bwp, direction, slot), occupied in sorted(symbols.items()):
+    for (cell, carrier, bwp, direction, slot, observation), occupied in sorted(symbols.items()):
         scope = f"Cell {cell} {direction} CC {carrier or '?'} BWP {bwp or '?'}"
+        context = observation_context.get(observation, {})
+        if context:
+            scope += (f' SNR {context["ConfiguredSNR_dB"]} dB UE {context["ObservationUEIndex"]}'
+                      f' trial {context["TrialIndex"]} seed {context["Seed"]}')
         series_points[scope].append([slot, len(occupied)])
         csv_rows.append({
             "run_id": run_id, "chart_name": name, "chart_mode": "scatter",
@@ -75,11 +91,12 @@ def symbol_occupancy_chart(existing, fetch_artifact_bytes, run_id):
             "cell_id": cell, "component_carrier": carrier, "bwp_id": bwp,
             "direction": direction, "symbol_indices_0based": "|".join(map(str, sorted(occupied))),
             "scope_identity_status": "complete" if carrier and bwp else "partial_carrier_or_bwp_not_exported",
-            "source_table_logical_path": path, "source_row_count": counts[(cell, carrier, bwp, direction, slot)],
-            "source_sample_count": counts[(cell, carrier, bwp, direction, slot)],
+            "source_table_logical_path": path, "source_row_count": counts[(cell, carrier, bwp, direction, slot, observation)],
+            "source_sample_count": counts[(cell, carrier, bwp, direction, slot, observation)],
             "materialization_status": "executed_tx_symbol_occupancy_dataset",
             "source_mapping_status": "exact", "evidence_shape_policy": "observed_timeline",
             "lineage_note": "Distinct symbols in active executed TX RE rows; absent intervals are not filled with zeros.",
+            **context,
         })
     series = [{"name": scope, "points": points} for scope, points in series_points.items()]
     one_slot = len({row["x_value"] for row in csv_rows}) == 1
@@ -94,7 +111,7 @@ def symbol_occupancy_chart(existing, fetch_artifact_bytes, run_id):
             name, "Executed TX grid occupancy by exported scope; missing carrier/BWP identity remains unavailable.",
             series, [f"executed_re_rows={sum(counts.values())}", "Distinct symbols, not RE/port counts", "No inferred empty slots", "CC?/BWP? = identity not exported"],
             x_label="Absolute slot (0-based)", y_label="Distinct occupied TX symbols",
-            mode=mode, evidence_shape_policy=shape),
+            mode=mode, evidence_shape_policy=shape, show_all_series=bool(observation_context)),
         "csv_status": "executed_tx_symbol_occupancy_dataset",
         "image_status": "generated_executed_tx_symbol_occupancy_svg",
         "source_table_path": path, "source_row_count": sum(counts.values()),

@@ -26,7 +26,19 @@ initialAccessLifecycle = localResolveOptionalTable(runtimeTables, "InitialAccess
     fullfile(controlDir, "initial_access_lifecycle_trace.csv"), ...
     fullfile(layout.ReportCSVDir, "initial_access_lifecycle_trace.csv"));
 if istable(initialAccessLifecycle) && ~isempty(initialAccessLifecycle)
-    initialAccessLifecycle = sixgr.truth.deriveInitialAccessProcedureDelay(initialAccessLifecycle);
+    % The export must retain the same completion policy as the live runtime.
+    % A bare table cannot authorize changing RRC completion to Msg4 alone.
+    accessCfg=sixgr.util.structGet(runtime,"CoupledRuntime.CfgMobility",struct());
+    snapshotPath=fullfile(runFolder,"meta","scenario_config_resolved.json");
+    if isempty(fieldnames(accessCfg)) && isfile(snapshotPath)
+        accessCfg=jsondecode(fileread(snapshotPath));
+    end
+    if ~isempty(fieldnames(accessCfg))
+        initialAccessLifecycle = sixgr.truth.deriveInitialAccessProcedureDelay( ...
+            initialAccessLifecycle,"RequireRRCSetupComplete", ...
+            logical(sixgr.util.structGet(accessCfg, ...
+            "initial_access.rrc.require_setup_complete",false)));
+    end
 end
 controlSummary = localResolveOptionalTable(runtimeTables, "ControlGatingSummaryTable", fullfile(layout.ReportCSVDir, "live_control_gating_summary.csv"));
 controlState = localResolveOptionalTable(runtimeTables, "ControlGatingStateTable", fullfile(layout.ReportCSVDir, "live_control_gating_state.csv"));

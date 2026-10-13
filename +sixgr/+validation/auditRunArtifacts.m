@@ -666,8 +666,8 @@ for i = 1:numel(files)
         sourceCSVs(strlength(sourceCSVs) == 0) = "__manifested_without_source__";
     end
     for k = 1:height(T)
-        plotRel = localManifestArtifactPath(plotFiles(k), rootRunFolder);
-        sourceRel = localManifestSourceSpec(sourceCSVs(k), rootRunFolder);
+        plotRel = localManifestArtifactPath(plotFiles(k), rootRunFolder, pathValue);
+        sourceRel = localManifestSourceSpec(sourceCSVs(k), rootRunFolder, pathValue);
         if strlength(plotRel) == 0
             continue;
         end
@@ -829,17 +829,38 @@ for candidate = string(candidates(:)).'
 end
 end
 
-function rel = localManifestArtifactPath(pathValue, rootRunFolder)
+function rel = localManifestArtifactPath(pathValue, rootRunFolder, lineagePath)
+if nargin < 3, lineagePath = ""; end
 pathValue = string(pathValue);
-if isfile(char(pathValue)) || localLooksAbsolute(pathValue)
+if localLooksAbsolute(pathValue)
     rel = localRelativePath(pathValue, rootRunFolder);
 else
     rel = pathValue;
+    % Component exporters own paths relative to their component root, not
+    % the parent execution. Resolve from the lineage's owning directory
+    % upward, bounded by this execution; never search sibling components.
+    portable = replace(strtrim(pathValue), "\", "/");
+    if strlength(lineagePath) > 0 && ~any(split(portable,"/") == "..")
+        root = string(sixgr.util.canonicalPath(rootRunFolder));
+        cursor = string(sixgr.util.canonicalPath(fileparts(char(lineagePath))));
+        while cursor == root || startsWith(cursor,root+string(filesep),'IgnoreCase',ispc)
+            candidate = fullfile(cursor,strrep(char(portable),"/",filesep));
+            if isfile(candidate)
+                rel = localRelativePath(candidate,root);
+                break;
+            end
+            if cursor == root, break; end
+            parent = string(fileparts(char(cursor)));
+            if parent == cursor, break; end
+            cursor = parent;
+        end
+    end
 end
 rel = localNormalizeRelativePath(rel);
 end
 
-function sourceSpec = localManifestSourceSpec(value, rootRunFolder)
+function sourceSpec = localManifestSourceSpec(value, rootRunFolder, lineagePath)
+if nargin < 3, lineagePath = ""; end
 value = strtrim(string(value));
 if value == "__manifested_without_source__"
     sourceSpec = value;
@@ -849,7 +870,7 @@ parts = split(value, "|");
 parts = strtrim(parts(:));
 parts = parts(strlength(parts) > 0);
 for i = 1:numel(parts)
-    parts(i) = localManifestArtifactPath(parts(i), rootRunFolder);
+    parts(i) = localManifestArtifactPath(parts(i), rootRunFolder, lineagePath);
 end
 sourceSpec = strjoin(parts, "|");
 end

@@ -195,26 +195,52 @@ row = struct( ...
 end
 
 function T = localBuildRFChainTable(cfg)
-paModel = localString(cfg, ["impairments.pa_nonlinearity.model","power_and_rf_frontend.pa_model"], "ideal_linear");
-osc = localString(cfg, ["impairments.oscillator_profile","power_and_rf_frontend.oscillator_profile"], "lab_clean");
-dacBits = localNumber(cfg, ["impairments.dac_quantization_bits","power_and_rf_frontend.dac_bits"], 12);
-adcBits = localNumber(cfg, ["impairments.adc_quantization_bits","power_and_rf_frontend.adc_bits"], 12);
-ueChains = localNumber(cfg, ["scenario.ue.nTxAnt","mimo.ue_num_rf_chains","phy.pusch.numTxPorts"], 1);
-bsChains = localNumber(cfg, ["scenario.bs.nTxAnt","mimo.bs_num_rf_chains","phy.pdsch.numTxPorts"], 1);
-ok = isfinite(dacBits) && isfinite(adcBits) && isfinite(ueChains) && isfinite(bsChains) && ...
-    strlength(strtrim(paModel)) > 0;
-T = table("DAC->RF_impairment_chain->PA->antenna_port", ...
-    "antenna_port->LNA_noise_figure->ADC->baseband", ...
+% Live exports receive buildInternalConfig output, not the scenario YAML.
+% Prefer the same effective device fields used by applyRFImpairmentChain.
+% An absent definition is not an ideal RF chain or a 12-bit converter.
+[paModel, paSource] = localString(cfg, ["rf.pa.method", ...
+    "rf.frontend.pa.model","rf_frontend.pa.model", ...
+    "impairments.pa_nonlinearity.model","power_and_rf_frontend.pa_model"], "");
+[osc, oscSource] = localString(cfg, ["rf.frontend.phase_noise.profile_id", ...
+    "rf_frontend.phase_noise.profile_id","impairments.oscillator_profile", ...
+    "power_and_rf_frontend.oscillator_profile"], "");
+[dacBits, dacSource] = localNumber(cfg, ["rf.frontend.dac.bits", ...
+    "rf.dacBits","phy.impairments.dacQuantizationBits", ...
+    "rf_frontend.dac.bits","impairments.dac_quantization_bits", ...
+    "power_and_rf_frontend.dac_bits"], NaN);
+[adcBits, adcSource] = localNumber(cfg, ["rf.hardware.adc.resolutionBits", ...
+    "rf.adcBits","phy.impairments.adcQuantizationBits", ...
+    "rf.frontend.receiver.adc.bits","rf_frontend.receiver.adc.bits", ...
+    "impairments.adc_quantization_bits","power_and_rf_frontend.adc_bits"], NaN);
+ueChains = localNumber(cfg, ["mimo.ue_num_rf_chains","scenario.ue.nTxAnt"], NaN);
+bsChains = localNumber(cfg, ["mimo.bs_num_rf_chains","scenario.bs.nTxAnt"], NaN);
+counts = [dacBits adcBits ueChains bsChains];
+ok = all(isfinite(counts) & counts > 0 & counts == fix(counts)) && ...
+    all([dacBits adcBits] >= 2 & [dacBits adcBits] <= 24) && ...
+    strlength(strtrim(paModel)) > 0 && strlength(strtrim(osc)) > 0;
+T = table("DAC->IQ->element_RF->PA->phase_noise->CFO->timing->sample_clock", ...
+    "timing->LO_CFO->phase_noise->IQ->element_RF->sample_clock->AGC->ADC", ...
     string(paModel), dacBits, adcBits, string(osc), ueChains, bsChains, ok, ...
-    "resolved_runtime_rf_chain_configuration", ...
+    "explicit_rf_chain_configuration_not_execution_evidence", ...
     'VariableNames', {'TX_chain','RX_chain','PA_model','DAC_bits','ADC_bits','OscillatorProfile', ...
     'UE_RFChainCount','BS_RFChainCount','RfChainDefinitionOk','EvidenceSource'});
+T.PAModelConfigurationSource = paSource;
+T.OscillatorProfileConfigurationSource = oscSource;
+T.DACBitsConfigurationSource = dacSource;
+T.ADCBitsConfigurationSource = adcSource;
+T.EvaluationScope = "configuration_definition_only_not_RF_qualification";
 end
 
 function T = localBuildCFOTable(dlT, ulT, cfg)
-configured = localNumber(cfg, ["impairments.cfo.value_hz","rf.cfo_hz","power_and_rf_frontend.cfo_hz"], 0);
-configuredEnabled = localBool(cfg, ["impairments.cfo.enabled","impairments.cfo_enabled", ...
+% The live producer passes the resolved internal config; offline audits
+% may pass scenario YAML. Runtime injection authority takes precedence.
+configured = localNumber(cfg, ["phy.impairments.cfoHz","rf.cfo_Hz", ...
+    "impairments.cfo_hz","impairments.cfo.value_hz", ...
+    "rf.cfo_hz","power_and_rf_frontend.cfo_hz"], NaN);
+configuredEnabled = localBool(cfg, ["phy.impairments.cfoEnabled", ...
+    "impairments.cfo_enabled","impairments.cfo.enabled", ...
     "rf.cfo_enabled","power_and_rf_frontend.cfo_enabled"], abs(configured) > 0);
+if ~configuredEnabled && isfinite(configured), configured = 0; end
 rows = [localCFOTrialRow("DL", dlT, configured, configuredEnabled); ...
     localCFOTrialRow("UL", ulT, configured, configuredEnabled)];
 T = struct2table(rows, "AsArray", true);
@@ -222,49 +248,77 @@ end
 
 function row = localCFOTrialRow(direction, T, configured, configuredEnabled)
 observed = istable(T) && height(T) > 0 && localHasColumn(T, "InjectedCFO_Hz");
-inj = localFiniteColumn(T, "InjectedCFO_Hz");
-est = localFiniteColumn(T, "EstimatedCFO_PreCorrection_Hz");
-res = localFiniteColumn(T, "ResidualCFO_PostCorrection_Hz");
+inj = localNumericColumn(T, "InjectedCFO_Hz");
+est = localNumericColumn(T, "EstimatedCFO_PreCorrection_Hz");
+res = localNumericColumn(T, "ResidualCFO_PostCorrection_Hz");
+n = localHeight(T);
+injectionComplete = n > 0 && numel(inj) == n && all(isfinite(inj));
 mismatch = localMaxAbs(inj - configured);
 residual = localMaxAbs(res);
 estimationRequired = logical(configuredEnabled) || abs(double(configured)) > 1e-12;
-if estimationRequired
-    estimatorOk = ~isempty(est) && ~isempty(res) && isfinite(residual) && residual <= 1;
-    estimatorStatus = "required_and_observed";
+if ~isfinite(configured)
+    estimatorOk = false;
+    estimatorStatus = "configuration_unavailable";
+elseif estimationRequired
+    estimatorComplete = n > 0 && numel(est) == n && numel(res) == n && ...
+        all(isfinite(est)) && all(isfinite(res));
+    estimatorOk = estimatorComplete && isfinite(residual) && residual <= 1;
+    if ~estimatorComplete
+        estimatorStatus = "required_missing_observations";
+    elseif ~estimatorOk
+        estimatorStatus = "required_residual_limit_failed";
+    else
+        estimatorStatus = "required_and_observed";
+    end
 else
     % A disabled zero-CFO stage is an identity transform.  Requiring an
     % estimator output in this case turns an honest N/A into a false fail.
     estimatorOk = true;
     estimatorStatus = "not_applicable_disabled_zero_cfo_identity";
 end
-ok = observed && isfinite(mismatch) && mismatch <= 1 && estimatorOk;
+injectionOk = observed && injectionComplete && isfinite(mismatch) && mismatch <= 1;
+ok = injectionOk && estimatorOk;
 row = struct("Direction", char(direction), "ObservedRows", double(localHeight(T)), ...
     "ConfiguredCFO_Hz", double(configured), "MeanInjectedCFO_Hz", localMean(inj), ...
     "MeanEstimatedCFO_PreCorrection_Hz", localMean(est), "MeanResidualCFO_PostCorrection_Hz", localMean(res), ...
     "MaxConfiguredAppliedMismatch_Hz", double(mismatch), "MaxResidualCFO_Hz", double(residual), ...
     "CFOEstimationRequired", logical(estimationRequired), "CFOEstimationStatus", char(estimatorStatus), ...
+    "CFOInjectionConfiguredAppliedOk", logical(injectionOk), ...
+    "CFOEstimatorQualificationOk", logical(estimatorOk), ...
     "CfoConfiguredAppliedOk", logical(ok), "EvidenceSource", char(localEvidenceSource(observed, "trial_rf_cfo_columns")));
 end
 
 function T = localBuildTimingTable(dlT, ulT, cfg)
-configured = localNumber(cfg, ["impairments.to.value_samples","impairments.timing_offset_samples","rf.timing_offset_samples"], 0);
+configured = localNumber(cfg, ["phy.impairments.timingOffsetSamples", ...
+    "rf.timingOffsetSamples","impairments.timing_offset_samples", ...
+    "impairments.to.value_samples","rf.timing_offset_samples"], NaN);
+enabled = localBool(cfg, ["phy.impairments.timingOffsetEnabled", ...
+    "impairments.timing_offset_enabled","impairments.to.enabled"], abs(configured) > 0);
+if ~enabled && isfinite(configured), configured = 0; end
 rows = [localTimingTrialRow("DL", dlT, configured); localTimingTrialRow("UL", ulT, configured)];
 T = struct2table(rows, "AsArray", true);
 end
 
 function row = localTimingTrialRow(direction, T, configured)
 observed = istable(T) && height(T) > 0 && localHasColumn(T, "InjectedTimingOffset_samples");
-inj = localFiniteColumn(T, "InjectedTimingOffset_samples");
-est = localFiniteColumn(T, "EstimatedTimingOffset_PreCorrection_samples");
-res = localFiniteColumn(T, "ResidualTimingError_PostCorrection_samples");
+inj = localNumericColumn(T, "InjectedTimingOffset_samples");
+est = localNumericColumn(T, "EstimatedTimingOffset_PreCorrection_samples");
+res = localNumericColumn(T, "ResidualTimingError_PostCorrection_samples");
+n = localHeight(T);
+complete = n > 0 && numel(inj) == n && numel(est) == n && numel(res) == n && ...
+    all(isfinite(inj)) && all(isfinite(est)) && all(isfinite(res));
 mismatch = localMaxAbs(inj - configured);
 residual = localMaxAbs(res);
-ok = observed && isfinite(mismatch) && mismatch <= 1 && (~isempty(res) && isfinite(residual) && residual <= 1);
+injectionOk = observed && n > 0 && numel(inj) == n && all(isfinite(inj)) && ...
+    isfinite(mismatch) && mismatch <= 1;
+ok = injectionOk && complete && ...
+    isfinite(residual) && residual <= 1;
 row = struct("Direction", char(direction), "ObservedRows", double(localHeight(T)), ...
     "ConfiguredTimingOffset_samples", double(configured), "MeanInjectedTimingOffset_samples", localMean(inj), ...
     "MeanEstimatedTimingOffset_PreCorrection_samples", localMean(est), ...
     "MeanResidualTimingOffset_samples", localMean(res), ...
     "MaxConfiguredAppliedMismatch_samples", double(mismatch), "MaxResidualTimingError_samples", double(residual), ...
+    "TimingInjectionConfiguredAppliedOk", logical(injectionOk), ...
     "TimingOffsetConfiguredAppliedOk", logical(ok), "EvidenceSource", char(localEvidenceSource(observed, "trial_rf_timing_columns")));
 end
 
@@ -1142,27 +1196,31 @@ else
 end
 end
 
-function value = localNumber(cfg, paths, defaultValue)
+function [value, source] = localNumber(cfg, paths, defaultValue)
 value = defaultValue;
+source = "unavailable";
 for path = string(paths)
     raw = localGet(cfg, path, []);
     if isnumeric(raw) || islogical(raw)
         if isscalar(raw) && isfinite(double(raw))
             value = double(raw);
+            source = path;
             return;
         end
     else
         x = str2double(string(raw));
         if isfinite(x)
             value = x;
+            source = path;
             return;
         end
     end
 end
 end
 
-function value = localString(cfg, paths, defaultValue)
+function [value, source] = localString(cfg, paths, defaultValue)
 value = string(defaultValue);
+source = "unavailable";
 for path = string(paths)
     raw = localGet(cfg, path, []);
     if isempty(raw)
@@ -1171,6 +1229,7 @@ for path = string(paths)
     text = string(raw);
     if ~isempty(text) && strlength(strtrim(text(1))) > 0
         value = text(1);
+        source = path;
         return;
     end
 end

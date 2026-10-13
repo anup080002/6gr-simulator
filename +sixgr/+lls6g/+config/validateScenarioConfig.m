@@ -1021,6 +1021,17 @@ if ~ismember(puschDmrsTypeAPos, localCatalogAllowedNumeric(catalog.sections.refe
         "reference_signals.pusch_dmrs_type_a_position in %s must be 2 or 3.", localCtx(ctx));
 end
 cfoEstMethod = lower(strtrim(string(localOptionalStructValue(cfg, "impairments.cfo_estimation_method", ""))));
+cpFraction = double(cfg.impairments.cfo_cp_window_fraction);
+cpFalseAlarm = double(cfg.impairments.cfo_cp_false_alarm_probability);
+if ~(isscalar(cpFraction) && isreal(cpFraction) && isfinite(cpFraction) && ...
+        cpFraction > 0 && cpFraction <= 1 && ...
+        isscalar(cpFalseAlarm) && isreal(cpFalseAlarm) && isfinite(cpFalseAlarm) && ...
+        cpFalseAlarm > 0 && cpFalseAlarm < 1)
+    error("sixgr:lls6g:config:CFOCPObservationPolicy", ...
+        ['impairments.cfo_cp_window_fraction in %s must be in (0,1], and ' ...
+         'impairments.cfo_cp_false_alarm_probability must be in (0,1).'], ...
+        localCtx(ctx));
+end
 if cfoEstMethod == "dmrs_two_symbol" && (pdschDmrsAddPos < 1 || puschDmrsAddPos < 1)
     error("sixgr:lls6g:config:DMRSTwoSymbolCFORequiresAdditionalDMRS", ...
         "impairments.cfo_estimation_method=dmrs_two_symbol in %s requires reference_signals.pdsch_dmrs_additional_positions>=1 and pusch_dmrs_additional_positions>=1.", ...
@@ -2244,6 +2255,19 @@ tf = isnumeric(value) && isscalar(value) && isfinite(double(value));
 end
 
 function localValidateRandomAccessCompatibility(cfg, ctx)
+policy=string(localOptionalStructValue(cfg,'random_access.preamble_detection_policy','strongest'));
+assert(isscalar(policy) && any(policy==["strongest","awgn_sic_unrestricted"]), ...
+    'sixgr:config:InvalidPRACHDetectionPolicy','random_access.preamble_detection_policy must be strongest or awgn_sic_unrestricted.');
+if policy=="awgn_sic_unrestricted"
+    validateattributes(localOptionalStructValue(cfg,'random_access.multi_preamble_max_delay_us',[]), ...
+        {'numeric'},{'scalar','real','finite','positive'});
+    assert(string(localOptionalStructValue(cfg,'random_access.restricted_set',''))=="UnrestrictedSet", ...
+        'sixgr:config:MultiPRACHRestrictedSet','awgn_sic_unrestricted requires random_access.restricted_set=UnrestrictedSet.');
+end
+pool=localOptionalStructValue(cfg,"random_access.temporary_crnti_pool",[]);
+if ~isempty(pool)
+    sixgr.mac.ra.RARIdentityAllocator.validatePool(pool);
+end
 if ~logical(localOptionalStructValue(cfg, "random_access.enabled", true))
     return;
 end

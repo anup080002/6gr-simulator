@@ -20,6 +20,13 @@ for i=1:numel(profiles)
     sanitizedMask=sanitized~=0;
     assert(row.ReservedRE==nnz(any(sanitizedMask,3)) && event.NRE==nnz(sanitizedMask));
     assert(all(diagnostic.Tx.Grid(sanitizedMask)==sanitized(sanitizedMask)));
+    equalized=diagnostic.Rx.EqualizedSymbolsForEvidence;
+    symbols=diagnostic.Tx.PDSCHSymbolsForEvidence;
+    assert(isequal(size(equalized),size(symbols)));
+    gain=(symbols(:)'*equalized(:))/sum(abs(symbols(:)).^2);
+    expectedEVM=norm(equalized(:)-gain*symbols(:))/norm(gain*symbols(:));
+    assert(abs(row.EqualizedSymbolEVMRMS-expectedEVM)<1e-12, ...
+        'EVM must use matched layer symbols, never pre-EQ receive antennas.');
     rows{i}=struct2table(row);
 end
 t=vertcat(rows{:});

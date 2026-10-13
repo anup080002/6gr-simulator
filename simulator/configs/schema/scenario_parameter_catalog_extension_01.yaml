@@ -154,6 +154,8 @@
       "artifact_formats": {"required": true, "type": "string_list", "min_items": 1},
       "save_resolved_config": {"required": true, "type": "boolean"},
       "save_raw_waveforms": {"required": true, "type": "boolean"},
+      "receiver_replay_capture_policy": {"required": false, "type": "string", "allowed_values": ["none", "failed", "all"]},
+      "receiver_replay_capture_max_trials": {"required": false, "type": "integer", "min": 0, "description": "Maximum complete receiver replay captures per direction and run folder; zero disables capture."},
       "save_llrs": {"required": true, "type": "boolean"},
       "save_channel_snapshots": {"required": true, "type": "boolean"},
       "save_constellations": {"required": true, "type": "boolean"},
@@ -434,6 +436,7 @@
       "dl_data_to_ul_ack": {"required": false, "type": "number_list"},
       "sr_resource_ids": {"required": false, "type": "number_list"},
       "scheduling_request_resources": {"required": false, "type": "struct_array", "item_nested_rule": "pucch_sr_resource_configuration_object"},
+      "ue_report_bindings": {"required": false, "type": "struct_array", "item_nested_rule": "pucch_ue_report_binding_object"},
       "csi_resource_ids": {"required": false, "type": "number_list"},
       "sps_pucch_an_resource_ids": {"required": false, "type": "number_list"},
       "power_control": {"required": false, "type": "struct"},
@@ -621,6 +624,16 @@
       "periodicity_slots": {"required": false, "type": "integer", "min": 1},
       "offset_slots": {"required": false, "type": "integer", "min": 0},
       "require_scheduler_request_state_update": {"required": false, "type": "boolean"}
+    }},
+    "pucch_ue_report_binding_object": {"parameters": {
+      "ue_index": {"required": true, "type": "integer", "min": 1},
+      "rnti": {"required": true, "type": "integer", "min": 1, "max": 65535},
+      "serving_cell_id": {"required": true, "type": "integer", "min": 1},
+      "component_carrier_id": {"required": true, "type": "integer", "min": 0},
+      "ul_bwp_id": {"required": true, "type": "integer", "min": 0},
+      "csi_report_config_id": {"required": true, "type": "string"},
+      "csi_resource_id": {"required": true, "type": "number_list", "min": 0, "integer": true, "max_items": 1},
+      "scheduling_request_resources": {"required": true, "type": "struct_array", "item_nested_rule": "pucch_sr_resource_configuration_object"}
     }},
     "pucch_sr_resource_configuration_object": {"parameters": {
       "scheduling_request_resource_id": {"required": true, "type": "integer", "min": 1, "max": 8},

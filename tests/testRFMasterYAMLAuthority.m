@@ -55,9 +55,17 @@ verifyEqual(t,disabledPhaseNoise.Backend,"disabled");
 probe.impairments.phase_noise_enabled=true;
 probe.impairments.pa_nonlinearity_enabled=true;
 probeCfg=sixgr.lls6g.buildInternalConfig(probe,fullfile(tmp,"probe"));
+% Enabling a previously disabled device must not invent its amplitude
+% reference. This bounded component probe explicitly uses normalized IQ;
+% it does not establish a volts/dBm-calibrated physical PA profile.
+verifyError(t,@()sixgr.rf.runtime.PAProfile.fromConfiguration(probeCfg), ...
+    'RF:PAProfileMissing');
+probe.rf_frontend.pa.reference_domain="normalized_complex_baseband_full_scale";
+probeCfg=sixgr.lls6g.buildInternalConfig(probe,fullfile(tmp,"probe-explicit-domain"));
 [paProfile,canonical]=sixgr.rf.runtime.PAProfile. ...
     fromConfiguration(probeCfg);
 verifyTrue(t,canonical);
+verifyEqual(t,paProfile.ReferenceDomain,"normalized_complex_baseband_full_scale");
 verifyEqual(t,paProfile.InputBackoff_dB,9.25);
 verifyEqual(t,double(probeCfg.rf.phaseNoise.maskLevels_dBcHz(:)), ...
     double(probe.rf_frontend.phase_noise.mask_levels_dbchz(:)));

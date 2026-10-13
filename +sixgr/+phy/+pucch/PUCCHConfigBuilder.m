@@ -34,7 +34,7 @@ classdef PUCCHConfigBuilder
             % binding with MATLAB:expectedInteger and the two entrypoints
             % disagree on the rejected configuration. No payload value is
             % consulted to choose this resource.
-            section=sixgr.util.structGet(cfg,'validation.pucch_resources',struct());
+            section=sixgr.phy.pucch.resolveUEReportResources(cfg,ueData);
             if isstruct(section) && isscalar(section) && isfield(section,'csi_resource_ids')
                 sixgr.phy.pucch.resolveConfiguredCSIResourceID(section.csi_resource_ids);
             end
@@ -183,7 +183,7 @@ end
 end
 
 function [rrc,section,epoch]=localRRC(cfg,ueData)
-section=sixgr.util.structGet(cfg,"validation.pucch_resources",struct());
+section=sixgr.phy.pucch.resolveUEReportResources(cfg,ueData);
 if ~isstruct(section) || ...
         ~logical(sixgr.util.structGet(section,"enabled",false)) || ...
         string(sixgr.util.structGet(section,"profile","")) ~= ...

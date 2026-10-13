@@ -108,6 +108,21 @@ control:
   blind_search_enabled: false
   coreset_frequency_resource_policy: full_bwp_groups
 
+# This tracking-only anchor does not execute random access. Do not inherit
+# the TDD RA baseline into its FDD carrier or assert an unrelated procedure.
+random_access:
+  enabled: false
+  msg2_pdsch:
+    ptrs_enabled: false
+  msg3_pusch:
+    ptrs_enabled: false
+    transform_precoding: false
+  msg4_pdsch:
+    ptrs_enabled: false
+  setup_complete_pusch:
+    ptrs_enabled: false
+    transform_precoding: false
+
 reference_signals:
   ssb_enabled: false
   pbch_enabled: false

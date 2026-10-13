@@ -134,6 +134,7 @@ for ii = 1:numel(resources)
     s.Metric = double(metric);
     s.CoverageRatio = double(coverage);
     s.CorrectedWaveform = corrWave;
+    s.OFDMInfo = ofdmInfo; % Canonical clock of this received slot, not a subframe CP vector.
     slotDetections(end+1, 1) = s; %#ok<AGROW>
 end
 
@@ -185,7 +186,7 @@ function row = localSlotDetection()
 row = struct("Slot", NaN, "RxGrid", [], "RxRE", [], "ReferenceSymbols", [], ...
     "Detected", false, "PhaseRad", NaN, "PhasePerReceiveBranchRad", [], ...
     "Metric", NaN, "CoverageRatio", NaN, ...
-    "CorrectedWaveform", [], "ReferenceIndices", [], "CyclicPrefixFraction", NaN);
+    "CorrectedWaveform", [], "OFDMInfo", struct(), "ReferenceIndices", [], "CyclicPrefixFraction", NaN);
 end
 
 function observed = localObservedRECount(rxRE, noiseVariance, faultMode)

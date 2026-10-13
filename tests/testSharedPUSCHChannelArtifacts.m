@@ -54,6 +54,11 @@ s=sixgr.lls6g.config.loadScenarioConfig(configPath);
 if nargin<8, outputRoot=tempname; end
 root=outputRoot; mkdir(root);
 cfg=sixgr.lls6g.buildInternalConfig(s,root);
+% Installed blind monitoring needs an actually received DL clock even when
+% this helper's legacy caller did not request the two-port authority case.
+% Run the existing physical SS/PBCH producer/receiver; do not set zero phase
+% or promote the analytical TAG setup below into acquisition evidence.
+acquireDLClock=receivedAuthority || logical(cfg.phy.pdcch.blindSearch);
 if independentCompletion && ~withCSI
     for name=["csi","cqi","pmi","ri","cri"]
         assert(~s.get("reference_signals."+name+"_reporting_enabled"), ...
@@ -101,13 +106,17 @@ state.TestPUCCHOnlyCompletion=logical(pucchOnlyCompletion);
 state.TestScheduledDLDAILedger=struct();
 if independentCompletion, assert(logical(cfg.phy.csi.reportCSI)==logical(withCSI)); end
 if independentCompletion && withCSI
+    assert(~cfg.run.controlGating.prachRequired && ...
+        state.AccessState(1)=="not_required", ...
+        'test:SharedCSIAccessScope', ...
+        'The component installs connected context explicitly; it does not execute or qualify random access.');
     assert(sixgr.truth.periodicCSIReportSlotMask(10,cfg.phy.csi.reportPeriodicitySlots, ...
         cfg.phy.csi.reportOffsetSlots) && sixgr.truth.periodicCSIReferenceSlot(cfg,10)==6);
 end
 state.TestPUSCHRows=table();
 [lateCSIProducerSlot,~]=localLateCSIProducerSlot(cfg,10);
 [state,owner]=sixgr.truth.CoupledWaveformStream.initialize(state,cfg,{cfg});
-if receivedAuthority
+if acquireDLClock
     % Retain the real large-scale/serving-cell state created by the normal
     % user-context bind; completion telemetry consumes that same state.
     [dl,state]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'DL');
@@ -138,7 +147,7 @@ measurement=table(0,loss,"SSB-0","analytic_component_pathloss_selector_fixture",
 state=sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementRuntime( ...
     state,'SSB','UE',1,measurement,'ProducerSlot',1,'AvailableSlot',1,'Valid',true, ...
     'Direction','DL','SourceSignal','SSB','MeasurementSource','analytic_component_selector_fixture');
-if ~receivedAuthority, localQueueSRS(state,cfg,5); end
+if ~acquireDLClock, localQueueSRS(state,cfg,5); end
 for slot=1:lastSlot
     if independentCompletion
         % Real slot entry retains the source-slot trace required by the
@@ -148,7 +157,7 @@ for slot=1:lastSlot
     end
     state.CurrentSlot=slot; state.CurrentCanonicalSlot=slot;
     state.CurrentFrame=floor((slot-1)/state.SlotsPerFrame)+1;
-    if receivedAuthority && slot==4
+    if acquireDLClock && slot==4
         % Freeze the slot-5 sounding only after real SS/PBCH acquisition.
         % Preparing it at initialization retained the declared phase=6
         % clock even after actual SS/PBCH established phase=0. Preparation
@@ -159,7 +168,36 @@ for slot=1:lastSlot
         localQueueSRS(state,cfg,5);
     end
     if independentCompletion && withCSI
-        state=sixgr.truth.CoupledTruthRuntime.armSharedPUCCHFeedbackRuntime(state);
+        if unconsumedULCommand && slot==11
+            held=state.PUCCHGrantTraceTable;
+            completed=state.SharedUnselectedPUCCHObservations;
+            assert(numel(completed)==1);
+            key=completed{1}.Context.Key;
+            assert(sixgr.truth.awaitingUnselectedPUCCHDisposition(state,held,key) && ...
+                all(~held.GrantExecutedFlag) && all(~state.PendingFeedbackTable.Processed));
+            late=held; late.PUCCHGrantId(1)="late_not_in_frozen_waveform";
+            assert(~sixgr.truth.awaitingUnselectedPUCCHDisposition(state,late,key));
+            missing=state; missing.SharedUnselectedPUCCHObservations={};
+            assert(~sixgr.truth.awaitingUnselectedPUCCHDisposition(missing,held,key));
+            localReject(@()sixgr.truth.CoupledTruthRuntime.armSharedPUCCHFeedbackRuntime(missing), ...
+                'sixgr:truth:LateSharedPUCCHFeedback');
+            lateState=state; lateState.PUCCHGrantTraceTable=late;
+            localReject(@()sixgr.truth.CoupledTruthRuntime.armSharedPUCCHFeedbackRuntime(lateState), ...
+                'sixgr:truth:LateSharedPUCCHFeedback');
+            fprintf('UNSELECTED_PUCCH_PENDING_PUSCH_GUARD_PASS no_early_completion=1 late_producer_rejected=1\n');
+        end
+        try
+            state=sixgr.truth.CoupledTruthRuntime.armSharedPUCCHFeedbackRuntime(state);
+        catch cause
+            % Preserve the actual ownership boundary; never repair or skip
+            % a failed occasion inside the test fixture.
+            failedArming=struct('Slot',slot,'NextSampleIndex',owner.Events.NextSampleIndex, ...
+                'GrantTrace',state.PUCCHGrantTraceTable, ...
+                'ArmedOccasions',state.SharedArmedPUCCHOccasions, ...
+                'PendingObservations',owner.Pending);
+            save(fullfile(root,'feedback_arming_failure.mat'),'failedArming','-v7.3');
+            rethrow(cause);
+        end
     end
     if independentSharedHARQ && slot==6
         state=localQueueSharedCSISource(state,cfg,slot,true);
@@ -235,7 +273,7 @@ for slot=1:lastSlot
         p=sixgr.link.prepareSharedPDCCHTransmission(dl,'Grant',grant,'RNTI',grant.RNTI,'K',numel(grant.DCI.Bits));
         controlContext=struct('Grant',grant,'ULConfig',ul);
         if independentCompletion, controlContext.ScheduledULHARQConfig=ul; end
-        if receivedAuthority
+        if acquireDLClock
             assert(isfield(state,'TestReceivedDLClock'),'Actual received SS/PBCH clock is required.');
             controlContext.ReceivedDLTimingReference=state.TestReceivedDLClock;
         end
@@ -419,6 +457,16 @@ for item=items
         continue;
     end
     if item.Kind=="PreparePUCCH"
+        if state.TestPUCCHOnlyCompletion
+            preparation=struct('CurrentSlot',state.CurrentSlot, ...
+                'NextSampleIndex',owner.Events.NextSampleIndex,'Occasion',item.Context, ...
+                'PendingCSI',state.PendingCSITable, ...
+                'CSIObligations',sixgr.util.structGet(state,'CSIReportObligationTable',table()), ...
+                'ReceivedCSIRS',sixgr.util.structGet(state,'ControlTrials.CSIRS',table()), ...
+                'GrantTrace',state.PUCCHGrantTraceTable);
+            save(fullfile(state.TestRoot,sprintf('pucch_preparation_slot_%d.mat',item.Context.Slot)), ...
+                'preparation','-v7.3');
+        end
         state=sixgr.truth.CoupledTruthRuntime.prepareSharedPUCCHFeedbackRuntime(state,item);
         continue;
     end
@@ -478,12 +526,18 @@ for item=items
         state=sixgr.truth.CoupledTruthRuntime.completeSharedPUCCHFeedbackRuntime(state,item);
         if state.TestPUCCHOnlyCompletion
             actual=state.SharedGNBUCIReceptions{end}.Receiver;
-            assert(isequaln(actual.DecodedFields,replay.DecodedFields) && ...
-                actual.ReceiverUsable==replay.ReceiverUsable && actual.DTX==replay.DTX && ...
-                actual.CRCPassed==replay.CRCPassed && isequal(actual.DecodedFields.SR,int8(0)), ...
-                'Retained-IQ independent reception must preserve HARQ/CSI/SR fields and decisions.');
+            % Preserve failed captures too: distinguish an observer mismatch
+            % from an identical physical decoding failure before repairing RX.
             save(fullfile(state.TestRoot,'combined_pucch_independent_replay.mat'), ...
                 'item','independent','actual','replay','-v7.3');
+            assert(isequaln(actual.DecodedFields,replay.DecodedFields) && ...
+                actual.ReceiverUsable==replay.ReceiverUsable && actual.DTX==replay.DTX && ...
+                actual.CRCPassed==replay.CRCPassed, ...
+                'Retained-IQ independent reception must preserve HARQ/CSI/SR fields and decisions.');
+            assert(isequal(actual.DecodedFields.SR,int8(0)), ...
+                'test:CombinedPUCCHNegativeSRRecovery', ...
+                'Combined reception did not recover negative SR: DTX=%d CRC=%d SR=%s.', ...
+                actual.DTX,actual.CRCPassed,mat2str(actual.DecodedFields.SR));
             fprintf('COMBINED_PUCCH_OBSERVER_REMOVAL_REPLAY_PASS additional_RF_executions=0 negative_SR_exact=1\n');
         end
         continue;
@@ -706,6 +760,7 @@ for item=items
         end
         result=sixgr.truth.executeGrantPHYJob(job); out=result.Result;
         assert(result.ReadyForReceiverCommit && height(out.TrialTable)==1);
+        localAssertReceiverCFOEvidence(out.TrialTable);
         assert(ismember('AppliedAWGNSNRSource',out.TrialTable.Properties.VariableNames) && ...
             out.TrialTable.AppliedAWGNSNRSource==string(sixgr.util.structGet(replay,'AppliedAWGNSNRSource',"")), ...
             'The DL trial must retain the actual executed noise-calibration source.');
@@ -764,6 +819,7 @@ for item=items
         end
         result=sixgr.truth.executeGrantPHYJob(job); out=result.Result;
         assert(result.ReadyForReceiverCommit && height(out.TrialTable)==1);
+        localAssertReceiverCFOEvidence(out.TrialTable);
         assert(ismember('AppliedAWGNSNRSource',out.TrialTable.Properties.VariableNames) && ...
             out.TrialTable.AppliedAWGNSNRSource==string(sixgr.util.structGet(replay,'AppliedAWGNSNRSource',"")), ...
             'The UL trial must retain the actual executed noise-calibration source.');
@@ -934,6 +990,7 @@ for item=items
             end
         end
         row=sixgr.truth.bindSharedRFExecutionEvidence(row,item.Planes);
+        localVerifyEffectiveLinkDiagnostic(state.TestRoot,job.Cfg,"UL",out,item.Planes,p,c.DesiredReferencePlane);
         [row,~,channelCaptures,channelReplays]=sixgr.truth.exportSharedChannelObservation( ...
             state.TestRoot,row,item.Planes,p,c.DesiredReferencePlane);
         assert(numel(out.ChannelEstimateSnapshots)==1 && ~isempty(out.ChannelEstimateSnapshots{1}), ...
@@ -1252,6 +1309,22 @@ if state.TestWithCSI
     measuredWire=sixgr.phy.mimo.bindMeasuredCSIWireReport(measuredConfig,table2struct(csi));
     assert(numel(measuredWire.Part1Bits)+numel(measuredWire.Part2Bits)==csi.CSIPayloadBitLength);
     state.TestSharedCSIReceived=true; state.TestCSISource=out;
+else
+    % Exercise reporting-disabled behavior at normal physical completion.
+    % A frozen grant may retain earlier CQI/rank; that is not a new report.
+    row=out.TrialTable;
+    assert(~job.Cfg.phy.csi.reportCSI && ...
+        string(row.CSIComputationStatus)=="disabled_by_configuration" && ...
+        ~isfinite(row.CSIPayloadBitLength) && strlength(string(row.CSIPayloadHex))==0 && ...
+        strlength(string(row.CSIComputationErrorIdentifier))==0 && ...
+        isfinite(row.PostEqSINR_dB) && isfinite(row.EVM_rms), ...
+        'Disabled CSI reporting must retain physical data measurements without a report payload.');
+    if ~isempty(out.CSIRSTrialTable)
+        csi=out.CSIRSTrialTable;
+        assert(all(string(csi.CSIComputationStatus)=="disabled_by_configuration") && ...
+            all(isnan(csi.CQI) & isnan(csi.RI) & isnan(csi.PMI)), ...
+            'A measured CSI-RS does not authorize disabled CQI/RI/PMI reporting.');
+    end
 end
 [state,out.ReceivedHARQACKEvent]=sixgr.truth.commitReceivedDLHARQACKEvent( ...
     state,job.Cfg,control,out.ReceivedHARQDecision,out.ReceivedHARQState,owner.Events.NextSampleIndex);
@@ -1270,6 +1343,7 @@ assert(height(state.PendingFeedbackTable)==1 && state.PendingFeedbackTable.Sourc
     state.PendingFeedbackTable.DueSlot==10 && ~state.PendingFeedbackTable.Processed && ...
     state.PendingFeedbackTable.Ack==state.TestExpectedSharedACK && ...
     state.DLHarq.Stats.Ack==0 && state.DLHarq.Stats.Nack==0);
+localVerifyEffectiveLinkDiagnostic(state.TestRoot,job.Cfg,"DL",out,item.Planes,p,item.Context.DesiredReferencePlane);
 [sourceRow,~,captures,replays]=sixgr.truth.exportSharedChannelObservation(state.TestRoot,out.TrialTable, ...
     item.Planes,p,item.Context.DesiredReferencePlane);
 assert(isnan(sourceRow.NMSE_dB) && isfinite(sourceRow.PilotReconstructionResidualRatio_dB), ...
@@ -1291,6 +1365,69 @@ sixgr.util.csvWriteTable(fullfile(state.TestRoot,'shared_received_dl_harq.csv'),
 save(fullfile(state.TestRoot,'shared_received_dl_harq.mat'),'item','out','control','sourceRow','-v7.3');
 fprintf('SHARED_DL_HARQ_SOURCE_RECEIVED slot=6 due=10 ACK=%d completed_sample=%d\n', ...
     state.TestExpectedSharedACK,owner.Events.NextSampleIndex);
+end
+
+function localVerifyEffectiveLinkDiagnostic(root,cfg,direction,out,planes,prepared,planeID)
+% Exercise the normal coordinator's bounded-memory contract using this
+% actual completed decode, in addition to the full-tensor archive checks.
+% No receiver re-execution and no replacement of the practical Hest.
+assert(cfg.outputs.phySignalDiagnosticEnabled && out.SignalDiagnostic.Available, ...
+    'test:MissingPhysicalDiagnostic','Actual %s receiver diagnostic is required.',direction);
+[row,context]=sixgr.truth.exportSharedScoringWaveformObservation( ...
+    root,out.TrialTable,planes,prepared,planeID);
+snapshot=sixgr.link.buildPHYSignalDiagnosticSnapshot( ...
+    cfg,direction,struct(),[],struct(),table(),context,out.SignalDiagnostic);
+assert(snapshot.Available && snapshot.SnapshotID==out.SignalDiagnostic.SnapshotID && ...
+    snapshot.Metadata.ExecutedChannelEvidenceRepresentation== ...
+    "complete_sample_indexed_desired_link_IQ_not_path_gain_tensor");
+T=snapshot.SourceTable;
+assert(~any(ismember(T.Panel,["true_channel_impulse_response", ...
+    "true_channel_frequency_response","runtime_channel_angles", ...
+    "time_varying_channel_impulse_response","doppler_spectrum"])), ...
+    'Effective-link IQ must not fabricate a pure channel-coefficient panel.');
+post=T(T.Panel=="time_domain" & T.Series=="post_channel",:);
+assert(~isempty(post) && isequal(complex(post.IValue,post.QValue), ...
+    context.PostChannelWaveform(post.SampleIndex,1)));
+fields={'Panel','Series','SampleIndex','PointIndex','XValue','YValue', ...
+    'IValue','QValue','GridKind','GridSHA256'};
+before=out.SignalDiagnostic.SourceTable;
+assert(isequaln(before(before.Panel=="channel_estimate",fields), ...
+    T(T.Panel=="channel_estimate",fields)));
+assert(row.ChannelObservationReceiverEstimatorInput==false && ...
+    context.AdditionalChannelExecutions==0 && context.AdditionalRFExecutions==0);
+% Normal shared completion must publish the already-captured coefficients,
+% not pass this different effective-IQ contract to the coefficient validator.
+% Exercise the exact exporter outputs and scoring plane now used there.
+coordinatorRoot=fullfile(root,'coordinator_publication',lower(direction));
+mkdir(coordinatorRoot);
+[coefficientRow,coefficientContext,~,~,scoringObservation,scoringEvidence]= ...
+    sixgr.truth.exportSharedChannelObservation(coordinatorRoot,out.TrialTable,planes,prepared,planeID);
+verified=sixgr.channel.validateSharedChannelObservationArtifact(coordinatorRoot,coefficientRow);
+assert(startsWith(coefficientRow.ChannelObservationID,"chobs_") && ...
+    any(verified.Manifest.Contract==["actual_shared_channel_observation/v1", ...
+        "actual_shared_channel_observation/v2"]) && ...
+    ~scoringEvidence.ReceiverEstimatorInput && ...
+    scoringEvidence.AdditionalChannelExecutions==0 && ...
+    scoringEvidence.AdditionalRFExecutions==0);
+coefficientDiagnostic=sixgr.link.buildPHYSignalDiagnosticSnapshot( ...
+    cfg,direction,struct(),[],struct(),table(),coefficientContext,out.SignalDiagnostic);
+assert(coefficientDiagnostic.Available && ...
+    any(coefficientDiagnostic.SourceTable.Panel=="true_channel_impulse_response"));
+assert(isequaln(before(before.Panel=="channel_estimate",fields), ...
+    coefficientDiagnostic.SourceTable(coefficientDiagnostic.SourceTable.Panel=="channel_estimate",fields)), ...
+    'Publishing executed coefficients must not replace the practical Hest.');
+scored=sixgr.truth.exportSharedDataChannelEstimate(coordinatorRoot,coefficientRow, ...
+    out.ChannelEstimateSnapshots{1},prepared,scoringObservation,scoringEvidence);
+assert(isfinite(scored.NMSE_dB) && ~scored.ChannelEstimateReferenceUsedByReceiver && ...
+    scored.CRCPass==out.TrialTable.CRCPass);
+localVerifyChannelResourceArchive(coordinatorRoot,scored);
+fprintf('SHARED_COORDINATOR_CHANNEL_PUBLICATION_PASS direction=%s coefficients=1 actual_scoring_IQ=1 crc=%d nmse=%g\n', ...
+    direction,scored.CRCPass,scored.NMSE_dB);
+sixgr.util.csvWriteTable(fullfile(root,lower(direction)+"_effective_link_diagnostic.csv"), ...
+    T,'PreserveSchema',true);
+save(fullfile(root,lower(direction)+"_effective_link_diagnostic.mat"),'row','snapshot','-v7.3');
+fprintf('SHARED_EFFECTIVE_LINK_DIAGNOSTIC_PASS direction=%s crc=%d samples=%d root=%s\n', ...
+    direction,out.TrialTable.CRCPass,height(post),root);
 end
 
 function localVerifyChannelResourceArchive(root,row)
@@ -1396,6 +1533,25 @@ function tf=localNoPUCCHTrialAtSlot(trials,slot)
 % not require a fabricated Slot column merely to prove that no trial ran.
 tf=isempty(trials) || ...
     (~ismember('Slot',trials.Properties.VariableNames) || ~any(trials.Slot==slot));
+end
+
+function localAssertReceiverCFOEvidence(T)
+% The same core receiver columns must survive shared physical completion.
+% An unavailable estimate is allowed; a simulated reference is not a donor.
+required=["CFOCorrectionApplied","CFOCorrectionApplied_Hz", ...
+    "ResidualCFO_EstimatedPostCorrection_Hz","ResidualCFOEstimateSource", ...
+    "ResidualCFOEstimateAvailable","ResidualCFOEstimateDomain"];
+assert(all(ismember(required,string(T.Properties.VariableNames))), ...
+    'Shared data reception must retain the core receiver CFO evidence schema.');
+assert(isequal(logical(T.ResidualCFOEstimateAvailable), ...
+    isfinite(T.ResidualCFO_EstimatedPostCorrection_Hz)));
+if T.ResidualCFOEstimateAvailable
+    assert(strlength(string(T.ResidualCFOEstimateSource))>0 && ...
+        T.ResidualCFOEstimateDomain=="receiver_measured_common_frequency_after_correction");
+end
+if T.CFOCorrectionApplied
+    assert(isfinite(T.CFOCorrectionApplied_Hz));
+end
 end
 
 function localReject(fn,id)

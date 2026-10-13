@@ -30,7 +30,9 @@ if ~isempty(varargin)
             case "rint"
                 Rint = val;
             case {"rincludesnoise","rintincludesnoise","covarianceincludesnoise"}
-                RIncludesNoise = logical(val);
+                % Preserve invalid input for the canonical validation gate;
+                % logical(NaN), logical(-1), etc. must not become true.
+                RIncludesNoise = val;
             case "strict"
                 strict = logical(val);
             case "currentslot"
@@ -84,7 +86,7 @@ if ~isempty(ind)
     args = [args, {"Indices", ind}]; %#ok<AGROW>
 end
 if ~isempty(RIncludesNoise)
-    args = [args, {"RIncludesNoise", logical(RIncludesNoise)}]; %#ok<AGROW>
+    args = [args, {"RIncludesNoise", RIncludesNoise}]; %#ok<AGROW>
 end
 
 [rawLayerSym, csi, eqInfo] = sixgr.phy.rx.equalizeMMSE(rx, hEst, nVar, args{:});

@@ -1,7 +1,20 @@
-function rec=normalizeReceivedSSBPowerReference(rec,cfg)
+function rec=normalizeReceivedSSBPowerReference(rec,cfg,part)
 % One scale contract for full-burst acquisition and per-occasion tracking.
+% A receiver can complete before any TX audit is attached. Normalize its
+% measured RX fields there, then attach TX evidence without converting RX
+% twice. The default retains the legacy combined adapter contract.
+if nargin<3, part="all"; end
+part=string(part);
+assert(isscalar(part) && any(part==["all","receive","transmit"]), ...
+    'sixgr:link:SSBPowerNormalizationPart','Unknown SSB power adapter scope.');
 fixed=sixgr.rf.isNormalizedFixedSNRPowerReference(cfg);
 if ~fixed, return; end
+if part=="transmit"
+    assert(logical(sixgr.util.structGet(rec,'SSPowerReferenceNormalized',false)), ...
+        'sixgr:link:SSBReceivePowerNotNormalized','Attach TX audit only after receiver power normalization.');
+    rec=localNormalizeTransmit(rec);
+    return;
+end
 status=string(sixgr.util.structGet(rec,'SSPhysicalMeasurementStatus',"unavailable"));
 assert(~logical(sixgr.util.structGet(rec,'SSPowerReferenceNormalized',false)) && ...
     status~="available_normalized_fixed_esn0_not_absolute_dbm", ...
@@ -12,8 +25,6 @@ assert(isscalar(status) && (~available || (isscalar(rsrp) && isfinite(rsrp))), .
     'sixgr:link:MissingSSBPowerMeasurement','Available SSB RSRP requires a finite actual measurement.');
 nfft=double(sixgr.util.structGet(rec,'SSMeasurementFFTSize',NaN));
 scale=double(sixgr.util.structGet(rec,'SSMeasurementGridScaleToSqrtW',NaN));
-txNfft=double(sixgr.util.structGet(rec,'ReferenceSignalTxMeasurementFFTSize',NaN));
-txScale=double(sixgr.util.structGet(rec,'ReferenceSignalTxMeasurementGridScaleToSqrtW',NaN));
 numeric=["SS_RSRP","SS_RSRPRawObserved"];
 textual=["SS_RSRPPerReceiveAntenna","SS_RSRPRawObservedPerReceiveAntenna", ...
     "SSBWindowRSSIPerReceiveAntenna"];
@@ -27,23 +38,13 @@ for name=textual
         string(sixgr.util.structGet(rec,name+"_dBm","")),nfft,scale,false);
     rec.(name+"_dBm")="";
 end
-rec.ReferenceSignalTxEPRE_dB_re_UnitOccupiedRE_Es=localConvert( ...
-    double(sixgr.util.structGet(rec,'ReferenceSignalTxEPRE_dBm',NaN)),txNfft,txScale,false);
-rec.ReferenceSignalTxEPREPerAntenna_dB_re_UnitOccupiedRE_Es=localConvert( ...
-    string(sixgr.util.structGet(rec,'ReferenceSignalTxEPREPerAntenna_dBm',"")),txNfft,txScale,false);
-rec.ReferenceSignalTxEPRE_dBm=NaN;
-rec.ReferenceSignalTxEPREPerAntenna_dBm="";
 for name=["SSSINRDesiredPowerPerReceiveAntenna","SSSINRNoiseInterferencePowerPerReceiveAntenna"]
     rec.(name+"_UnitOccupiedRE_Es")=localConvert( ...
         string(sixgr.util.structGet(rec,name+"_W","")),nfft,scale,true);
     rec.(name+"_W")="";
 end
 rec.SSPowerReferenceOffset_dB=localOffset(nfft,scale);
-rec.ReferenceSignalTxPowerReferenceOffset_dB=localOffset(txNfft,txScale);
 rec.SSMeasurementGridScaleToSqrtW=NaN;
-rec.ReferenceSignalTxMeasurementGridScaleToSqrtW=NaN;
-rec.MeasuredReferenceSignalChannelGain_dB= ...
-    rec.SS_RSRP_dB_re_UnitOccupiedRE_Es-rec.ReferenceSignalTxEPRE_dB_re_UnitOccupiedRE_Es;
 [rec.SSBWindowRelativePowerMeasurementJSON,windowEvidence]=localNormalizeWindow( ...
     string(sixgr.util.structGet(rec,'SSBWindowPowerMeasurementJSON',"")),nfft,scale);
 if ~isempty(fieldnames(windowEvidence))
@@ -56,17 +57,41 @@ rec.SSBWindowPowerMeasurementJSON=""; % Physical-unit schema stays unavailable.
 rec.SSSTxPowerDeltaFromSignalled_dB=NaN;
 rec.MeasuredReferenceSignalPathloss_dB=NaN;
 rec.MeasuredReferenceSignalPathlossSource="unavailable_normalized_fixed_esn0_has_no_absolute_link_budget";
+rec.PowerReferencePlane="normalized_fixed_esn0_unit_occupied_re_es";
+rec.SSSINRReferencePlane="normalized_received_ssb_grid_unit_occupied_re_es";
+rec.SSPowerReferenceNormalized=true;
+if available
+    rec.SSPhysicalMeasurementStatus="available_normalized_fixed_esn0_not_absolute_dbm";
+end
+if part=="all", rec=localNormalizeTransmit(rec); end
+end
+
+function rec=localNormalizeTransmit(rec)
+assert(~logical(sixgr.util.structGet(rec,'SSTxPowerReferenceNormalized',false)), ...
+    'sixgr:link:SSBTxPowerReferenceAlreadyNormalized','Normalize TX audit evidence exactly once.');
+txNfft=double(sixgr.util.structGet(rec,'ReferenceSignalTxMeasurementFFTSize',NaN));
+txScale=double(sixgr.util.structGet(rec,'ReferenceSignalTxMeasurementGridScaleToSqrtW',NaN));
+rec.ReferenceSignalTxEPRE_dB_re_UnitOccupiedRE_Es=localConvert( ...
+    double(sixgr.util.structGet(rec,'ReferenceSignalTxEPRE_dBm',NaN)),txNfft,txScale,false);
+rec.ReferenceSignalTxEPREPerAntenna_dB_re_UnitOccupiedRE_Es=localConvert( ...
+    string(sixgr.util.structGet(rec,'ReferenceSignalTxEPREPerAntenna_dBm',"")),txNfft,txScale,false);
+rec.ReferenceSignalTxEPRE_dBm=NaN;
+rec.ReferenceSignalTxEPREPerAntenna_dBm="";
+rec.ReferenceSignalTxPowerReferenceOffset_dB=localOffset(txNfft,txScale);
+rec.ReferenceSignalTxMeasurementGridScaleToSqrtW=NaN;
+rec.MeasuredReferenceSignalChannelGain_dB= ...
+    rec.SS_RSRP_dB_re_UnitOccupiedRE_Es-rec.ReferenceSignalTxEPRE_dB_re_UnitOccupiedRE_Es;
+rec.SSSTxPowerDeltaFromSignalled_dB=NaN;
+rec.MeasuredReferenceSignalPathloss_dB=NaN;
+rec.MeasuredReferenceSignalPathlossSource="unavailable_normalized_fixed_esn0_has_no_absolute_link_budget";
+rec.PowerReferencePlane="normalized_fixed_esn0_unit_occupied_re_es";
 if isfinite(rec.ReferenceSignalTxEPRE_dB_re_UnitOccupiedRE_Es)
     source=string(sixgr.util.structGet(rec,'ReferenceSignalTxMeasurementSource',""));
     assert(isscalar(source) && strlength(strtrim(source))>0, ...
         'sixgr:link:MissingSSBTxPowerSource','Do not claim measured TX EPRE without its producer source.');
     rec.ReferenceSignalTxMeasurementSource=source+"_relative_to_unit_occupied_re_es";
 end
-rec.PowerReferencePlane="normalized_fixed_esn0_unit_occupied_re_es";
-rec.SSPowerReferenceNormalized=true;
-if available
-    rec.SSPhysicalMeasurementStatus="available_normalized_fixed_esn0_not_absolute_dbm";
-end
+rec.SSTxPowerReferenceNormalized=true;
 end
 
 function [token,evidence]=localNormalizeWindow(token,nfft,scale)

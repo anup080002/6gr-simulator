@@ -23,6 +23,11 @@ classdef CORESETDefinition
             data.MappingType = lower(strrep(string(data.MappingType), "-", ""));
             data.PrecoderGranularity = string(data.PrecoderGranularity);
             nRB = localInteger(data.NRB, "NRB");
+            rbStart = localInteger(data.RBStart, "RBStart");
+            if rbStart < 0
+                error("sixgr:phy:pdcch:invalid_coreset_frequency_resources", ...
+                    "CORESET RBStart must be a nonnegative BWP-relative RB index.");
+            end
             duration = localInteger(data.DurationSymbols, "DurationSymbols");
             if nRB < 6 || mod(nRB, 6) ~= 0
                 error("sixgr:phy:pdcch:invalid_coreset_frequency_resources", ...
@@ -65,6 +70,7 @@ classdef CORESETDefinition
                     "PrecoderGranularity must be sameAsREG-bundle or allContiguousRBs.");
             end
             data.NRB = nRB;
+            data.RBStart = rbStart;
             data.DurationSymbols = duration;
             data.REGBundleSize = L;
             data.InterleaverSize = R;

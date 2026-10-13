@@ -96,6 +96,48 @@ assert(fixedIndex.DuplicateKeyCount == 0 && ...
     "Direction|FixedLinkPointIndex|FixedLinkTrialIndex|FixedLinkSeedIndex", ...
     "Fixed-link raw evidence must use its explicit point/trial/seed key.");
 
+% Joint waveform points and independent seeds reuse radio coordinates.
+% All rows must survive; genuinely repeated trials must still be rejected.
+for direction = ["DL","UL"]
+    sweepFolder = string(tempname());
+    sweepCleanup = onCleanup(@() localCleanup(sweepFolder));
+    mkdir(sweepFolder);
+    sweep = table(repmat(direction,4,1),[18;30;18;30],[17;17;18;18], ...
+        ones(4,1),ones(4,1),ones(4,1),strings(4,1),zeros(4,1), ...
+        repmat("in_path",4,1),repmat("truth",4,1), ...
+        'VariableNames',{'Direction','ConfiguredSNR_dB','Seed','Frame', ...
+        'Slot','UEID','TBId','HARQRound','EvidenceScope','SourceClassification'});
+    sweep.SNR_dB = sweep.ConfiguredSNR_dB;
+    sweep.MeasuredSINR_dB = [16;29;15;28];
+    sweepLink = struct("RawTrials",struct(char(direction),sweep));
+    sealed = sixgr.runtime.snapshotRawExecutionEvidence(sweepFolder,sweepLink,identity);
+    sweepIndex = readtable(sealed.IndexPath,'TextType','string');
+    assert(sealed.RowCount==4 && sweepIndex.DuplicateKeyCount==0 && ...
+        sweepIndex.PrimaryKeyColumns== ...
+        "ConfiguredSNR_dB|Seed|Direction|Frame|Slot|UEID|TBId|HARQRound");
+    saved = readtable(fullfile(fileparts(sealed.IndexPath),sweepIndex.RelativePath));
+    assert(isequal(saved.ConfiguredSNR_dB,sweep.ConfiguredSNR_dB) && ...
+        isequal(saved.Seed,sweep.Seed),'Retain every point/seed without invented rows.');
+    legacyFolder = string(tempname());
+    legacyCleanup = onCleanup(@() localCleanup(legacyFolder));
+    mkdir(legacyFolder);
+    legacy = removevars(sweep,'ConfiguredSNR_dB');
+    legacySnapshot = sixgr.runtime.snapshotRawExecutionEvidence( ...
+        legacyFolder,struct("RawTrials",struct(char(direction),legacy)),identity);
+    legacyIndex = readtable(legacySnapshot.IndexPath,'TextType','string');
+    assert(legacySnapshot.RowCount==4 && legacyIndex.PrimaryKeyColumns== ...
+        "SNR_dB|Seed|Direction|Frame|Slot|UEID|TBId|HARQRound");
+    duplicateSweepFolder = string(tempname());
+    duplicateSweepCleanup = onCleanup(@() localCleanup(duplicateSweepFolder));
+    mkdir(duplicateSweepFolder);
+    duplicateSweep = [sweep;sweep(1,:)];
+    duplicateSweep.MeasuredSINR_dB(end) = -12;
+    localAssertError(@() sixgr.runtime.snapshotRawExecutionEvidence( ...
+        duplicateSweepFolder,struct("RawTrials",struct(char(direction),duplicateSweep)),identity), ...
+        "sixgr:runtime:RawEvidenceDuplicateKey");
+    clear duplicateSweepCleanup legacyCleanup sweepCleanup;
+end
+
 % A later report-identity pass must never invalidate the immutable raw
 % index. Re-reading the seal after annotation proves byte preservation.
 sixgr.report.annotateScenarioCSVArtifacts(runFolder, identity.ScenarioID, ...
@@ -118,6 +160,7 @@ duplicateFolder = string(tempname());
 duplicateCleanup = onCleanup(@() localCleanup(duplicateFolder)); %#ok<NASGU>
 mkdir(duplicateFolder);
 duplicate = [dl(1, :); dl(1, :)];
+duplicate.ConfiguredSNR_dB = [18;30]; % Explicit TrialID remains globally unique.
 localAssertError(@() sixgr.runtime.snapshotRawExecutionEvidence( ...
     duplicateFolder, struct("RawTrials", struct("DL", duplicate)), identity), ...
     "sixgr:runtime:RawEvidenceDuplicateKey");

@@ -30,12 +30,9 @@ audit=struct('Scope',"offline_frozen_time_spatial_power_not_runtime_SINR", ...
 carrier=sixgr.phy.grid.makeCarrier(cfg); oi=nrOFDMInfo(carrier);
 for direction=["DL","UL"]
     T=dl(1,:); if direction=="UL", T=ul(1,:); end
-    sixgr.channel.validateSharedChannelObservationArtifact(runRoot,T);
-    saved=load(fullfile(runRoot,T.ChannelObservationMATFile),'Captures');
-    r=saved.Captures{1}.Reference;
-    index=max(1,round(size(r.PathGains,1)/2));
-    g=squeeze(r.PathGains(index,:,:,:)); % path, TX, RX
-    F=fft(double(r.PathFilters),double(oi.Nfft),1);
+    snapshot=sixgr.channel.readChannelObservationSnapshot(runRoot,T);
+    g=squeeze(snapshot.PathGains); % path, TX, RX, same exact midpoint as v1
+    F=fft(double(snapshot.PathFilters),double(oi.Nfft),1);
     K=12*double(carrier.NSizeGrid); bins=mod((-K/2:K/2-1),double(oi.Nfft))+1;
     hd=zeros(K,size(g,3),size(g,2));
     for tx=1:size(g,2)
@@ -49,7 +46,7 @@ for direction=["DL","UL"]
         gu(k)=sum(abs(H.'*Wu).^2);
     end
     row=struct('SourceTrialSlot',double(T.Slot),'SourceChannelMATFile',T.ChannelObservationMATFile, ...
-        'SampleIndex',r.StartSample+index-1,'DLReceiveBranchSumGain_dB',10*log10(mean(gd)), ...
+        'SampleIndex',snapshot.AbsoluteSampleIndex,'DLReceiveBranchSumGain_dB',10*log10(mean(gd)), ...
         'ULReceiveBranchSumGain_dB',10*log10(mean(gu)), ...
         'SameReciprocalChannelDLMinusULSpatialPower_dB',10*log10(mean(gd)/mean(gu)), ...
         'ConfiguredGridNoiseVariance',double(T.ReplayGridNoiseVariance), ...

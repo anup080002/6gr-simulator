@@ -170,6 +170,7 @@ out.Row = struct( ...
     "StrictOk", strictOk, ...
     "TruthStatus", "real_lls_evidence", ...
     "FailureReason", failure);
+out.Row = sixgr.report.bindConverterEvidence(out.Row,replay,replay);
 end
 
 function chain = localResolveChainConfig(cfg, fs, endpoint, direction, useLegacy, applyPA, applyADC)
@@ -203,7 +204,7 @@ chain.RxSampleClockOffset = localResolveSampleClockOffsetConfig(cfg, "rx", legac
 chain.TxDAC = localResolveDACConfig(cfg, fs);
 chain.TxPA = localResolvePAConfig(cfg, logical(applyPA));
 chain.RxAGC = localResolveAGCConfig(cfg, logical(applyADC));
-chain.RxADC = localResolveADCConfig(cfg, logical(applyADC));
+chain.RxADC = localResolveADCConfig(cfg, logical(applyADC), fs);
 chain.CarrierPhase = localResolveCarrierPhaseConfig(cfg, endpoint, legacyToTx, legacyToRx);
 chain.SampleClockOffset = localMergeSampleClockOffsetConfig(chain.TxSampleClockOffset, chain.RxSampleClockOffset);
 end
@@ -484,7 +485,7 @@ cfgAGC = struct("Enabled", logical(enabled), "TargetRMS", double(targetRms), ...
     "AppliedGain_dB", NaN);
 end
 
-function cfgADC = localResolveADCConfig(cfg, applyADC)
+function cfgADC = localResolveADCConfig(cfg, applyADC, fs)
 bits = localFirstFinite( ...
     sixgr.util.structGet(cfg, "rf.hardware.adc.resolutionBits", NaN), ...
     sixgr.util.structGet(cfg, "rf.adcBits", NaN), ...
@@ -532,6 +533,44 @@ if logical(enabled) && strictRF && ...
 end
 cfgADC = struct("Enabled", logical(enabled), "Bits", double(bits), ...
     "DACBits", double(dacBits), "FullScale", double(fullScale));
+% Resolve the installed profile once for block and retained-stream ADCs.
+% Feature enablement remains owned by the canonical operator switch above.
+raw = sixgr.util.structGet(cfg,"rf.frontend.receiver.adc",struct());
+if ~isstruct(raw) || ~isscalar(raw)
+    error('RF:ADCProfileMissing','ADC configuration must be a scalar structure.');
+end
+convention = string(sixgr.util.structGet(raw,"convention","signed_midtread"));
+ditherEnabled = sixgr.util.structGet(raw,"dither_enabled",false);
+dither = double(sixgr.util.structGet(raw,"dither_rms",0));
+jitter = double(sixgr.util.structGet(raw,"aperture_jitter_seconds", ...
+    sixgr.util.structGet(raw,"aperture_jitter_s",0)));
+inl = double(sixgr.util.structGet(raw,"inl_lsb",0));
+dnl = double(sixgr.util.structGet(raw,"dnl_lsb",0));
+seed = double(sixgr.util.structGet(cfg,"run.seed",1));
+if enabled
+    if isfield(raw,'aperture_jitter_seconds') && isfield(raw,'aperture_jitter_s') && ...
+            ~isequaln(double(raw.aperture_jitter_seconds),double(raw.aperture_jitter_s))
+        error('RF:ADCProfileConflict','Canonical and legacy ADC aperture-jitter values disagree.');
+    end
+    if ~(isscalar(convention) && any(convention==["signed_midtread","signed_midrise"]) && ...
+            (islogical(ditherEnabled)||isnumeric(ditherEnabled)) && ...
+            isreal(ditherEnabled) && isscalar(ditherEnabled) && any(ditherEnabled==[0 1]) && ...
+            localNonnegativeScalar(dither) && localNonnegativeScalar(jitter) && ...
+            localNonnegativeScalar(inl) && localNonnegativeScalar(dnl) && ...
+            localNonnegativeScalar(seed) && seed==fix(seed) && seed<=2^32-1)
+        error('RF:ADCProfileMissing','Enabled ADC requires a supported convention, explicit dither switch, finite nonnegative dither/jitter/INL/DNL and integer seed.');
+    end
+    if ~ditherEnabled && dither~=0
+        error('RF:ADCProfileMissing','A disabled ADC dither stage must declare dither_rms=0.');
+    end
+end
+cfgADC.Profile=struct('Bits',cfgADC.Bits,'FullScale',cfgADC.FullScale, ...
+    'Convention',convention,'DitherRMS',dither,'ApertureJitter_s',jitter, ...
+    'INL_LSB',inl,'DNL_LSB',dnl,'Seed',seed,'SampleRate_Hz',double(fs));
+end
+
+function ok=localNonnegativeScalar(value)
+ok=isnumeric(value) && isscalar(value) && isreal(value) && isfinite(value) && value>=0;
 end
 
 function cfgPhase = localResolveCarrierPhaseConfig(cfg, endpoint, legacyToTx, legacyToRx)
@@ -625,6 +664,7 @@ if stageCfg.Enabled
     y = result.Output;
     [~, row] = localApplyGenericStage(x, true, stageName, endpoint, @(z)y);
     row.ErrorVariance = double(result.ErrorVariance);
+    row = localBindConverterMeasurement(row,result);
 else
     y = x;
     [~, row] = localApplyGenericStage(x, false, stageName, endpoint, @(z)z);
@@ -634,7 +674,7 @@ row.Parameter1Value = double(stageCfg.Bits);
 row.Parameter2Name = "full_scale";
 row.Parameter2Value = double(stageCfg.FullScale);
 row.Parameter3Name = "clipping_ratio";
-row.Parameter3Value = localADCClippingRatio(x, stageCfg.FullScale);
+% Remains NaN when no converter executed; actual mask populated above.
 row.Status = localTernary(stageCfg.Enabled && row.Applied, ...
     "applied_complex_dac_quantization", row.Status);
 rows(end + 1, 1) = row;
@@ -742,15 +782,14 @@ end
 function [y, rows] = localApplyADCStage(x, stageCfg, stageName, endpoint, rows,stream)
 if stageCfg.Enabled
     if isempty(stream)
-        result = sixgr.rf.runtime.ADCModel.quantize(x, struct( ...
-            "Bits",stageCfg.Bits,"FullScale",stageCfg.FullScale, ...
-            "Convention","signed_midtread"));
+        result = sixgr.rf.runtime.ADCModel.quantize(x, stageCfg.Profile);
     else
         result=stream.applyADC(x);
     end
     y = result.Output;
     [~, row] = localApplyGenericStage(x, true, stageName, endpoint, @(z)y);
     row.ErrorVariance = double(result.ErrorVariance);
+    row = localBindConverterMeasurement(row,result);
 else
     y = x;
     [~, row] = localApplyGenericStage(x, false, stageName, endpoint, @(z)z);
@@ -760,7 +799,7 @@ row.Parameter1Value = double(stageCfg.Bits);
 row.Parameter2Name = "full_scale";
 row.Parameter2Value = double(stageCfg.FullScale);
 row.Parameter3Name = "clipping_ratio";
-row.Parameter3Value = localADCClippingRatio(x, stageCfg.FullScale);
+% Remains NaN when no converter executed; actual mask populated above.
 row.Status = localTernary(stageCfg.Enabled && row.Applied, "applied_complex_adc_quantization", row.Status);
 rows(end + 1, 1) = row;
 end
@@ -824,6 +863,9 @@ row = struct( ...
     "OutputHash", "", ...
     "Backend", "", ...
     "TruthClassification", "", ...
+    "ClippedSampleCount", NaN, "ClippingSampleCount", NaN, ...
+    "ClippingStatus", "not_executed", "ClippingPopulation", "unavailable", ...
+    "ClippingSource", "", "ClippingThresholdRule", "", ...
     "ErrorVariance", NaN);
 end
 
@@ -930,15 +972,30 @@ replay = struct( ...
     "ADCQuantizationApplied", ~isempty(adcRows) && any([adcRows.Applied]), ...
     "ADCBits", double(chain.RxADC.Bits), ...
     "ADCFullScale", double(chain.RxADC.FullScale), ...
-    "ADCClippingRatio", localSumRowParameter(adcRows, "clipping_ratio"), ...
+    "ADCClippingRatio", localLastFiniteRowValue(adcRows, "Parameter3Value"), ...
     "ADCQuantizationErrorVariance", localLastFiniteRowValue(adcRows, "ErrorVariance"), ...
+    "ADCConventionConfigured", string(chain.RxADC.Profile.Convention), ...
+    "ADCDitherRMSConfigured", double(chain.RxADC.Profile.DitherRMS), ...
+    "ADCApertureJitterSecondsConfigured", double(chain.RxADC.Profile.ApertureJitter_s), ...
+    "ADCINLLSBConfigured", double(chain.RxADC.Profile.INL_LSB), ...
+    "ADCDNLLSBConfigured", double(chain.RxADC.Profile.DNL_LSB), ...
+    "ADCSeedConfigured", double(chain.RxADC.Profile.Seed), ...
     "DACQuantizationApplied", ~isempty(dacRows) && any([dacRows.Applied]), ...
     "DACBits", double(chain.TxDAC.Bits), ...
     "DACFullScale", double(chain.TxDAC.FullScale), ...
-    "DACClippingRatio", localSumRowParameter(dacRows, "clipping_ratio"), ...
+    "DACClippingRatio", localLastFiniteRowValue(dacRows, "Parameter3Value"), ...
     "DACQuantizationErrorVariance", localLastFiniteRowValue(dacRows, "ErrorVariance"), ...
     "SampleClockOffsetTxPpm", double(chain.SampleClockOffset.TxPPM), ...
     "SampleClockOffsetRxPpm", double(chain.SampleClockOffset.RxPPM));
+for prefix=["ADC","DAC"]
+    converterRows=adcRows; if prefix=="DAC", converterRows=dacRows; end
+    replay.(prefix+"QuantizationExecuted")=~isempty(converterRows) && any([converterRows.Executed]);
+    if isempty(converterRows), converterRows=localStageRowTemplate(); end
+    for name=["ClippedSampleCount","ClippingSampleCount","ClippingStatus", ...
+            "ClippingPopulation","ClippingSource","ClippingThresholdRule"]
+        replay.(prefix+name)=converterRows(end).(name);
+    end
+end
 end
 
 function strictOk = localResolveStrictOk(chain, beforeHash, afterHash, rows, strictMutationRequired,retainedStream)
@@ -1093,13 +1150,20 @@ yi = round((xi ./ scale) * maxCode) ./ maxCode .* scale;
 y = complex(yr, yi);
 end
 
-function ratio = localADCClippingRatio(x, fullScale)
-ratio = NaN;
-if isempty(x) || ~(isfinite(fullScale) && fullScale > 0)
-    return;
+function row = localBindConverterMeasurement(row,result)
+assert(islogical(result.Clipped) && isequal(size(result.Clipped),size(result.Output)) && ...
+    result.ClippingRatio==mean(double(result.Clipped(:))), ...
+    'RF:ConverterClippingEvidenceMismatch','Retain the actual executed converter mask and its population.');
+row.Parameter3Value=double(result.ClippingRatio);
+row.ClippedSampleCount=double(nnz(result.Clipped));
+row.ClippingSampleCount=double(numel(result.Clipped));
+row.ClippingStatus="measured";
+row.ClippingSource="executed_converter_clipped_mask";
+row.ClippingThresholdRule="abs_component_greater_than_or_equal_full_scale";
+row.ClippingPopulation="real_samples_across_all_channels";
+if ~isreal(result.Output)
+    row.ClippingPopulation="complex_samples_any_I_or_Q_component_across_all_channels";
 end
-vals = [abs(real(double(x(:)))) > double(fullScale); abs(imag(double(x(:)))) > double(fullScale)];
-ratio = mean(double(vals), "omitnan");
 end
 
 function evm = localEVM(ref, meas)

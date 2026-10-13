@@ -176,11 +176,19 @@ switch string(mode)
     case "wrong_scrambling_id"
         rxCfg.NID = double(cfg.NID) + 31;
     case "wrong_resource_mapping"
-        rxCfg.SymbolLocation = mod(double(cfg.SymbolLocation) + 1, 13);
+        % Exercise a physically legal but wrong receive hypothesis. Adding
+        % one to [6,10] gives unsupported [7,11] and aborts configuration
+        % before the detector can execute the intended negative trial.
+        legalPairs = [4 8;5 9;6 10];
+        current = find(all(legalPairs == reshape(double(cfg.SymbolLocation),1,[]),2));
+        assert(isscalar(current),'sixgr:phy:trs:UnsupportedTrackingSymbolPair', ...
+            'The transmitted TRS must use a supported tracking symbol pair.');
+        rxCfg.SymbolLocation = legalPairs(mod(current,size(legalPairs,1))+1,:);
 end
 resourceSet = sixgr.phy.trs.buildNZPCSIRSResourceSetForTRS(rxCfg);
 rxCfg.ToolboxCarrier = resourceSet.Carrier;
 rxCfg.ToolboxCSIRS = resourceSet.CSIRS;
+rxCfg.ToolboxResources = resourceSet.Resources;
 rxCfg.NumCSIRSPorts = double(resourceSet.CSIRS.NumCSIRSPorts);
 rxCfg.CDMType = string(resourceSet.CSIRS.CDMType);
 rxCfg.Density = string(resourceSet.CSIRS.Density);

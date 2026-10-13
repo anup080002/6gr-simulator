@@ -275,6 +275,7 @@ for i = 1:numel(defs)
         row = localEmptyCoverageRow();
         row.RunId = ctx.RunId;
         row.FunctionName = functionsExpected(j);
+        row.BlockId = string(defs(i).BlockId);
         row.FilePath = localExpectedFunctionFile(functionsExpected(j));
         row.Subsystem = string(defs(i).Subsystem);
         row.ExpectedForScenario = logical(defs(i).FeatureEnabled);
@@ -359,7 +360,7 @@ for i = 1:numel(defs)
     blockId = string(defs(i).BlockId);
     comp = comparisonT(string(comparisonT.BlockId) == blockId, :);
     inv = invariantT(string(invariantT.Subsystem) == string(defs(i).Subsystem), :);
-    cov = coverageT(string(coverageT.Subsystem) == string(defs(i).Subsystem), :);
+    cov = coverageT(string(coverageT.BlockId) == blockId, :);
     det = detectorT(string(detectorT.BlockId) == blockId, :);
     ev = evidenceT(string(evidenceT.BlockId) == blockId, :);
 
@@ -1257,7 +1258,7 @@ switch string(summary.ActualLLSVerdict)
     case "full actual LLS"
         sentence = "Actual end-to-end LLS implementation evidence is complete for the enabled feature set.";
     case "partial actual LLS"
-        sentence = "Partial NR LLS implementation: data-channel path executed, but full access/control/feedback stack incomplete.";
+        sentence = "Partial NR LLS implementation: data-channel path executed, but required block implementation/reference qualification remains incomplete.";
     case "label/proxy simulator"
         sentence = "Not an actual end-to-end LLS implementation for the enabled feature set.";
     otherwise
@@ -1335,7 +1336,7 @@ tf = localAnyLogicalColumn(T, "Skipped") || localAnyStringColumnContains(T, ["Ro
 end
 
 function tf = localBlockBypassed(blockId, coverageT, evidenceT, featureEnabled)
-cov = coverageT(string(coverageT.Subsystem) == string(localBlockSubsystem(blockId)), :);
+cov = coverageT(string(coverageT.BlockId) == string(blockId), :);
 ev = evidenceT(string(evidenceT.BlockId) == string(blockId), :);
 tf = featureEnabled && ~any(localTableLogical(cov, "ActuallyCalled")) && any(localTableLogical(ev, "EvidencePresent"));
 end
@@ -1897,7 +1898,7 @@ row.RecommendedFix = string(recommendedFix);
 end
 
 function row = localEmptyCoverageRow()
-row = struct("RunId", "", "FunctionName", "", "FilePath", "", "Subsystem", "", "ExpectedForScenario", false, ...
+row = struct("RunId", "", "FunctionName", "", "BlockId", "", "FilePath", "", "Subsystem", "", "ExpectedForScenario", false, ...
     "ActuallyCalled", false, "CallCount", 0, "TotalTimeSeconds", NaN, "SelfTimeSeconds", NaN, ...
     "InputArtifactSeen", false, "OutputArtifactSeen", false, "EvidenceRowsProduced", 0, "RequiredEvidenceProduced", false, ...
     "Bypassed", false, "ProxyUsed", false, "FallbackUsed", false, "Skipped", false, ...

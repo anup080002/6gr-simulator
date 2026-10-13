@@ -106,14 +106,16 @@ for stageIndex = 1:numel(stages)
     row.InternalEnablePaths = strjoin(runtimePaths, "|");
     row.ResolvedValue = resolvedText;
     row.ConfigMappingMatch = mappingMatch;
-    row.RequiredForScenario = logical(row.Required && stageEnabled);
+    % Unknown/mismatched enable authority is not proof of disablement.
+    row.RequiredForScenario = logical(row.Required && (stageEnabled || ~mappingMatch));
     row.ConfigMappingDetails = mappingDetails;
 
     functions = localStringList(sixgr.util.structGet( ...
         spec, "consumer_functions", strings(0,1)));
     sourceFiles = localStringList(sixgr.util.structGet( ...
         spec, "consumer_source_files", strings(0,1)));
-    [ledgerCount, ledgerMatches] = localLedgerEvidence(ledgerT, functions);
+    [ledgerCount, ledgerMatches] = localLedgerEvidence( ...
+        ledgerT, functions, sourceFiles, runId, configHash);
     [profileCount, profileSeconds, profileMatches] = ...
         localProfilerEvidence(profileT, sourceFiles);
     row.ConsumerFunctions = strjoin(functions, "|");
@@ -197,11 +199,12 @@ for index = 1:numel(specs)
     row.ScenarioPath = string(sixgr.util.structGet(spec, "scenario_path", ""));
     row.RuntimePath = string(sixgr.util.structGet(spec, "runtime_path", ""));
     featureName = string(sixgr.util.structGet(spec, "feature_authority", ""));
-    [applicable, featureDetails] = localFeatureApplicable(cfg, featureName);
+    if isempty(featureName), featureName = ""; end
+    [applicable, featureDetails, authorityKnown] = localFeatureApplicable(cfg, featureName);
     row.FeatureAuthority = featureName;
     row.FeatureAuthorityDetails = featureDetails;
     row.Required = localBoolean(sixgr.util.structGet(spec, "required", true), true);
-    row.RequiredForScenario = row.Required && applicable;
+    row.RequiredForScenario = row.Required && (applicable || ~authorityKnown);
 
     [configured, configuredFound] = localTryScenarioValue(scfg, row.ScenarioPath);
     [resolved, resolvedFound] = localTryStructValue(cfg, row.RuntimePath);
@@ -215,7 +218,8 @@ for index = 1:numel(specs)
         spec, "consumer_functions", strings(0,1)));
     files = localStringList(sixgr.util.structGet( ...
         spec, "consumer_source_files", strings(0,1)));
-    [ledgerCount, ledgerMatches] = localLedgerEvidence(ledgerT, functions);
+    [ledgerCount, ledgerMatches] = localLedgerEvidence( ...
+        ledgerT, functions, files, runId, configHash);
     [profileCount, ~, profileMatches] = localProfilerEvidence(profileT, files);
     row.ConsumerFunctions = strjoin(functions, "|");
     row.ConsumerSourceFiles = strjoin(files, "|");
@@ -223,7 +227,10 @@ for index = 1:numel(specs)
     row.MatchedConsumers = strjoin(unique([ledgerMatches(:); ...
         profileMatches(:)], "stable"), "|");
 
-    if ~applicable
+    if ~authorityKnown
+        row.Status = "FEATURE_AUTHORITY_MISSING";
+        row.FailureReason = "missing_or_invalid_feature_authority:" + featureName;
+    elseif ~applicable
         row.Status = "DISABLED_BY_YAML";
         row.StrictPass = true;
     elseif ~configuredFound
@@ -479,20 +486,45 @@ end
 mask = mask(:);
 end
 
-function [count, matches] = localLedgerEvidence(T, functions)
+function [count, matches] = localLedgerEvidence(T, functions, sourceFiles, runId, configHash)
 count = 0;
 matches = strings(0,1);
-if isempty(T) || ~ismember("FunctionName", string(T.Properties.VariableNames))
+required = ["FunctionName","RunId","ConfigHash","Event", ...
+    "EvidenceClass","ApproximationMode"];
+if isempty(T) || ~all(ismember(required, string(T.Properties.VariableNames)))
     return;
 end
+% A stale run, a planned call, or a proxy entry must not qualify a consumer.
+eligible = strcmp(strtrim(string(T.RunId)), runId) & ...
+    strcmp(strtrim(string(T.ConfigHash)), configHash) & ...
+    strcmpi(strtrim(string(T.Event)), "ENTER") & ...
+    strcmpi(strtrim(string(T.EvidenceClass)), "ACTUAL_RUNTIME_ENTRY") & ...
+    strcmpi(strtrim(string(T.ApproximationMode)), "none");
 names = strtrim(string(T.FunctionName));
+matched = false(height(T),1);
 for functionName = functions(:).'
-    mask = strcmpi(names, strtrim(functionName));
-    count = count + sum(mask);
+    mask = eligible & strcmp(names, strtrim(functionName));
+    matched = matched | mask;
     if any(mask)
         matches(end+1,1) = "ledger:" + functionName; %#ok<AGROW>
     end
 end
+% SourceFile is captured from the actual caller stack by RuntimeCallLedger.
+% Never resolve it from a configured name or source-code reachability. Old
+% ledgers without this evidence may qualify only exact named functions.
+if ismember("SourceFile", string(T.Properties.VariableNames))
+    observed = localNormalizePaths(T.SourceFile);
+    repoRoot = fileparts(fileparts(fileparts(mfilename("fullpath"))));
+    for sourceFile = sourceFiles(:).'
+        expected = localNormalizePaths(string(fullfile(repoRoot, char(sourceFile))));
+        mask = eligible & strcmp(observed, expected);
+        matched = matched | mask;
+        if any(mask)
+            matches(end+1,1) = "ledger_source_file:" + sourceFile; %#ok<AGROW>
+        end
+    end
+end
+count = nnz(matched);
 end
 
 function [count, seconds, matches] = localProfilerEvidence(T, sourceFiles)
@@ -541,7 +573,7 @@ function source = localRuntimeEvidenceSource(ledgerCount, profileCount)
 if ledgerCount > 0 && profileCount > 0
     source = "runtime_call_ledger+exact_profiler_file_match";
 elseif ledgerCount > 0
-    source = "runtime_call_ledger_exact_function_match";
+    source = "runtime_call_ledger_exact_function_or_executed_caller_file_match";
 elseif profileCount > 0
     source = "runtime_profiler_exact_source_file_match";
 else
@@ -549,14 +581,19 @@ else
 end
 end
 
-function [applicable, details] = localFeatureApplicable(cfg, featureName)
-if strlength(featureName) == 0
+function [applicable, details, known] = localFeatureApplicable(cfg, featureName)
+% Heterogeneous YAML structs insert [] for an absent optional field.
+% Both that representation and "" mean an unconditional parameter, not a
+% disabled feature. A named but absent authority must instead fail closed.
+known = true;
+if isempty(featureName) || (isscalar(featureName) && strlength(featureName) == 0)
     applicable = true;
     details = "always_applicable";
     return;
 end
 feature = sixgr.util.structGet(cfg, "runtime.features." + featureName, struct());
 enabled = sixgr.util.structGet(feature, "Enabled", []);
+known = localIsBooleanScalar(enabled);
 applicable = localBoolean(enabled, false);
 details = "runtime.features." + featureName + ".Enabled=" + localValueText(enabled);
 end

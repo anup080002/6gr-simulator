@@ -1,0 +1,16 @@
+# Explicit receiver algorithm comparison, not statistical qualification.
+# No added pilot symbols, reduced MCS/rank, or changes to channel/power.
+inherits:
+  - ../fixtures/lls_result_richness.yaml
+meta:
+  scenario_id: lls_100mhz_tdlc_cp_cfo_diagnostic
+  description: Receiver-only coherent CP window selection with single-symbol DMRS.
+  research_class: optional_research_experiment
+reference_signals:
+  pdsch_dmrs_additional_positions: 0
+  pusch_dmrs_additional_positions: 0
+impairments:
+  cfo_estimation_method: cyclic_prefix
+  cfo_cp_observation_policy: received_coherence_window
+  cfo_cp_window_fraction: 0.5
+  cfo_cp_false_alarm_probability: 0.001

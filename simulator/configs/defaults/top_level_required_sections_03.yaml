@@ -37,6 +37,7 @@
     "tracking_density": "baseline", "tracking_bandwidth": "baseline", "symbol_gap": 0, "beam_mismatch_model": "none"
   },
   "receiver_algorithms": {
+    "channel_estimation_method": "LS", "pdsch_channel_estimation_averaging_window": [0, 0],
     "channel_estimator": "realistic_baseline", "interpolation_method": "2d_linear", "equalizer": "mmse", "detector": "baseline", "list_size": 8,
     "iterative_receiver_flag": false, "interference_cancellation": "disabled", "soft_demapper": "maxlog", "llr_quantization": "float",
     "descrambling": "enabled", "deinterleaving": "enabled", "rate_dematching": "enabled", "decoder": "family_default",

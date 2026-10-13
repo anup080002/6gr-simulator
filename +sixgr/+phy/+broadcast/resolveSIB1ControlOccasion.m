@@ -34,6 +34,21 @@ cfgSI = sixgr.util.structSet(cfgSI, ...
 pdcch = resolution.PDCCH;
 cfgSI = sixgr.util.structSet(cfgSI, "phy.sib1.resolvedCORESET0", resolution.CORESET0);
 cfgSI = sixgr.util.structSet(cfgSI, "phy.sib1.resolvedSearchSpace0", resolution.SearchSpace0);
+if sixgr.phy.frame.resolveDuplexMode(cfg)=="TDD"
+    controlSymbols = [double(pdcch.SearchSpace.StartSymbolWithinSlot), ...
+        double(pdcch.CORESET.Duration)];
+    if ~frame.IsDLAllocation(absoluteSlot,controlSymbols)
+        error("sixgr:phy:broadcast:Type0ControlSymbolsNotDLCapable", ...
+            "Configured Type-0 PDCCH symbols [%d,%d] in absolute slot %d are not entirely DL-capable.", ...
+            controlSymbols(1),controlSymbols(2),absoluteSlot);
+    end
+    allocation = sixgr.phy.broadcast.configuredSIB1Allocation(carrierSI,cfgSI);
+    if ~frame.IsDLAllocation(absoluteSlot,allocation.SymbolAllocation)
+        error("sixgr:phy:broadcast:SIB1SymbolsNotDLCapable", ...
+            "Configured SIB1 symbols [%d,%d] in absolute slot %d are not entirely DL-capable. Select an explicit legal monitoring occasion/allocation.", ...
+            allocation.SymbolAllocation(1),allocation.SymbolAllocation(2),absoluteSlot);
+    end
+end
 end
 
 function value = localPDCCHConfigSIB1(cfg)

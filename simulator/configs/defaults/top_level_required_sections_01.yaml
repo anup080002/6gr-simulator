@@ -71,6 +71,8 @@
     "artifact_formats": ["json", "csv", "mat", "png", "md"],
     "save_resolved_config": true,
     "save_raw_waveforms": false,
+    "receiver_replay_capture_policy": "none",
+    "receiver_replay_capture_max_trials": 0,
     "save_llrs": false,
     "save_channel_snapshots": false,
     "save_constellations": false,

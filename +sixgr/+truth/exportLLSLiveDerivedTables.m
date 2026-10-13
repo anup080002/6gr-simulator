@@ -297,6 +297,25 @@ if isempty(rawBeamT)
         localRawBeamSummary(persistedUL, "UL", beamMetricFields, localRuntimeTrialSource(persistedUL, "UL", true))});
 end
 rawBeamT = localAnnotateBeamSummaryTable(rawBeamT, "P2_runtime_beam_refinement", "PDSCH_PUSCH_GRANT");
+% A fixed-link execution can legitimately contain no beam measurements.
+% Do not demand a beam-summary identity when no primary or auxiliary beam
+% observation exists. This is an empty result, not successful refinement.
+% As soon as any beam evidence is present, retain the strict identity gate.
+if isempty(rawBeamT)
+    beamFiles = ["probe_beam_mimo.csv","beam_precoder_table.csv", ...
+        "beam_management_state_trace.csv","beam_management_event_trace.csv"];
+    hasAuxiliaryEvidence = false;
+    for beamFile = beamFiles
+        if ~isempty(localReadUnboundBeamArtifactTable(runFolder,beamFile))
+            hasAuxiliaryEvidence = true;
+            break;
+        end
+    end
+    if ~hasAuxiliaryEvidence
+        T = localEmptyBeamSummaryTable();
+        return;
+    end
+end
 [authorityRunID, authorityExecutionID] = localBeamAuthorityIdentity(authorityDL, authorityUL);
 
 parts = { ...
@@ -386,17 +405,7 @@ end
 end
 
 function T = localReadBeamArtifactTable(runFolder, fileName, authorityRunID, authorityExecutionID)
-T = table();
-if strlength(strtrim(string(runFolder))) == 0
-    return;
-end
-layout = sixgr.report.resultLayout(runFolder);
-candidates = { ...
-    fullfile(layout.BeamformingCSVDir, char(fileName)), ...
-    fullfile(layout.ReportCSVDir, char(fileName)), ...
-    fullfile(layout.ControlCSVDir, char(fileName)), ...
-    fullfile(layout.AirInterfaceCSVDir, char(fileName))};
-T = localReadFirstDerivedTable(candidates);
+T = localReadUnboundBeamArtifactTable(runFolder,fileName);
 % These secondary beam artifacts are folded into a primary, scenario-level
 % measured summary.  Rows without the exact run/execution identity cannot
 % be proven to belong to this execution (and older derived artifacts may
@@ -422,6 +431,18 @@ if istable(T) && ~isempty(T)
         T = table();
     end
 end
+end
+
+function T = localReadUnboundBeamArtifactTable(runFolder,fileName)
+% Read existence/content only; callers must bind identity before promotion.
+T = table();
+if strlength(strtrim(string(runFolder))) == 0, return; end
+layout = sixgr.report.resultLayout(runFolder);
+T = localReadFirstDerivedTable({ ...
+    fullfile(layout.BeamformingCSVDir,char(fileName)), ...
+    fullfile(layout.ReportCSVDir,char(fileName)), ...
+    fullfile(layout.ControlCSVDir,char(fileName)), ...
+    fullfile(layout.AirInterfaceCSVDir,char(fileName))});
 end
 
 function [runID, executionID] = localBeamAuthorityIdentity(dlT, ulT)

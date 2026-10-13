@@ -1,4 +1,4 @@
-function authority = resolveConfiguredPRI(cfg, ueIndex, rnti, explicitPRI, purpose)
+function authority = resolveConfiguredPRI(cfg, ueIndex, rnti, explicitPRI, purpose, receiverIdentity)
 %RESOLVECONFIGUREDPRI Resolve one YAML-authorized PUCCH resource indicator.
 %
 % The DCI resource indicator selects an ordinal within an RRC-configured
@@ -13,6 +13,7 @@ arguments
     rnti (1,1) double = NaN
     explicitPRI (1,1) double = NaN
     purpose (1,1) string {mustBeMember(purpose,["harq","csi"])} = "harq"
+    receiverIdentity (1,1) struct = struct()
 end
 
 section = sixgr.util.structGet(cfg, "validation.pucch_resources", struct());
@@ -23,6 +24,12 @@ end
 sets = sixgr.util.structGet(section, "resource_sets", struct([]));
 assignment = sixgr.util.structGet(section, "multi_user_assignment", struct());
 if purpose == "csi"
+    if ~isempty(sixgr.util.structGet(section,'ue_report_bindings',struct([])))
+        section=sixgr.phy.pucch.resolveUEReportResources(cfg,receiverIdentity);
+        assert(receiverIdentity.UEID==ueIndex && receiverIdentity.RNTI==rnti, ...
+            'sixgr:phy:pucch:UEReportIdentityMismatch', ...
+            'CSI receiver identity must match the requested UE ordinal and RNTI.');
+    end
     configuredPurposeIds = sixgr.util.structGet( ...
         section, "csi_resource_ids", []);
     id=sixgr.phy.pucch.resolveConfiguredCSIResourceID(configuredPurposeIds);

@@ -10,6 +10,7 @@ cfg.outputs.saveMAT = false;
 cfg.outputs.saveFigures = false;
 cfg.phy.nTxAnt = 4;
 cfg.phy.nRxAnt = 2;
+cfg.phy.linkAdaptation.rankPolicy = 'measured_ri';
 cfg = sixgr.util.structSet(cfg, "phy.csi.reportCQI", true);
 cfg = sixgr.util.structSet(cfg, "phy.csi.reportPMI", true);
 cfg = sixgr.util.structSet(cfg, "phy.csi.reportRI", true);

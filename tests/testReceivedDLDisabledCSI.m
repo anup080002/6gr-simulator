@@ -1,10 +1,13 @@
 function ok=testReceivedDLDisabledCSI()
 setup6GRSimToolkit('Verbose',false);
 s=sixgr.lls6g.config.loadScenarioConfig( ...
-    'simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml');
+    'simulator/configs/fixtures/received_dl_harq_calendar_20260913.yaml');
 installed=sixgr.lls6g.buildInternalConfig(s,tempname);
 saved=load(fullfile('docs','lls','evidence_20260913','received_dl_harq_calendar_03','attempt_4.mat'));
 cfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(installed,saved.a.ControlAbsoluteSlot+1);
+[capturedOccasion,periodicity]=sixgr.phy.refsig.csirsOccasion(cfg,saved.a.DataAbsoluteSlot);
+assert(capturedOccasion && periodicity==string(saved.rx.CSIRSInfo.Periodicity), ...
+    'Replay must use the installed CSI calendar recorded with this capture.');
 cfg.phy.csirs.enable=false;
 try
     saved.before.receive(cfg,saved.a,saved.delayed,'TimingSearchWindowSamples',[0 60]);

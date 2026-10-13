@@ -28,7 +28,7 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-09-24-contract-v86-exact-packet-wait-observations"
+MATERIALIZER_VERSION = "2026-10-13-contract-v93-complete-availability-audit"
 FILESYSTEM_CONTRACT_CACHE_PATH = (
     "artifact_generation/browser_contract_exact_source_cache.json"
 )
@@ -340,6 +340,28 @@ def contract_artifact_is_policy_filtered(
         or "distance_vs_sinr.csv" in path
     ):
         return True
+
+    # Independent PHY trials have actual channel/receiver evidence but no
+    # connected MAC scheduler, packet queue, per-UE RRC state or UCI delivery
+    # lifecycle. Match the strict MATLAB execution-scope contract; do not
+    # waive resource-grid, control detection, CSI/SRS or RF measurements.
+    if policy.get("independent_phy_calibration") is True:
+        if Path(path).name in {
+            "live_scheduler_cycle.csv", "live_dl_scheduler_grants.csv",
+            "live_ul_scheduler_grants.csv", "live_queue_state.csv",
+            "live_hol_delay_state.csv", "live_bsr_state.csv",
+            "live_ue_control_state.csv",
+            "live_phy_mac_api_table.csv",
+        }:
+            return True
+        if name in {
+            "scheduled prbs per ue over time", "queue depth over time",
+            "hol delay over time", "sr/bsr event timeline", "grant reason distribution",
+            "ack/nack timeline", "residual bler by harq process",
+            "harq rtt distribution", "ue control/report timeline",
+            "per-cell context health timeline", "mu grouping summary", "mu grouping analytics",
+        }:
+            return True
 
     # Pairwise UE-distance evidence is mathematically undefined for a
     # single-UE scenario.  Applicability comes exclusively from the resolved
@@ -2016,12 +2038,13 @@ def _render_svg_plot(title: str, subtitle: str, dataset: dict[str, Any] | None, 
     top = 108
     plot_w = 820
     plot_h = 458
+    badge = "OFFLINE IQ REANALYSIS" if dataset and dataset.get("evidence_scope") == "offline_reanalysis_not_original_in_path_row" else "RUNTIME MEASUREMENT"
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
         '<rect width="100%" height="100%" fill="#f8fafc"/>',
         '<rect x="0" y="0" width="10" height="720" fill="#0f766e"/>',
         '<rect x="40" y="24" width="190" height="24" rx="12" fill="#ccfbf1"/>',
-        '<text x="135" y="41" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="700" letter-spacing="1.2" fill="#115e59">RUNTIME MEASUREMENT</text>',
+        f'<text x="135" y="41" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="700" letter-spacing="1.2" fill="#115e59">{badge}</text>',
         f'<text x="40" y="76" font-family="Segoe UI,Arial,sans-serif" font-size="29" font-weight="700" fill="#0f172a">{html.escape(_display_chart_title(title))}</text>',
         f'<text x="40" y="99" font-family="Segoe UI,Arial,sans-serif" font-size="14" fill="#475569">{html.escape(_ellipsize_svg_text(subtitle, 132))}</text>',
         f'<rect x="{left}" y="{top}" width="{plot_w}" height="{plot_h}" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>',
@@ -2041,6 +2064,7 @@ def _render_svg_plot(title: str, subtitle: str, dataset: dict[str, Any] | None, 
         max_x = max(xs)
         min_y = min(ys)
         max_y = max(ys)
+        is_bar = dataset.get("mode") == "bar"
         requested_y_min = dataset.get("y_axis_min")
         requested_y_max = dataset.get("y_axis_max")
         if requested_y_min is not None and requested_y_max is not None:
@@ -2055,6 +2079,10 @@ def _render_svg_plot(title: str, subtitle: str, dataset: dict[str, Any] | None, 
             ):
                 min_y = requested_y_min
                 max_y = requested_y_max
+        if is_bar:
+            # Bars encode distance from zero, including tiny positive or
+            # negative measurements. Never use the plot bottom as zero.
+            min_y, max_y = min(0.0, min_y), max(0.0, max_y)
         if math.isclose(min_x, max_x):
             max_x = min_x + 1.0
         if math.isclose(min_y, max_y):
@@ -2071,21 +2099,15 @@ def _render_svg_plot(title: str, subtitle: str, dataset: dict[str, Any] | None, 
                 token in y_semantics
                 for token in ("db", "sinr", "power", "quality", "gain", "evm", "%")
             )
-            if bounded_unit_metric and 0.0 <= constant_value <= 1.0:
+            if is_bar or (bounded_unit_metric and 0.0 <= constant_value <= 1.0):
                 min_y, max_y = 0.0, 1.0
             elif discrete_index_metric and constant_value >= 0.0:
                 min_y = max(0.0, constant_value - 1.0)
                 max_y = constant_value + 1.0
             else:
-                padding = max(abs(constant_value) * 0.1, 1.0)
+                padding = abs(constant_value) * 0.1 if constant_value else 1.0
                 min_y = constant_value - padding
                 max_y = constant_value + padding
-        is_bar = dataset.get("mode") == "bar"
-        if is_bar:
-            if min_y > 0:
-                min_y = 0.0
-            if math.isclose(min_y, max_y):
-                max_y = min_y + max(abs(min_y) * 0.1, 1.0)
         axis_left = left + 45
         axis_right = left + plot_w - 24
         axis_top = top + 24
@@ -2109,10 +2131,11 @@ def _render_svg_plot(title: str, subtitle: str, dataset: dict[str, Any] | None, 
         parts.append(f'<line x1="{axis_left}" y1="{axis_top}" x2="{axis_left}" y2="{axis_bottom}" stroke="#94a3b8" stroke-width="1.2"/>')
         if is_bar:
             bar_w = max(8.0, (plot_w - 100) / max(len(points), 1) * 0.7)
+            zero_px = axis_bottom - ((0.0 - min_y) / (max_y - min_y)) * (axis_bottom - axis_top)
             for idx, (x_val, y_val) in enumerate(points):
                 x_px = left + 55 + idx * max(bar_w + 4, (plot_w - 100) / max(len(points), 1))
                 y_px = axis_bottom - ((y_val - min_y) / (max_y - min_y)) * (axis_bottom - axis_top)
-                parts.append(f'<rect x="{x_px:.1f}" y="{y_px:.1f}" width="{bar_w:.1f}" height="{(axis_bottom - y_px):.1f}" fill="#0f766e" opacity="0.88"/>')
+                parts.append(f'<rect data-bar-value="{y_val}" data-zero-y="{zero_px:.1f}" x="{x_px:.1f}" y="{min(y_px, zero_px):.1f}" width="{bar_w:.1f}" height="{abs(zero_px - y_px):.1f}" fill="#0f766e" opacity="0.88"/>')
                 if y_val == 0.0:
                     # A zero-height bar is otherwise invisible. Mark its
                     # exact endpoint without flooring or changing the metric.
@@ -3171,9 +3194,13 @@ def _render_scatter_panels_svg(
     subtitle: str,
     panels: list[tuple[str, list[tuple[float, float, str]], list[tuple[float, float]]]],
     summary_lines: list[str],
+    *,
+    max_points_per_panel: int | None = 450,
 ) -> bytes:
     width = 1180
-    panel_w, panel_h = 320, 250
+    title_lines = max((len(panel[0].splitlines()) for panel in panels), default=1)
+    title_extra = max(0, title_lines - 1) * 17
+    panel_w, panel_h = 320, 250 + title_extra
     base_x, base_y = 44, 110
     panel_rows = (len(panels) + 1) // 2
     panel_extent = panel_rows * (panel_h + 28) - 28 if panel_rows else 0
@@ -3194,9 +3221,10 @@ def _render_scatter_panels_svg(
         x0 = base_x + col * (panel_w + 28)
         y0 = base_y + row * (panel_h + 28)
         parts.append(f'<rect x="{x0}" y="{y0}" width="{panel_w}" height="{panel_h}" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>')
-        parts.append(f'<text x="{x0 + 16}" y="{y0 + 26}" font-family="Segoe UI,Arial,sans-serif" font-size="16" font-weight="700" fill="#0f172a">{html.escape(panel_title)}</text>')
+        for line_index, line in enumerate(panel_title.splitlines()):
+            parts.append(f'<text x="{x0 + 16}" y="{y0 + 26 + 17 * line_index}" font-family="Segoe UI,Arial,sans-serif" font-size="{13 if title_lines > 1 else 16}" font-weight="700" fill="#0f172a">{html.escape(line)}</text>')
         cx = x0 + panel_w / 2
-        cy = y0 + panel_h / 2 + 12
+        cy = y0 + panel_h / 2 + 12 + title_extra / 2
         radius = 86
         numeric = [(x_val, y_val) for x_val, y_val, _direction in points] + list(ideal_points)
         observed_max = max((max(abs(x_val), abs(y_val)) for x_val, y_val in numeric), default=1.0)
@@ -3212,11 +3240,11 @@ def _render_scatter_panels_svg(
         parts.append(f'<line x1="{cx}" y1="{cy - radius}" x2="{cx}" y2="{cy + radius}" stroke="#94a3b8" stroke-width="1.1"/>')
         parts.append(f'<text x="{cx}" y="{y0 + panel_h - 8}" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#334155">In-phase</text>')
         parts.append(f'<text x="{x0 + 14}" y="{cy}" text-anchor="middle" transform="rotate(-90 {x0 + 14} {cy})" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#334155">Quadrature</text>')
-        for ix, iy in ideal_points[:256]:
+        for ix, iy in (ideal_points if max_points_per_panel is None else ideal_points[:256]):
             px = cx + (ix / axis_limit) * radius
             py = cy - (iy / axis_limit) * radius
             parts.append(f'<circle cx="{px:.2f}" cy="{py:.2f}" r="4.0" fill="#cbd5e1" />')
-        for x_val, y_val, direction in points[:450]:
+        for x_val, y_val, direction in (points if max_points_per_panel is None else points[:max_points_per_panel]):
             px = cx + (x_val / axis_limit) * radius
             py = cy - (y_val / axis_limit) * radius
             color = colors.get(direction, "#475569")
@@ -4850,23 +4878,54 @@ def _specialized_live_report_table(
                 "source_logical_path": "sim_artifacts",
                 "source_row_count": len(rows),
             }
-    if table_name in {"live_browser_surface_integrity_table", "live_consistency_check_table", "reports_partial_or_missing_v", "reports_truth_violations_v", "reports_status_rollup_explanations_v"}:
+    if table_name == "reports_truth_violations_v":
+        # Availability is not a scientific verdict. The old shared branch
+        # listed every healthy source under "truth violations" and never
+        # exported the actual required failure codes.
+        path = "reports/csv/truth_contract_failures.csv"
+        artifact = source_lookup.get(path)
+        if artifact is None:
+            return None
+        header, failures = _decode_csv_dicts(fetch_artifact_bytes(int(artifact["artifact_id"])))
+        if "FailureCode" not in header:
+            raise ValueError("Truth-violation view requires the authoritative FailureCode schema")
+        columns = list(dict.fromkeys(["run_id", *header, "source_artifact"]))
+        rows = [dict(row, run_id=run_id, source_artifact=path) for row in failures]
+        return {
+            "data": _encode_csv(columns, [[row.get(name, "") for name in columns] for row in rows]),
+            "status": "specialized_authoritative_truth_failures",
+            "note": "Exact persisted truth-contract failures; source availability is not a violation or a pass.",
+            "source_logical_path": path,
+            "source_row_count": len(rows),
+        }
+    if table_name in {"live_browser_surface_integrity_table", "live_consistency_check_table", "reports_partial_or_missing_v", "reports_status_rollup_explanations_v"}:
         rows = []
         for spec in output_contract.iter_table_specs("reports"):
+            policy_disabled = contract_artifact_is_policy_filtered(
+                table_contract_path(spec), feature_policy, contract_name=str(spec.get("table_name") or "")
+            )
+            if table_name == "reports_partial_or_missing_v" and policy_disabled:
+                continue
             source_rows = _table_source_health(str(spec.get("table_name") or ""), source_lookup, fetch_artifact_bytes)
             present_rows = sum(int(item["source_row_count"]) for item in source_rows)
+            if table_name == "reports_partial_or_missing_v" and present_rows > 0:
+                continue
             rows.append({
                 "run_id": run_id,
                 "section_slug": str(spec.get("section_slug") or ""),
                 "contract_table": str(spec.get("table_name") or ""),
-                "status": "generated" if present_rows > 0 else "missing_source_evidence",
+                "status": "disabled_by_policy" if policy_disabled else (
+                    "generated" if present_rows > 0 else "missing_source_evidence"),
                 "source_paths_checked": "|".join(item["source_logical_path"] for item in source_rows),
                 "present_source_count": sum(int(item["source_present"]) for item in source_rows),
                 "source_row_count": present_rows,
-                "rollup_explanation": "At least one truthful source artifact exists for this contract table." if present_rows > 0 else "No direct aliased source artifact was published for this run.",
+                "rollup_explanation": "Explicitly disabled by the resolved feature policy; not an applicable missing measurement." if policy_disabled else (
+                    "Persisted source rows exist; availability alone does not establish correctness." if present_rows > 0 else "No nonempty direct aliased source artifact was published for this run."),
             })
+        columns = ["run_id", "section_slug", "contract_table", "status", "source_paths_checked",
+                   "present_source_count", "source_row_count", "rollup_explanation"]
         return {
-            "data": _encode_rows_from_dicts(rows),
+            "data": _encode_csv(columns, [[row.get(name, "") for name in columns] for row in rows]),
             "status": "specialized_runtime_integrity_table",
             "note": "Integrity and partial/missing investigator views derived from direct alias-health checks.",
             "source_logical_path": "sim_artifacts",
@@ -5153,6 +5212,59 @@ def _wilson_score_interval(success_count: float, sample_count: int, z_value: flo
     return max(0.0, center - half_width), min(1.0, center + half_width)
 
 
+def _prach_receiver_trial_flag(row: dict[str, str], metric: str) -> bool | None:
+    """Score the PRACH receiver, not later Msg2/3/4/RRC success or peak size."""
+    if _row_flag(row, "Crash") is True:
+        return None
+    noise_only = (
+        _row_flag(row, "NoiseOnlyTrial", "NoiseOnly", "NoPreambleTransmitted") is True
+        or _row_flag(row, "SignalPresent", "PreambleTransmitted") is False
+        or _row_text(row, "TrialType").strip().lower() in {"noise_only", "no_signal", "no_preamble"}
+    )
+    if metric == "false_alarm":
+        # The standalone MATLAB producer records a companion no-preamble
+        # observation on the signal-present row. Its explicit classification
+        # distinguishes this from an extra/wrong candidate with signal present.
+        companion = _row_text(row, "FalseAlarmClassification") in {
+            "ts38321_no_preamble_transmitted_any_preamble_detected",
+            "ts38321_no_preamble_transmitted_requested_preamble_detected",
+        }
+        return _row_flag(row, "FalseAlarmFlag", "FalseAlarm") if noise_only or companion else None
+    if noise_only:
+        return None
+    detected = None
+    if _row_flag(row, "DetectedPreambleSetAvailable") is True:
+        target = _row_float(row, "PreambleIndexTx", "RequestedPreambleIndex")
+        text = _row_text(row, "DetectedPreambleSet").strip()
+        try:
+            candidates = [float(token) for token in text.split("|")] if text else []
+        except ValueError:
+            return None
+        if (target is None or not math.isfinite(target) or target != int(target) or not 0 <= target < 64
+                or any(not math.isfinite(v) or v != int(v) or not 0 <= v < 64 for v in candidates)
+                or len(candidates) != len(set(candidates))):
+            return None
+        detected = target in candidates
+    else:
+        missed = _row_flag(row, "MissedDetection", "MissedDetectionFlag")
+        if missed is not None:
+            detected = not missed
+        else:
+            detected = _row_flag(row, "PreambleDetected", "Detected")
+            if detected is True:
+                target = _row_float(row, "PreambleIndexTx", "RequestedPreambleIndex")
+                candidate = _row_float(row, "PreambleIndexDetected", "DetectedPreambleIndex")
+                if target is not None:
+                    if candidate is None:
+                        return None
+                    detected = target == candidate
+            if detected is None and not _row_text(row, "RAProcedureType"):
+                detected = _row_flag(row, "DecodeSuccess", "SuccessFlag")
+    if detected is None:
+        return None  # A positive metric/qualification Status is not detection.
+    return detected if metric == "detected" else not detected
+
+
 def _prach_rate_chart_materialization(
     chart_name: str,
     existing: dict[str, dict[str, Any]],
@@ -5164,71 +5276,37 @@ def _prach_rate_chart_materialization(
         "detection rate": {
             "metric_label": "Detection rate",
             "metric_keys": {"prach_detection_probability"},
-            "trial_flag": lambda row: _row_flag(row, "DecodeSuccess", "SuccessFlag")
-            if _row_flag(row, "DecodeSuccess", "SuccessFlag") is not None
-            else (_row_text(row, "Status").strip().lower() in {"pass", "detected", "success"})
-            if _row_text(row, "Status")
-            else (_row_float(row, "DetectionMetric") or 0.0) > 0.0,
+            "trial_flag": lambda row: _prach_receiver_trial_flag(row, "detected"),
         },
         "p_d": {
             "metric_label": "Detection probability",
             "metric_keys": {"prach_detection_probability"},
-            "trial_flag": lambda row: _row_flag(row, "DecodeSuccess", "SuccessFlag")
-            if _row_flag(row, "DecodeSuccess", "SuccessFlag") is not None
-            else (_row_text(row, "Status").strip().lower() in {"pass", "detected", "success"})
-            if _row_text(row, "Status")
-            else (_row_float(row, "DetectionMetric") or 0.0) > 0.0,
+            "trial_flag": lambda row: _prach_receiver_trial_flag(row, "detected"),
         },
         "false alarm rate": {
             "metric_label": "False alarm rate",
             "metric_keys": {"prach_false_alarm"},
-            "trial_flag": lambda row: _row_flag(row, "FalseAlarmFlag"),
+            "trial_flag": lambda row: _prach_receiver_trial_flag(row, "false_alarm"),
         },
         "far": {
             "metric_label": "False alarm rate",
             "metric_keys": {"prach_false_alarm"},
-            "trial_flag": lambda row: _row_flag(row, "FalseAlarmFlag"),
+            "trial_flag": lambda row: _prach_receiver_trial_flag(row, "false_alarm"),
         },
         "p_fa": {
             "metric_label": "False alarm probability",
             "metric_keys": {"prach_false_alarm"},
-            "trial_flag": lambda row: _row_flag(row, "FalseAlarmFlag"),
+            "trial_flag": lambda row: _prach_receiver_trial_flag(row, "false_alarm"),
         },
         "missed detection rate": {
             "metric_label": "Missed detection rate",
             "metric_keys": {"prach_missed_detection"},
-            "trial_flag": lambda row: (
-                _row_flag(row, "MissedDetectionFlag")
-                if _row_flag(row, "MissedDetectionFlag") is not None
-                else (
-                    not bool(
-                        _row_flag(row, "DecodeSuccess", "SuccessFlag")
-                        if _row_flag(row, "DecodeSuccess", "SuccessFlag") is not None
-                        else (_row_text(row, "Status").strip().lower() in {"pass", "detected", "success"})
-                        if _row_text(row, "Status")
-                        else (_row_float(row, "DetectionMetric") or 0.0) > 0.0
-                    )
-                    and not bool(_row_flag(row, "FalseAlarmFlag"))
-                )
-            ),
+            "trial_flag": lambda row: _prach_receiver_trial_flag(row, "missed"),
         },
         "p_md": {
             "metric_label": "Missed detection probability",
             "metric_keys": {"prach_missed_detection"},
-            "trial_flag": lambda row: (
-                _row_flag(row, "MissedDetectionFlag")
-                if _row_flag(row, "MissedDetectionFlag") is not None
-                else (
-                    not bool(
-                        _row_flag(row, "DecodeSuccess", "SuccessFlag")
-                        if _row_flag(row, "DecodeSuccess", "SuccessFlag") is not None
-                        else (_row_text(row, "Status").strip().lower() in {"pass", "detected", "success"})
-                        if _row_text(row, "Status")
-                        else (_row_float(row, "DetectionMetric") or 0.0) > 0.0
-                    )
-                    and not bool(_row_flag(row, "FalseAlarmFlag"))
-                )
-            ),
+            "trial_flag": lambda row: _prach_receiver_trial_flag(row, "missed"),
         },
     }
     spec = metric_specs.get(chart_key)
@@ -5241,6 +5319,7 @@ def _prach_rate_chart_materialization(
         ["air_interface/csv/prach_trials.csv", "control/csv/prach_trials.csv", "control/csv/prach_detection_trials.csv"],
     )
     grouped: dict[float | None, list[float]] = defaultdict(list)
+    correlated_buckets: set[float | None] = set()
     if trial_rows:
         for row in trial_rows:
             flag_value = spec["trial_flag"](row)
@@ -5249,6 +5328,8 @@ def _prach_rate_chart_materialization(
             snr_value, _snr_source = _row_quality_axis_value(row, allow_receiver_hest=False)
             bucket = float(snr_value) if snr_value is not None and math.isfinite(float(snr_value)) else None
             grouped[bucket].append(1.0 if bool(flag_value) else 0.0)
+            if "not_independent" in _row_text(row, "DetectionPopulationScope").lower():
+                correlated_buckets.add(bucket)
     if grouped:
         ordered = sorted(grouped.items(), key=lambda item: (-9999.0 if item[0] is None else float(item[0])))
         points: list[list[float]] = []
@@ -5267,6 +5348,10 @@ def _prach_rate_chart_materialization(
             total_samples += len(values)
             total_positive += sum(values)
             ci95_lower, ci95_upper = _wilson_score_interval(sum(values), len(values))
+            confidence_status = "wilson95_independent_trial_assumption"
+            if snr_bucket in correlated_buckets:
+                ci95_lower = ci95_upper = ""
+                confidence_status = "not_evaluated_correlated_target_rows"
             csv_rows.append(
                 {
                     "run_id": run_id,
@@ -5278,6 +5363,7 @@ def _prach_rate_chart_materialization(
                     "ci95_lower": ci95_lower,
                     "ci95_upper": ci95_upper,
                     "source_table_logical_path": trial_path,
+                    "confidence_status": confidence_status,
                 }
             )
         if points:
@@ -5299,18 +5385,23 @@ def _prach_rate_chart_materialization(
                 f"samples_used={total_samples}",
                 f"mean_rate={total_positive / max(total_samples, 1):.6f}",
             ]
-            overall_lower, overall_upper = _wilson_score_interval(total_positive, total_samples)
-            summary.extend([
-                f"wilson95_lower={overall_lower:.6f}",
-                f"wilson95_upper={overall_upper:.6f}",
-            ])
+            if correlated_buckets:
+                summary.append("confidence_status=not_evaluated_correlated_target_rows")
+            else:
+                overall_lower, overall_upper = _wilson_score_interval(total_positive, total_samples)
+                summary.extend([
+                    f"wilson95_lower={overall_lower:.6f}",
+                    f"wilson95_upper={overall_upper:.6f}",
+                ])
             img_bytes = _render_svg_plot(
                 chart_name,
-                "Observed PRACH Bernoulli rate from persisted trials; Wilson 95% bounds are reported in the summary.",
+                ("Observed PRACH target rate; shared-occasion rows do not establish independent-trial confidence bounds."
+                 if correlated_buckets else
+                 "Observed PRACH Bernoulli rate from persisted trials; Wilson 95% bounds are reported in the summary."),
                 dataset,
                 summary,
             )
-            if len(points) == 1 and ordered[0][0] is None:
+            if len(points) == 1 and ordered[0][0] is None and not correlated_buckets:
                 img_bytes = _render_prach_rate_card_svg(
                     chart_name, str(spec["metric_label"]),
                     total_positive / total_samples, total_positive, total_samples,
@@ -5318,7 +5409,7 @@ def _prach_rate_chart_materialization(
                 )
             return {
                 "csv_bytes": _encode_dict_rows(
-                    ["run_id", "chart_name", "bucket_name", "snr_db", "metric_value", "sample_count", "ci95_lower", "ci95_upper", "source_table_logical_path"],
+                    ["run_id", "chart_name", "bucket_name", "snr_db", "metric_value", "sample_count", "ci95_lower", "ci95_upper", "source_table_logical_path", "confidence_status"],
                     csv_rows,
                 ),
                 "img_bytes": img_bytes,
@@ -5329,6 +5420,9 @@ def _prach_rate_chart_materialization(
                 "note": "Detection-rate chart derived from truthful PRACH trial flags grouped by observed SNR.",
             }
 
+    # Do not rescue unsupported trial populations with a generic summary.
+    if trial_rows:
+        return None
     summary_path, summary_rows = _first_available_rows(
         existing,
         fetch_artifact_bytes,
@@ -5416,7 +5510,7 @@ def _prach_peak_chart_materialization(
     source_path, records = _first_available_rows(
         existing,
         fetch_artifact_bytes,
-        [
+        (["reports/csv/prach_background_replay.csv"] if "noise floor" in chart_key else []) + [
             "reports/csv/prach_correlation_trace.csv",
             "reports/csv/prach_correlation_traces.csv",
             "air_interface/csv/prach_trials.csv",
@@ -5429,6 +5523,7 @@ def _prach_peak_chart_materialization(
     values: list[float] = []
     points: list[list[float]] = []
     status_counts: Counter[str] = Counter()
+    background_observations: set[tuple[str, ...]] = set()
     for idx, row in enumerate(records, start=1):
         slot = _row_float(row, "trial_id", "Slot")
         if slot is None:
@@ -5436,11 +5531,20 @@ def _prach_peak_chart_materialization(
         peak_value = _row_float(row, "correlation_abs", "PeakValue", "peak_value", "DetectionMetric", "detection_metric")
         noise_floor = _row_float(
             row, "noise_floor", "NoiseFloor", "PDPAverageNoiseFloor",
-            "DetectorNoiseFloor", "NoiseVariance", "noise_variance",
+            "Msg1PDPAverageNoiseFloor", "DetectorNoiseFloor",
         )
         metric = noise_floor if "noise floor" in chart_key else peak_value
         if metric is None or not math.isfinite(float(metric)):
             continue
+        if "noise floor" in chart_key and _row_text(row, "trial_id") and "lag_samples" in row:
+            # A correlation trace repeats one background estimate at every
+            # lag. Those rows are not independent noise observations.
+            observation = tuple(_row_text(row, name) for name in (
+                "RunID", "trial_id", "UEIndex", "preamble_index", "seed", "snr_db",
+                "ObservationStartSample", "peak_lag_samples")) + (str(float(metric)),)
+            if observation in background_observations:
+                continue
+            background_observations.add(observation)
         values.append(float(metric))
         points.append([float(slot), float(metric)])
         status_text = _row_text(row, "Status", "DetectionOutcome") or "unknown"
@@ -5453,8 +5557,13 @@ def _prach_peak_chart_materialization(
                 "peak_index": _row_float(row, "peak_lag_samples", "lag_samples", "PeakIndex", "peak_index"),
                 "peak_value": peak_value,
                 "noise_floor": noise_floor,
+                "noise_floor_estimator": _row_text(row, "noise_floor_estimator", "NoiseFloorEstimator", "Msg1NoiseFloorEstimator"),
+                "noise_floor_definition": _row_text(row, "noise_floor_definition", "NoiseFloorDefinition", "Msg1NoiseFloorDefinition"),
+                "noise_floor_status": _row_text(row, "noise_floor_status", "NoiseFloorStatus", "Msg1NoiseFloorStatus"),
+                "evidence_scope": _row_text(row, "EvidenceScope"),
+                "source_capture_sha256": _row_text(row, "SourceCaptureSHA256"),
                 "detection_metric": _row_float(row, "correlation_abs", "DetectionMetric", "detection_metric"),
-                "timing_error_samples": _row_float(row, "timing_advance_samples", "TimingError_samples", "timing_error_samples"),
+                "timing_error_samples": _row_float(row, "TimingError_samples", "timing_error_samples"),
                 "status": _row_text(row, "Status", "DetectionOutcome"),
                 "source_table_logical_path": source_path,
             }
@@ -5471,7 +5580,7 @@ def _prach_peak_chart_materialization(
     if is_distribution_chart:
         dataset = {
             "mode": "bar",
-            "x_label": "Noise floor" if "noise floor" in chart_key else "PRACH peak metric",
+            "x_label": "Correlation background (see CSV definition)" if "noise floor" in chart_key else "PRACH peak metric",
             "y_label": "Count",
             "points": _histogram_points(values, 18),
             "evidence_shape_policy": "observed_distribution",
@@ -5481,13 +5590,16 @@ def _prach_peak_chart_materialization(
         dataset = {
             "mode": "scatter" if len(points) < 3 else "line",
             "x_label": timeline_x_label,
-            "y_label": "Noise floor" if "noise floor" in chart_key else "PRACH peak metric",
+            "y_label": "Correlation background (see CSV definition)" if "noise floor" in chart_key else "PRACH peak metric",
             "points": timeline_points[:MAX_PREVIEW_ROWS],
             "evidence_shape_policy": "observed_timeline",
             "sample_count": len(values),
         }
     unique_values = _unique_numeric_count(values)
     summary = [f"source={source_path}", f"rows={len(csv_rows)}"]
+    if source_path == "reports/csv/prach_background_replay.csv":
+        dataset["evidence_scope"] = "offline_reanalysis_not_original_in_path_row"
+        summary.append("Offline replay of retained received IQ; original decisions unchanged")
     img_bytes = _render_svg_plot(
         chart_name,
         "PRACH peak/noise observations from persisted runtime rows; sparse samples are rendered as points or exact categorical counts.",
@@ -5496,7 +5608,7 @@ def _prach_peak_chart_materialization(
     )
     return {
         "csv_bytes": _encode_dict_rows(
-            ["run_id", "chart_name", "slot", "peak_index", "peak_value", "noise_floor", "detection_metric", "timing_error_samples", "status", "source_table_logical_path"],
+            ["run_id", "chart_name", "slot", "peak_index", "peak_value", "noise_floor", "detection_metric", "timing_error_samples", "status", "source_table_logical_path", "noise_floor_estimator", "noise_floor_definition", "noise_floor_status", "evidence_scope", "source_capture_sha256"],
             csv_rows,
         ),
         "img_bytes": img_bytes,
@@ -5831,7 +5943,7 @@ def _pdcch_channel_estimate_chart(
     numeric = ("HReal", "HImag", "Magnitude", "Phase_rad", "SubcarrierIndex0",
                "SymbolIndex0", "RxPortIndex0", "ReferencePortIndex0", "AbsoluteSlot0",
                "ObservationStartSample", "ObservationEndSampleExclusive", "CandidateIndex")
-    latest: dict[tuple[str, ...], tuple[float, float]] = {}
+    latest: dict[tuple[str, ...], tuple[float, float, float]] = {}
     parsed = []
     for row in records:
         values = {field: _row_float(row, field) for field in numeric}
@@ -5843,6 +5955,11 @@ def _pdcch_channel_estimate_chart(
         key = tuple(_row_text(row, field) for field in identity)
         if not all(key) or not _row_text(row, "ChannelEstimateSource") or not _row_text(row, "ChannelEstimateMethod"):
             raise ValueError("PDCCH channel-estimate source identity is incomplete")
+        scope = [_row_float(row, field) for field in identity[:3]]
+        if (any(value is None or not math.isfinite(value) for value in scope)
+                or any(value < 1 or not value.is_integer() for value in scope[1:])
+                or key[3] not in {"DL", "UL"}):
+            raise ValueError("PDCCH channel-estimate source scope is invalid")
         magnitude = math.hypot(values["HReal"], values["HImag"])
         phase = math.atan2(values["HImag"], values["HReal"])
         if not math.isclose(magnitude, values["Magnitude"], rel_tol=1e-10, abs_tol=1e-12) or abs(
@@ -5855,14 +5972,20 @@ def _pdcch_channel_estimate_chart(
         window = (values["ObservationStartSample"], values["ObservationEndSampleExclusive"])
         if window[1] <= window[0]:
             raise ValueError("PDCCH channel-estimate observation window is empty or reversed")
-        latest[key] = max(latest.get(key, (-math.inf, -math.inf)), window)
-        parsed.append((row, values, key, accepted))
+        trial = 0.0  # Legacy/shared captures are identified by their absolute clock.
+        if _row_text(row, "TrialIndex"):
+            trial = _row_float(row, "TrialIndex")
+            if trial is None or not math.isfinite(trial) or trial < 1 or not trial.is_integer():
+                raise ValueError("PDCCH channel-estimate independent trial identity is invalid")
+        occasion = (*window, trial)
+        latest[key] = max(latest.get(key, (-math.inf, -math.inf, -math.inf)), occasion)
+        parsed.append((row, values, key, accepted, occasion))
     phase_plot = chart_name.lower().endswith("phase")
     field = "Phase_rad" if phase_plot else "Magnitude"
     series: dict[str, list[list[float]]] = defaultdict(list)
     csv_rows = []
-    for row, values, key, accepted in parsed:
-        preview = (values["ObservationStartSample"], values["ObservationEndSampleExclusive"]) == latest[key]
+    for row, values, key, accepted, occasion in parsed:
+        preview = occasion == latest[key]
         csv_rows.append({**row, "run_id": run_id, "chart_name": chart_name,
                          "preview_selected": preview, "source_table_logical_path": source})
         if preview:
@@ -5870,6 +5993,7 @@ def _pdcch_channel_estimate_chart(
                      f"sym={values['SymbolIndex0']:g} SNR={key[0]} "
                      f"UE={key[1]} cell={key[2]} {key[3]} "
                      f"slot0={values['AbsoluteSlot0']:g} cand={values['CandidateIndex']:g} "
+                     f"trial={_row_text(row, 'TrialIndex') or 'absolute-clock'} "
                      f"accepted={int(accepted)}")
             series[label].append([values["SubcarrierIndex0"], values[field]])
     image = _render_multi_series_svg(
@@ -7495,7 +7619,25 @@ def _recorded_no_data_beam_sources(existing, fetch_artifact_bytes) -> list[str]:
     both directions independently from their complete clock and grant ledgers.
     Acquisition success alone says nothing about whether data was scheduled.
     """
-    if "reports/csv/scenario_summary.csv" in existing:
+    summary_columns, summary_rows = _artifact_rows_by_path(
+        existing, fetch_artifact_bytes, "reports/csv/scenario_summary.csv")
+    state_columns, _ = _artifact_rows_by_path(
+        existing, fetch_artifact_bytes, "reports/csv/run_state.csv")
+    # Legacy runs also wrote scenario_summary.csv. Its existence alone is
+    # not a schema-version discriminator. Admit the exact old failed-run
+    # signature only; partial current-format receipts must use the stronger
+    # identity-bound directional proof and may not fall back to legacy.
+    has_directional_receipt = any(path in existing for path in (
+        "packet_flow/csv/live_dl_scheduler_grants.csv",
+        "packet_flow/csv/live_ul_scheduler_grants.csv"))
+    has_current_clock = bool({"ScenarioID", "ConfigHash", "SlotTraceRows"}.intersection(state_columns))
+    legacy_summary = (
+        set(summary_columns) == {"RunCompletion"}
+        and len(summary_rows) == 1
+        and _row_text(summary_rows[0], "RunCompletion") in {"failed", "completed_with_failures"}
+        and not has_directional_receipt and not has_current_clock
+    )
+    if ("reports/csv/scenario_summary.csv" in existing and not legacy_summary) or has_directional_receipt or has_current_clock:
         directional = [_recorded_direction_without_data_sources(
             existing, fetch_artifact_bytes, direction) for direction in ("DL", "UL")]
         if not all(directional):
@@ -8555,6 +8697,58 @@ def _configured_sweep_chart_materialization(
     }
 
 
+def _availability_audit_chart(
+    existing: dict[str, dict[str, Any]],
+    fetch_artifact_bytes: Callable[[int], bytes],
+    run_id: int,
+) -> dict[str, Any] | None:
+    """Count a complete persisted inventory, not rows in its failure-only view.
+
+    An empty missing-table list can mean a successful audit or no audit at
+    all. Only the complete, same-run inventory distinguishes those cases.
+    These are artifact-availability counts, never PHY pass/fail observations.
+    """
+    path = "reports/csv/reports_status_rollup_explanations_v.csv"
+    header, rows = _artifact_rows_by_path(existing, fetch_artifact_bytes, path)
+    required = {"run_id", "section_slug", "contract_table", "status", "source_row_count"}
+    if not rows or not required.issubset(header):
+        return None
+    expected = {(str(spec.get("section_slug") or ""), str(spec.get("table_name") or ""))
+                for spec in output_contract.iter_table_specs("reports")}
+    observed = [(row["section_slug"], row["contract_table"]) for row in rows]
+    if set(observed) != expected or len(observed) != len(expected):
+        raise ValueError("Availability chart requires a complete, nonduplicated reports inventory")
+    statuses = ("generated", "missing_source_evidence", "disabled_by_policy")
+    counts: Counter[str] = Counter()
+    for row in rows:
+        status = row["status"]
+        count = _row_float(row, "source_row_count")
+        if (_row_float(row, "run_id") != run_id or status not in statuses
+                or count is None or not math.isfinite(count) or count < 0 or not count.is_integer()
+                or (status == "generated" and count == 0)
+                or (status == "missing_source_evidence" and count != 0)):
+            raise ValueError("Availability chart inventory has invalid identity, status or source counts")
+        counts[status] += 1
+    labels = ["Available", "Missing", "Disabled"]
+    points = [[index, counts[status]] for index, status in enumerate(statuses, 1)]
+    dataset = dict(mode="bar", x_label="Table availability (not PHY qualification)",
+                   y_label="Contract tables", points=points, tick_labels=labels,
+                   sample_count=len(rows), evidence_shape_policy="observed_distribution")
+    plotted = [dict(run_id=run_id, x_value=index, y_value=counts[status], status=status,
+                    table_count=counts[status], inventory_table_count=len(rows),
+                    source_table_logical_path=path, evidence_scope="artifact_availability_audit_not_PHY_qualification")
+               for index, status in enumerate(statuses, 1)]
+    note = "Counts from the complete persisted report-table inventory; availability is not scientific acceptance."
+    return {
+        "csv_bytes": _encode_rows_from_dicts(plotted),
+        "img_bytes": _render_svg_plot("partial or missing data dashboard", note, dataset,
+                                     [f"{label}: {counts[status]}" for label, status in zip(labels, statuses)]),
+        "csv_status": "complete_inventory_availability_audit",
+        "image_status": "generated_complete_inventory_availability_svg",
+        "source_table_path": path, "source_row_count": len(rows), "note": note,
+    }
+
+
 def _explicit_runtime_metric_chart_materialization(
     chart_name: str,
     existing: dict[str, dict[str, Any]],
@@ -8613,7 +8807,6 @@ def _explicit_runtime_metric_chart_materialization(
         "sleep-state timeline": {"sources": ["reports/csv/live_sleep_state_table.csv"], "fields": ["metric_value", "energy_per_bit_j"], "x_fields": ["slot", "timestamp_sim_ms"], "kind": "timeline", "label": "Sleep-state runtime metric"},
         "efficiency scatter plots": {"sources": ["analytics/csv/energy_efficiency_analytics.csv"], "fields": ["ue_energy_efficiency", "cell_energy_efficiency"], "x_fields": ["ue_id", "cell_id"], "kind": "timeline", "label": "Energy efficiency"},
         "truth violation rollup": {"sources": ["analytics/csv/truth_policy_analytics.csv"], "fields": ["StrictTruthFailureCount", "StrictProxyGuardFailureCount", "CanonicalArtifactGapCount"], "kind": "distribution", "label": "Truth violation count"},
-        "partial or missing data dashboard": {"sources": ["reports/csv/reports_partial_or_missing_v.csv"], "fields": ["source_row_count", "present_source_count"], "kind": "distribution", "label": "Persisted source rows"},
         "value semantics coverage chart": {"sources": ["reports/csv/reports_value_semantics_coverage_v.csv"], "fields": ["observation_count"], "kind": "distribution", "label": "Categorical runtime observation count"},
         "NMSE vs SNR / SINR": {"sources": ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"], "fields": ["NMSE_dB"], "x_fields": ["ConfiguredSNR_dB"], "kind": "timeline", "label": "Channel-estimate NMSE (dB)"},
         "estimator bias / variance summaries": {"sources": ["reports/csv/live_channel_estimation_stats.csv", "air_interface/csv/dl_pdsch_trials.csv"], "fields": ["NMSE_dB", "MeanNMSE_dB"], "kind": "distribution", "label": "Estimator error (dB)"},
@@ -8899,6 +9092,59 @@ def _runtime_resource_occupancy_chart(
     _, records = _artifact_rows_by_path(existing, fetch_artifact_bytes, source_path)
     if not records:
         return None
+    if any(_row_text(row, "ObservationID") for row in records):
+        # Each independent waveform has its own local grid. Render all of
+        # them in one figure/CSV, never sum different SNR/trial grids.
+        import xml.etree.ElementTree as ET
+        groups = defaultdict(list)
+        for row in records:
+            observation = _row_text(row, "ObservationID")
+            if not observation or _row_text(row, "ExecutionScope") != "independent_link_execution":
+                raise ValueError("Mixed or unbound independent RE observations")
+            groups[observation].append(row)
+        panels = []
+        joint_rows = []
+        for observation, selected in sorted(groups.items()):
+            scoped = {source_path: {"artifact_id": -1}}
+            # Remove the dispatch marker only inside this already separated
+            # render call; retain every identity in its joint plotted CSV.
+            render_rows = [dict(row) for row in selected]
+            for row in render_rows:
+                row.pop("ObservationID", None)
+            payload = _encode_dict_rows(list(render_rows[0]), render_rows)
+            result = _runtime_resource_occupancy_chart(chart_name, scoped, lambda _: payload, run_id)
+            if result is None:
+                continue  # e.g. no PTRS in this actual observation
+            identity = {key: selected[0].get(key, "") for key in
+                        ("ObservationID", "ObservationUEIndex", "ConfiguredSNR_dB", "Seed", "TrialIndex", "direction", "ExecutionScope")}
+            if any(any(row.get(key, "") != value for key, value in identity.items()) for row in selected):
+                raise ValueError("Conflicting independent RE observation context")
+            _, plotted = _decode_csv_dicts(result["csv_bytes"])
+            joint_rows.extend(dict(row, **identity) for row in plotted)
+            panel = ET.fromstring(result["img_bytes"])
+            label = (f'{chart_name}: {identity["direction"]}, SNR {identity["ConfiguredSNR_dB"]} dB, '
+                     f'UE {identity["ObservationUEIndex"]}, trial {identity["TrialIndex"]}, seed {identity["Seed"]}')
+            title_node = next((node for node in panel.iter() if node.tag.endswith("}text")), None)
+            if title_node is not None:
+                title_node.text = label
+                title_node.set("font-size", "20")
+            panels.append(panel)
+        if not panels:
+            return None
+        columns = min(2, len(panels))
+        width, height = 1180 * columns, 760 * math.ceil(len(panels) / columns)
+        canvas = ET.Element("{http://www.w3.org/2000/svg}svg", {
+            "width": str(width), "height": str(height), "viewBox": f"0 0 {width} {height}"})
+        for index, panel in enumerate(panels):
+            panel.set("x", str(1180 * (index % columns)))
+            panel.set("y", str(760 * (index // columns)))
+            canvas.append(panel)
+        return {"csv_bytes": _encode_dict_rows(list(joint_rows[0]), joint_rows),
+                "img_bytes": ET.tostring(canvas, encoding="utf-8"),
+                "csv_status": "executed_independent_re_observation_dataset",
+                "image_status": "generated_independent_re_panels_svg", "source_table_path": source_path,
+                "source_row_count": len(records), "source_mapping_status": "exact",
+                "note": "All independent TX grids in one CSV/figure; separate SNR/seed/trial/UE panels, no shared-grid claim."}
     token_filters: tuple[str, ...] = ()
     if chart_name == "SSB/PBCH occupancy map":
         token_filters = ("SSB", "PBCH", "PSS", "SSS")
@@ -8927,8 +9173,8 @@ def _runtime_resource_occupancy_chart(
             continue
         family = " ".join(
             _row_text(row, field).upper()
-            for field in ("signal_family", "channel", "signal_name", "occupancy_role")
-        )
+            for field in ("signal_family", "channel", "signal_name", "occupancy_role", "component")
+        ).replace("-", "")
         if token_filters and not any(token in family for token in token_filters):
             continue
         if exact_re_schema:
@@ -9004,6 +9250,16 @@ def _runtime_resource_occupancy_chart(
     x_labels, y_labels, matrix = _grid_rows_to_heatmap(
         grid_rows, x_field, "rb_index", "occupancy_value"
     )
+    if exact_re_schema:
+        # Sparse pilot symbols must not be drawn as adjacent continuous
+        # occupancy. Preserve their actual OFDM spacing; absent coordinates
+        # are blank (None), never manufactured zero-valued measurements.
+        first_slot = min(row["absolute_slot"] for row in grid_rows)
+        last_slot = max(row["absolute_slot"] for row in grid_rows)
+        symbols = list(range(first_slot * 14, (last_slot + 1) * 14))
+        values = {(row["time_symbol"], row["rb_index"]): row["occupancy_value"] for row in grid_rows}
+        x_labels = [str(symbol) for symbol in symbols]
+        matrix = [[values.get((symbol, int(float(rb)))) for symbol in symbols] for rb in y_labels]
     csv_rows = [
         {
             "run_id": run_id,
@@ -9014,16 +9270,17 @@ def _runtime_resource_occupancy_chart(
         }
         for row in grid_rows
     ]
-    image_bytes, image_status = _render_heatmap_or_projection_svg(
-        chart_name,
+    render_args = (chart_name,
         "Resource occupancy aggregated from persisted runtime RE-allocation rows.",
-        x_labels,
-        y_labels,
-        matrix,
-        [f"source={source_path}", f"cell={chosen_cell or 'all'}", f"occupied_slot_rb_pairs={len(grid_rows)}"],
-        x_axis_label,
-        "RB index",
-    )
+        x_labels, y_labels, matrix,
+        [f"source={source_path}", f"cell={chosen_cell or 'all'}", f"occupied_slot_rb_pairs={len(grid_rows)}",
+         "Blank: no exported occupied RE; not measured zero."], x_axis_label, "RB index")
+    if exact_re_schema:
+        image_bytes = _render_heatmap_svg(*render_args, allow_singleton_observation=True,
+                                          physical_color_label="Occupied REs across ports")
+        image_status = "generated_specialized_runtime_heatmap_svg"
+    else:
+        image_bytes, image_status = _render_heatmap_or_projection_svg(*render_args)
     return {
         "csv_bytes": _encode_dict_rows(
             (
@@ -9744,7 +10001,7 @@ def _runtime_prach_operational_chart(
     source_path, records = _first_available_rows(
         existing,
         fetch_artifact_bytes,
-        [
+        (["reports/csv/prach_background_replay.csv"] if chart_key == "noise floor trend" else []) + [
             "air_interface/csv/prach_trials.csv",
             "control/csv/prach_trials.csv",
             "components/prach/csv/prach_detection_trials.csv",
@@ -9778,14 +10035,17 @@ def _runtime_prach_operational_chart(
         noise_floor = _row_float(
             row,
             "PDPAverageNoiseFloor",
-            "ThresholdBackgroundComponent",
+            "Msg1PDPAverageNoiseFloor",
             "DetectorNoiseFloor",
         )
         peak_lag = _row_float(row, "DetectorPeakLagSamples", "PRACHRawTimingEstimate_samples")
         setup_slot = _row_float(row, "SetupCompleteScheduledSlot")
+        msg1_slot = _row_float(row, "Msg1ScheduledSlot")
         latency_slots = None
-        if setup_slot is not None and occasion_slot is not None:
-            latency_slots = float(setup_slot) - float(occasion_slot)
+        # OccasionSlot is frame-local; scheduled procedure slots are absolute
+        # zero-based. Subtract only coordinates on the same declared clock.
+        if setup_slot is not None and msg1_slot is not None:
+            latency_slots = float(setup_slot) - float(msg1_slot)
         out_rows.append({
             "run_id": run_id,
             "chart_name": chart_name,
@@ -9796,6 +10056,7 @@ def _runtime_prach_operational_chart(
             "occasion_slot": "" if occasion_slot is None else float(occasion_slot),
             "occasion_symbol": "" if occasion_symbol is None else float(occasion_symbol),
             "occasion_frequency_index": "" if occasion_frequency is None else float(occasion_frequency),
+            "msg1_absolute_slot": "" if msg1_slot is None else float(msg1_slot),
             "preamble_index_tx": _row_text(row, "PreambleIndexTx", "PreambleIndex"),
             "preamble_index_detected": _row_text(row, "PreambleIndexDetected", "DetectedPreambleIndex"),
             "root_sequence_index": _row_text(row, "RootSequenceIndex", "PRACHRootSequenceIndex"),
@@ -9809,6 +10070,11 @@ def _runtime_prach_operational_chart(
             "correlation_peak": "" if correlation_peak is None else float(correlation_peak),
             "detection_threshold": "" if detection_threshold is None else float(detection_threshold),
             "noise_floor": "" if noise_floor is None else float(noise_floor),
+            "noise_floor_estimator": _row_text(row, "NoiseFloorEstimator", "Msg1NoiseFloorEstimator"),
+            "noise_floor_definition": _row_text(row, "NoiseFloorDefinition", "Msg1NoiseFloorDefinition"),
+            "noise_floor_status": _row_text(row, "NoiseFloorStatus", "Msg1NoiseFloorStatus"),
+            "evidence_scope": _row_text(row, "EvidenceScope"),
+            "source_capture_sha256": _row_text(row, "SourceCaptureSHA256"),
             "detector_peak_lag_samples": "" if peak_lag is None else float(peak_lag),
             "timing_advance_command": _row_text(row, "TimingAdvanceCommand"),
             "access_latency_slots": "" if latency_slots is None else latency_slots,
@@ -9915,11 +10181,14 @@ def _runtime_prach_operational_chart(
             }
     elif chart_key == "noise floor trend":
         points = [[float(row["observation_index"]), float(row["noise_floor"])] for row in out_rows if row["noise_floor"] != ""]
-        dataset = {"mode": "line" if len(points) > 1 else "bar", "x_label": "PRACH observation", "y_label": "Measured PDP noise floor", "points": points, "evidence_shape_policy": "operating_point" if len(points) == 1 else "observed_timeline", "sample_count": len(points)}
+        dataset = {"mode": "bar", "x_label": "PRACH observation", "y_label": "Correlation background (see CSV definition)", "points": points, "evidence_shape_policy": "observed_distribution", "sample_count": len(points)}
 
     if dataset and dataset.get("points"):
         dataset.setdefault("sample_count", len(out_rows))
         dataset.setdefault("evidence_shape_policy", "observed_distribution")
+        if source_path == "reports/csv/prach_background_replay.csv":
+            dataset["evidence_scope"] = "offline_reanalysis_not_original_in_path_row"
+            summary.append("Offline replay of retained received IQ; original decisions unchanged")
         img_bytes = _render_svg_plot(
             chart_name,
             "Persisted PRACH/initial-access observations; procedure coverage follows the source rows.",
@@ -9931,8 +10200,15 @@ def _runtime_prach_operational_chart(
                          for row in out_rows if row["occasion_slot"] != ""}
             comparison = len(out_rows) == 1 and bool(peak_points) and bool(threshold_points)
             if len(occasions) < 2 and peak_points and not comparison:
-                img_bytes = _render_prach_peak_summary_svg(
-                    chart_name, [point[1] for point in peak_points], Counter(),
+                # Several UEs can share an occasion. Their measured peaks
+                # are valid categorical observations, not a time series or
+                # missing evidence merely because their values coincide.
+                img_bytes = _render_svg_plot(
+                    chart_name,
+                    "Measured PRACH peaks by receiver observation; no elapsed-time trend is implied.",
+                    dict(mode="bar", x_label="Receiver observation", y_label="Correlation peak",
+                         points=peak_points, sample_count=len(peak_points),
+                         evidence_shape_policy="observed_distribution"),
                     summary + ["single_or_unresolved_occasion_no_elapsed_time_trend"],
                 )
     else:
@@ -9948,13 +10224,15 @@ def _runtime_prach_operational_chart(
         "csv_bytes": _encode_dict_rows(
             [
                 "run_id", "chart_name", "observation_index", "ue_id", "occasion_id",
-                "occasion_frame", "occasion_slot", "occasion_symbol", "occasion_frequency_index",
+                "occasion_frame", "occasion_slot", "occasion_symbol", "occasion_frequency_index", "msg1_absolute_slot",
                 "preamble_index_tx", "preamble_index_detected", "root_sequence_index",
                 "cyclic_shift_ncs", "attempt_number", "success_flag", "success_scope",
                 "true_timing_offset_samples", "estimated_timing_offset_samples",
                 "timing_error_samples", "correlation_peak", "detection_threshold",
                 "noise_floor", "detector_peak_lag_samples", "timing_advance_command", "access_latency_slots",
                 "source_table_logical_path",
+                "noise_floor_estimator", "noise_floor_definition", "noise_floor_status",
+                "evidence_scope", "source_capture_sha256",
             ],
             out_rows,
         ),
@@ -11414,6 +11692,8 @@ def _specialized_chart_materialization(
     run_id: int,
 ) -> dict[str, Any] | None:
     chart_name = str(chart_name or "")
+    if chart_name == "partial or missing data dashboard":
+        return _availability_audit_chart(existing, fetch_artifact_bytes, run_id)
     if chart_name == "ACK/NACK timeline":
         from lls_received_harq_plot import received_feedback_chart
         return received_feedback_chart(existing, fetch_artifact_bytes, run_id)

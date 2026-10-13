@@ -10,6 +10,9 @@ classdef FrameRuntimeStateBuilder
 
     methods (Static)
         function [snapshot, carriers] = build(cfg)
+            sixgr.runtime.RuntimeCallLedger.record( ...
+                "sixgr.phy.frame.FrameRuntimeStateBuilder.build", ...
+                "FRAME_GRID", "", struct("Stage","resolved_runtime_construction"));
             if ~(isstruct(cfg) && isscalar(cfg))
                 error("sixgr:phy:frame:InvalidRuntimeConfig", ...
                     "Frame runtime state requires one resolved internal config struct.");

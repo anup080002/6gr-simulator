@@ -131,12 +131,18 @@ if anchorUsable
 end
 
 [cond_dB] = localRankConditionNumber(Hprb);
+rankPolicy = sixgr.mimo.resolveRankPolicy(cfg);
+estimate.RankPolicy = rankPolicy.Policy;
+estimate.AllowedRanks = localAllowedRanks(cfg,numTxPorts,numRxAnt);
 [ri, rankMetric, rankCandidateCount] = localEstimateRankByMI(Hprb, predictionNoise, cfg);
 estimate.RI = double(ri);
 estimate.ConditionNumber_dB = double(cond_dB);
 estimate.RankMutualInformation = double(rankMetric);
 estimate.RankCandidateCount = double(rankCandidateCount);
 estimate.RISource = "ul_srs_post_equalization_mi_rank_estimator";
+if rankPolicy.FixedRankAnchor
+    estimate.RISource = "ul_srs_configured_fixed_rank_receiver_scored";
+end
 
 if scheme ~= "codebook" || transformPrecoding
     estimate.Valid = isfinite(estimate.RI);
@@ -149,6 +155,7 @@ end
 estimate.NumTxPorts = double(tpmiNumPorts);
 estimate.PUSCHCodebookNumPorts = double(tpmiNumPorts);
 estimate.PortSelectionSource = char(portSource);
+estimate.AllowedRanks = localAllowedRanks(cfg,tpmiNumPorts,numRxAnt);
 [riJoint, tpmi, metric, candidateCount, beamIndices, layerSINR_dB, ...
     minimumLayerSINR_dB, widebandMeanSINR_dB] = localEstimateRankTPMI( ...
     Htpmi, predictionNoise, cfg, tpmiNumPorts, transformPrecoding);
@@ -156,6 +163,9 @@ if isfinite(riJoint)
     estimate.RI = double(riJoint);
     estimate.RankMutualInformation = double(metric);
     estimate.RISource = "ul_srs_joint_rank_tpmi_post_equalization_mi_estimator";
+    if rankPolicy.FixedRankAnchor
+        estimate.RISource = "ul_srs_configured_fixed_rank_measured_tpmi";
+    end
 elseif isfinite(estimate.RI)
     estimate.RI = double(max(1, min(round(double(estimate.RI)), max(1, round(double(tpmiNumPorts))))));
 end
@@ -364,14 +374,14 @@ numTxPorts = size(Hprb, 2);
 if isempty(Hprb) || numTxPorts < 1
     return;
 end
-maxRank = localResolveMaxRank(cfg, numTxPorts);
+allowedRanks = localAllowedRanks(cfg, numTxPorts, size(Hprb,1));
 bestMetric = -inf;
 minIncrement = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.rankMinIncrementMI_bpcu", ...
     sixgr.util.structGet(cfg, "phy.srs.rankMinIncrementMI_bpcu", 1e-6)));
 if ~(isfinite(minIncrement) && minIncrement >= 0)
     minIncrement = 1e-6;
 end
-for rankIdx = 1:maxRank
+for rankIdx = allowedRanks
     candidateCount = candidateCount + 1;
     metric = localAverageEigenmodeMI(Hprb, nVar, rankIdx);
     if isfinite(metric) && (metric > bestMetric + minIncrement || ~isfinite(bestMetric))
@@ -391,6 +401,22 @@ if ~(isfinite(maxRank) && maxRank >= 1)
     maxRank = numTxPorts;
 end
 maxRank = max(1, min(round(maxRank), max(1, round(double(numTxPorts)))));
+end
+
+function ranks = localAllowedRanks(cfg,numTxPorts,numRxAnt)
+maxRank = min(localResolveMaxRank(cfg,numTxPorts),numRxAnt);
+policy = sixgr.mimo.resolveRankPolicy(cfg);
+if policy.FixedRankAnchor
+    requested = double(sixgr.util.structGet(cfg,"phy.pusch.numLayers", ...
+        sixgr.util.structGet(cfg,"phy.pusch.nLayers",1)));
+    assert(isscalar(requested) && isreal(requested) && isfinite(requested) && ...
+        requested>=1 && requested==fix(requested) && requested<=maxRank, ...
+        'sixgr:phy:ul:UnsupportedFixedSRSRank', ...
+        'Fixed PUSCH rank must fit the configured capability and measured SRS TX/RX dimensions.');
+    ranks = requested;
+else
+    ranks = 1:maxRank;
+end
 end
 
 function metric = localAverageEigenmodeMI(Hprb, nVar, rankIdx)
@@ -446,8 +472,8 @@ bestRI = NaN;
 bestLayerSINR_dB = [];
 bestMinimumLayerSINR_dB = NaN;
 bestWidebandMeanSINR_dB = NaN;
-maxRank = localResolveMaxRank(cfg, numTxPorts);
-for rankIdx = 1:maxRank
+allowedRanks = localAllowedRanks(cfg,numTxPorts,size(Hprb,1));
+for rankIdx = allowedRanks
     catalog = sixgr.phy.ul.puschCodebookCatalog(rankIdx, numTxPorts, transformPrecoding);
     if ~logical(catalog.Valid)
         continue;

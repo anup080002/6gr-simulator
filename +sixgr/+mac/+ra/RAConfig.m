@@ -133,6 +133,12 @@ ra = struct();
 ra.RunId = string(opt.RunId);
 ra.ScenarioName = scenarioName;
 ra.CellId = double(cellId);
+% Physical PCI and installed gNB index are distinct namespaces. Standalone
+% component execution has one declared cell; a coupled execution supplies
+% its explicit serving-cell identity independently of the scrambling PCI.
+ra.ServingCell = double(sixgr.util.structGet(cfg, ...
+    "lls6g.userContext.RuntimeServingCell", cellId));
+validateattributes(ra.ServingCell,{'numeric'},{'scalar','real','finite','integer','nonnegative'});
 ra.UEId = double(opt.UEId);
 ra.AttemptId = double(opt.AttemptId);
 validateattributes(ra.AttemptId,{'numeric'},{'real','scalar','integer','positive','finite'});
@@ -324,7 +330,7 @@ if frame.Mu ~= grantPlan.TimeDomainAllocation.Mu
         "RA carrier numerology must match its canonical frame; cross-numerology RA needs explicit time conversion.");
 end
 commonDL = sixgr.phy.frame.CommonDLResourcePlan(cfg);
-commonDL.validateSIB1TRS();
+commonDL.validateSIB1References();
 stageAllocations = struct('Msg2',ra.Msg2PDSCH,'Msg4',ra.Msg4PDSCH);
 ra.TimingSchedule = sixgr.phy.ia.RAEventScheduler.resolve( ...
     "PDSCHResourceAvailability", @(stage,slot0) commonDL.checkPDSCH(stageAllocations.(stage),slot0), ...

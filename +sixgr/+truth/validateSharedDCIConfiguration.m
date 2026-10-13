@@ -4,6 +4,7 @@ function contexts = validateSharedDCIConfiguration(cfg)
 % paired DCI context. A layout reconstructed from a transmitted grant is not
 % receiver configuration. This check consumes no samples and installs nothing.
 contexts = struct();
+reportIdentities=sixgr.phy.pucch.validateUEReportBindings(cfg);
 dataEnabled = logical(sixgr.util.structGet(cfg,'phy.pdsch.enable',false)) || ...
     logical(sixgr.util.structGet(cfg,'phy.pusch.enable',false));
 if ~dataEnabled
@@ -31,7 +32,7 @@ end
 srIDs=sixgr.util.structGet(cfg,'validation.pucch_resources.sr_resource_ids',[]);
 srConfigs=sixgr.util.structGet(cfg,'validation.pucch_resources.scheduling_request_resources',struct([]));
 if logical(sixgr.util.structGet(cfg,'phy.pucch.enable',false)) && ...
-        (~isempty(srIDs) || ~isempty(srConfigs))
+        (~isempty(srIDs) || ~isempty(srConfigs) || ~isempty(reportIdentities))
     identity=cfg.phy.frame.DefaultIdentity;
     % DCI serving-cell indices are zero-based; runtime cell IDs are one-based.
     cellID=double(contexts.DL.Data.ScheduledServingCell)+1;

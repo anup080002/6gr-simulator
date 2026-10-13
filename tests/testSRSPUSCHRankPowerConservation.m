@@ -5,6 +5,7 @@ function ok = testSRSPUSCHRankPowerConservation()
 assert(exist('nrPUSCHCodebook','file')==2, ...
     'sixgr:test:Required5GToolboxUnavailable','Native PUSCH codebooks are required.');
 cfg = struct();
+cfg.phy.linkAdaptation.rankPolicy = 'measured_ri';
 cfg.phy.pusch.transmissionScheme = 'codebook';
 cfg.phy.pusch.transformPrecoding = false;
 cfg.phy.pusch.NumAntennaPorts = 4;

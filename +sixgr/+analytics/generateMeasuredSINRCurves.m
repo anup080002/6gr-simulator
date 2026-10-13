@@ -101,7 +101,8 @@ end
 gateTables = localWriteKPIReconciliationGates(layout, kpiSummary, anchorKPIs, ...
     trialData, slotDuration_s, scenarioCfg);
 
-localRelabelAnalyticsCSVAndPNG(layout);
+% Browser chart datasets/images are producer-owned. A measured-SINR
+% reduction must never relabel an existing SNR axis or copy its raster.
 
 tables = struct( ...
     "DLBlerCurve", dlBler, ...
@@ -550,7 +551,7 @@ anchor = localEnsureAnchorColumns(anchor);
 
 anchor = localUpdateDirectionAnchor(anchor, summaryT, kpiSummaryT, "DL", "DL_PDSCH_Throughput");
 anchor = localUpdateDirectionAnchor(anchor, summaryT, kpiSummaryT, "UL", "UL_PUSCH_Throughput");
-anchor = localUpdatePBCHAnchor(anchor, localTableField(trialData, ["pbch","PBCH"]));
+anchor = localUpdatePBCHAnchor(anchor, localTableField(trialData, ["pbch","PBCH"]), layout);
 anchor = localUpdatePRACHAnchor(anchor, localTableField(trialData, ["prach","PRACH"]));
 anchor = localUpdateSRSAnchor(anchor, localTableField(trialData, ["srs","SRS"]));
 anchor = localUpdateLowPAPRAnchor(anchor, localTableField(trialData, ["ul","UL"]));
@@ -648,7 +649,7 @@ anchor.Notes(mask) = sprintf("Geometry-driven %s KPI from finalized measured-SIN
     string(direction), throughput, goodput, bler);
 end
 
-function anchor = localUpdatePBCHAnchor(anchor, T)
+function anchor = localUpdatePBCHAnchor(anchor, T, layout)
 caseName = "CellSearch_MIB_SIB1";
 if ~(istable(T) && height(T) > 0)
     anchor = localMarkAnchorUnavailable(anchor, caseName, "pbch_trial_rows_unavailable");
@@ -657,12 +658,28 @@ end
 pass = localPassVector(T, ["SIB1StrictOk","MIBDecoded","SIB1Decoded","PBCHDecoded","DecodeSuccess","CRCPass","StrictOk","Ok"]);
 n = height(T);
 nPass = sum(pass);
+evidenceSource="pbch_trial_rows";
+candidateNote="";
+sinrTrials=T;
+if ismember("SSBBurstSweepScope",string(T.Properties.VariableNames)) && ...
+        any(string(T.SSBBurstSweepScope)=="configured_active_ss_burst_set")
+    [episodes,selectedRows]=sixgr.analytics.summarizePBCHAccessEpisodes(T,pass);
+    sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, ...
+        "pbch_access_episode_reconciliation.csv"),episodes, ...
+        'PreserveSchema',true,'RoundTripNumericText',true);
+    n=height(episodes);
+    nPass=nnz(episodes.AccessSuccess);
+    sinrTrials=T(selectedRows,:);
+    evidenceSource="receiver_selected_pbch_burst_episode";
+    candidateNote=sprintf("; candidate trials=%d; candidate strict failures=%d retained separately", ...
+        height(T),sum(episodes.CandidateStrictFailureCount));
+end
 bler = localSafeDivide(n - nPass, n);
 anchor = localEnsureAnchorCase(anchor, caseName);
 mask = strcmpi(string(anchor.Case), caseName);
 anchor.Ok(mask) = n > 0 && isfinite(bler) && bler <= 0.20;
 anchor.Skipped(mask) = false;
-anchor.SINR_median_dB(mask) = localMedianTrialSINR(T);
+anchor.SINR_median_dB(mask) = localMedianTrialSINR(sinrTrials);
 anchor.BLER(mask) = bler;
 anchor.TrialCount(mask) = n;
 anchor.PassCount(mask) = nPass;
@@ -670,8 +687,8 @@ anchor.FailCount(mask) = n - nPass;
 anchor.CrashCount(mask) = 0;
 anchor.FallbackUsed(mask) = false;
 anchor.KPIFormulaVersion(mask) = "measured_posteq_sinr_v2";
-anchor.EvidenceSource(mask) = "pbch_trial_rows";
-anchor.Notes(mask) = sprintf("PBCH/MIB/SIB1 strict evidence from %.0f runtime rows; pass=%.0f; BLER=%.6g", n, nPass, bler);
+anchor.EvidenceSource(mask) = evidenceSource;
+anchor.Notes(mask) = sprintf("PBCH/MIB/SIB1 strict evidence from %.0f trials/episodes; pass=%.0f; BLER=%.6g%s", n, nPass, bler,candidateNote);
 end
 
 function anchor = localUpdatePRACHAnchor(anchor, T)
@@ -1169,44 +1186,6 @@ mode = lower(strtrim(string(sixgr.util.structGet(cfg, ...
 tf = mode == "standalone_awgn_snr_argument";
 end
 
-function localRelabelAnalyticsCSVAndPNG(layout)
-csvDir = fullfile(layout.Root, "analytics", "csv");
-imgDir = fullfile(layout.Root, "analytics", "image");
-specs = [
-    "contract__error-reliability-analytics__bler-vs-snr", "BLER vs Measured PostEq SINR", "contract__error-reliability-analytics__bler-vs-measured-sinr";
-    "contract__error-reliability-analytics__ber-vs-snr", "BER vs Measured PostEq SINR", "contract__error-reliability-analytics__ber-vs-measured-sinr";
-    "contract__throughput-goodput-spectral-efficiency-analytics__throughput-vs-snr", "Throughput vs Measured PostEq SINR", "contract__throughput-goodput-spectral-efficiency-analytics__throughput-vs-measured-sinr"
-    ];
-for i = 1:size(specs, 1)
-    stem = specs(i, 1);
-    titleText = specs(i, 2);
-    aliasStem = specs(i, 3);
-    csvPath = fullfile(csvDir, stem + ".csv");
-    if exist(csvPath, "file") == 2
-        try
-            T = readtable(csvPath, "VariableNamingRule", "preserve", "TextType", "string");
-            if localHasColumn(T, "chart_name")
-                T.chart_name(:) = titleText;
-            end
-            if localHasColumn(T, "SNR_dB") && ~localHasColumn(T, "PostEqSINR_dB")
-                T.Properties.VariableNames{strcmp(string(T.Properties.VariableNames), "SNR_dB")} = char("PostEqSINR_dB");
-            end
-            sixgr.analytics.writeAnalysisTable(csvPath, T);
-            sixgr.analytics.writeAnalysisTable(fullfile(csvDir, aliasStem + ".csv"), T);
-        catch
-        end
-    end
-    pngPath = fullfile(imgDir, stem + ".png");
-    if exist(pngPath, "file") == 2
-        try
-            aliasPngPath = fullfile(imgDir, aliasStem + ".png");
-            sixgr.util.ensureDir(aliasPngPath);
-            copyfile(pngPath, aliasPngPath, "f");
-        catch
-        end
-    end
-end
-end
 
 function T = localSortDistanceScatter(T)
 if istable(T) && height(T) > 0 && localHasColumn(T, "PropagationDistance_m")
@@ -1319,7 +1298,7 @@ function b = localToLogical(v)
 if islogical(v)
     b = v(:);
 elseif isnumeric(v)
-    b = double(v(:)) ~= 0;
+    b = isfinite(double(v(:))) & double(v(:)) == 1;
 else
     s = lower(strtrim(string(v(:))));
     b = ismember(s, ["true","1","yes","y","pass","ok"]);
@@ -1482,13 +1461,10 @@ if ~(isfinite(total) && total > 0)
     hi = NaN;
     return;
 end
-z = 1.96;
-p = localSafeDivide(fails, total);
-den = 1 + z^2 / total;
-center = (p + z^2 / (2 * total)) / den;
-half = z * sqrt(p * (1 - p) / total + z^2 / (4 * total^2)) / den;
-lo = max(0, center - half);
-hi = min(1, center + half);
+% Use the common interval engine, including exact zero/all-error endpoints.
+% Do not relax the persisted CSV inequality to conceal floating-point
+% cancellation that otherwise excludes the observed BLER by one ulp.
+[~, ~, lo, hi] = sixgr.stats.wilsonBinomialCI(fails, total, .95);
 end
 
 function y = localSafeDivide(a, b)

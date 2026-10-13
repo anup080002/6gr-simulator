@@ -1,5 +1,8 @@
-function ok=testGrantCalibrationReference()
+function ok=testGrantCalibrationReference(storageMode)
 % Real AWGN references and fading targets keep separate physical identities.
+arguments
+    storageMode (1,1) string="lossless_path_gains_xor_v1"
+end
 cfg=localConfig();
 source=sixgr.calibration.grantSourceIdentity();
 sixgr.calibration.assertGrantSourceIdentity(source);
@@ -28,7 +31,7 @@ for direction=["DL","UL"]
     end
     targetFolder=tempname(fullfile(pwd,'logs'));
     t=sixgr.system.waveform.collectGrantCalibrationEpisodes(cfg,targetPlan,targetFolder, ...
-        'MaximumNewEpisodes',4,'EvidenceStorage',"lossless_path_gains_xor_v1");
+        'MaximumNewEpisodes',4,'EvidenceStorage',storageMode);
     assert(t.CompletedEpisodes==4 && ~t.CalibrationQualified);
     targetKey=localReadKey(targetFolder);
     [reference,heldout,proof]=sixgr.calibration.readGrantCalibrationReference( ...

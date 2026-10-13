@@ -26,7 +26,8 @@ for ui=1:numel(ulGrants)
         [valid,reason]=sixgr.phy.frame.evaluateHARQPUSCHTimingConstraints(g.TimingDecision.HARQACKDecision,c);
         if ~valid
             keep(ui)=false;
-            state=sixgr.truth.CoupledTruthRuntime.cancelUnexecutedHARQGrantRuntime(state,u,'UL');
+            state=sixgr.truth.CoupledTruthRuntime.cancelUnexecutedHARQGrantRuntime( ...
+                state,u,'UL','DCINotIssued',true);
             rows=[rows;localRow(g,g.K1,NaN,"defer_tentative_UL",reason)]; %#ok<AGROW>
             break;
         end
@@ -49,7 +50,8 @@ for di=1:numel(dlGrants)
             startsWith(reason,"harq_ack_timing_rejected:insufficient_harq_pusch_"), ...
             'sixgr:truth:JointHARQTimingInvalid','Joint scheduling rejected malformed timing: %s',reason);
         keep(di)=false;
-        state=sixgr.truth.CoupledTruthRuntime.cancelUnexecutedHARQGrantRuntime(state,old,'DL');
+        state=sixgr.truth.CoupledTruthRuntime.cancelUnexecutedHARQGrantRuntime( ...
+            state,old,'DL','DCINotIssued',true);
         rows=[rows;localRow(old,old.K1,NaN,"defer_tentative_DL",reason)]; %#ok<AGROW>
         continue;
     end

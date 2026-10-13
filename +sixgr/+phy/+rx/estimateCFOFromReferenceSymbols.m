@@ -1,9 +1,21 @@
-function [freqHz, info] = estimateCFOFromReferenceSymbols(rxGrid, refInd, refSym, carrier, sampleRateHz)
+function [freqHz, info] = estimateCFOFromReferenceSymbols(rxGrid, refInd, refSym, carrier, sampleRateHz, options)
 %estimateCFOFromReferenceSymbols Estimate common frequency offset from RS phase drift.
 %
 % The estimate is derived from received reference-symbol phase versus OFDM
 % symbol time. It is only available when the reference mapping spans at
-% least two distinct OFDM symbols.
+% least two distinct OFDM symbols with matching frequency/port references.
+% Independent phase wraps are resolved within the shortest observed pair's
+% ambiguity interval; no injected frequency or channel coefficients are used.
+% ReferenceGroupIDs separates installed resources/precoders whose unknown
+% effective channels must not be correlated. The default is one fixed grant.
+arguments
+    rxGrid
+    refInd
+    refSym
+    carrier
+    sampleRateHz
+    options.ReferenceGroupIDs = []
+end
 
 info = struct( ...
     "EstimateAvailable", false, ...
@@ -43,17 +55,38 @@ K = double(dims(1));
 L = double(dims(2));
 refInd = double(refInd(:));
 refSym = refSym(:);
-n = min(numel(refInd), numel(refSym));
-refInd = refInd(1:n);
-refSym = refSym(1:n);
-valid = isfinite(refInd) & refInd >= 1 & abs(refSym) > 0 & ...
-    isfinite(real(refSym)) & isfinite(imag(refSym));
-refInd = round(refInd(valid));
-refSym = refSym(valid);
-if isempty(refInd)
-    info.Status = "no_valid_reference_symbols";
-    return;
+assert(numel(refInd)==numel(refSym), ...
+    'sixgr:phy:rx:ReferenceCFOShapeMismatch', ...
+    'Every installed reference index requires exactly one reference symbol.');
+assert(isreal(refInd) && all(isfinite(refInd) & refInd>=1 & refInd==fix(refInd)), ...
+    'sixgr:phy:rx:ReferenceCFOInvalidIndex', ...
+    'Reference indices must be positive finite one-based integers.');
+assert(all(isfinite(real(refSym)) & isfinite(imag(refSym))), ...
+    'sixgr:phy:rx:ReferenceCFOInvalidSymbol', ...
+    'Installed references must be finite; do not drop an unknown port from its pilot mixture.');
+% Native codebook DM-RS is expressed on physical ports. Precoding may
+% produce a known zero on an inactive port even though the resource has
+% nonzero pilot energy on another port. Retain every such zero in the
+% complete mixture. It is neither missing evidence nor an observation of
+% that port's channel. Entirely zero mixtures cannot identify frequency.
+assert(numel(unique(refInd))==numel(refInd), ...
+    'sixgr:phy:rx:ReferenceCFODuplicateIndex', ...
+    'A logical reference RE cannot have multiple reference symbols.');
+groups=options.ReferenceGroupIDs;
+if isempty(groups)
+    groups=zeros(size(refInd));
 end
+assert(isnumeric(groups) && isreal(groups) && numel(groups)==numel(refInd) && ...
+    all(isfinite(groups(:)) & groups(:)>=0 & groups(:)==fix(groups(:))), ...
+    'sixgr:phy:rx:ReferenceCFOInvalidGroups', ...
+    'ReferenceGroupIDs must identify one installed nonnegative integer group per reference.');
+[~,~,groups]=unique(double(groups(:)));
+physicalRE=mod(refInd-1,K*L)+1;
+[~,~,physicalGroup]=unique(physicalRE);
+assert(all(accumarray(physicalGroup,groups,[],@min)== ...
+    accumarray(physicalGroup,groups,[],@max)), ...
+    'sixgr:phy:rx:ReferenceCFOOverlappingGroups', ...
+    'Distinct channel/beam resources cannot be treated as isolated mixtures on the same physical RE.');
 
 numRefPorts = max(1, ceil(max(refInd) / max(K * L, 1)));
 [kSub, lSub, pSub] = ind2sub([K, L, numRefPorts], refInd);
@@ -62,10 +95,22 @@ kSub = kSub(valid);
 lSub = lSub(valid);
 pSub = pSub(valid);
 refSym = refSym(valid);
+groups = groups(valid);
 if isempty(kSub)
     info.Status = "reference_indices_outside_grid";
     return;
 end
+
+% A common received amplitude scale contains no timing/frequency authority.
+% Remove it before products so absolute RX power cannot underflow a valid
+% correlation or hit an arbitrary dimensionful epsilon gate.
+finiteGrid=isfinite(real(rxGrid)) & isfinite(imag(rxGrid));
+amplitude=max(abs(rxGrid(finiteGrid)),[],'all');
+if isempty(amplitude) || amplitude==0
+    info.Status="no_received_reference_energy";
+    return;
+end
+rxGrid=rxGrid/amplitude;
 
 symbolTimes = localSymbolCenterTimes(carrier, sampleRateHz, L);
 if numel(symbolTimes) < L
@@ -73,8 +118,8 @@ if numel(symbolTimes) < L
     return;
 end
 
-uniqueSymbols = unique(lSub(:), "stable");
-[pairFreqHz, pairInfo] = localPairwiseCommonREEstimate(rxGrid, refSym, kSub, lSub, pSub, uniqueSymbols, symbolTimes);
+uniqueSymbols = unique(lSub(:));
+[pairFreqHz, pairInfo] = localPairwiseCommonREEstimate(rxGrid, refSym, kSub, lSub, pSub, groups, uniqueSymbols, symbolTimes);
 if logical(pairInfo.EstimateAvailable)
     info.EstimateAvailable = true;
     info.EstimatedCFO_Hz = double(pairFreqHz);
@@ -86,170 +131,144 @@ if logical(pairInfo.EstimateAvailable)
     info.SampleRate_Hz = double(sampleRateHz);
     info.NumSymbolPairsUsed = double(pairInfo.NumSymbolPairsUsed);
     info.NumCommonRESamplesUsed = double(pairInfo.NumCommonRESamplesUsed);
+    info.AcquisitionInterval_Hz = pairInfo.AcquisitionInterval_Hz;
+    info.PairPhaseWrapIntegers = pairInfo.PairPhaseWrapIntegers;
+    info.PairTimeSeparations_s = pairInfo.PairTimeSeparations_s;
+    info.PairPhaseFitResidual_rad = pairInfo.PairPhaseFitResidual_rad;
+    info.NumReferenceGroups = double(numel(unique(groups)));
+    info.NumRejectedPilotMixtures = pairInfo.NumRejectedPilotMixtures;
+    info.PilotPairAuthority = "same_installed_resource_and_proportional_complete_port_vector";
+    info.FrequencyEvidenceRole = "common_frequency_includes_channel_phase_evolution";
     freqHz = double(pairFreqHz);
     return;
 end
 
-phaseObs = NaN(numel(uniqueSymbols), 1);
-timeObs = NaN(numel(uniqueSymbols), 1);
-for ii = 1:numel(uniqueSymbols)
-    lSym = uniqueSymbols(ii);
-    mask = (lSub == lSym);
-    if ~any(mask)
-        continue;
-    end
-    hObs = zeros(nnz(mask), 1);
-    kk = kSub(mask);
-    refs = refSym(mask);
-    for jj = 1:numel(kk)
-        rxVals = squeeze(rxGrid(kk(jj), lSym, :));
-        rxVals = rxVals(:);
-        rxVals = rxVals(isfinite(real(rxVals)) & isfinite(imag(rxVals)));
-        if isempty(rxVals)
-            hObs(jj) = NaN;
-        else
-            hObs(jj) = mean(rxVals, "omitnan") ./ refs(jj);
-        end
-    end
-    hObs = hObs(isfinite(real(hObs)) & isfinite(imag(hObs)));
-    if isempty(hObs)
-        continue;
-    end
-    hMean = mean(hObs(:), "omitnan");
-    if ~(isfinite(real(hMean)) && isfinite(imag(hMean)) && abs(hMean) > eps)
-        continue;
-    end
-    phaseObs(ii) = angle(hMean);
-    timeObs(ii) = symbolTimes(lSym);
-end
-
-validObs = isfinite(phaseObs) & isfinite(timeObs);
-phaseObs = phaseObs(validObs);
-timeObs = timeObs(validObs);
-symbolObs = uniqueSymbols(validObs);
+% Different frequency/port supports have different unknown channel phases.
+% Their separate complex means cannot identify a common-frequency slope.
+% Do not rescue a missing matched-pilot observation with that assumption.
 info.NumReferenceRE = double(numel(refInd));
-info.NumSymbolsUsed = double(numel(phaseObs));
-info.SymbolIndices = double(symbolObs(:) - 1);
+info.NumSymbolsUsed = double(numel(uniqueSymbols));
+info.SymbolIndices = double(uniqueSymbols(:) - 1);
 info.SampleRate_Hz = double(sampleRateHz);
-if numel(phaseObs) < 2
+info.NumReferenceGroups = double(numel(unique(groups)));
+info.NumRejectedPilotMixtures = pairInfo.NumRejectedPilotMixtures;
+info.Status = "no_usable_matched_reference_pairs";
+if numel(uniqueSymbols)<2
     info.Status = "fewer_than_two_reference_symbol_times";
-    return;
+end
 end
 
-phaseObs = unwrap(phaseObs(:));
-fit = polyfit(timeObs(:), phaseObs(:), 1);
-freqHz = fit(1) ./ (2 * pi);
-if ~isfinite(freqHz)
-    info.Status = "frequency_estimate_nonfinite";
-    freqHz = NaN;
-    return;
-end
-
-info.EstimateAvailable = true;
-info.EstimatedCFO_Hz = double(freqHz);
-info.Status = "OK";
-end
-
-function [freqHz, info] = localPairwiseCommonREEstimate(rxGrid, refSym, kSub, lSub, pSub, uniqueSymbols, symbolTimes)
+function [freqHz, info] = localPairwiseCommonREEstimate(rxGrid, refSym, kSub, lSub, pSub, groups, uniqueSymbols, symbolTimes)
 freqHz = NaN;
 info = struct( ...
     "EstimateAvailable", false, ...
     "NumSymbolPairsUsed", 0, ...
     "NumCommonRESamplesUsed", 0, ...
     "NumSymbolsUsed", 0, ...
-    "SymbolIndices", zeros(0, 1));
+    "SymbolIndices", zeros(0, 1), ...
+    "NumRejectedPilotMixtures", 0);
 if numel(uniqueSymbols) < 2
     return;
 end
 K = size(rxGrid, 1);
-pairFreq = zeros(0, 1);
+L = size(rxGrid, 2);
+received=reshape(rxGrid,K*L,[]);
+% Each physical RE is one received mixture, not one independent observation
+% per logical port. Build the complete known pilot vector before matching.
+keys=double(kSub)+double(K)*(double(groups)-1);
+referenceRows=cell(numel(uniqueSymbols),1);
+referenceMatrices=cell(numel(uniqueSymbols),1);
+for n=1:numel(uniqueSymbols)
+    mask=lSub==uniqueSymbols(n);
+    referenceRows{n}=unique(keys(mask));
+    referenceMatrices{n}=sparse(keys(mask),double(pSub(mask)),double(refSym(mask)), ...
+        K*max(groups),max(pSub));
+end
+pilotTolerance=64*double(eps(class(refSym)));
+pairPhase = zeros(0, 1);
+pairSeparation = zeros(0, 1);
 pairWeight = zeros(0, 1);
 symbolsUsed = false(numel(uniqueSymbols), 1);
 for ia = 1:numel(uniqueSymbols)-1
     l1 = uniqueSymbols(ia);
-    mask1 = lSub == l1;
-    if ~any(mask1)
-        continue;
-    end
-    key1 = double(kSub(mask1)) + double(K) .* double(pSub(mask1) - 1);
-    k1 = kSub(mask1);
-    ref1 = refSym(mask1);
     for ib = ia+1:numel(uniqueSymbols)
         l2 = uniqueSymbols(ib);
         dt = double(symbolTimes(l2) - symbolTimes(l1));
         if ~(isfinite(dt) && dt > 0)
             continue;
         end
-        mask2 = lSub == l2;
-        if ~any(mask2)
+        common=intersect(referenceRows{ia},referenceRows{ib});
+        if isempty(common)
             continue;
         end
-        key2 = double(kSub(mask2)) + double(K) .* double(pSub(mask2) - 1);
-        k2 = kSub(mask2);
-        ref2 = refSym(mask2);
-        [~, idx1, idx2] = intersect(key1(:), key2(:), "stable");
-        if isempty(idx1)
+        a=referenceMatrices{ia}(common,:);
+        b=referenceMatrices{ib}(common,:);
+        [~,anchorPort]=max(abs(a),[],2);
+        anchorIndex=sub2ind(size(a),(1:numel(common)).',full(anchorPort));
+        r1=full(a(anchorIndex)); r2=full(b(anchorIndex));
+        candidates=r1~=0 & r2~=0;
+        match=false(size(common));
+        if any(candidates)
+            aa=spdiags(1./r1(candidates),0,nnz(candidates),nnz(candidates))*a(candidates,:);
+            bb=spdiags(1./r2(candidates),0,nnz(candidates),nnz(candidates))*b(candidates,:);
+            match(candidates)=full(sum(abs(aa-bb),2)) <= ...
+                pilotTolerance*full(sum(abs(aa)+abs(bb),2));
+        end
+        info.NumRejectedPilotMixtures=info.NumRejectedPilotMixtures+nnz(~match);
+        if ~any(match), continue; end
+        subcarrier=mod(common(match)-1,K)+1;
+        h1=received(subcarrier+K*(l1-1),:)./r1(match);
+        h2=received(subcarrier+K*(l2-1),:)./r2(match);
+        cross=h2.*conj(h1);
+        cross=cross(isfinite(real(cross)) & isfinite(imag(cross)) & abs(cross)>0);
+        sampleCount=numel(cross);
+        corrSum=sum(cross,'all');
+        if sampleCount < 1 || ~(isfinite(real(corrSum)) && isfinite(imag(corrSum))) || abs(corrSum) == 0
             continue;
         end
-        corrSum = complex(0, 0);
-        sampleCount = 0;
-        for jj = 1:numel(idx1)
-            r1 = ref1(idx1(jj));
-            r2 = ref2(idx2(jj));
-            if ~(isfinite(real(r1)) && isfinite(imag(r1)) && abs(r1) > eps && ...
-                    isfinite(real(r2)) && isfinite(imag(r2)) && abs(r2) > eps)
-                continue;
-            end
-            rx1 = squeeze(rxGrid(k1(idx1(jj)), l1, :));
-            rx2 = squeeze(rxGrid(k2(idx2(jj)), l2, :));
-            rx1 = rx1(:);
-            rx2 = rx2(:);
-            n = min(numel(rx1), numel(rx2));
-            if n < 1
-                continue;
-            end
-            rx1 = rx1(1:n);
-            rx2 = rx2(1:n);
-            valid = isfinite(real(rx1)) & isfinite(imag(rx1)) & ...
-                isfinite(real(rx2)) & isfinite(imag(rx2));
-            if ~any(valid)
-                continue;
-            end
-            h1 = rx1(valid) ./ r1;
-            h2 = rx2(valid) ./ r2;
-            cross = h2(:) .* conj(h1(:));
-            cross = cross(isfinite(real(cross)) & isfinite(imag(cross)) & abs(cross) > eps);
-            if isempty(cross)
-                continue;
-            end
-            corrSum = corrSum + sum(cross, "all");
-            sampleCount = sampleCount + numel(cross);
-        end
-        if sampleCount < 1 || ~(isfinite(real(corrSum)) && isfinite(imag(corrSum))) || abs(corrSum) <= eps
-            continue;
-        end
-        pairFreq(end+1, 1) = angle(corrSum) ./ (2 * pi * dt); %#ok<AGROW>
-        pairWeight(end+1, 1) = max(abs(corrSum), eps) * double(sampleCount); %#ok<AGROW>
+        pairPhase(end+1, 1) = angle(corrSum); %#ok<AGROW>
+        pairSeparation(end+1, 1) = dt; %#ok<AGROW>
+        pairWeight(end+1, 1) = abs(corrSum) * double(sampleCount); %#ok<AGROW>
         symbolsUsed(ia) = true;
         symbolsUsed(ib) = true;
         info.NumSymbolPairsUsed = double(info.NumSymbolPairsUsed) + 1;
         info.NumCommonRESamplesUsed = double(info.NumCommonRESamplesUsed) + double(sampleCount);
     end
 end
-validFreq = isfinite(pairFreq) & isfinite(pairWeight) & pairWeight > 0;
-if ~any(validFreq)
+validPair = isfinite(pairPhase) & isfinite(pairSeparation) & ...
+    pairSeparation>0 & isfinite(pairWeight) & pairWeight>0;
+if ~any(validPair)
     return;
 end
-pairFreq = pairFreq(validFreq);
-pairWeight = pairWeight(validFreq);
-freqHz = sum(pairFreq .* pairWeight, "omitnan") ./ sum(pairWeight, "omitnan");
-if ~isfinite(freqHz)
+pairPhase = pairPhase(validPair);
+pairSeparation = pairSeparation(validPair);
+pairWeight = pairWeight(validPair);
+shortest = min(pairSeparation);
+candidates = find(pairSeparation==shortest);
+[~,best] = max(pairWeight(candidates));
+anchor = candidates(best);
+anchorHz = pairPhase(anchor)/(2*pi*shortest);
+% Lift all pair phases to the same alias branch before a weighted phase-
+% versus-time fit. An average of individually wrapped frequencies is wrong
+% even for noiseless static channels. The interval is an acquisition
+% assumption, not evidence that a larger unknown offset can be identified.
+wraps = round(anchorHz*pairSeparation-pairPhase/(2*pi));
+liftedPhase = pairPhase+2*pi*wraps;
+pairWeight = pairWeight/max(pairWeight);
+freqHz = sum(pairWeight.*pairSeparation.*liftedPhase)/ ...
+    (2*pi*sum(pairWeight.*pairSeparation.^2));
+halfWidth = .5/shortest;
+if ~isfinite(freqHz) || abs(freqHz) >= halfWidth
     freqHz = NaN;
     return;
 end
 info.EstimateAvailable = true;
 info.NumSymbolsUsed = double(sum(symbolsUsed));
 info.SymbolIndices = double(uniqueSymbols(symbolsUsed) - 1);
+info.AcquisitionInterval_Hz = [-halfWidth halfWidth];
+info.PairPhaseWrapIntegers = wraps;
+info.PairTimeSeparations_s = pairSeparation;
+info.PairPhaseFitResidual_rad = liftedPhase-2*pi*freqHz*pairSeparation;
 end
 
 function sampleRate = localCarrierSampleRate(carrier)

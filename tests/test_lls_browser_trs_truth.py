@@ -10,7 +10,7 @@ sys.path.insert(0, str(REPO_ROOT / "apps"))
 import lls_web_dashboard as dash  # noqa: E402
 
 
-def main() -> None:
+def test_trs_runtime_truth_preview() -> None:
     artifacts = [
         {"logical_path": "reports/csv/runtime_operating_mode.csv", "artifact_id": 1, "byte_size": 128, "artifact_kind": "table_csv"},
         {"logical_path": "air_interface/csv/trs_trials.csv", "artifact_id": 2, "byte_size": 256, "artifact_kind": "table_csv"},
@@ -33,6 +33,8 @@ def main() -> None:
             "Slot": "5",
             "TRSValidityState": "valid",
             "TrackingEligibility": "1",
+            "StrictOk": "0",
+            "Status": "FAIL",
             "TRSRuntimeConsumer": "shared_receiver_tracking_state",
             "TRSInfluencedDecision": "1",
             "TRSProcessed": "1",
@@ -58,9 +60,13 @@ def main() -> None:
         assert runtime_context["truth_modes"]["trs_receiver_integration_status"] == "integrated_shared_tracking_object", (
             "browser runtime truth modes must surface receiver tracking integration when runtime evidence exists"
         )
-        assert runtime_context["trs_trials_preview"][0]["TRSValidityState"] == "valid", (
+        preview = runtime_context["trs_trials_preview"][0]
+        assert preview["Tracking state"] == "valid", (
             "browser runtime context must include a canonical TRS trials preview when present"
         )
+        assert str(preview["Scheduler usable"]) == "1"
+        assert str(preview["Qualification pass"]) == "0"
+        assert preview["Status"] == "FAIL", "Scheduler usability must not turn failed qualification into PASS."
         assert any("TRS runtime consumer: shared_receiver_tracking_state." in note for note in runtime_context["notes"]), (
             "browser notes must disclose the real TRS runtime consumer"
         )
@@ -72,4 +78,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    test_trs_runtime_truth_preview()

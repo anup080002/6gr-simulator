@@ -43,15 +43,24 @@ function [unit, desc] = localUnitForColumn(name)
 n = lower(string(name));
 unit = "unknown";
 desc = "Unit not classified by catalogue.";
-if endsWith(n, ["_db","db"]) || contains(n, "sinr") || contains(n, "rsrp") || contains(n, "rsrq")
-    unit = "dB";
-    desc = "Log-domain radio metric.";
+if endsWith(n, ["status","source","reason","policy","method","classification", ...
+        "scope","reference","authority","available","enabled","valid","flag"])
+    desc = "Evidence metadata or state, not a measured radio quantity.";
 elseif endsWith(n, ["_dbm","dbm"])
     unit = "dBm";
-    desc = "Absolute power in dBm.";
+    desc = "Declared absolute-power unit; actual availability/calibration is specified by the source row.";
+elseif endsWith(n, ["_db","db"])
+    unit = "dB";
+    desc = "Log-domain radio metric.";
 elseif endsWith(n, ["_mbps","mbps"])
     unit = "Mbps";
     desc = "Megabits per second.";
+elseif endsWith(n, "_bps")
+    unit = "bps";
+    desc = "Bits per second.";
+elseif endsWith(n, "_linear")
+    unit = "ratio";
+    desc = "Explicit linear-domain ratio; not a dB value.";
 elseif endsWith(n, ["_hz","hz"])
     unit = "Hz";
     desc = "Frequency in hertz.";

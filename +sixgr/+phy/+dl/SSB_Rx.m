@@ -36,6 +36,9 @@ if p.Results.TimingOnly
     return;
 end
 
+sixgr.runtime.RuntimeCallLedger.record("sixgr.phy.dl.SSB_Rx", "SSB", "DL", ...
+    struct("Stage","RX","NumReceivedSamples",size(rxWaveform,1)));
+
 % Receiver policy comes from the resolved YAML/core catalog, never from
 % configured SNR, transmitted cell identity, or a successful PBCH CRC.
 detector=sixgr.util.structGet(cfg,'phy.synchronization',struct());
@@ -165,12 +168,38 @@ slotSymbolLengths = double(ssbSampling.CyclicPrefixLengthsPerSlot(:)).' + ...
     double(ssbSampling.Nfft);
 prefixSamples = sum(slotSymbolLengths(1:symbolWithinSlot));
 demodStartIdx = startIdx - prefixSamples;
-if demodStartIdx >= 1
-    rxSync = rxF(demodStartIdx:end, :);
-else
-    rxSync = [complex(zeros(1 - demodStartIdx, size(rxF, 2), ...
-        "like", rxF)); rxF];
+ssbSymbolColumns = symbolWithinSlot + (1:4);
+% Only this acquired SS/PBCH block is consumed below. Demodulating the
+% entire capture tail also transforms later SI/data slots and can allocate
+% multi-gigabyte temporary FFT arrays for a 64-port TX-power measurement.
+% Keep the acquired slot origin, CP sequence, sample rate and phase clock;
+% bounding the unused tail must not change any selected FFT input sample.
+demodSampleCount = 0;
+symbolsRemaining = ssbSymbolColumns(end);
+windowCarrier = ssbCarrier;
+windowSampling = ssbSampling;
+while symbolsRemaining > 0
+    windowCP = double(windowSampling.CyclicPrefixLengthsPerSlot(:));
+    symbolCount = min(symbolsRemaining, numel(windowCP));
+    demodSampleCount = demodSampleCount + ...
+        sum(windowCP(1:symbolCount) + double(windowSampling.Nfft));
+    symbolsRemaining = symbolsRemaining - symbolCount;
+    if symbolsRemaining > 0
+        windowCarrier.NSlot = windowCarrier.NSlot + 1;
+        windowSampling = sixgr.phy.frame.OFDMSamplingResolver.resolve( ...
+            windowCarrier, "SampleRate", fs);
+    end
 end
+demodEndIdx = demodStartIdx + demodSampleCount - 1;
+if demodEndIdx > size(rxF,1)
+    error('sixgr:phy:ia:SSBNotDetected', ...
+        'The synchronized waveform contains fewer than four SSB symbols.');
+end
+% Preserve the existing unavailable pre-capture prefix treatment. Never
+% append fabricated future samples to complete a truncated SS/PBCH block.
+leftPadding = max(0, 1 - demodStartIdx);
+rxSync = [complex(zeros(leftPadding, size(rxF,2), 'like', rxF)); ...
+    rxF(max(1,demodStartIdx):demodEndIdx, :)];
 rxGrid = sixgr.phy.waveform.ofdmDemodulate( ...
     ssbCarrier, rxSync, ...
     "Nfft", ssbSampling.Nfft, ...
@@ -186,7 +215,6 @@ if ndims(rxGrid) == 2
 end
 
 
-ssbSymbolColumns = symbolWithinSlot + (1:4);
 if size(rxGrid,2) < ssbSymbolColumns(end)
     error('sixgr:phy:ia:SSBNotDetected', ...
         'The synchronized waveform contains fewer than four SSB symbols.');
@@ -273,6 +301,9 @@ sync.DemodulationSlot = double(nSlot);
 sync.SymbolPhaseCompensationCarrierFrequencyHz = double(timing.CarrierFrequencyHz);
 sync.SymbolPhaseCompensationSource = 'configured_carrier_nr_ofdm_demodulation';
 sync.SSBSymbolColumnsOneBased = double(ssbSymbolColumns);
+sync.SSBDemodulationSampleCount = double(size(rxSync,1));
+sync.SSBDemodulationSymbolCount = double(ssbSymbolColumns(end));
+sync.SSBDemodulationScope = 'acquired_slot_prefix_through_selected_ssb_only';
 sync.SSBCenterFrequencyOffsetHz = double(sixgr.util.structGet( ...
     finfo, "SSBCenterFrequencyOffsetHz", NaN));
 sync.SSBPlacementCorrectionAppliedHz = double(sixgr.util.structGet( ...

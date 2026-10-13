@@ -19,13 +19,12 @@ assert(isequal(size(matrix),[array.NumElements size(ports,2)]) && ...
     'The resolved PDCCH port map must preserve power and match the physical array.');
 assert(~power.PAApplied && (~power.PAEnabled || power.PAExecutionDeferred), ...
     'sixgr:link:PDCCHPreparationAppliedRF','Apply node PA only after composition.');
-assert(string(power.WaveformAmplitudeUnit)=="sqrt_mW", ...
-    'sixgr:link:PDCCHPhysicalPowerUnit','Shared node IQ requires a physical sqrt(mW) power reference.');
+unit=sixgr.rf.appliedWaveformAmplitudeUnit(cfg,power);
 prepared.TransmitSamples=ports*cast(matrix.','like',ports);
 prepared.PowerContext=power;
 prepared.PhysicalPortMapping=matrix;
 prepared.PhysicalPortMappingSHA256=string(sixgr.phy.mimo.MatrixContract.digest(matrix));
-prepared.SampleDomain="physical_antenna_sqrt_mW_before_shared_tx_rf";
+prepared.SampleDomain="physical_antenna_"+unit+"_before_shared_tx_rf";
 prepared.PowerExecutionDeferred=false;
 prepared.ReceiverConfig=sixgr.util.structSet(cfg,'lls6g.runtimePowerContext',power);
 end

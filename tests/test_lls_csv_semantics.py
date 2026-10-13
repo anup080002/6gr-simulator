@@ -14,6 +14,8 @@ from lls_csv_semantics import (  # noqa: E402
     _adaptive_policy_expectation,
     audit_run,
     _audit_control_table,
+    _audit_prach_detection_trials,
+    _audit_ra_literal_evidence,
     _audit_derived_link_table,
     _audit_domain_runtime_tables,
     _audit_dynamic_tdd_runtime_channel_reciprocity,
@@ -64,6 +66,33 @@ from lls_csv_semantics import (  # noqa: E402
     PRODUCTION_GATE_ORDER,
     RECONCILIATION_PHASE7_FLAGS,
 )
+
+
+def test_ra_literal_evidence_accepts_exact_hex_and_missing_decoded_payload(tmp_path):
+    path = tmp_path / "control/csv/msg3_pusch_trials.csv"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        "PayloadHex,ContentionIdentity,RNTI,ULSCHCrcPass\n"
+        "0106000000000001310455452D31,000000000001,4660,1\n"
+        "0000E123,000000000002,4661,1\n"
+        ",,4662,0\n", encoding="utf-8")
+    checks = _audit_ra_literal_evidence(tmp_path)
+    assert len(checks) == 1 and checks[0].passed and checks[0].row_count == 3
+
+
+def test_ra_literal_evidence_rejects_numeric_coercion_and_is_in_publication_gate(tmp_path):
+    path = tmp_path / "control/csv/msg3_pusch_trials.csv"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        "PayloadHex,ContentionIdentity,RNTI,ULSCHCrcPass\n"
+        "1.0600000000000131e+54,1,4660,1\n", encoding="utf-8")
+    checks = _audit_ra_literal_evidence(tmp_path)
+    assert len(checks) == 1 and not checks[0].passed
+    assert checks[0].failure_count == 2
+    report = audit_run(tmp_path)
+    guarded = [row for row in report["canonical_csv_semantic_audit"]
+               if row["check_id"] == "ra_literal_receiver_evidence"]
+    assert len(guarded) == 1 and not guarded[0]["passed"]
 
 
 def _dynamic_tdd_channel_trial(direction: str) -> dict[str, str]:
@@ -343,6 +372,40 @@ def test_observed_grid_collisions_are_cell_scoped(tmp_path: Path) -> None:
     assert any("RE_collision_with" in check.details for check in _observed_grid_checks(tmp_path, [first, second]))
     second["cell_id"] = ""
     assert any("missing_or_invalid_cell_identity" in check.details for check in _observed_grid_checks(tmp_path, [second]))
+
+
+def test_independent_re_sweep_keeps_observation_clocks_and_collisions(tmp_path: Path) -> None:
+    # Validator inputs only; actual MATLAB producer is exercised separately.
+    config = {
+        "scenario": {"runner_profile": "waveform_bundle"},
+        "users": {"execution_model": "independent_link_sweep"},
+        "pdsch": {"execution_profile": "phy_calibration"},
+        "pusch": {"execution_profile": "phy_calibration"},
+        "control_gating": {name + "_required": False for name in ("pbch", "prach", "pdcch", "pucch", "srs", "trs")},
+        "frame": {"duplex": "FDD", "scs_khz": 15}, "bwp": {"dl": {"n_size_bwp": 1}},
+    }
+    path = tmp_path / "meta/scenario_config_resolved.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(config), encoding="utf-8")
+    first = dict(_observed_re_row("DL", "PDSCH", ""), ConfiguredSNR_dB="18", Seed="42", TrialIndex="1",
+                 ObservationID="independent_tx|DL|1|1|18|42|1|0",
+                 ExecutionScope="independent_link_execution", SameScenarioInPathEligible="0", ObservationUEIndex="1")
+    second = dict(first, ConfiguredSNR_dB="30", ObservationID="independent_tx|DL|1|1|30|42|1|0")
+
+    def audit(rows):
+        _write_rows(tmp_path / "frame_grid/csv/observed_re_allocation.csv", rows)
+        return _audit_observed_re_allocation(tmp_path)
+
+    assert all(check.passed for check in audit([first, second]))
+    assert any("duplicate_RE_run" in check.details for check in audit([first, first]))
+    assert any("RE_collision_with" in check.details for check in audit([first, dict(first, channel="CSI-RS")]))
+    assert any("identity_mismatch" in check.details for check in audit([dict(second, ObservationID=first["ObservationID"])]))
+    for name, value in [("Seed", ""), ("TrialIndex", "0"), ("ConfiguredSNR_dB", "NaN"),
+                        ("SameScenarioInPathEligible", "1"), ("ExecutionScope", "shared_runtime")]:
+        assert any(not check.passed for check in audit([dict(first, **{name: value})])), name
+    config["control_gating"]["pdcch_required"] = True
+    path.write_text(json.dumps(config), encoding="utf-8")
+    assert any("invalid_independent_observation_identity" in check.details for check in audit([first, second]))
 
 
 def test_native_prach_cannot_be_audited_as_carrier_re(tmp_path: Path) -> None:
@@ -659,6 +722,47 @@ def test_disabled_causal_audit_requires_identity_bound_producer_receipt(tmp_path
     checks = _audit_domain_runtime_tables(tmp_path, summary)
     assert any(c.artifact_path == relatives[0] and c.required and c.failure_count
                for c in checks)
+
+
+def test_disabled_causal_audit_retains_logical_identity_after_report_copy(tmp_path: Path) -> None:
+    relative = "reports/csv/causal_phy_chain_audit.csv"
+    path = tmp_path / relative
+    path.parent.mkdir(parents=True)
+    path.write_text("RunID,ConfigHash,Status\n", encoding="utf-8")
+    config_hash = "a" * 64
+    original = "original_physical_run"
+    summary = {"ConfigHash": config_hash}
+    gate = {"RunID": original, "ConfigHash": config_hash,
+            "Enabled": "0", "Required": "0", "Pass": "1",
+            "Status": "DISABLED_BY_YAML", "FailureReason": "",
+            "StageCount": "0", "RequiredStageFailureCount": "0",
+            "DisabledExecutionFailureCount": "0", "ParameterBindingFailureCount": "0"}
+    _write_rows(tmp_path / "reports/csv/causal_phy_chain_gate.csv", [gate])
+    # A receipt alone cannot declare another run's identity.
+    assert _domain_table_applicability(relative, tmp_path, summary, {}) == (True, True)
+    manifest_path = tmp_path / "meta/scenario_manifest.json"
+    manifest_path.parent.mkdir()
+    manifest = {"RunTag": original, "ConfigHash": config_hash}
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    assert _domain_table_applicability(relative, tmp_path, summary, {}) == (False, False)
+    index_path = tmp_path / "raw/evidence/raw_evidence_index.csv"
+    _write_rows(index_path, [{"RunID": original, "ConfigHash": config_hash}])
+    assert _domain_table_applicability(relative, tmp_path, summary, {}) == (False, False)
+    assert _domain_table_applicability(relative, tmp_path,
+        {**summary, "RunID": "another_run"}, {}) == (True, True)
+    for bad in ({"RunID": "another_run", "ConfigHash": config_hash},
+                {"RunID": original, "ConfigHash": "b" * 64}):
+        _write_rows(index_path, [bad])
+        assert _domain_table_applicability(relative, tmp_path, summary, {}) == (True, True)
+    _write_rows(index_path, [{"RunID": original, "ConfigHash": config_hash}])
+    for bad in ({**manifest, "ConfigHash": "b" * 64},
+                {**manifest, "RunID": "another_run"}, []):
+        manifest_path.write_text(json.dumps(bad), encoding="utf-8")
+        assert _domain_table_applicability(relative, tmp_path, summary, {}) == (True, True)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    for field in ("enabled", "required"):
+        config = {"validation": {"causal_phy_chain_audit": {field: True}}}
+        assert _domain_table_applicability(relative, tmp_path, summary, config) == (True, True)
 
 
 def test_geometry_plot_lineage_is_required_only_when_governed_raster_exists(
@@ -1906,6 +2010,50 @@ def test_pdcch_pretransmission_resource_block_is_valid_nontrial() -> None:
     assert "no_finite_runtime_measurement" in runtime.details
 
 
+def test_shared_prach_component_uses_received_set_not_strongest_target(tmp_path: Path) -> None:
+    row = dict(TrialID="ue1_msg1", OccasionID="cell1_frame1_slot4", PreambleIndexTx="0",
+               PreambleIndexDetected="1", Detected="1", PeakMetric=".4983", Threshold=".0144",
+               TimingEstimate_samples="8", TimingError_samples="0", FalseAlarm="NaN",
+               MissedDetection="0", Ambiguous="1", Status="MEASURED", ScenarioID="two_ue",
+               ConfigHash="a"*64, EvidenceScope="in_path", RunID="run", ExecutionID="exec",
+               EvidenceOrigin="current_runtime_memory", DetectedPreambleSet="1|0",
+               DetectedPreambleSetAvailable="1",
+               FalseAlarmStatus="unavailable_complete_transmitted_occasion_set_not_retained",
+               DetectionPopulationScope="per_target_shared_occasion_not_independent_trials")
+    path = tmp_path / "components/prach/csv/prach_detection_trials.csv"
+    path.parent.mkdir(parents=True)
+
+    def audit(candidate):
+        with path.open("w", newline="", encoding="utf-8") as stream:
+            writer = csv.DictWriter(stream, fieldnames=list(candidate))
+            writer.writeheader()
+            writer.writerow(candidate)
+        return _audit_prach_detection_trials(tmp_path)
+
+    assert all(c.passed for c in audit(row))
+    assert all(c.passed for c in audit(row | {"PreambleIndexTx": "2", "MissedDetection": "1"}))
+    empty = row | {"DetectedPreambleSet": "", "Detected": "0", "PreambleIndexDetected": "NaN",
+                   "PeakMetric": ".001", "MissedDetection": "1", "Ambiguous": "0"}
+    assert all(c.passed for c in audit(empty))
+    for change in ({"MissedDetection": "1"}, {"FalseAlarm": "0"}, {"FalseAlarm": "1"},
+                   {"FalseAlarmStatus": ""}, {"DetectionPopulationScope": "independent_trials"},
+                   {"DetectedPreambleSetAvailable": "0"}, {"PreambleIndexDetected": "2"},
+                   {"Detected": "0"}, {"DetectedPreambleSet": "1|1"},
+                   {"DetectedPreambleSet": "64"}, {"DetectedPreambleSet": "1|nan"},
+                   {"DetectedPreambleSet": "1|.5"}, {"DetectedPreambleSet": "1|"}):
+        assert not all(c.passed for c in audit(row | change)), change
+    legacy = {k: v for k, v in row.items() if k not in {
+        "DetectedPreambleSet", "DetectedPreambleSetAvailable", "FalseAlarmStatus", "DetectionPopulationScope"}}
+    assert all(c.passed for c in audit(legacy | {"FalseAlarm": "1"}))
+    assert not all(c.passed for c in audit(legacy | {"FalseAlarm": "0"}))
+    assert not all(c.passed for c in audit(legacy))  # Unknown without explicit scope is invalid.
+    noise = legacy | {"PreambleIndexTx": "NaN", "PreambleIndexDetected": "NaN",
+                      "Detected": "0", "PeakMetric": ".001", "FalseAlarm": "0", "MissedDetection": "1"}
+    assert all(c.passed for c in audit(noise))
+    assert all(c.passed for c in audit(noise | {"Detected": "1", "PeakMetric": ".5",
+                   "PreambleIndexDetected": "4", "FalseAlarm": "1", "MissedDetection": "0"}))
+
+
 def test_pdcch_noise_only_requires_real_receiver_evidence() -> None:
     row = {
         "SignalPresent": "0", "TrialType": "noise_only", "TXGridEnergy": "0",
@@ -1963,6 +2111,32 @@ def test_ra_retry_zero_event_requires_typed_schema_and_successful_first_attempt(
         encoding="utf-8",
     )
     assert not _evaluated_empty_ra_retry_events_is_valid(run_root)
+
+
+def test_ra_retry_applicability_distinguishes_prach_component_from_access(tmp_path: Path) -> None:
+    relative = "control/csv/ra_retry_events.csv"
+    cfg = {
+        "scenario": {"runner_profile": "waveform_bundle"},
+        "pdsch": {"execution_profile": "phy_calibration"},
+        "initial_access": {"random_access_procedure": "disabled"},
+        "random_access": {"enabled": True},
+    }
+    assert _domain_table_applicability(relative, tmp_path, {}, cfg) == (False, False)
+    # Non-applicability is not a successful first-attempt access outcome.
+    assert not _evaluated_empty_ra_retry_events_is_valid(tmp_path)
+    for key, value in (
+        ("initial_access", {}),
+        ("initial_access", {"random_access_procedure": "four_step"}),
+        ("scenario", {"runner_profile": "coupled_truth"}),
+        ("pdsch", {"execution_profile": "received_control"}),
+        ("random_access", {"enabled": True, "four_step_ra_required": True}),
+        ("validation", {"random_access_evidence": {"msg3_pusch_required": True}}),
+        ("random_access_evidence", {"contention_resolution_identity_required": True}),
+    ):
+        assert _domain_table_applicability(relative, tmp_path, {}, cfg | {key: value}) == (True, True)
+    _write_rows(tmp_path / "control/csv/ra_attempts.csv", [{"RACompleted": "0"}])
+    assert _domain_table_applicability(relative, tmp_path, {}, cfg) == (True, True)
+    assert not _evaluated_empty_ra_retry_events_is_valid(tmp_path)
 
 
 def test_pdcch_component_semantics_require_pdcch_not_data_trials(tmp_path: Path) -> None:
@@ -2603,6 +2777,38 @@ def test_derived_bler_curve_requires_exact_failure_count_arithmetic() -> None:
     )
     assert not reconciliation.passed
     assert "bler_failure_count_arithmetic_mismatch" in reconciliation.details
+
+
+def test_measured_bler_interval_must_include_zero_error_endpoint() -> None:
+    # Numerical boundary fixture only: these are not physical trial results.
+    # A producer must export the exact Wilson endpoint, not ask publication
+    # to tolerate an interval which excludes its observed zero-error BLER.
+    row = {
+        "Direction": "DL",
+        "PostEqSINR_dB_BinCenter": "21.5",
+        "PostEqSINR_dB_BinMin": "21",
+        "PostEqSINR_dB_BinMax": "22",
+        "BLER": "0",
+        "BLER_CI_Low": "2.77555756156289e-17",
+        "BLER_CI_High": "0.2588329669680317",
+        "BER": "0",
+        "TrialCount": "11",
+        "FailureCount": "0",
+        "SourceArtifact": "dl_pdsch_trials.csv",
+    }
+    for lower_bound, expected in (("2.77555756156289e-17", False), ("0", True)):
+        row["BLER_CI_Low"] = lower_bound
+        checks = _audit_derived_link_table(
+            "air_interface/csv/dl_measured_sinr_bler_curve.csv",
+            list(row), [row], {"DL": [], "UL": []},
+        )
+        physical = next(
+            check for check in checks
+            if check.check_id == "physical_ranges_and_arithmetic"
+        )
+        assert physical.passed is expected
+        if not expected:
+            assert "bler_confidence_interval_invalid" in physical.details
 
 
 def test_derived_link_summary_reconciles_weighted_ber_and_trial_count() -> None:

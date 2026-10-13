@@ -13,7 +13,7 @@ end
 assert(ismatrix(waveform) && isequal(size(waveform),size(physicalWaveform)), ...
     'sixgr:refsig:CSIReceivePlaneDimensions', ...
     'CSI-RS pre/post-front-end captures must have identical sample and antenna extents.');
-[indices,symbols]=sixgr.phy.refsig.csirs(carrier,cfg);
+[indices,symbols,referenceInfo]=sixgr.phy.refsig.csirs(carrier,cfg);
 assert(~isempty(indices) && ~isempty(symbols), ...
     'sixgr:refsig:CSIReceiveOutsideConfiguredOccasion', ...
     'A CSI-RS receive obligation must use an enabled installed calendar occasion.');
@@ -48,7 +48,8 @@ if enabled
         % unknown PDSCH DM-RS. A one-symbol resource cannot supply a slope.
         grid=nrOFDMDemodulate(carrier,aligned);
         [frequency,evidence]=sixgr.phy.rx.estimateCFOFromReferenceSymbols( ...
-            grid,indices,symbols,carrier,ofdm.SampleRate);
+            grid,indices,symbols,carrier,ofdm.SampleRate, ...
+            'ReferenceGroupIDs',localReferenceGroups(referenceInfo,indices));
         tracking.Source="configured_csirs_reference_symbol_phase_slope";
     else
         error('sixgr:refsig:UnsupportedCSIReceiverFrequencyMethod', ...
@@ -97,4 +98,25 @@ rx.ReceiverTrackingCorrection=tracking;
 rx.ReceiverReferenceSource="installed_CSI_RS_configuration_and_received_waveform";
 rx.PDSCHDecodeAttempted=false;
 rx.RxGrid=grid;
+end
+function groups=localReferenceGroups(info,indices)
+% Calendar/resource identity is receiver-installed configuration authority.
+% Distinct CSI-RS resources may use different beams even at the same k/port.
+if isfield(info,'Resources') && ~isempty(info.Resources)
+    pieces=cell(numel(info.Resources),1);
+    groupIndices=cell(numel(info.Resources),1);
+    for n=1:numel(info.Resources)
+        resource=info.Resources(n);
+        groupIndices{n}=resource.Indices;
+        pieces{n}=repmat(double(resource.ResourceID),size(resource.Indices));
+    end
+    combined=vertcat(groupIndices{:});
+    assert(isequal(combined(:),indices(:)), ...
+        'sixgr:refsig:CSIReferenceResourceIdentityMismatch', ...
+        'Combined CSI-RS references must preserve installed resource identity/order.');
+    groups=vertcat(pieces{:});
+    groups=groups(:);
+else
+    groups=repmat(double(info.ResourceID),numel(indices),1);
+end
 end

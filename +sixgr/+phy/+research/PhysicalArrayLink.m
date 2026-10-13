@@ -48,7 +48,9 @@ classdef PhysicalArrayLink
                 'NormalizeChannelOutputs',logical(p.normalize_channel_outputs), ...
                 'NoiseCalibration',"fixed_pre_channel_per_layer_reference_no_received_power_rescaling", ...
                 'ChannelTiming',string(p.timing),'BurstPolicy',string(p.burst_policy), ...
-                'AcquiredTiming',false,'ContinuousChannelMemory',false,'ChannelSeed',p.seed);
+                'AcquiredTiming',false,'ContinuousChannelMemory',false,'ChannelSeed',p.seed, ...
+                'ClusterAnglesCSV',"beamforming/csv/cdl_cluster_angles.csv", ...
+                'ClusterAngleRole',"native_CDL_model_reference_not_receiver_estimate");
             link=struct('Channels',{{dl,ul}},'Weights',{{wg,wu}}, ...
                 'TxElements',[prod(gnb.Size),prod(ue.Size)], ...
                 'RxElements',[prod(ue.Size),prod(gnb.Size)],'Manifest',meta);
@@ -78,7 +80,9 @@ classdef PhysicalArrayLink
                 'ChannelFilterDelaySamples',delay);
         end
 
-        function export(root,link)
+        function export(root,link,savePlots)
+            if nargin<3, savePlots=false; end
+            validateattributes(savePlots,{'logical'},{'scalar'});
             sixgr.util.jsonWrite(fullfile(root,'meta','physical_array.json'),link.Manifest);
             for d=1:2
                 roles=["gnb","ue"]; w=link.Weights{d};
@@ -86,6 +90,54 @@ classdef PhysicalArrayLink
                 T=table(port(:),element(:),real(w(:)),imag(w(:)), ...
                     'VariableNames',{'LogicalPort','PhysicalElement','WeightReal','WeightImag'});
                 sixgr.util.csvWriteTable(fullfile(root,'beamforming','csv',roles(d)+"_precoder.csv"),T);
+            end
+            % Export native cluster centres, not geometry inferred from a
+            % chosen beam or a receiver estimate. info() neither executes
+            % nor resets either channel; UL angles follow the actual swapped
+            % reciprocal object. This is configuration/reference evidence,
+            % available even before a trial, never a measured-angle claim.
+            angles=table(); directions=["DL","UL"];
+            for d=1:2
+                c=info(link.Channels{d}); n=numel(c.PathDelays);
+                fields=["PathDelays","AveragePathGains","AnglesAoA","AnglesAoD","AnglesZoA","AnglesZoD"];
+                for field=fields
+                    validateattributes(c.(field),{'numeric'},{'vector','real','finite','numel',n});
+                end
+                row=table(repmat(directions(d),n,1),(0:n-1).',c.PathDelays(:), ...
+                    c.AveragePathGains(:),c.AnglesAoA(:),c.AnglesAoD(:),c.AnglesZoA(:),c.AnglesZoD(:), ...
+                    repmat(link.Manifest.ChannelProfile,n,1),repmat(link.Manifest.ChannelSeed,n,1), ...
+                    repmat("nrCDLChannel.info_cluster_centres",n,1),false(n,1),false(n,1), ...
+                    'VariableNames',{'Direction','NativeClusterIndex0','PathDelay_s','AveragePathGain_dB', ...
+                    'AoA_deg','AoD_deg','ZoA_deg','ZoD_deg','ChannelProfile','ChannelSeed', ...
+                    'Source','ReceiverMeasured','UsedForBeamSelection'});
+                angles=[angles;row]; %#ok<AGROW>
+            end
+            csvPath=fullfile(root,link.Manifest.ClusterAnglesCSV);
+            sixgr.util.csvWriteTable(csvPath,angles,'PreserveSchema',true,'RoundTripNumericText',true);
+            if savePlots
+                % The plotted file is the retained source, including both
+                % directions. No separate hidden plotting population.
+                plotted=sixgr.util.csvReadTable(csvPath,'TextType','string');
+                fig=figure('Visible','off'); cleanup=onCleanup(@()close(fig)); %#ok<NASGU>
+                layout=tiledlayout(fig,2,2);
+                names=["AoA_deg","AoD_deg","ZoA_deg","ZoD_deg"];
+                for k=1:numel(names)
+                    ax=nexttile(layout); hold(ax,'on');
+                    for d=1:2
+                        selected=plotted.Direction==directions(d);
+                        plot(ax,plotted.NativeClusterIndex0(selected),plotted.(names(k))(selected), ...
+                            'o','LineStyle','none','DisplayName',directions(d));
+                    end
+                    xlabel(ax,'Native cluster index (zero-based)'); ylabel(ax,names(k),'Interpreter','none');
+                    legend(ax,'Location','best'); grid(ax,'on');
+                end
+                title(layout,'CDL model-reference cluster centres; not receiver estimates');
+                imagePath=fullfile(root,'beamforming','image','cdl_cluster_angles.png');
+                sixgr.util.ensureDir(imagePath); exportgraphics(fig,imagePath);
+                sixgr.util.jsonWrite(fullfile(root,'beamforming','image','cdl_cluster_angles.source.json'), ...
+                    struct('SourceCSV',link.Manifest.ClusterAnglesCSV, ...
+                    'SourceSHA256',sixgr.phy.waveform.WaveformHash.file(csvPath), ...
+                    'SourceRows',height(plotted),'ReceiverMeasured',false));
             end
         end
     end

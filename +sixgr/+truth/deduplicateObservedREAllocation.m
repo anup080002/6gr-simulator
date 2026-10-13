@@ -25,6 +25,9 @@ identityVariables = [ ...
 if ismember('grid_domain',T.Properties.VariableNames)
     identityVariables(end+1)="grid_domain";
 end
+if ismember('ObservationID',T.Properties.VariableNames)
+    identityVariables(end+1)="ObservationID";
+end
 if all(ismember(identityVariables, string(T.Properties.VariableNames)))
     key = strings(inputCount, numel(identityVariables));
     for variableIndex = 1:numel(identityVariables)

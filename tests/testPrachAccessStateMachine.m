@@ -30,6 +30,16 @@ pbch.RNTI(1) = 4603;
 state = sixgr.truth.CoupledTruthRuntime.applyPBCHTrial(state, 3, pbch);
 rrcPrach = localPrachRow("PASS", NaN, true, 0.91, "");
 rrcPrach.RACompleted = true;
+% Declared received-result fixture: complete identity evidence is required
+% before a successful full-access row can install a connected C-RNTI.
+rrcPrach.RAPIDMatches=true;
+rrcPrach.Msg2DCICrcPass=true; rrcPrach.Msg2PDSCHCrcPass=true;
+rrcPrach.RARULGrantValid=true; rrcPrach.Msg3PUSCHCrcPass=true;
+rrcPrach.Msg4PDCCHCrcPass=true; rrcPrach.Msg4PDSCHCrcPass=true;
+rrcPrach.ContentionIdentityMatches=true;
+rrcPrach.TemporaryCRNTI=4662; rrcPrach.FinalCRNTI=4662;
+rrcPrach.FinalCRNTISource="decoded_msg4_payload_after_contention_match";
+rrcPrach.FinalCRNTIEncodingProfile="legacy_bounded_not_NR_MAC_RRC";
 rrcPrach.FullRAEvidenceSource = "sixgr.phy.ra.runFourStepRA";
 rrcPrach.RASlotTimeBase = "absolute_one_based";
 rrcPrach.Msg1ScheduledSlot = 5;
@@ -46,6 +56,7 @@ rrcPrach.RRCSetupCompleteDecoded = true;
 rrcPrach.RRCConnected = true;
 rrcPrach.RRCSetupCompletePayloadSHA256 = ...
     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+state.CurrentSlot=9;
 state = sixgr.truth.CoupledTruthRuntime.applyPRACHTrial(state, 3, rrcPrach);
 trace = state.InitialAccessLifecycleTraceTable;
 ue3 = double(trace.UEIndex) == 3;
@@ -133,7 +144,7 @@ T = struct2table(row, "AsArray", true);
 end
 
 function state = localMinimalAccessState(nUsers)
-nCells = 2;
+nCells = nUsers;
 state = struct();
 state.NumUsers = nUsers;
 state.MultiUser = struct("RNTIStart", 4601, "NumUsers", nUsers, "Enabled", true, "ExecutionModel", "coupled_truth");
@@ -176,4 +187,9 @@ state.PRACHFailureCount = zeros(nUsers, 1);
 state.PBCHFailureCount = zeros(nUsers, 1);
 state.SRSInvalidEventCount = zeros(nUsers, 1);
 state.AccessTransitionLedgerTable = sixgr.monitor.AccessFlowRecorder.emptyLedger();
+% Receiver-owned TRS state is required even when tracking is not a gate.
+state.LastEstimatedTRSDopplerHzByCell=nan(nCells,1);
+state.TRSFailureCountByCell=zeros(nCells,1);
+state.ReceiverTrackingStateByCell=repmat(struct('UEIndex',NaN),nCells,1);
+state=sixgr.truth.TRSReceiverState.initialize(state);
 end

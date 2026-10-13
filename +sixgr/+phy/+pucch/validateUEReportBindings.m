@@ -1,0 +1,46 @@
+function identities=validateUEReportBindings(cfg)
+% Validate the installed catalog before any waveform/UE procedure executes.
+% Return only configured receiver identities, never payload or pending state.
+prototype=struct('UEID',0,'RNTI',0,'ServingCell',0,'PUCCHCell',0, ...
+    'ComponentCarrier',0,'ActiveULBWP',0);
+identities=repmat(prototype,0,1);
+section=sixgr.util.structGet(cfg,'validation.pucch_resources',struct());
+rows=sixgr.util.structGet(section,'ue_report_bindings',struct([]));
+if isempty(rows), return; end
+assert(isequal(sixgr.util.structGet(section,'enabled',false),true), ...
+    'sixgr:phy:pucch:DisabledUEReportBindings', ...
+    'pucch_resources.ue_report_bindings requires enabled installed PUCCH configuration.');
+required={'ue_index','rnti','serving_cell_id','component_carrier_id','ul_bwp_id'};
+assert(isstruct(rows) && all(isfield(rows,required)), ...
+    'sixgr:phy:pucch:InvalidUEReportBinding','Install complete UE report-resource identities.');
+users=sixgr.util.structGet(cfg,'lls6g.users',struct());
+assert(isstruct(users) && isscalar(users) && all(isfield(users,{'n_users','rnti_start'})), ...
+    'sixgr:phy:pucch:MissingUEReportUserConfiguration', ...
+    'UE report bindings require explicit users.n_users and users.rnti_start.');
+validateattributes(users.n_users,{'numeric'},{'scalar','real','finite','integer','positive'});
+validateattributes(users.rnti_start,{'numeric'},{'scalar','real','finite','integer','positive'});
+identities=repmat(prototype,numel(rows),1);
+for k=1:numel(rows)
+    row=rows(k);
+    ue=struct('UEID',row.ue_index,'RNTI',row.rnti, ...
+        'ServingCell',row.serving_cell_id,'PUCCHCell',row.serving_cell_id, ...
+        'ComponentCarrier',row.component_carrier_id,'ActiveULBWP',row.ul_bwp_id);
+    % The common resolver validates all identity fields and duplicate owners.
+    % Calendar/RRC validation then checks resource formats, BWP dimensions,
+    % SR periods and the full installed resource configuration.
+    sixgr.phy.pucch.resolveUEReportResources(cfg,ue);
+    assert(ue.UEID<=users.n_users && ue.RNTI==users.rnti_start+ue.UEID-1, ...
+        'sixgr:phy:pucch:UEReportUserConfigurationMismatch', ...
+        'The UE report binding must match the configured UE ordinal and RNTI allocation.');
+    sixgr.truth.buildConfiguredSRCalendar(cfg,ue,1,1);
+    identities(k)=ue;
+end
+active=cfg.phy.frame.DefaultIdentity;
+for index=1:users.n_users
+    assert(any([identities.UEID]==index & ...
+        [identities.ComponentCarrier]==active.ScheduledCCID & ...
+        [identities.ActiveULBWP]==active.ULBWPID), ...
+        'sixgr:phy:pucch:MissingUEReportBinding', ...
+        'Install an active carrier/BWP report binding for configured UE %d.',index);
+end
+end

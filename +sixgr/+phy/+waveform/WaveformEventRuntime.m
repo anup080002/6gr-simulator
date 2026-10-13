@@ -177,7 +177,11 @@ classdef WaveformEventRuntime < handle
                 event.Decisions=string({obj.Boundaries(hit).ID}).';
                 obj.Boundaries=obj.Boundaries(~hit);
                 obj.ProcessorState=nextState;
-                obj.ExecutionTrace{end+1,1}=segment;
+                % Pending/completed observations own the complete arrays
+                % until their receiver and exporter consume them. The
+                % lifetime trace must not also pin every 64-TXRU tensor:
+                % that grows by gigabytes per grant after publication.
+                obj.ExecutionTrace{end+1,1}=obj.metadataTraceSegment(segment);
                 obj.NextSampleIndex=stop;
                 event.Execution=execution;
                 event.PhysicalExecutionPerformed=true;
@@ -189,6 +193,32 @@ classdef WaveformEventRuntime < handle
         end
     end
     methods (Access=private)
+        function trace=metadataTraceSegment(~,segment)
+            trace=segment;
+            if ~isfield(trace.Execution,'ChannelReferences'), return; end
+            metadata=trace.Execution.ChannelReferences;
+            for k=1:numel(metadata)
+                reference=metadata(k).Reference;
+                for field=["PathGains","PathFilters","SampleTimes_s"]
+                    if isfield(reference,field)
+                        value=reference.(field);
+                        reference.(field+"Dimensions")=size(value);
+                        reference.(field+"ElementCount")=numel(value);
+                        reference=rmfield(reference,field);
+                    end
+                end
+                reference.CoefficientArraysRetained=false;
+                metadata(k).Reference=reference;
+            end
+            % A different field name prevents a metadata-only entry from
+            % being consumed as an applied channel reference. Execution
+            % clocks, link IDs and processor hashes remain unchanged.
+            trace.Execution=rmfield(trace.Execution,'ChannelReferences');
+            trace.Execution.ChannelReferenceMetadata=metadata;
+            trace.Execution.ChannelReferenceRetention= ...
+                "full_arrays_in_observation_windows_and_returned_events_not_lifetime_trace";
+        end
+
         function assertMutable(obj)
             if obj.Faulted
                 error('WAVEFORM:FaultedEventRuntime', ...

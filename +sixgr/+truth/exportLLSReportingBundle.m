@@ -212,7 +212,9 @@ if ~(istable(ctx.Tables.InitialAccessLifecycle) && ~isempty(ctx.Tables.InitialAc
 end
 if istable(ctx.Tables.InitialAccessLifecycle) && ~isempty(ctx.Tables.InitialAccessLifecycle)
     ctx.Tables.InitialAccessLifecycle = ...
-        sixgr.truth.deriveInitialAccessProcedureDelay(ctx.Tables.InitialAccessLifecycle);
+        sixgr.truth.deriveInitialAccessProcedureDelay(ctx.Tables.InitialAccessLifecycle, ...
+        "RequireRRCSetupComplete",logical(sixgr.util.structGet( ...
+        cfg,"initial_access.rrc.require_setup_complete",false)));
     sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, ...
         "initial_access_lifecycle_trace.csv"), ctx.Tables.InitialAccessLifecycle);
 end
@@ -1127,11 +1129,8 @@ switch key
         T = localMetricTableRow(cat, metric, "report", "plot", localDerivedOrPlaceholderAvailability(hasData), NaN, localPortablePath(aggPath), "", localPortablePath(aggPath), localAggregateAvailabilityNote(hasData, "No compute, radio-time, or procedure-delay samples are available; the plot is omitted."));
     case "curves_access_delay_cdf"
         aggPath = localAggregateArtifactPath(ctx, "AccessDelayCDFPlot");
-        hasData = localHasAnyFiniteColumn(ctx.Tables.InitialAccessLifecycle, ["AccessDelay_ms","ProcedureDelay_ms"]) || ...
-            localHasAnyFiniteColumn(ctx.Tables.PRACH, ["AccessDelay_ms","ProcedureDelay_ms"]) || ...
-            localHasAnyFiniteColumn(ctx.Tables.PBCH, ["ProcedureDelay_ms"]) || ...
-            localHasAnyFiniteColumn(ctx.Tables.PBCHRecovery, ["ProcedureDelay_ms"]) || ...
-            localHasAnyFiniteColumn(ctx.Tables.CellSearch, ["ProcedureDelay_ms"]);
+        [accessSamples,~] = localInitialAccessProcedureDelaySamples(ctx);
+        hasData = ~isempty(accessSamples);
         if hasData
             note = "";
         elseif localShouldEmitPlaceholderArtifacts(ctx)
@@ -1937,11 +1936,17 @@ elseif all(ismember(["PreambleIndexTx","PreambleIndexDetected","PreambleDetected
 else
     return;
 end
-mask = isfinite(requested) & isfinite(detected) & isfinite(present) & present ~= 0;
+identity = table(requested, detected, present, 'VariableNames', ...
+    {'PreambleIndexTx','PreambleIndexDetected','PreambleDetected'});
+for field = ["DetectedPreambleSet","DetectedPreambleSetAvailable"]
+    if ismember(field, vars), identity.(field) = prach.(field); end
+end
+[~, wrong] = sixgr.report.prachTargetDetectionEvidence(identity);
+mask = isfinite(wrong);
 if any(mask)
     T = localRateWithCounts(cat, metric, "PRACH", "wrong_preamble_identity", ...
-        detected(mask) ~= requested(mask), "air_interface/csv/prach_trials.csv", ...
-        "Wrong identity is conditioned on a detected preamble and compares the decoded identity with the scheduled transmitted preamble.");
+        logical(wrong(mask)), "air_interface/csv/prach_trials.csv", ...
+        "Per-target identity absence, conditioned on a nonempty independent received preamble set (legacy single candidate where explicitly unavailable). Repeated UE rows in one shared occasion are not independent false-alarm trials or a false-alarm qualification population.");
 end
 end
 
@@ -3381,35 +3386,21 @@ T = [T; ... %#ok<AGROW>
 end
 
 function [samples, sourceRel] = localInitialAccessProcedureDelaySamples(ctx)
+samples=zeros(0,1);
+sourceRel = "control/csv/initial_access_lifecycle_trace.csv";
 life = ctx.Tables.InitialAccessLifecycle;
-if istable(life) && ~isempty(life)
-    if ismember("CompleteFlag", string(life.Properties.VariableNames))
-        try
-            life = life(logical(life.CompleteFlag), :);
-        catch
-        end
+if istable(life) && ~isempty(life) && ismember("CompleteFlag",string(life.Properties.VariableNames))
+    completed=false(height(life),1);
+    for k=1:height(life)
+        completed(k)=localTableLogicalAtRow(life,k,"CompleteFlag") && ...
+            ~localTableLogicalAtRow(life,k,"PlaceholderFlag") && ...
+            ~localTableLogicalAtRow(life,k,"FallbackFlag");
     end
+    life=life(completed,:);
     samples = localFiniteColumn(life, ["AccessDelay_ms","ProcedureDelay_ms"]);
-    samples = samples(isfinite(samples));
-    sourceRel = "control/csv/initial_access_lifecycle_trace.csv";
-    if ~isempty(samples)
-        return;
-    end
+    samples = samples(isfinite(samples) & samples>=0);
 end
-samples = [ ...
-    localFiniteColumn(ctx.Tables.PRACH, ["AccessDelay_ms","ProcedureDelay_ms"]); ...
-    localFiniteColumn(ctx.Tables.PBCH, "ProcedureDelay_ms"); ...
-    localFiniteColumn(ctx.Tables.PBCHRecovery, "ProcedureDelay_ms"); ...
-    localFiniteColumn(ctx.Tables.CellSearch, "ProcedureDelay_ms")];
-samples = samples(isfinite(samples));
-sourceRel = "air_interface/csv/prach_trials.csv";
-if ~isempty(localFiniteColumn(ctx.Tables.PBCH, "ProcedureDelay_ms"))
-    sourceRel = "air_interface/csv/pbch_trials.csv";
-elseif ~isempty(localFiniteColumn(ctx.Tables.PBCHRecovery, "ProcedureDelay_ms"))
-    sourceRel = "control/csv/pbch_recovery_trials.csv";
-elseif ~isempty(localFiniteColumn(ctx.Tables.CellSearch, "ProcedureDelay_ms"))
-    sourceRel = "control/csv/cell_search_trials.csv";
-end
+% A PBCH/PRACH stage duration alone does not establish completed attachment.
 end
 
 function T = localBeamPairAcquisitionRows(cat, metric, ctx)
@@ -6259,13 +6250,29 @@ artifacts.AutomaticMarkdownSummary = fullfile(ctx.Layout.ReportDir, "automatic_m
 artifacts.WaterfallChart = fullfile(ctx.Layout.ReportImageDir, "gains_losses_waterfall.png");
 artifacts.PAPRCCDFPlot = fullfile(ctx.Layout.ReportImageDir, "papr_ccdf.png");
 artifacts.LatencyCDFPlot = fullfile(ctx.Layout.ReportImageDir, "latency_cdf.png");
-artifacts.AccessDelayCDFPlot = fullfile(ctx.RunFolder, "analytics", "image", ...
-    "contract__random-access-prach-analytics__access-latency.png");
+artifacts.AccessDelayCDFPlot = fullfile(ctx.Layout.ReportImageDir,"access_delay_cdf.png");
 artifacts.EnergyVsThroughputPlot = fullfile(ctx.Layout.ReportImageDir, "energy_vs_throughput.png");
 artifacts.ComplexityVsGainPlot = fullfile(ctx.Layout.ReportImageDir, "complexity_vs_gain.png");
 artifacts.BandFeatureKPIHeatmap = fullfile(ctx.Layout.ReportImageDir, "heatmap_band_feature_kpi.png");
 artifacts.ImpairmentKPIHeatmap = fullfile(ctx.Layout.ReportImageDir, "heatmap_impairment_kpi.png");
 artifacts.BeamRankTRPKPIHeatmap = fullfile(ctx.Layout.ReportImageDir, "heatmap_beam_rank_trp_kpi.png");
+[accessSamples,accessSource]=localInitialAccessProcedureDelaySamples(ctx);
+accessSamples=sort(accessSamples(:));
+count=numel(accessSamples);
+accessPlotCSV=fullfile(ctx.Layout.ReportCSVDir,'access_delay_cdf_plot.csv');
+if count>0
+    plotted=table(accessSamples,(1:count)'/count,repmat(string(accessSource),count,1), ...
+        repmat("exact",count,1),'VariableNames', ...
+        {'latency_ms','cdf_probability','source_table','source_mapping_status'});
+    sixgr.util.csvWriteTable(accessPlotCSV,plotted);
+else
+    % Retire only this producer's derived files. A previous completed
+    % population must not survive a recovery with no eligible lifecycle
+    % evidence. The metric ledger records not_available; an empty primary
+    % plot CSV is not a substitute for actual runtime samples.
+    if isfile(accessPlotCSV), delete(accessPlotCSV); end
+    if isfile(artifacts.AccessDelayCDFPlot), delete(artifacts.AccessDelayCDFPlot); end
+end
 
 sixgr.util.csvWriteTable(artifacts.PerScenarioSummaryTable, localBuildPerScenarioSummaryTable(ctx, coverageT, rows));
 legacyPerSweep = fullfile(ctx.Layout.ReportCSVDir, "per_sweep_comparison_tables.csv");
@@ -6915,6 +6922,7 @@ T = table( ...
     'InjectedCFO_Hz','EstimatedCFO_PreCorrection_Hz','ResidualCFO_PostCorrection_Hz','EstimatedCFO_Hz','TrueCFO_Hz','CFOError_Hz', ...
     'InjectedTimingOffset_samples','EstimatedTimingOffset_PreCorrection_samples','ResidualTimingError_PostCorrection_samples','TrueTimingOffset_samples','TimingError_samples', ...
     'InjectedDoppler_Hz','EstimatedDopplerHz','DopplerError_Hz','PhaseTrackingError_deg','ComputeLatency_ms','AirInterfaceObservation_ms','AcquisitionTime_ms','TrackingFailureProbability','SourceArtifact','Status'});
+T = localAppendReceiverCFOMeasurements(T, table());
 end
 
 function T = localTrackingTraceSlice(sourceT, traceSource, sourceArtifact)
@@ -6958,6 +6966,22 @@ T = table( ...
     'InjectedCFO_Hz','EstimatedCFO_PreCorrection_Hz','ResidualCFO_PostCorrection_Hz','EstimatedCFO_Hz','TrueCFO_Hz','CFOError_Hz', ...
     'InjectedTimingOffset_samples','EstimatedTimingOffset_PreCorrection_samples','ResidualTimingError_PostCorrection_samples','TrueTimingOffset_samples','TimingError_samples', ...
     'InjectedDoppler_Hz','EstimatedDopplerHz','DopplerError_Hz','PhaseTrackingError_deg','ComputeLatency_ms','AirInterfaceObservation_ms','AcquisitionTime_ms','TrackingFailureProbability','SourceArtifact','Status'});
+T = localAppendReceiverCFOMeasurements(T, sourceT);
+end
+
+function T = localAppendReceiverCFOMeasurements(T, sourceT)
+% Preserve actual receiver outputs; never derive a measured residual from
+% the injected CFO, a scoring error, or another channel's observations.
+n = height(T);
+for name = ["CFOCorrectionApplied","CFOCorrectionApplied_Hz", ...
+        "ResidualCFO_EstimatedPostCorrection_Hz","ResidualCFOEstimateAvailable", ...
+        "ResidualCFOReusesAcquisitionObservation","ResidualCFOEstimatorConsistency_Hz"]
+    T.(name) = localDebugNumericColumn(sourceT, name, n);
+end
+for name = ["ResidualCFOEstimateSource","ResidualCFOEstimateDomain","ResidualCFOReferenceDefinition", ...
+        "ResidualCFOEstimateRole"]
+    T.(name) = localDebugStringColumn(sourceT, name, n);
+end
 end
 
 function T = localBuildPRACHCorrelationTraceTable(ctx)
@@ -7023,24 +7047,15 @@ end
 
 function localPlotEqualizedConstellationsOrPlaceholder(pathOut, ctx)
 T = localBuildEqualizedConstellationTable(ctx);
-groups = localSelectConstellationPlotGroups(T, 4);
-if ~isempty(groups)
-    fig = figure("Visible", "off", "Color", "w");
-    cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
-    nCols = min(2, numel(groups));
-    nRows = ceil(numel(groups) / max(nCols, 1));
-    tl = tiledlayout(fig, nRows, nCols, "Padding", "compact", "TileSpacing", "compact");
-    for i = 1:numel(groups)
-        localConstellationAxes(nexttile(tl), groups{i}, "Equalized Constellation");
-    end
-    sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
+[rendered, ~] = sixgr.report.exportConstellationGroups(T, pathOut);
+if rendered
     return;
 end
 if ~localShouldEmitPlaceholderArtifacts(ctx)
     return;
 end
 localExportPlaceholderFigure(pathOut, "Symbol Constellations", ...
-    "Constellation plot suppressed: modulation/layer/SNR/MCS/SINR lineage is missing or no finite equalized/reference symbol pairs were emitted.");
+    "Constellation plot suppressed: modulation/layer/SNR/MCS lineage is missing or no finite equalized/reference symbol pairs were emitted.");
 end
 
 function localPlotLLRHistogramsOrPlaceholder(pathOut, ctx)
@@ -7075,9 +7090,11 @@ if istable(T) && ~isempty(T) && any(usableMask)
     end
     fig = figure("Visible", "off", "Color", "w");
     cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
-    tl = tiledlayout(fig, 2, 2, "Padding", "compact", "TileSpacing", "compact");
+    tl = tiledlayout(fig, 3, 2, "Padding", "compact", "TileSpacing", "compact");
     localTraceAxes(nexttile(tl), localTrackingPlotColumn(Tplot, ["ResidualCFO_PostCorrection_Hz","CFOError_Hz"]), ...
-        "Residual CFO Post-Correction", "Hz");
+        "Simulation-Reference CFO Residual / Error", "Hz");
+    localTraceAxes(nexttile(tl), localTrackingPlotColumn(Tplot, "ResidualCFO_EstimatedPostCorrection_Hz"), ...
+        "Receiver-Measured Residual Frequency", "Hz");
     localTraceAxes(nexttile(tl), localTrackingPlotColumn(Tplot, ["ResidualTimingError_PostCorrection_samples","TimingError_samples"]), ...
         "Residual Timing Post-Correction", "samples");
     localTraceAxes(nexttile(tl), localTrackingPlotColumn(Tplot, ["DopplerError_Hz"]), ...
@@ -7103,7 +7120,7 @@ if ismember("Status", string(T.Properties.VariableNames))
     status = upper(strtrim(string(T.Status)));
     mask = mask & ~ismember(status, ["NA","NOT_AVAILABLE","NOT_SUPPORTED"]);
 end
-cols = ["ResidualCFO_PostCorrection_Hz","CFOError_Hz", ...
+cols = ["ResidualCFO_PostCorrection_Hz","CFOError_Hz","ResidualCFO_EstimatedPostCorrection_Hz", ...
     "ResidualTimingError_PostCorrection_samples","TimingError_samples", ...
     "DopplerError_Hz","PhaseTrackingError_deg","EstimatedCFO_PreCorrection_Hz","EstimatedDopplerHz"];
 hasFinite = false(height(T), 1);
@@ -7243,162 +7260,6 @@ grid(ax, "on");
 sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
 end
 
-function localConstellationAxes(ax, T, plotTitle)
-if ~(istable(T) && ~isempty(T))
-    axis(ax, "off");
-    title(ax, plotTitle);
-    text(ax, 0.5, 0.5, "No lineaged samples", "HorizontalAlignment", "center");
-    return;
-end
-hold(ax, "on");
-eqMask = isfinite(double(T.equalized_i)) & isfinite(double(T.equalized_q));
-scatter(ax, double(T.equalized_i(eqMask)), double(T.equalized_q(eqMask)), 8, "filled", ...
-    "MarkerFaceAlpha", 0.35, "DisplayName", "Aligned equalized");
-hardRealName = localFirstExistingConstellationVar(T, ["HardDecisionReal","DecisionReal"]);
-hardImagName = localFirstExistingConstellationVar(T, ["HardDecisionImag","DecisionImag"]);
-hardMask = false(height(T), 1);
-if strlength(hardRealName) > 0 && strlength(hardImagName) > 0
-    hardMask = isfinite(double(T.(hardRealName))) & isfinite(double(T.(hardImagName)));
-end
-if any(hardMask)
-    scatter(ax, double(T.(hardRealName)(hardMask)), double(T.(hardImagName)(hardMask)), 12, "x", "DisplayName", "Hard decision");
-end
-refMask = isfinite(double(T.reference_symbol_i)) & isfinite(double(T.reference_symbol_q));
-if any(refMask)
-    scatter(ax, double(T.reference_symbol_i(refMask)), double(T.reference_symbol_q(refMask)), 10, "+", "DisplayName", "Reference");
-end
-[idealI, idealQ] = localIdealConstellationPoints(string(T.modulation(1)), double(T.reference_symbol_i), double(T.reference_symbol_q));
-if ~isempty(idealI)
-    scatter(ax, idealI, idealQ, 30, "kd", "LineWidth", 1.1, "DisplayName", "Ideal constellation");
-    localDrawConstellationDecisionBoundaries(ax, idealI, idealQ);
-end
-evmPct = mean(double(T.evm_rms_pct), "omitnan");
-evmDb = mean(double(T.evm_db), "omitnan");
-ctxLine = sprintf("%s | mod=%s | layer=%g | SNR=%.3g dB | MCS=%g | N=%d | EVM=%.3g%% / %.3g dB", ...
-    char(string(T.direction(1))), char(string(T.modulation(1))), double(T.layer(1)), ...
-    double(T.snr_db(1)), double(T.mcs_index(1)), height(T), evmPct, evmDb);
-xlabel(ax, "I");
-ylabel(ax, "Q");
-title(ax, string(plotTitle) + newline + string(ctxLine));
-text(ax, 0.02, 0.02, string(ctxLine), "Units", "normalized", "Interpreter", "none", ...
-    "FontSize", 7, "BackgroundColor", [1 1 1], "Margin", 3, "VerticalAlignment", "bottom");
-axis(ax, "equal");
-grid(ax, "on");
-legend(ax, "Location", "best");
-end
-
-function groups = localSelectConstellationPlotGroups(T, maxGroups)
-groups = {};
-if nargin < 2
-    maxGroups = 4;
-end
-mask = localConstellationLineageMask(T);
-if ~any(mask)
-    return;
-end
-Tv = T(mask, :);
-key = string(Tv.direction) + "|" + string(Tv.modulation) + "|layer=" + string(double(Tv.layer)) + "|snr=" + string(double(Tv.snr_db));
-[keys, ~, g] = unique(key, "stable");
-counts = accumarray(g, 1);
-[~, order] = sort(counts, "descend");
-order = order(1:min(numel(order), maxGroups));
-groups = cell(numel(order), 1);
-for i = 1:numel(order)
-    Ti = Tv(key == keys(order(i)), :);
-    if height(Ti) > 2000
-        idx = unique(round(linspace(1, height(Ti), 2000)));
-        Ti = Ti(idx, :);
-    end
-    groups{i} = Ti;
-end
-end
-
-function mask = localConstellationLineageMask(T)
-mask = false(0, 1);
-if ~(istable(T) && ~isempty(T))
-    return;
-end
-required = ["direction","modulation","layer","snr_db","mcs_index","posteq_sinr_db", ...
-    "reference_symbol_i","reference_symbol_q","equalized_i","equalized_q","truth_status"];
-if ~all(ismember(required, string(T.Properties.VariableNames)))
-    mask = false(height(T), 1);
-    return;
-end
-mask = isfinite(double(T.equalized_i)) & isfinite(double(T.equalized_q)) & ...
-    isfinite(double(T.reference_symbol_i)) & isfinite(double(T.reference_symbol_q)) & ...
-    isfinite(double(T.layer)) & isfinite(double(T.snr_db)) & ...
-    isfinite(double(T.mcs_index)) & isfinite(double(T.posteq_sinr_db)) & ...
-    strlength(strtrim(string(T.modulation))) > 0 & ...
-    ismember(lower(strtrim(string(T.truth_status))), ["real_lls_evidence","truth","runtime_measured"]);
-end
-
-function name = localFirstExistingConstellationVar(T, names)
-name = "";
-names = string(names);
-for i = 1:numel(names)
-    if ismember(names(i), string(T.Properties.VariableNames))
-        name = names(i);
-        return;
-    end
-end
-end
-
-function [idealI, idealQ] = localIdealConstellationPoints(modulation, refI, refQ)
-modToken = upper(regexprep(char(strtrim(string(modulation))), "[^A-Z0-9/]", ""));
-pts = [];
-if contains(modToken, "BPSK") && ~contains(modToken, "QPSK")
-    pts = [-1; 1];
-else
-    m = NaN;
-    if contains(modToken, "QPSK")
-        m = 4;
-    else
-        tok = regexp(modToken, "(\d+)QAM", "tokens", "once");
-        if ~isempty(tok)
-            m = str2double(tok{1});
-        end
-    end
-    if isfinite(m) && m >= 4
-        side = sqrt(m);
-        if abs(side - round(side)) < 1e-9
-            levels = (-(side - 1):2:(side - 1)).';
-            [ii, qq] = meshgrid(levels, levels);
-            pts = ii(:) + 1i .* qq(:);
-            pts = pts ./ sqrt(mean(abs(pts).^2, "omitnan"));
-        end
-    end
-end
-if isempty(pts)
-    ref = complex(refI(:), refQ(:));
-    ref = ref(isfinite(real(ref)) & isfinite(imag(ref)));
-    pts = complex(round(real(ref) .* 1e6) ./ 1e6, round(imag(ref) .* 1e6) ./ 1e6);
-    pts = unique(pts, "stable");
-    if numel(pts) > 64
-        pts = pts(1:64);
-    end
-end
-idealI = real(pts);
-idealQ = imag(pts);
-end
-
-function localDrawConstellationDecisionBoundaries(ax, idealI, idealQ)
-levelsI = unique(round(double(idealI(:)), 8));
-levelsQ = unique(round(double(idealQ(:)), 8));
-levelsI = sort(levelsI(isfinite(levelsI)));
-levelsQ = sort(levelsQ(isfinite(levelsQ)));
-if numel(levelsI) > 1
-    mids = (levelsI(1:end-1) + levelsI(2:end)) ./ 2;
-    for i = 1:numel(mids)
-        xline(ax, mids(i), ":", "Color", [0.65 0.65 0.65], "HandleVisibility", "off");
-    end
-end
-if numel(levelsQ) > 1
-    mids = (levelsQ(1:end-1) + levelsQ(2:end)) ./ 2;
-    for i = 1:numel(mids)
-        yline(ax, mids(i), ":", "Color", [0.65 0.65 0.65], "HandleVisibility", "off");
-    end
-end
-end
 
 function localHistogramAxes(ax, x, plotTitle, xLabel)
 if isempty(x)
@@ -8084,7 +7945,7 @@ fprintf(fid, "- Primary air-interface KPIs: `%s`\n", localExistsText(fullfile(ct
 fprintf(fid, "- Measured SINR summary: `%s`\n", localExistsText(fullfile(ctx.Layout.AirInterfaceCSVDir, "lls_measured_sinr_summary.csv")));
 fprintf(fid, "- Report coverage table: `%s`\n", localExistsText(fullfile(ctx.Layout.ReportCSVDir, "lls_output_spec_coverage.csv")));
 fprintf(fid, "\n## Operating Point\n\n");
-fprintf(fid, "- SINR source: `geometry-derived (pathloss + shadow fading + CDL/TDL channel + MMSE equaliser); no AWGN injection`\n");
+localWriteExecutedSINRSources(fid, ctx);
 fprintf(fid, "- Configured nominal MIMO: `%s`\n", string(opSummary.Configured.MIMOText));
 fprintf(fid, "- Configured DL nominal operating point: `%s`\n", string(opSummary.Configured.DL.OperatingPointText));
 fprintf(fid, "- Configured UL nominal operating point: `%s`\n", string(opSummary.Configured.UL.OperatingPointText));
@@ -8102,7 +7963,7 @@ if logical(opSummary.UL.HasSamples)
     localWriteHistogramMarkdownTable(fid, opSummary.UL.ModulationHistogram, "UL Modulation Distribution", "Modulation");
 end
 fprintf(fid, "- Effective runtime note: `%s`\n", string(opSummary.RuntimeNarrative));
-localWriteMeasuredSINRRangeSection(fid, ctx, "## SINR Operating Range (Geometry-Driven)");
+localWriteMeasuredSINRRangeSection(fid, ctx, "## Measured SINR Operating Range");
 fprintf(fid, "\n## Highlights\n\n");
 localWriteMeasuredSINRHighlight(fid, ctx, "DL");
 localWriteMeasuredSINRHighlight(fid, ctx, "UL");
@@ -8192,8 +8053,8 @@ if logical(opSummary.UL.HasSamples)
     fprintf(fid, "- Effective UL configured-match rate: `%.3f`\n", double(opSummary.UL.ConfiguredMatchRate));
 end
 fprintf(fid, "- Effective runtime note: `%s`\n", string(opSummary.RuntimeNarrative));
-fprintf(fid, "- SINR source: `geometry-derived (pathloss + shadow fading + CDL/TDL channel + MMSE equaliser); no AWGN injection`\n");
-localWriteMeasuredSINRRangeSection(fid, ctx, "## SINR Operating Range (Geometry-Driven)");
+localWriteExecutedSINRSources(fid, ctx);
+localWriteMeasuredSINRRangeSection(fid, ctx, "## Measured SINR Operating Range");
 fprintf(fid, "\n## Category Coverage\n\n");
 cats = unique(string(coverageT.CategoryCode), "stable");
 coverageAvailLower = lower(strtrim(string(coverageT.Availability)));
@@ -8308,19 +8169,62 @@ histStr = strtrim(string(histStr));
 if strlength(histStr) == 0
     return;
 end
-entries = split(histStr, ",");
+% summarizeEffectiveOperatingPoint emits label:COUNT separated by pipes,
+% not fractions. Accept the legacy comma delimiter without changing units.
+entries = string(regexp(char(histStr), '[|,]', 'split'));
 rows = strings(0, 1);
+labels = strings(numel(entries),1);
+counts = zeros(numel(entries),1);
 for i = 1:numel(entries)
     kv = split(strtrim(entries(i)), ":");
-    if numel(kv) < 2
+    assert(numel(kv)==2, 'sixgr:report:InvalidOperatingPointHistogram', ...
+        'Operating-point histogram entries must contain label:count.');
+    labels(i)=strtrim(kv(1));
+    counts(i)=str2double(kv(2));
+    assert(strlength(labels(i))>0 && isfinite(counts(i)) && ...
+        counts(i)>0 && counts(i)==fix(counts(i)), ...
+        'sixgr:report:InvalidOperatingPointHistogram', ...
+        'Operating-point histogram counts must be positive integer observations.');
+end
+for i = 1:numel(entries)
+    rows(end + 1, 1) = "| " + labels(i) + " | " + string(counts(i)) + ...
+        " | " + string(sprintf('%.6g',counts(i)/sum(counts))) + " |"; %#ok<AGROW>
+end
+mdTable = strjoin(["| " + string(dimension) + " | Count | Fraction |"; ...
+    "| --- | ---: | ---: |"; rows], newline);
+end
+
+function localWriteExecutedSINRSources(fid, ctx)
+% Describe actual receiver rows, not a fixed narrative or configured SNR.
+% Missing provenance stays unavailable even when a channel is configured.
+fields = ["ChannelModelApplied", "NoiseOperatingMode", ...
+    "AppliedAWGNSNRSource", "AppliedNoiseSNRSource", ...
+    "SNRReferencePlane", "PostEqSINRSource"];
+for direction = ["DL", "UL"]
+    T = sixgr.util.structGet(ctx.Tables,direction,table());
+    if ~istable(T) || isempty(T)
+        fprintf(fid,"- %s executed SINR/channel provenance: `unavailable_no_receiver_trial_rows`\n",direction);
         continue;
     end
-    rows(end + 1, 1) = "| " + strtrim(kv(1)) + " | " + strtrim(kv(2)) + " |"; %#ok<AGROW>
+    fprintf(fid,"- %s executed SINR/channel provenance (%d receiver trial rows):\n",direction,height(T));
+    for field = fields
+        value = "unavailable_in_receiver_trial_rows";
+        if ismember(field,string(T.Properties.VariableNames))
+            values = strtrim(string(T.(field)));
+            valid = ~ismissing(values) & strlength(values)>0 & ...
+                ~ismember(lower(values),["nan","<missing>"]);
+            if any(valid)
+                value = strjoin(unique(values(valid),"stable"),"; ");
+                if any(~valid)
+                    value = value + "; unavailable_rows=" + string(sum(~valid));
+                end
+            end
+        end
+        value=replace(value,[newline,char(13),"`"]," ");
+        fprintf(fid,"  - %s: `%s`\n",field,value);
+    end
 end
-if isempty(rows)
-    return;
-end
-mdTable = strjoin(["| " + string(dimension) + " | Fraction |"; "| --- | ---: |"; rows], newline);
+fprintf(fid,"- Configured SNR is an operating-point input, not a measured post-equalization SINR.\n");
 end
 
 function localWriteSweepPerformanceSection(fid, sectionTitle, sweepT, blerCandidates, berCandidates, tputCandidates, countCandidates)
@@ -8602,8 +8506,7 @@ switch string(fieldName)
     case "LatencyCDFPlot"
         pathOut = fullfile(ctx.Layout.ReportImageDir, "latency_cdf.png");
     case "AccessDelayCDFPlot"
-        pathOut = fullfile(ctx.RunFolder, "analytics", "image", ...
-            "contract__random-access-prach-analytics__access-latency.png");
+        pathOut = fullfile(ctx.Layout.ReportImageDir,"access_delay_cdf.png");
     case "EnergyVsThroughputPlot"
         pathOut = fullfile(ctx.Layout.ReportImageDir, "energy_vs_throughput.png");
     case "ComplexityVsGainPlot"
@@ -8746,7 +8649,8 @@ end
 
 function out = localConstellationArtifactAvailability(ctx)
 T = localBuildEqualizedConstellationTable(ctx);
-hasData = any(localConstellationLineageMask(T));
+[groups,~] = sixgr.report.groupConstellationPlotSamples(T);
+hasData = ~isempty(groups);
 out = localDerivedOrPlaceholderAvailability(hasData);
 end
 

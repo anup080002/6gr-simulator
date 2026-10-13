@@ -91,6 +91,8 @@
       "symbol_gap": {"required": true, "type": "integer", "min": 0}, "beam_mismatch_model": {"required": true, "type": "string"}
     }},
     "receiver_algorithms": {"required": true, "parameters": {
+      "channel_estimation_method": {"required": false, "type": "string", "allowed_values": ["LS", "wiener", "lmmse"]},
+      "pdsch_channel_estimation_averaging_window": {"required": false, "type": "number_list", "notes": "[frequency,time] odd positive lengths, or zero for native automatic selection; validated by the receiver. Not an oracle channel."},
       "channel_estimator": {"required": true, "type": "string"}, "interpolation_method": {"required": true, "type": "string"},
       "equalizer": {"required": true, "type": "string"},
       "ul_single_user_equalizer": {"required": false, "type": "string", "allowed_values": ["MMSE", "ZF", "IRC", "MMSE-IRC"]},

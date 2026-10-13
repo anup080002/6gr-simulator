@@ -21,7 +21,7 @@ if isempty(targetChannels)
     % string array inside repeated anonymous membership checks is both less
     % readable and release-sensitive; the public meaning remains "all".
     targetChannels = ["SSB_PBCH";"TYPE0_PDCCH";"SIB1_PDSCH";"PDCCH"; ...
-        "PDSCH";"CSI_RS";"TRS";"PRACH";"PUCCH";"PUSCH";"SRS"];
+        "PDSCH";"CSI_RS";"CSI_IM";"TRS";"PRACH";"PUCCH";"PUSCH";"SRS"];
 end
 isSelected = @(name) any(targetChannels == upper(string(name)));
 reusePeriodicTemplates = logical(ip.Results.ReusePeriodicCoordinateTemplates);
@@ -96,6 +96,12 @@ csirsEnabled = isSelected("CSI_RS") && ...
     csirsEnabled, "RRC_CSI_RS_resource_configuration", ...
     "sixgr.phy.refsig.csirs+nrCSIRSIndices", ...
     @() localCSIRS(cfg, carrier, totalSlots, frame, compactPeriodicOutput));
+
+csiimEnabled = isSelected("CSI_IM") && ...
+    logical(sixgr.util.structGet(cfg,"phy.csiim.enabled",false));
+[rows,checks] = localAttempt(rows,checks,"CSI_IM","DL",csiimEnabled, ...
+    "RRC_CSI_IM_resource_configuration", "sixgr.phy.refsig.csiIMResource", ...
+    @() localCSIIM(cfg,carrier,totalSlots,frame,compactPeriodicOutput));
 
 trsEnabled = isSelected("TRS") && ...
     logical(sixgr.util.structGet(cfg, "phy.trs.enable", false));
@@ -214,6 +220,22 @@ coords = [subcarrier-1 symbol-1 zeros(numel(subcarrier),1)];
 end
 
 function out = localType0(cfg, carrier, totalSlots)
+indices=sixgr.phy.broadcast.resolveSIB1TransmitSSBIndices(cfg);
+if numel(indices)>1
+    rows=repmat(localEmptyRow(),0,1); count=0; value=struct();
+    for index=indices
+        child=cfg; child.phy.sib1.transmissionScope="selected_ssb_occasion";
+        child.phy.ssb.runtimeSSBIndex=index;
+        part=localType0(child,carrier,totalSlots);
+        for row=1:numel(part.Rows)
+            part.Rows(row).allocation_id=part.Rows(row).allocation_id+"_ssb_"+index;
+        end
+        rows=[rows;part.Rows]; count=count+part.RECount; %#ok<AGROW>
+        if isempty(fieldnames(value)), value=part.Value; end
+    end
+    out=localPayload(rows,count,"configured Type-0 monitoring across the transmitted SI beam set",value);
+    return;
+end
 if ~logical(sixgr.util.structGet(cfg, "phy.ssb.enable", false)) || ...
         ~logical(sixgr.util.structGet(cfg, "phy.mib.enable", true))
     error("sixgr:truth:MissingMIBControlAuthority", ...
@@ -258,6 +280,21 @@ out = localPayload(rows,size(unique(vertcat(rows.allocation_id)),1), ...
 end
 
 function out = localSIB1(cfg, carrier, type0, totalSlots)
+indices=sixgr.phy.broadcast.resolveSIB1TransmitSSBIndices(cfg);
+if numel(indices)>1
+    rows=repmat(localEmptyRow(),0,1); count=0;
+    for index=indices
+        child=cfg; child.phy.sib1.transmissionScope="selected_ssb_occasion";
+        child.phy.ssb.runtimeSSBIndex=index;
+        part=localSIB1(child,carrier,type0,totalSlots);
+        for row=1:numel(part.Rows)
+            part.Rows(row).allocation_id=part.Rows(row).allocation_id+"_ssb_"+index;
+        end
+        rows=[rows;part.Rows]; count=count+part.RECount; %#ok<AGROW>
+    end
+    out=localPayload(rows,count,"exact configured SI-RNTI PDSCH on every transmitted SSB-associated occasion");
+    return;
+end
 if isempty(type0) || ~isstruct(type0) || ~isfield(type0,"Resolution")
     % Resolve the dependency even when TYPE0_PDCCH is not selected for
     % publication. Errors remain fatal to this enabled SIB1 allocation;
@@ -639,6 +676,39 @@ end
 out=localPayload(rows,count,"CSI-RS resources resolved");
 end
 
+function out = localCSIIM(cfg,carrier,totalSlots,frame,compactPeriodicOutput)
+% Muted measurement resources have no transmit antenna port or payload.
+rows=repmat(localEmptyRow(),0,1); count=0;
+cache=containers.Map('KeyType','char','ValueType','any'); keyOrder=cell(0,1);
+for slot0=0:totalSlots-1
+    cfgSlot=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,slot0+1);
+    c=localCarrierAtSlot(carrier,slot0);
+    plan=sixgr.phy.refsig.csiIMResource(c,cfgSlot);
+    if ~plan.Scheduled, continue; end
+    assert(all(arrayfun(@(s)frame.IsDLAllocation(slot0,[s 1]), ...
+        unique(plan.Symbols0Based))),'sixgr:truth:CSIIMNotDLAvailable', ...
+        'Configured CSI-IM REs must occupy DL symbols, not guard or UL symbols.');
+    coords=[plan.Subcarriers0Based plan.Symbols0Based zeros(plan.NumRE,1)];
+    slotRows=localRows(coords,slot0,"CSI_IM","MUTED",double(c.NCellID),NaN, ...
+        "RRC_CSI_IM_resource_configuration","sixgr.phy.refsig.csiIMResource", ...
+        "csi_im_slot_"+string(slot0));
+    for j=1:numel(slotRows)
+        slotRows(j).port_index=NaN;
+        slotRows(j).ue_id=NaN;
+        slotRows(j).csi_resource_index=plan.ResourceID;
+    end
+    if compactPeriodicOutput
+        [cache,keyOrder]=localAccumulatePeriodicRows(cache,keyOrder,slotRows,slot0,"csi_im");
+    else
+        rows=[rows;slotRows]; %#ok<AGROW>
+    end
+    count=count+plan.NumRE;
+end
+assert(count>0,'sixgr:truth:NoCSIIMOccasion','No CSI-IM resource falls within the run window.');
+if compactPeriodicOutput, rows=localEmitPeriodicRows(cache,keyOrder,"CSI_IM"); end
+out=localPayload(rows,count,"Serving-cell-muted CSI-IM resources; no transmitted port or payload");
+end
+
 function out = localTRS(cfg,totalSlots,frame,compactPeriodicOutput)
 strict=sixgr.phy.trs.buildTRSConfigFromScenario(cfg);
 rows=repmat(localEmptyRow(),0,1);count=0;
@@ -672,32 +742,51 @@ end
 
 function out = localPRACH(cfg,carrier,totalSlots,frame)
 strict=sixgr.rach.PRACHConfig(cfg);
-slots=[];
-if isfield(strict,"FirstActiveOccasion") && isstruct(strict.FirstActiveOccasion)
-    % PRACHConfig publishes the canonical zero-based carrier-slot identity
-    % as SlotIndex0.  Older evidence used AbsoluteSlot; retain read
-    % compatibility without making the legacy alias authoritative.
-    slots=double(sixgr.util.structGet(strict.FirstActiveOccasion,"SlotIndex0", ...
-        sixgr.util.structGet(strict.FirstActiveOccasion,"AbsoluteSlot",[])));
-end
-if isempty(slots)
-    for slot1=1:totalSlots
-        if sixgr.truth.isActivePRACHOccasion(cfg,slot1),slots(end+1)=slot1-1;end %#ok<AGROW>
+% The first active occasion is a waveform-construction convenience, not
+% the entire configured calendar. Enumerate the canonical joint PRACH/TDD
+% period, preserving each native time/frequency occasion and its clock.
+timing=frame.PRACHTiming;
+required=["AbsoluteSlot","PRACHSlot","ActivePRACHSlot","TimeIndex", ...
+    "FrequencyIndex","StartSymbol","DurationSymbols"];
+assert(isfield(timing,'Occasions') && istable(timing.Occasions) && ...
+    ~isempty(timing.Occasions) && all(ismember(required, ...
+    string(timing.Occasions.Properties.VariableNames))), ...
+    'sixgr:truth:MissingPlannedPRACHCalendar', ...
+    'Planned PRACH requires the resolved native occasion table, not its first occurrence.');
+period=double(timing.PeriodCarrierSlots);
+nativePeriod=double(timing.PeriodPRACHSlots);
+validateattributes(period,{'numeric'},{'scalar','integer','positive','finite'});
+validateattributes(nativePeriod,{'numeric'},{'scalar','integer','positive','finite'});
+rows=repmat(localEmptyRow(),0,1);count=0;
+for repetition=0:ceil(totalSlots/period)-1
+    for ordinal=1:height(timing.Occasions)
+        occasion=timing.Occasions(ordinal,:);
+        slot0=double(occasion.AbsoluteSlot)+repetition*period;
+        if slot0>=totalSlots,continue;end
+        assert(frame.IsULAllocation(slot0, ...
+            [double(occasion.StartSymbol),double(occasion.DurationSymbols)]), ...
+            'sixgr:truth:PlannedPRACHNotULAvailable', ...
+            'A canonical PRACH occasion must remain UL available on the carrier clock.');
+        c=localCarrierAtSlot(carrier,slot0);
+        prach=strict.ToolboxPRACH;
+        prach.NPRACHSlot=double(occasion.PRACHSlot)+repetition*nativePeriod;
+        prach.ActivePRACHSlot=double(occasion.ActivePRACHSlot);
+        prach.TimeIndex=double(occasion.TimeIndex);
+        prach.FrequencyIndex=double(occasion.FrequencyIndex);
+        m=sixgr.phy.frame.ChannelAllocationMaterializer.materializePRACH( ...
+            c,prach,"AbsoluteSlot",slot0);
+        part=localResultRows(m,slot0,"PRACH",1,NaN, ...
+            "decoded_SIB1_RACH_ConfigCommon","PRACHConfig+nrPRACHIndices");
+        identity="prach_slot_"+string(slot0)+"_native_"+string(prach.NPRACHSlot)+ ...
+            "_active_"+string(prach.ActivePRACHSlot)+"_time_"+string(prach.TimeIndex)+ ...
+            "_frequency_"+string(prach.FrequencyIndex);
+        for row=1:numel(part),part(row).allocation_id=identity;end
+        rows=[rows;part]; %#ok<AGROW>
+        count=count+size(m.ActualCoordinates0Based,1);
     end
 end
-slots=unique(slots);slots=slots(slots>=0 & slots<totalSlots);
-rows=repmat(localEmptyRow(),0,1);count=0;
-for slot0=reshape(slots,1,[])
-    if ~frame.IsULSlot(slot0),continue;end
-    c=localCarrierAtSlot(carrier,slot0);
-    m=sixgr.phy.frame.ChannelAllocationMaterializer.materializePRACH( ...
-        c,strict.ToolboxPRACH,"AbsoluteSlot",slot0);
-    rows=[rows;localResultRows(m,slot0,"PRACH",1,NaN, ...
-        "decoded_SIB1_RACH_ConfigCommon","PRACHConfig+nrPRACHIndices")]; %#ok<AGROW>
-    count=count+size(m.ActualCoordinates0Based,1);
-end
 if count==0,error("sixgr:truth:NoPRACHOccasion","No legal PRACH occasion resolved.");end
-out=localPayload(rows,count,"PRACH occasions resolved from RACH-ConfigCommon");
+out=localPayload(rows,count,"All PRACH time/frequency occasions in the configured run window; planning, not executed transmissions.");
 end
 
 function out = localPUCCH(cfg,carrier,totalSlots,frame)

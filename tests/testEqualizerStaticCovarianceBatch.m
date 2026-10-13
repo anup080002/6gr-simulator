@@ -21,7 +21,7 @@ assert(double(info.UniqueSolveCount) == nRE, ...
     "A varying channel still requires one exact layer-domain filter per RE.");
 
 Rprepared = (R+R')/2;
-Rprepared = Rprepared + max(norm(Rprepared,"fro")*1e-12,eps)*eye(nRx);
+% Rprepared is the physical covariance, without numerical diagonal loading.
 reference = complex(zeros(nRE,nLayers));
 referenceSINR = zeros(nRE,nLayers);
 for re = 1:nRE
@@ -33,8 +33,9 @@ for re = 1:nRE
     Cout = W*Rprepared*W';
     for layer = 1:nLayers
         desired = abs(WH(layer,layer))^2;
-        interference = sum(abs(WH(layer,:)).^2)-desired;
-        referenceSINR(re,layer) = desired/max(interference+real(Cout(layer,layer)),eps);
+        other = [1:layer-1 layer+1:nLayers];
+        interference = sum(abs(WH(layer,other)).^2);
+        referenceSINR(re,layer) = desired/(interference+real(Cout(layer,layer)));
     end
 end
 

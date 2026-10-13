@@ -63,6 +63,19 @@ assert(collections.Plan(1).Grants{1}.TBSBits==g{1}.TBSBits && ...
 assert(againIdentity==identity && isequaln(again.Config,collections.Config) && ...
     isequaln(again.Plan,collections.Plan), ...
     'Reloading unchanged YAML must not alter immutable campaign/config/seed identity.');
+% Storage is an immutable campaign policy, not a change to physical grants
+% or random realizations. All public modes must reach the YAML loader.
+for mode=["raw","lossless_path_gains_xor_v1","lossless_path_gains_xor_dedup_v1"]
+    p.evidence_storage=mode; sixgr.util.jsonWrite(file,p);
+    [loaded,storedPlan,storedIdentity]=sixgr.calibration.loadGrantCampaign(file);
+    assert(string(loaded.evidence_storage)==mode && ...
+        isequaln(storedPlan.Config,collections.Config) && ...
+        isequaln(storedPlan.Plan,collections.Plan));
+    assert((storedIdentity==identity)==(mode=="raw"), ...
+        'Storage-policy changes must require a new sealed campaign identity.');
+end
+p.evidence_storage="lossy"; sixgr.util.jsonWrite(file,p);
+localReject(@()sixgr.calibration.loadGrantCampaign(file),'sixgr:calibration:GrantEvidenceStorage');
 fprintf('GRANT_CONFIGURED_ALLOCATION_PASS PRBs=273 directions=2 ranks=1,2,4 waveform_executed=0 qualified=0\n');
 ok=true;
 end

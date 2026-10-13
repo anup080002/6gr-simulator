@@ -133,6 +133,17 @@ for name=["InjectedCFO_Hz","InjectedTimingOffset_samples"]
     values=cellfun(@(r,t)double(r.(name))+double(t.(name)),rx,txReplay);
     if all(values==values(1)), replay.(name)=values(1); end
 end
+% Unit authority comes from the executed receiver ledger, including silent
+% receive-only occasions. Never infer absolute units from a prepared payload.
+replay.WaveformAmplitudeUnit="unavailable_missing_executed_amplitude_unit";
+if all(cellfun(@(x)isfield(x,'WaveformAmplitudeUnit'),rx))
+    units=string(cellfun(@(x)x.WaveformAmplitudeUnit,rx,'UniformOutput',false));
+    if any(ismissing(units)) || any(units~=units(1))
+        error('sixgr:truth:TimeVaryingObservationLedger', ...
+            'One receive observation cannot flatten different sample amplitude domains.');
+    end
+    replay.WaveformAmplitudeUnit=units(1);
+end
 for k=1:numel(linkReplay)
     replay.ChannelFadingApplied=replay.ChannelFadingApplied || ...
         logical(sixgr.util.structGet(linkReplay{k},'ChannelFadingApplied',false));

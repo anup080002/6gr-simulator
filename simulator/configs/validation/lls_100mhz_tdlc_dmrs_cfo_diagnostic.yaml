@@ -1,0 +1,16 @@
+# Receiver-RCA comparison, not an accepted replacement for the retained
+# single-DMRS/CP-estimator baseline or statistical BLER qualification.
+# Additional DM-RS changes real RE overhead/TBS; retain native accounting.
+inherits:
+  - ../fixtures/lls_result_richness.yaml
+meta:
+  scenario_id: lls_100mhz_tdlc_dmrs_cfo_diagnostic
+  description: Measured two-symbol DM-RS CFO comparison against the retained CP estimator diagnostic.
+  research_class: baseline_benchmark
+reference_signals:
+  pdsch_dmrs_additional_positions: 1
+  # The installed estimator policy is bidirectional; both directions must
+  # provide its independent second reference-symbol observation.
+  pusch_dmrs_additional_positions: 1
+impairments:
+  cfo_estimation_method: dmrs_two_symbol

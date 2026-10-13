@@ -91,6 +91,18 @@ classdef RasterFigureStyle
                 localStyleText(ax.ZLabel, dark);
             end
 
+            % Tiled-layout text is owned by the layout, not by its axes or
+            % the regular text hierarchy. Style these properties explicitly;
+            % otherwise a dark desktop theme leaves pale titles on white.
+            layouts = findall(figureHandle, "Type", "tiledlayout");
+            for index = 1:numel(layouts)
+                tiles = layouts(index);
+                localStyleText(tiles.Title, dark);
+                localStyleText(tiles.Subtitle, dark);
+                localStyleText(tiles.XLabel, dark);
+                localStyleText(tiles.YLabel, dark);
+            end
+
             legends = findall(figureHandle, "Type", "legend");
             for index = 1:numel(legends)
                 set(legends(index), "Color", "white", ...

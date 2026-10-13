@@ -91,6 +91,11 @@ if isempty(hSlice)
 end
 
 if direction == "DL"
+    if string(sixgr.util.structGet(rx,"PDSCHRxSymbolsEvidencePlane","")) ~= ...
+            "received_data_RE_by_RX_antenna"
+        snapshot.Reason = "pre_equalization_data_re_plane_unverified";
+        return;
+    end
     preEq = sixgr.util.structGet(rx, "PDSCHRxSymbolsForEvidence", []);
 else
     preEq = sixgr.util.structGet(rx, "PUSCHRxSymbolsForEvidence", []);
@@ -109,25 +114,22 @@ if isempty(constellationUse)
     return;
 end
 
-maxWaveformSamples = localBoundedInteger(cfg, "outputs.phySignalDiagnosticWaveformSamples", 1024, 64, 4096);
-maxFFTLength = localBoundedInteger(cfg, "outputs.phySignalDiagnosticFFTLength", 1024, 64, 4096);
 maxChannelPoints = localBoundedInteger(cfg, "outputs.phySignalDiagnosticChannelPoints", 1024, 8, 4096);
 maxConstellationPoints = localBoundedInteger(cfg, "outputs.phySignalDiagnosticConstellationPoints", 512, 16, 2048);
 
-nTime = min(nAvailable, maxWaveformSamples);
-timeIndex = (1:nTime).';
+[timeIndex,fftIndex,windowMeta] = sixgr.link.selectPHYDiagnosticSampleWindow( ...
+    cfg,txWave,nAvailable);
 time_s = (double(timeIndex) - 1) ./ sampleRateHz;
 txTime = txWave(timeIndex);
 rxTime = rxWave(timeIndex);
 
-nFFTAvailable = min(nAvailable, maxFFTLength);
-nFFT = 2 ^ floor(log2(double(nFFTAvailable)));
+nFFT = numel(fftIndex);
 if nFFT < minWaveformSamples
     snapshot.Reason = "contiguous_waveform_window_too_short_for_fft";
     return;
 end
 [frequencyOffsetHz, txSpectrum_dB, rxSpectrum_dB] = localRelativeSpectrum( ...
-    txWave(1:nFFT), rxWave(1:nFFT), sampleRateHz);
+    txWave(fftIndex), rxWave(fftIndex), sampleRateHz);
 
 if numel(hSlice) > maxChannelPoints
     hKeep = unique(round(linspace(1, numel(hSlice), maxChannelPoints))).';
@@ -143,13 +145,16 @@ end
 
 meta = localMetadata(cfg, direction, tx, rx, context, constellationUse, ...
     sampleRateHz, nFFT, channelModel, delayProfile, channelSource, channelMethod, hSymbolIndex);
+for windowField=string(fieldnames(windowMeta)).'
+    meta.(windowField)=windowMeta.(windowField);
+end
 sourceT = localEmptySourceTable();
 
 % Retain the exact sample ownership implied by the OFDM modulator metadata.
 % These rows identify CP and useful-symbol samples in the same contiguous
 % TX waveform captured below; they do not recreate an OFDM waveform from
 % configuration.
-ofdmRows = localOFDMSymbolSampleRows(meta, tx, txWave, nTime);
+ofdmRows = localOFDMSymbolSampleRows(meta, tx, txWave, timeIndex);
 sourceT = [sourceT; ofdmRows]; %#ok<AGROW>
 
 rows = localBaseRows(meta, "time_domain", "tx", numel(timeIndex));
@@ -174,27 +179,7 @@ rows.IValue = real(rxTime);
 rows.QValue = imag(rxTime);
 sourceT = [sourceT; rows]; %#ok<AGROW>
 
-postChannelWave = localFirstWaveformColumn(sixgr.util.structGet( ...
-    context, "PostChannelWaveform", []));
-if ~isempty(postChannelWave)
-    nPostChannel = min(numel(postChannelWave), maxWaveformSamples);
-    postChannelIndex = (1:nPostChannel).';
-    postChannelTime_s = (double(postChannelIndex) - 1) ./ sampleRateHz;
-    postChannelUse = postChannelWave(postChannelIndex);
-    rows = localBaseRows(meta, "time_domain", "post_channel", nPostChannel);
-    rows.PointIndex = double(postChannelIndex);
-    rows.SampleIndex = double(postChannelIndex);
-    rows.XValue = postChannelTime_s;
-    rows.YValue = abs(postChannelUse);
-    rows.XUnit(:) = "s";
-    rows.YUnit(:) = "complex_baseband_amplitude_before_receiver_impairments";
-    rows.IValue = real(postChannelUse);
-    rows.QValue = imag(postChannelUse);
-    rows.GridKind(:) = "exact_runtime_channel_output_waveform";
-    rows.GridSHA256(:) = string(sixgr.util.structGet(context, ...
-        "PostChannelWaveformSHA256", localComplexTensorHash(postChannelWave)));
-    sourceT = [sourceT; rows]; %#ok<AGROW>
-end
+sourceT = [sourceT; localPostChannelSampleRows(meta,context,timeIndex)]; %#ok<AGROW>
 
 rows = localBaseRows(meta, "spectrum", "tx", numel(frequencyOffsetHz));
 rows.PointIndex = (1:numel(frequencyOffsetHz)).';
@@ -356,6 +341,7 @@ equalizerRows = localEqualizerRows(meta, rx, maxChannelPoints);
 sourceT = [sourceT; equalizerRows]; %#ok<AGROW>
 
 rows = localBaseRows(meta, "pre_equalization_re_cloud", "rx_antenna_1", numel(preEq));
+rows.GridKind(:) = "received_data_RE_before_equalization";
 rows.PointIndex = (1:numel(preEq)).';
 rows.XValue = real(preEq);
 rows.YValue = imag(preEq);
@@ -414,36 +400,37 @@ assert(string(sixgr.util.structGet(snapshot,"Direction",""))==direction && ...
     'Post-decode channel evidence must augment the same-direction actual PHY snapshot.');
 meta=snapshot.Metadata;
 sourceT=snapshot.SourceTable;
+sourceT=localWindowMetadataColumns(sourceT,meta);
+% Re-augmentation replaces the previous evidence binding, not its receiver
+% measurements. Drop only fields owned by this augmentation before appending
+% canonical sample rows; otherwise a repeated call has incompatible schemas.
+ownedFields=intersect({'ExecutedChannelEvidenceRepresentation','ExecutedPathGainStatus'}, ...
+    sourceT.Properties.VariableNames);
+sourceT(:,ownedFields)=[];
 replacePanels=["true_channel_impulse_response","true_channel_frequency_response", ...
     "runtime_channel_angles","time_varying_channel_impulse_response","doppler_spectrum"];
 sourceT=sourceT(~ismember(string(sourceT.Panel),replacePanels),:);
 sourceT=sourceT(~(string(sourceT.Panel)=="time_domain" & ...
     string(sourceT.Series)=="post_channel"),:);
-postChannelWave=localFirstWaveformColumn(sixgr.util.structGet( ...
-    context,"PostChannelWaveform",[]));
-if ~isempty(postChannelWave)
-    txRows=sourceT(string(sourceT.Panel)=="time_domain" & string(sourceT.Series)=="tx",:);
-    nPostChannel=min(numel(postChannelWave),height(txRows));
-    assert(nPostChannel>0 && isfinite(meta.SampleRate_Hz) && meta.SampleRate_Hz>0, ...
-        'sixgr:link:PostChannelDiagnosticClockUnavailable', ...
-        'Post-channel augmentation requires the same bounded waveform clock as the actual trial snapshot.');
-    postChannelIndex=(1:nPostChannel).';
-    postChannelUse=postChannelWave(postChannelIndex);
-    rows=localBaseRows(meta,"time_domain","post_channel",nPostChannel);
-    rows.PointIndex=double(postChannelIndex);
-    rows.SampleIndex=double(postChannelIndex);
-    rows.XValue=(double(postChannelIndex)-1)./double(meta.SampleRate_Hz);
-    rows.YValue=abs(postChannelUse);
-    rows.XUnit(:)="s";
-    rows.YUnit(:)="complex_baseband_amplitude_before_receiver_impairments";
-    rows.IValue=real(postChannelUse);
-    rows.QValue=imag(postChannelUse);
-    rows.GridKind(:)="exact_runtime_channel_output_waveform";
-    rows.GridSHA256(:)=string(sixgr.util.structGet(context, ...
-        "PostChannelWaveformSHA256",localComplexTensorHash(postChannelWave)));
-    sourceT=[sourceT;rows]; %#ok<AGROW>
-end
+txRows=sourceT(string(sourceT.Panel)=="time_domain" & string(sourceT.Series)=="tx",:);
+sourceT=[sourceT;localPostChannelSampleRows(meta,context,txRows.SampleIndex)]; %#ok<AGROW>
 [truePathGain,truePathDelay_s,truePathStatus]=localSelectExecutedPathGain(context);
+if string(sixgr.util.structGet(context,'ExecutedChannelEvidenceRepresentation',"")) == ...
+        "complete_sample_indexed_desired_link_IQ_not_path_gain_tensor"
+    % The bounded-memory shared producer preserves complete effective-link
+    % IQ, not a pure-channel coefficient tensor. Do not demand, reconstruct,
+    % or label coefficients from that waveform. This applies to both AWGN
+    % and fading: practical per-RE Hest remains untouched, and independently
+    % captured path-gain/angle previews keep their own publication lineage.
+    localValidateExecutedWaveformEvidence(context);
+    sourceT=localBindExecutedChannelProvenance(sourceT,context,direction);
+    sourceT.ExecutedChannelEvidenceRepresentation=repmat(string(context.ExecutedChannelEvidenceRepresentation),height(sourceT),1);
+    sourceT.ExecutedPathGainStatus=repmat("not_in_effective_link_waveform_representation",height(sourceT),1);
+    snapshot.Metadata.ExecutedChannelEvidenceRepresentation=string(context.ExecutedChannelEvidenceRepresentation);
+    snapshot.Metadata.ExecutedPathGainStatus="not_in_effective_link_waveform_representation";
+    snapshot.SourceTable=sourceT;
+    return;
+end
 assert(truePathStatus=="available", ...
     'sixgr:link:PHYDiagnosticExecutedChannelUnavailable', ...
     'A shared fading capture must provide actual path gains and delays after decoding.');
@@ -503,6 +490,37 @@ sourceT=[sourceT;localExecutedRuntimeAngleRows(meta,context)]; %#ok<AGROW>
 sourceT=[sourceT;timeRows;dopplerRows]; %#ok<AGROW>
 sourceT=localBindExecutedChannelProvenance(sourceT,context,direction);
 snapshot.SourceTable=sourceT;
+end
+
+function localValidateExecutedWaveformEvidence(context)
+required={'PostChannelWaveform','PostChannelWaveformSHA256','PostChannelWaveformSource', ...
+    'RuntimeChannelStartSample','RuntimeChannelEndSample','RuntimeChannelCanonicalInputSamples', ...
+    'RuntimeChannelObjectClockExact','ReceiverEstimatorInput', ...
+    'AdditionalChannelExecutions','AdditionalRFExecutions'};
+assert(all(isfield(context,required)), ...
+    'sixgr:link:PHYDiagnosticExecutedWaveformUnavailable', ...
+    'Waveform-only post-decode evidence requires the complete executed IQ, hash, clock and execution provenance.');
+wave=context.PostChannelWaveform;
+first=double(context.RuntimeChannelStartSample);
+last=double(context.RuntimeChannelEndSample);
+count=double(context.RuntimeChannelCanonicalInputSamples);
+source=string(context.PostChannelWaveformSource);
+hash=string(context.PostChannelWaveformSHA256);
+assert(isnumeric(wave) && ismatrix(wave) && ~isempty(wave) && all(isfinite(wave),'all') && ...
+    isscalar(first) && isscalar(last) && isscalar(count) && ...
+    all(isfinite([first last count])) && all([first last count]==fix([first last count])) && ...
+    first>=0 && last>first && count==last-first && size(wave,1)==count && ...
+    isequal(context.RuntimeChannelObjectClockExact,true) && ...
+    isequal(context.ReceiverEstimatorInput,false) && ...
+    isequal(context.AdditionalChannelExecutions,0) && isequal(context.AdditionalRFExecutions,0) && ...
+    isscalar(source) && isscalar(hash) && source== ...
+        "actual_desired_link_after_tx_rf_channel_and_large_scale_loss_before_sum_noise_and_rx_rf" && ...
+    hash== ...
+        string(sixgr.channel.ChannelFactory.runtimeNumericArraySHA256(wave)) && ...
+    isempty(sixgr.util.structGet(context,'RuntimeChannelPathGains',[])) && ...
+    isempty(sixgr.util.structGet(context,'RuntimeChannelPathDelays_s',[])), ...
+    'sixgr:link:PHYDiagnosticExecutedWaveformUnavailable', ...
+    'Do not replace missing channel tensors with truncated, mismatched, re-executed or fabricated waveform evidence.');
 end
 
 function T=localBindExecutedChannelProvenance(T,context,direction)
@@ -704,9 +722,14 @@ end
 txFFT = fftshift(fft(tx .* window, n));
 rxFFT = fftshift(fft(rx .* window, n));
 commonReference = max([abs(txFFT(:)); abs(rxFFT(:))], [], "omitnan");
-commonReference = max(commonReference, realmin);
-txDB = 20 .* log10(max(abs(txFFT), realmin) ./ commonReference);
-rxDB = 20 .* log10(max(abs(rxFFT), realmin) ./ commonReference);
+% Zero magnitude is -Inf; an all-zero common reference is undefined.
+% Never turn silence into a finite -6000-dB spectrum with a realmin floor.
+if isfinite(commonReference) && commonReference>0
+    txDB = 20 .* log10(abs(txFFT) ./ commonReference);
+    rxDB = 20 .* log10(abs(rxFFT) ./ commonReference);
+else
+    txDB=nan(size(txFFT)); rxDB=nan(size(rxFFT));
+end
 frequencyOffsetHz = ((0:n-1).' - floor(n/2)) .* (sampleRateHz ./ n);
 end
 
@@ -863,6 +886,9 @@ meta.CRCPass = localFirstFiniteScalar( ...
     sixgr.util.structGet(rx, "CRCPass", NaN));
 meta.SampleRate_Hz = double(sampleRateHz);
 meta.FFTLength = double(nFFT);
+meta.OFDMFFTLength = localFirstFiniteScalar( ...
+    sixgr.util.structGet(tx,"OFDMInfo.Nfft",NaN), ...
+    sixgr.util.structGet(tx,"OFDM.Nfft",NaN));
 meta.CurveConstruction = "runtime_same_trial_phy_signal_snapshot";
 meta.TruthStatus = "real_lls_evidence";
 meta.SourceArtifact = "runtime_phy_arrays_same_trial";
@@ -1002,6 +1028,49 @@ T.truth_status = repmat(string(meta.TruthStatus), n, 1);
 T.SourceArtifact = repmat(string(meta.SourceArtifact), n, 1);
 T.Status = repmat(string(meta.Status), n, 1);
 T.NAReason = repmat(string(meta.NAReason), n, 1);
+T=localWindowMetadataColumns(T,meta);
+end
+
+function T=localWindowMetadataColumns(T,meta)
+% Old retained snapshots have no window metadata. Keep that unavailable;
+% do not infer their physical FFT from the diagnostic FFT.
+for field=["OFDMFFTLength","WaveformWindowStartSample","WaveformWindowSamples", ...
+        "SpectrumWindowStartSample","SpectrumWindowSamples"]
+    T.(field)=repmat(double(sixgr.util.structGet(meta,field,NaN)),height(T),1);
+end
+for field=["WaveformWindowSelection","SpectrumWindowFunction"]
+    T.(field)=repmat(string(sixgr.util.structGet(meta,field,"")),height(T),1);
+end
+T.TXNonzeroSampleObserved=repmat(logical(sixgr.util.structGet( ...
+    meta,"TXNonzeroSampleObserved",false)),height(T),1);
+end
+
+function T=localPostChannelSampleRows(meta,context,sampleIndex)
+T=localEmptySourceTable();
+wave=localFirstWaveformColumn(sixgr.util.structGet(context,"PostChannelWaveform",[]));
+if isempty(wave), return; end
+origin=double(sixgr.util.structGet(context,"PostChannelWaveformStartSample",1));
+assert(isscalar(origin) && isfinite(origin) && origin>=1 && origin==floor(origin) && ...
+    isfinite(meta.SampleRate_Hz) && meta.SampleRate_Hz>0, ...
+    'sixgr:link:PostChannelDiagnosticClockUnavailable', ...
+    'Post-channel capture requires a positive original-clock sample origin and sample rate.');
+sampleIndex=double(sampleIndex(:));
+relativeIndex=sampleIndex-origin+1;
+available=relativeIndex>=1 & relativeIndex<=numel(wave) & relativeIndex==floor(relativeIndex);
+% Preserve only samples actually retained by this producer, never padding or
+% relabelling the beginning of an incomplete preview as the requested window.
+sampleIndex=sampleIndex(available);
+if isempty(sampleIndex), return; end
+use=wave(relativeIndex(available));
+T=localBaseRows(meta,"time_domain","post_channel",numel(sampleIndex));
+T.PointIndex=sampleIndex; T.SampleIndex=sampleIndex;
+T.XValue=(sampleIndex-1)./double(meta.SampleRate_Hz);
+T.YValue=abs(use); T.IValue=real(use); T.QValue=imag(use);
+T.XUnit(:)="s";
+T.YUnit(:)="complex_baseband_amplitude_before_receiver_impairments";
+T.GridKind(:)="exact_runtime_channel_output_waveform";
+T.GridSHA256(:)=string(sixgr.util.structGet(context, ...
+    "PostChannelWaveformSHA256",localComplexTensorHash(wave)));
 end
 
 function T = localFullChannelGridRows(meta, hest)
@@ -1106,7 +1175,7 @@ end
 phase=ipermute(reshape(values,shape),order);
 end
 
-function T = localOFDMSymbolSampleRows(meta, tx, txWave, maxSamples)
+function T = localOFDMSymbolSampleRows(meta, tx, txWave, sample)
 T = localEmptySourceTable();
 ofdm = sixgr.util.structGet(tx, "OFDMInfo", ...
     sixgr.util.structGet(tx, "OFDM", struct()));
@@ -1130,29 +1199,27 @@ if ~(isfinite(nfft) && nfft > 0)
     end
     nfft = useful(1);
 end
-n = min([numel(txWave), maxSamples, sum(symbolLengths)]);
+sample=double(sample(:));
+sample=sample(sample>=1 & sample<=min(numel(txWave),sum(symbolLengths)));
+n = numel(sample);
 if n < 1
     return;
 end
-sample = (1:n).';
 symbolIndex = nan(n, 1);
 sampleWithin = nan(n, 1);
 cpLength = nan(n, 1);
 isCP = false(n, 1);
 cursor = 1;
 for symbol = 1:numel(symbolLengths)
-    stop = min(n, cursor + symbolLengths(symbol) - 1);
-    if stop < cursor
-        break;
-    end
-    idx = (cursor:stop).';
-    within = (0:numel(idx)-1).';
+    stop = cursor + symbolLengths(symbol) - 1;
+    idx = find(sample>=cursor & sample<=stop);
+    within = sample(idx)-cursor;
     symbolIndex(idx) = symbol - 1;
     sampleWithin(idx) = within;
     cpLength(idx) = cp(symbol);
     isCP(idx) = within < cp(symbol);
     cursor = stop + 1;
-    if cursor > n
+    if cursor > sample(end)
         break;
     end
 end
@@ -1281,8 +1348,19 @@ end
 % tensor cannot expand into a multi-gigabyte CSV. Uniform indices retain
 % the complete observation time span; the Doppler calculation below still
 % uses the full executed rx1/tx1 series.
-fullPathGains=pathGains;
-fullSampleTimes=sampleTimes;
+fullSampleTimes=double(sixgr.util.structGet(context, ...
+    'RuntimeChannelDopplerSampleTimes_s',sampleTimes));
+pair=sixgr.util.structGet(context,'RuntimeChannelDopplerPathGains',[]);
+if isempty(pair)
+    pair=reshape(pathGains(:,:,1,1),sz(1),sz(2));
+end
+assert(size(pair,1)==numel(fullSampleTimes) && size(pair,2)==sz(2) && ...
+    all(isfinite(fullSampleTimes)) && all(diff(fullSampleTimes)>0), ...
+    'sixgr:link:InvalidExecutedDopplerClock', ...
+    'Doppler requires the complete executed rx1/tx1 path series on its own sample clock.');
+timeIndices=double(sixgr.util.structGet(context, ...
+    'RuntimeChannelPathGainTimeIndices0Based',(0:sz(1)-1).'));
+assert(numel(timeIndices)==sz(1),'sixgr:link:InvalidChannelDiagnosticTimeIndices');
 maxTimeSamples=round(double(sixgr.util.structGet(context, ...
     "RuntimeChannelDiagnosticMaxTimeSamples",128)));
 maxTimeSamples=max(4,min(1024,maxTimeSamples));
@@ -1290,6 +1368,7 @@ if sz(1)>maxTimeSamples
     keep=unique(round(linspace(1,sz(1),maxTimeSamples))).';
     pathGains=pathGains(keep,:,:,:);
     sampleTimes=sampleTimes(keep);
+    timeIndices=timeIndices(keep);
     sz=size(pathGains); sz(end+1:4)=1;
 end
 [time0, path0, tx0, rx0] = ndgrid(0:sz(1)-1, 0:sz(2)-1, ...
@@ -1299,7 +1378,7 @@ n = numel(gain);
 timeRows = localBaseRows(meta, "time_varying_channel_impulse_response", ...
     "executed_path_gain_tensor", n);
 timeRows.PointIndex = (1:n).';
-timeRows.TimeIndex = double(time0(:));
+timeRows.TimeIndex = reshape(timeIndices(time0(:)+1),[],1);
 timeRows.PathIndex = double(path0(:));
 timeRows.TxPortIndex0Based = double(tx0(:));
 timeRows.RxPortIndex0Based = double(rx0(:));
@@ -1324,10 +1403,9 @@ timeRows.GridSHA256(:) = string(sixgr.util.structGet(context, ...
     "RuntimeChannelPathGainsSHA256", localComplexTensorHash(pathGains)));
 
 dt = median(diff(fullSampleTimes));
-if ~(isfinite(dt) && dt > 0) || size(fullPathGains,1) < 4
+if ~(isfinite(dt) && dt > 0) || size(pair,1) < 4
     return;
 end
-pair = reshape(fullPathGains(:, :, 1, 1),size(fullPathGains,1),size(fullPathGains,2));
 [~, strongestPath] = max(mean(abs(pair).^2, 1, "omitnan"));
 series = pair(:, strongestPath);
 if any(~isfinite(real(series)) | ~isfinite(imag(series)))

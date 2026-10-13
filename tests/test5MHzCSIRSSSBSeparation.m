@@ -11,13 +11,17 @@ for name=scenarios
     cfg=sixgr.lls6g.buildInternalConfig(scenario,tempname);
     before=rng;
     evidence=sixgr.phy.refsig.validateCSIRSSSBSeparation(cfg);
-    assert(cfg.phy.csirs.period_slots==5 && cfg.phy.csirs.offset_slots==2);
+    assert(cfg.phy.csirs.period_slots==5 && cfg.phy.csirs.offset_slots==0);
     assert(isequal(before,rng) && evidence.Applicable && ...
-        evidence.CycleSlots==20 && evidence.CheckedOccasions==0, ...
+        evidence.CycleSlots==20 && evidence.CheckedOccasions==1, ...
         'Scenario %s RNGPreserved=%d calendar=%s',name,isequal(before,rng),jsonencode(evidence));
     assert(isequal(cfg.phy.csirs.symbolLocationsByResource,6));
     % The same installed calendar must cover later repetitions too.
-    for slot0=[2 7 12 17 22 42]
+    % Same-slot SSB/CSI is legal only because their exact symbols differ;
+    % Type-0 SIB1 at 2+20n is now outside the authored CSI calendar.
+    common=sixgr.phy.frame.CommonDLResourcePlan(cfg);
+    common.validateSIB1References();
+    for slot0=[0 5 10 15 20 40]
         current=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,slot0+1);
         carrier=sixgr.phy.grid.makeCarrier(current);
         indices=sixgr.phy.refsig.csirs(carrier,current);
@@ -39,7 +43,7 @@ for name=scenarios
         rejected=true;
     end
     assert(rejected,'The retained CSI-RS/SSB collision must fail before execution.');
-    fprintf('CSI_SSB_SEPARATION_PASS scenario=%s cycle=%d configured_period=5 configured_offset=2 rejected_offset=1 rejected_symbol=5\n', ...
+    fprintf('CSI_SSB_SEPARATION_PASS scenario=%s cycle=%d configured_period=5 configured_offset=0 rejected_offset=1 rejected_symbol=5\n', ...
         name,evidence.CycleSlots);
 end
 ok=true;

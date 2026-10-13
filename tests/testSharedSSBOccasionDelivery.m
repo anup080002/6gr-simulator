@@ -4,10 +4,15 @@ function ok=testSharedSSBOccasionDelivery(normalized)
 setup6GRSimToolkit('Verbose',false);
 if nargin<1, normalized=false; end
 fixture='lls_ssb_physical_power_contract_fixture.yaml';
-if normalized, fixture='lls_causal_access_to_data_wiring_tdd.yaml'; end
+if normalized, fixture='lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml'; end
 s=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs','scenarios',fixture));
 root=tempname(fullfile(pwd,'logs')); mkdir(root);
 cfg=sixgr.lls6g.buildInternalConfig(s,root);
+cfg.run.rootRunFolder=root;
+if ~normalized
+    assert(cfg.channel.pathlossEnabled, ...
+        'The physical SSB-power fixture must execute its geometry-based pathloss.');
+end
 multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
 state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,root,multi,struct(),6);
 state.CurrentSlot=1; state.CurrentFrame=1; state.CurrentCanonicalSlot=1;
@@ -64,6 +69,14 @@ for slot=1:6
         assert(~isfield(state,'TestFullBroadcastComplete'),'Early measurement must precede full broadcast completion.');
     end
     [state,~]=owner.advanceSlot(state,cfg,@received);
+    if ~normalized && slot==1
+        execution=owner.Events.ExecutionTrace{end}.Execution;
+        link=execution.Links(string({execution.Links.TX})=="gnb_1");
+        assert(~isempty(link) && all(arrayfun(@(x) ...
+            isfinite(x.LossReplay.AppliedLargeScaleAmplitudeGain) && ...
+            x.LossReplay.AppliedLargeScaleAmplitudeGain<1,link)), ...
+            'Physical SSB reception must include the executed propagation loss, not just a config label.');
+    end
     if slot==1
         assert(~isempty(state.PendingSSBOccasionMeasurements));
         censored=sixgr.truth.SSBOccasionResultDelivery.censorAtSweepBoundary(state);

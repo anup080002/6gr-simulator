@@ -9,3 +9,15 @@ meta:
 
 simulation:
   snr_db: -30
+
+# This endpoint deliberately tests rejection of one installed candidate.
+# The shared-queue parent also serves blind-monitoring tests; inheriting
+# that policy changes this fixture's declared experiment before decoding.
+control:
+  blind_search_enabled: false
+
+# No initial-access or SI decoder is executed at this endpoint. Keep the
+# installed known-candidate policy consistent with that bounded scope.
+initial_access:
+  sib1:
+    enabled: false

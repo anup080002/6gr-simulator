@@ -27,11 +27,51 @@ scenarioName = string(p.Results.ScenarioName);
 cfg = sixgr.util.structSet(cfg, "channel_rf.runId", char(runId));
 cfg = sixgr.util.structSet(cfg, "scenario.id", char(scenarioName));
 
+inPath = strlength(strtrim(string(p.Results.ExecutionID))) > 0;
+if inPath
+    present = false;
+    for direction = ["DL","UL"]
+        rows = sixgr.util.structGet(p.Results.RuntimeTrials,direction,table());
+        present = present || (istable(rows) && ~isempty(rows));
+    end
+    if ~present
+        error("sixgr:channel:MissingInPathRuntimeTrials", ...
+            "In-path Channel/RF evidence requires nonempty DL or UL runtime trials.");
+    end
+end
+
 [sampleRateHz, carrierMeta] = localResolveSampleRate(cfg);
 cfg = sixgr.util.structSet(cfg, "channel_rf.sampleRateHz", sampleRateHz);
 cfg = localEnsureRFConfig(cfg);
 verdict = sixgr.channel.validateChannelRFConfigStrict(cfg);
 toolbox = localToolboxCapabilities();
+if inPath
+    % This is an evidence reducer, including when called during recovery.
+    % Do not execute local QPSK/channel/RF probes and then discard their
+    % results while claiming LaunchedSupplementalWaveform=false.
+    % Geometry here is explicitly CONFIGURATION authority only; the actual
+    % propagation rows below are reduced from the retained runtime capture.
+    % Keep deterministic configured geometry independent of caller RNG.
+    priorRNG = rng;
+    restoreRNG = onCleanup(@()rng(priorRNG));
+    rng(double(sixgr.util.structGet(cfg,"run.seed",240620)),"twister");
+    geometry = sixgr.channel.buildScenarioGeometry(cfg);
+    clear restoreRNG;
+    anchor = struct('ConfigValidation',verdict,'ToolboxCapabilities',toolbox, ...
+        'ConfigStrict',localConfigRow(cfg,runId,scenarioName,sampleRateHz,carrierMeta,verdict), ...
+        'Geometry',geometry);
+    identity = struct("RunID",runId,"ExecutionID",string(p.Results.ExecutionID), ...
+        "ScenarioID",scenarioName,"ConfigHash",string(p.Results.ScenarioConfigHash));
+    result = sixgr.channel.buildInPathChannelRFResult( ...
+        cfg,anchor,p.Results.RuntimeTrials,identity);
+    if logical(p.Results.WriteArtifacts)
+        result.Artifacts = sixgr.channel.exportStrictChannelRFArtifacts( ...
+            result,char(string(p.Results.RunFolder)));
+    else
+        result.Artifacts = struct();
+    end
+    return;
+end
 geometry = sixgr.channel.buildScenarioGeometry(cfg);
 
 rng(double(sixgr.util.structGet(cfg, "run.seed", 240620)), "twister");
@@ -109,24 +149,14 @@ result.SampleEvidence = struct( ...
     "InterferenceWaveformHash", sixgr.channel.hashChannelRFConfig(localWaveformPayload(interferenceWave)), ...
     "NoiseWaveformHash", sixgr.channel.hashChannelRFConfig(localWaveformPayload(noiseWave)), ...
     "RFImpairedWaveformHash", sixgr.channel.hashChannelRFConfig(localWaveformPayload(rfOut.Waveform)));
-if strlength(strtrim(string(p.Results.ExecutionID))) > 0
-    identity = struct("RunID", runId, ...
-        "ExecutionID", string(p.Results.ExecutionID), ...
-        "ScenarioID", scenarioName, ...
-        "ConfigHash", string(p.Results.ScenarioConfigHash));
-    result = sixgr.channel.buildInPathChannelRFResult( ...
-        cfg, result, p.Results.RuntimeTrials, identity);
-else
-    % A direct component invocation is a real executed anchor, but it is
-    % not same-scenario in-path evidence.  Bind its identity explicitly so
-    % downstream gates never need to infer or fabricate provenance.
-    anchorHash = lower(string(configRow.ConfigHash));
-    anchorIdentity = struct( ...
-        "ExecutionID", "component_anchor:" + runId, ...
-        "ScenarioID", scenarioName, ...
-        "ConfigHash", anchorHash);
-    result = localBindComponentAnchorIdentity(result, anchorIdentity);
-end
+% A direct component invocation is real executed anchor evidence, not the
+% active scenario. Keep it separate from the reducer above.
+anchorHash = lower(string(configRow.ConfigHash));
+anchorIdentity = struct( ...
+    "ExecutionID", "component_anchor:" + runId, ...
+    "ScenarioID", scenarioName, ...
+    "ConfigHash", anchorHash);
+result = localBindComponentAnchorIdentity(result, anchorIdentity);
 
 if logical(p.Results.WriteArtifacts)
     result.Artifacts = sixgr.channel.exportStrictChannelRFArtifacts(result, char(string(p.Results.RunFolder)));

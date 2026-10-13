@@ -70,6 +70,32 @@ localError(@()r.decisionBoundary('past_action',11),'MATLAB:notGreaterEqual');
 localError(@()r.decisionBoundary('feedback',14),'WAVEFORM:DuplicateDecisionBoundary');
 assert(~r.Faulted && r.NextSampleIndex==12);
 
+% The lifetime trace keeps identity/clock metadata, not large coefficient
+% tensors. Overlapping pending and completed observations must still retain
+% every exact array until the consuming receiver/exporter releases them.
+% This is a deterministic storage fixture, not physical channel evidence.
+c=sixgr.phy.waveform.WaveformEventRuntime(1000,0,@localCaptureProcessor,[]);
+c.addTransmitter('gnb',2,'double'); c.addReceiver('rx',2);
+c.enqueue('gnb','fixture',chunk(a,0));
+c.commitTransmissionsThrough('gnb',12);
+c.observe('rx','first',0,4); c.observe('rx','overlap',2,12);
+first=c.advanceUntilEvent(12);
+second=c.advanceUntilEvent(12);
+assert(first.EndSampleExclusive==4 && second.EndSampleExclusive==12 && ...
+    numel(second.Completed.Segments)==2 && numel(c.ExecutionTrace)==2);
+for j=1:2
+    exact=second.Completed.Segments{j}.Execution.ChannelReferences;
+    trace=c.ExecutionTrace{j}.Execution;
+    assert(~isfield(trace,'ChannelReferences') && ...
+        ~isfield(trace.ChannelReferenceMetadata.Reference,'PathGains') && ...
+        ~trace.ChannelReferenceMetadata.Reference.CoefficientArraysRetained && ...
+        isequal(trace.ChannelReferenceMetadata.Reference.PathGainsDimensions, ...
+            size(exact.Reference.PathGains)) && ...
+        isequal(exact.Reference.PathGains,reshape(1:256,16,4,2,2)));
+end
+assert(isequal(first.Execution.ChannelReferences, ...
+    second.Completed.Segments{1}.Execution.ChannelReferences));
+
 % Invalid physical execution can have mutated retained handles: never retry
 % it, or fill its missing receiver plane with zeros.
 for mode=["throw","missing_plane","proxy","source_proxy","fallback","pathloss_fallback","clock","short","nan"]
@@ -121,6 +147,16 @@ switch mode
     case "pathloss_fallback", execution.FallbackUsedForPathloss=true;
     case "clock", execution.StartSample=first+1;
 end
+end
+
+function [outputs,execution,state]=localCaptureProcessor(inputs,first,stop,state)
+outputs=struct('ID','rx','Chunk',inputs(1).Chunk);
+reference=struct('PathGains',reshape(1:256,16,4,2,2), ...
+    'PathFilters',ones(3,4),'SampleTimes_s',(first:stop-1)'/1000, ...
+    'StartSample',first,'EndSampleExclusive',stop);
+execution=struct('Source',"deterministic_storage_unit_fixture", ...
+    'ApproximationMode',"none",'StartSample',first,'EndSampleExclusive',stop, ...
+    'ChannelReferences',struct('LinkID',"test_link",'Reference',reference));
 end
 
 function localError(action,identifier)

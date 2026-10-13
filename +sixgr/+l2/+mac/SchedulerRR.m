@@ -196,6 +196,7 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                     g.BufferBytesAfter = max(g.BufferBytesBefore - double(g.TBSBytes), 0);
                     g.GrantReason = "harq_retx";
                     g = obj.attachULSRSAuthorityToGrant(g, ueStates(k));
+                    g = sixgr.l2.mac.bindSchedulerGrantUEIdentity(g,ueStates(k));
                     g = sixgr.l2.mac.attachReceivedULTimingAuthority(g,ueStates(k));
                     g = obj.freezePHYGrantForGrant(g);
                     g.DCI = obj.buildDCIBitfield(g);
@@ -381,8 +382,6 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                 receivedCSI=sixgr.util.structGet(ueStates(k),'ReceivedCSIReport',struct());
                 if isDL && isstruct(receivedCSI) && ~isempty(fieldnames(receivedCSI))
                     g.ReceivedCSIReport=receivedCSI;
-                    g.UEIndex=double(sixgr.util.structGet(ueStates(k),'UEIndex',NaN));
-                    g.ServingCell=double(sixgr.util.structGet(ueStates(k),'ServingCell',NaN));
                     g.PMI=NaN;
                     g.CRI=receivedCSI.CRI;
                 end
@@ -401,6 +400,7 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                     sprintf("%s new_data_rr RNTI=%d", class(obj), round(rnti)));
                 g.TBSBytes = g.TBSBits / 8;
                 g = obj.attachULSRSAuthorityToGrant(g, ueStates(k));
+                g = sixgr.l2.mac.bindSchedulerGrantUEIdentity(g,ueStates(k));
                 g = sixgr.l2.mac.attachReceivedULTimingAuthority(g,ueStates(k));
                 g = obj.freezePHYGrantForGrant(g);
                 if ~g.ExactPHYFeasible && string(g.ExactPHYInfeasibilityReason) == ...

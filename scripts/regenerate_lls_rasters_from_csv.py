@@ -6,11 +6,13 @@ The command is intentionally fail-closed and destructive only inside one
 validated ``results/lls/<scenario>/<run>`` folder, or inside the single
 explicit ``SIXGR_REGRESSION_SCRATCH_ROOT`` used by isolated regression
 workers.  It first proves that the primary runtime CSV semantics pass,
-inventories every old raster, removes those rasters, forces the canonical
-browser contract materializer to rebuild eligible PNG charts from exact CSV
+inventories every old raster, removes only browser-owned chart rasters, and
+forces the canonical materializer to rebuild eligible PNG charts from exact CSV
 sources, verifies chart lineage, and then publishes hash-identical
 component-facing mirrors.
 
+Other producers retain their original images and remain subject to all
+source/lineage checks; preserving a file does not qualify its measurements.
 No placeholder/reason-card image is generated.  A chart without sufficient
 runtime samples remains policy-disabled in contract coverage.
 """
@@ -663,6 +665,12 @@ def materialize_frc_reference_rasters(run_root: Path) -> list[dict[str, str]]:
 
 _DECLARED_REPORT_RASTER_SPECS: tuple[dict[str, str], ...] = (
     {
+        "plot_id": "access_delay_cdf",
+        "source": "reports/csv/access_delay_cdf_plot.csv",
+        "image": "reports/image/access_delay_cdf.png",
+        "kind": "access_delay_cdf",
+    },
+    {
         "plot_id": "latency_cdf",
         "source": "reports/csv/latency_cdf_plot.csv",
         "image": "reports/image/latency_cdf.png",
@@ -782,7 +790,7 @@ def _render_declared_report_svg(
 
     if not rows:
         raise RuntimeError(f"Declared report raster {plot_id} has no persisted source rows.")
-    if kind == "latency_cdf":
+    if kind in {"latency_cdf", "access_delay_cdf"}:
         points = []
         for row in rows:
             x_value = _finite_report_value(row, "latency_ms")
@@ -799,10 +807,10 @@ def _render_declared_report_svg(
             "evidence_shape_policy": "observed_relation",
         }
         return contract_materializer._render_svg_plot(
-            "Latency CDF",
+            "Completed access procedure delay CDF" if kind == "access_delay_cdf" else "Latency CDF",
             "Empirical latency distribution from persisted same-run runtime measurements.",
             dataset,
-            [f"source_rows={len(rows)}", "source=reports/csv/latency_cdf_plot.csv"],
+            [f"source_rows={len(rows)}", f"source=reports/csv/{kind}_plot.csv"],
         )
     if kind == "complexity_vs_gain":
         grouped: dict[str, list[list[float]]] = {}
@@ -862,25 +870,41 @@ def _render_declared_report_svg(
             )
         return svg
     if kind == "equalized_constellations":
-        grouped: dict[str, list[tuple[float, float, str]]] = {}
-        ideal: dict[str, set[tuple[float, float]]] = {}
+        grouped: dict[tuple, list[tuple[float, float, str]]] = {}
+        ideal: dict[tuple, set[tuple[float, float]]] = {}
+        energies: dict[tuple, list[tuple[float, float]]] = {}
         for row in rows:
             direction = str(row.get("RuntimeDirection", row.get("direction", ""))).strip().upper()
             modulation = str(row.get("RuntimeModulation", row.get("modulation", ""))).strip().upper()
             layer = str(row.get("LayerIndex", row.get("layer", ""))).strip()
-            panel = " / ".join(part for part in (direction, modulation, f"L{layer}" if layer else "") if part)
+            snr = _finite_report_value(row, "snr_db", "RuntimeSNR_dB", "ConfiguredSNR_dB")
+            mcs = _finite_report_value(row, "mcs_index", "MCSIndex", "MCS")
+            ue = str(row.get("ue_id", row.get("UEIndex", ""))).strip()
+            normalization = str(row.get("normalization", row.get("RuntimeNormalization", "")))
+            panel = (direction, modulation, layer, snr, mcs, ue, normalization)
             x_value = _finite_report_value(row, "EqualizedReal", "equalized_i")
             y_value = _finite_report_value(row, "EqualizedImag", "equalized_q")
             ref_x = _finite_report_value(row, "ReferenceSymbolReal", "reference_symbol_i")
             ref_y = _finite_report_value(row, "ReferenceSymbolImag", "reference_symbol_q")
-            if panel and x_value is not None and y_value is not None:
-                grouped.setdefault(panel, []).append((x_value, y_value, direction))
-            if panel and ref_x is not None and ref_y is not None:
-                ideal.setdefault(panel, set()).add((ref_x, ref_y))
-        panels = [
-            (name, points, sorted(ideal.get(name, set())))
-            for name, points in sorted(grouped.items())
-        ]
+            truth = str(row.get("truth_status", row.get("TruthStatus", ""))).strip().lower()
+            if truth and truth not in {"real_lls_evidence", "truth", "runtime_measured"}:
+                continue
+            if direction not in {"DL", "UL"} or any(v is None for v in (x_value, y_value, ref_x, ref_y)):
+                continue
+            grouped.setdefault(panel, []).append((x_value, y_value, direction))
+            ideal.setdefault(panel, set()).add((ref_x, ref_y))
+            energies.setdefault(panel, []).append(((x_value-ref_x)**2 + (y_value-ref_y)**2, ref_x**2 + ref_y**2))
+        panels = []
+        for key, points in grouped.items():
+            direction, modulation, layer, snr, mcs, ue, _normalization = key
+            reference_energy = math.fsum(value[1] for value in energies[key])
+            error_energy = math.fsum(value[0] for value in energies[key])
+            evm = 100 * math.sqrt(error_energy/reference_energy) if reference_energy > 0 else float("nan")
+            title = " / ".join(part for part in (direction, modulation, f"L{layer}" if layer else "", f"UE {ue}" if ue else "") if part)
+            title += f"\nConfigured SNR {snr:g} dB" if snr is not None else "\nConfigured SNR unavailable"
+            title += f" / MCS {mcs:g}" if mcs is not None else " / MCS unavailable"
+            title += f"\nN={len(points)} / Capture EVM {evm:.4g}%"
+            panels.append((title, points, sorted(ideal[key])))
         if not panels:
             raise RuntimeError("Equalized-constellation CSV contains no finite symbol pairs.")
         return contract_materializer._render_scatter_panels_svg(
@@ -888,6 +912,7 @@ def _render_declared_report_svg(
             "Aligned equalized symbols and exact transmitted references from persisted DL/UL receiver output.",
             panels,
             [f"source_rows={len(rows)}", f"panels={len(panels)}"],
+            max_points_per_panel=None,
         )
     if kind == "llr_histograms":
         grouped: dict[str, list[list[float]]] = {}
@@ -1793,6 +1818,28 @@ def raster_inventory(run_root: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def partition_rasters_by_browser_ownership(
+    inventory: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Only the installed browser chart catalog authorizes raster deletion.
+
+    PDSCH/PUSCH constellation and diagnostic plots belong to their MATLAB
+    producers, not to this publisher. A filename or PNG extension alone is
+    not proof that this pipeline can reconstruct its exact measured panels.
+    Known report aliases are overwritten by their own CSV renderer without
+    first destroying the authoritative producer's other images.
+    """
+    owned = {
+        contract_materializer.chart_contract_image_path(spec)
+        for spec in contract_materializer._chart_specs()
+    }
+    remove, preserve = [], []
+    for row in inventory:
+        target = str(row.get("relative_path", "")).replace("\\", "/")
+        (remove if target in owned else preserve).append(row)
+    return remove, preserve
+
+
 def component_for_plot(plot_id: str) -> str:
     value = plot_id.lower()
     rules = (
@@ -1979,12 +2026,18 @@ def main() -> int:
     require_primary_csv_semantics(run_root, policy_filter=policy_filter)
 
     before = raster_inventory(run_root)
+    removable, preserved = partition_rasters_by_browser_ownership(before)
     write_csv(
         audit_output / "removed_raster_inventory.csv",
-        before,
+        removable,
         ["relative_path", "extension", "bytes", "sha256", "width_px", "height_px", "format"],
     )
-    for row in before:
+    write_csv(
+        audit_output / "preserved_producer_raster_inventory.csv",
+        preserved,
+        ["relative_path", "extension", "bytes", "sha256", "width_px", "height_px", "format"],
+    )
+    for row in removable:
         target = (run_root / str(row["relative_path"])).resolve()
         target.relative_to(run_root)
         io_path(target).unlink()
@@ -2143,8 +2196,9 @@ def main() -> int:
     ]
     summary = {
         "run_folder": str(run_root),
-        "old_rasters_removed": len(before),
-        "csv_derived_rasters_generated": len(after),
+        "old_rasters_removed": len(removable),
+        "producer_rasters_preserved": len(preserved),
+        "final_raster_count": len(after),
         "canonical_lineaged_charts": len(post_audit["chart_source_semantic_audit"]) - 1,
         "component_raster_mirrors": len(mirrors),
         "artifact_generation_rasters": len(artifact_generation_rasters),

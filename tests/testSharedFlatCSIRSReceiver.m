@@ -9,34 +9,36 @@ s=sixgr.lls6g.config.loadScenarioConfig( ...
     'simulator/configs/scenarios/lls_tdd_5mhz_rank2_4tx2rx_awgn_m10db.yaml');
 sc=s.toStruct(); sc.reference_signals.csi_rs_runtime_channel_estimator='flat_static_awgn_ls';
 if withCSIIM
-    % Explicit calibration resource on the same period-5/offset-2
+    % Explicit calibration resource on the same configured periodic
     % measurement occasion as the inherited CSI-RS.  CSI-IM is an
     % independently configured received-interference resource; enabling it
     % must not make it present on an unrelated slot.
     sc.reference_signals.csi_im=struct('enabled',true,'resource_id',0,'pattern',1, ...
         'subcarrier',4,'symbol',13,'starting_rb',0,'num_rbs',24, ...
-        'period_slots',5,'offset_slots',2);
+        'period_slots',sc.reference_signals.csi_rs_periodicity_slots, ...
+        'offset_slots',sc.reference_signals.csi_rs_offset_slots);
 end
 sixgr.lls6g.config.validateScenarioConfig(sc);
 cfg=sixgr.lls6g.buildInternalConfig(sc,tempname);
 assert(string(cfg.phy.csirs.runtimeChannelEstimator)=="flat_static_awgn_ls");
-% The inherited CSI-RS calendar is period 5, zero-based offset 2.  Runtime
-% slots are one based, so slot 3 is the first real CSI-RS occasion.  Never
+% Resolve the inherited calendar instead of freezing an obsolete offset.
+% Runtime slots are one based. Never
 % turn resource enablement into an every-slot transmission merely to make a
 % component fixture produce pilots.
-cfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,3);
+cfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,double(cfg.phy.csirs.offset_slots)+1);
 cfg.channel.snr_dB=snr;
 % This CSI occasion also carries SSB. Use a legal two-symbol allocation
 % after its burst, rather than bypassing the production SSB/DM-RS guard.
 cfg.phy.pdsch.SymbolAllocation=[12 2]; cfg.phy.pdsch.symbolAllocation=[12 2];
 cfg.phy.pdsch.MappingType='B'; cfg.phy.pdsch.mappingType='B';
 cfg.phy.pdsch.dmrs.additionalPosition=0;
-cfg=sixgr.util.structSet(cfg,'lls6g.runtimePowerContext.WaveformAmplitudeUnit','sqrt_mW');
 precoder=ones(4,1)/2; % Explicit unit-norm rank-one calibration assignment.
 cfg.phy.pdsch.selectedPrecoderSHA256=sixgr.phy.mimo.MatrixContract.digest(precoder);
 [tx,txInfo]=sixgr.phy.dl.PDSCH_Tx(cfg,'ExecutionProfile','phy_calibration', ...
     'PrecodingMatrix',precoder,'CompactOutput',false);
 assert(size(tx.Waveform,2)==4 && ~isempty(tx.CSIRSIndices));
+[tx.Waveform,cfg.lls6g.runtimePowerContext]=sixgr.rf.applyPowerContext( ...
+    tx.Waveform,cfg,'DL',txInfo,'ApplyPA',false);
 if withCSIIM
     assert(tx.CSIIMResource.Scheduled && tx.CSIIMResource.NumRE==96);
     txGrid=nrOFDMDemodulate(tx.Carrier,tx.Waveform);
@@ -152,7 +154,7 @@ assert(~isfield(independent,'CRCError') && ~isfield(independent,'PDSCH'));
 fprintf('SHARED_CSI_INDEPENDENT_REPORT_PARITY_PASS RI=%g PMI=%g CQI=%g bits=%g\n', ...
     reports{2}.RI,reports{2}.PMI,reports{2}.CQI, ...
     numel(reports{2}.CSIPart1Bits)+numel(reports{2}.CSIPart2Bits));
-% Fixed-Es/N0 export deliberately clears absolute-dBm resource records.
+% Fixed-Es/N0 retains measured relative-power resources without a dBm claim.
 % The dimensionless selected SINR and its estimator evidence stay in JSON.
 measured=jsondecode(rx.CSIRSObservation.ReferenceSINRMeasurementJSON);
 assert(measured.Available && ...

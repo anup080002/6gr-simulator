@@ -216,8 +216,18 @@ classdef ConnectedDCIProfile
                 fields.tpc_command_for_pusch=double(sixgr.util.structGet(grant,'TPCCommandForPUSCH',1));
                 fields=sixgr.phy.pdcch.ULReferenceSignaling.bindSRI(fields,d, ...
                     double(sixgr.util.structGet(grant,'SRSResourceIndicator',0)));
-                fields.precoding_information_and_number_of_layers= ...
-                    sixgr.phy.pdcch.ULPrecodingField.encode(d,grant.NumLayers,grant.TPMI);
+                if isfield(grant,'TPMI')
+                    tpmi=grant.TPMI;
+                else
+                    % A one-port codebook has one possible precoder and no
+                    % indication bits. Never substitute this for a missing
+                    % spatial decision in a multi-port grant.
+                    assert(d.ULPrecoding.num_ports==1, ...
+                        'sixgr:phy:pdcch:MissingULPrecodingSelection', ...
+                        'A multi-port grant requires its selected TPMI.');
+                    tpmi=0;
+                end
+                fields=sixgr.phy.pdcch.ULPrecodingField.bind(fields,d,grant.NumLayers,tpmi);
                 fields.antenna_ports=sixgr.phy.pdcch.ULReferenceSignaling.antennaFromGrant(d,cfg,grant);
                 fields.dmrs_sequence_initialization=double(cfg.phy.pusch.dmrs.NSCID);
                 fields.ul_sch_indicator=1;

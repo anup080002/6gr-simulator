@@ -232,6 +232,9 @@ laState = initialLAState;
 slotDur_s = localSlotDuration(cfgUL);
 
 trialSeed = NaN(numFrames,1);
+trialReplayStatus = repmat("not_attempted",numFrames,1);
+trialReplayMAT = strings(numFrames,1);
+trialReplayHash = strings(numFrames,1);
 trialFrame = startFrameIndex + (0:numFrames-1).';
 trialSlot = startSlotIndex + (0:numFrames-1).';
 % Reporting Frame is one-based; radio SFN is owned by the executed carrier.
@@ -284,6 +287,7 @@ trialEVMStatus = strings(numFrames,1);
 trialEVMDomain = strings(numFrames,1);
 trialNMSE = NaN(numFrames,1);
 trialIndependentChannelScore = cell(numFrames,1);
+trialAppliedPrecoderEvidence = cell(numFrames,1);
 trialDet = NaN(numFrames,1);
 trialSINR = NaN(numFrames,1);
 trialMeasuredTrialSINR = NaN(numFrames,1);
@@ -307,6 +311,9 @@ trialInterLayerPerLayer=strings(numFrames,1);
 trialInterLayerSource=strings(numFrames,1);
 trialInterLayerStatus=repmat("unavailable_receiver_trial",numFrames,1);
 trialPostEqSINRRawEqualizer = NaN(numFrames,1);
+trialPostEqSINRRawReduction = strings(numFrames,1);
+trialPostEqSINRRawEqualizerPerLayer = strings(numFrames,1);
+trialPostEqSINRDecisionResidualBoundApplied = false(numFrames,1);
 trialPostEqSINRDMRSResidualBoundApplied = false(numFrames,1);
 trialPostEqSINRDMRSResidual = NaN(numFrames,1);
 trialPostEqDMRSResidualNoiseVar = NaN(numFrames,1);
@@ -381,6 +388,9 @@ trialReplaySampleNoiseVariance = NaN(numFrames,1);
 trialReplayGridNoiseVariance = NaN(numFrames,1);
 trialReceiverInputSampleNoiseVariance = NaN(numFrames,1);
 trialPreEqualizationNoiseVariance = NaN(numFrames,1);
+trialPostEqSINRScalarNoiseVariance = NaN(numFrames,1);
+trialPostEqSINRScalarNoiseVarianceSource = strings(numFrames,1);
+trialPostEqSINRModelScope = strings(numFrames,1);
 trialPostEqualizationNoiseVariance = NaN(numFrames,1);
 trialSampleToGridNoiseVarianceGain = NaN(numFrames,1);
 trialReplaySampleNoiseVarianceDomain = strings(numFrames,1);
@@ -522,6 +532,12 @@ trialIQImbalanceMeasurementStatus = strings(numFrames,1);
 trialInjectedCFO = NaN(numFrames,1);
 trialEstimatedCFOPre = NaN(numFrames,1);
 trialResidualCFOPost = NaN(numFrames,1);
+trialResidualCFOEstimatedPost = NaN(numFrames,1);
+trialResidualCFOEstimateSource = strings(numFrames,1);
+trialCFOObservation=cell(numFrames,1);
+trialCFOSynchronization=cell(numFrames,1);
+trialCFOCorrectionApplied = false(numFrames,1);
+trialCFOCorrectionAppliedHz = NaN(numFrames,1);
 trialEstimatedCFO = NaN(numFrames,1);
 trialTrueCFO = NaN(numFrames,1);
 trialCFOError = NaN(numFrames,1);
@@ -982,6 +998,10 @@ for n = 1:numFrames
                 "PHYGrantContextId", sixgr.util.structGet( ...
                 grantSnapshotOverride, "GrantContextId", ""))));
         trialTxWaveformColumns(n) = double(size(tx.Waveform, 2));
+        observedREChunks{n}.ConfiguredSNR_dB = repmat(snr_dB,height(observedREChunks{n}),1);
+        observedREChunks{n}.Seed = repmat(trialSeed(n),height(observedREChunks{n}),1);
+        observedREChunks{n}.TrialIndex = repmat(n,height(observedREChunks{n}),1);
+        observedREChunks{n}.ObservationUEIndex = repmat(observedUEIndex,height(observedREChunks{n}),1);
         trialPhysicalTxAntennas(n) = double(sixgr.util.structGet(txInfo, ...
             "UEPhysicalTxAntennas", size(tx.Waveform, 2)));
         ulTxPrecoding = sixgr.util.structGet(txInfo, "Precoding", struct());
@@ -1294,6 +1314,10 @@ for n = 1:numFrames
             [rxWave, replay, chState, desiredScoringWaveform] = localApplyChannelAndAwgn( ...
                 tx.Waveform, snr_dB, chState, cfgFrameRx, tx, txInfo, ...
                 interferenceBundle, captureDiagnosticPathGains);
+            trialAppliedPrecoderEvidence{n}=sixgr.link.exportIsolatedDataPrecoderEvidence( ...
+                tx,cfgFrameRx,chState,replay,struct('Direction',"UL", ...
+                'UEIndex',observedUEIndex,'ConfiguredSNR_dB',snr_dB, ...
+                'TrialIndex',n,'Seed',trialSeed(n)));
         end
         trialRxWaveformBranches(n) = double(size(rxWave, 2));
         trialPhysicalRxAntennas(n) = double(size(rxWave, 2));
@@ -1387,6 +1411,27 @@ for n = 1:numFrames
         end
         trialReceiverPipelineLatency(n) = 1e3 * toc(rxCallTic);
         trialReceiverPipelineLatencySource(n) = "matlab_tic_toc_pusch_receiver_call";
+        replayContext=struct('Seed',trialSeed(n),'Frame',trialFrame(n),'Slot',trialSlot(n), ...
+            'ConfiguredSNR_dB',snr_dB,'ScoringOnlyTransmittedBits',tx.TransportBlock);
+        if string(sixgr.util.structGet(cfgFrame,'outputs.receiverReplayCapturePolicy','none'))~="none"
+            % The actual transmitted-layer evidence and clean link samples
+            % are post-decode diagnostics, never receiver arguments.
+            replayContext.ScoringOnlyTransmittedLayerSymbols=tx.PUSCHLayerSymbolsForEvidence;
+            replayContext.ScoringOnlyTransmittedLayerIndices=tx.PUSCHIndices;
+            replayContext.ScoringReferenceReceiverInput=false;
+            replayContext.ScoringReferenceAdditionalChannelExecutions=0;
+            if ~receivedCompletion
+                replayContext.ScoringOnlyDesiredWaveform=desiredScoringWaveform;
+                replayContext.ScoringOnlyDesiredWaveformPlane="post_channel_and_large_scale_before_interference_noise_and_rx_rf";
+                replayContext.ScoringOnlyDesiredWaveformSource="same_executed_isolated_desired_link_samples";
+            else
+                replayContext.ScoringOnlyDesiredWaveformSource="separate_shared_link_scoring_artifact_not_part_of_receiver_invocation";
+            end
+        end
+        replayCapture=sixgr.link.captureReceiverReplay(cfgFrame,"UL",rxWave,rxArgs,rx,replayContext);
+        trialReplayStatus(n)=replayCapture.Status;
+        trialReplayMAT(n)=replayCapture.MATFile;
+        trialReplayHash(n)=replayCapture.SHA256;
         trialChannelEstimationLatency(n) = double(sixgr.util.structGet( ...
             rx, "ChannelEstimationLatency_ms", NaN));
         trialEqualizationLatency(n) = double(sixgr.util.structGet( ...
@@ -1416,6 +1461,12 @@ for n = 1:numFrames
         trialNoise(n) = double(sixgr.util.structGet(rx, "NoiseVar", NaN));
         trialPreEqualizationNoiseVariance(n) = double(sixgr.util.structGet(rx, ...
             "PreEqualizationNoiseVariance", sixgr.util.structGet(rx, "PreEqualizationNoiseVar", NaN)));
+        trialPostEqSINRScalarNoiseVariance(n) = double(sixgr.util.structGet(rx, ...
+            "PostEqSINRScalarNoiseVariance", NaN));
+        trialPostEqSINRScalarNoiseVarianceSource(n) = string(sixgr.util.structGet(rx, ...
+            "PostEqSINRScalarNoiseVarianceSource", ""));
+        trialPostEqSINRModelScope(n) = string(sixgr.util.structGet(rx, ...
+            "PostEqSINRModelScope", ""));
         trialPostEqualizationNoiseVariance(n) = double(sixgr.util.structGet(rx, ...
             "PostEqualizationNoiseVariance", sixgr.util.structGet(rx, "PostEqualizationNoiseVar", NaN)));
         trialSampleToGridNoiseVarianceGain(n) = double(sixgr.util.structGet(rx, ...
@@ -1552,6 +1603,11 @@ for n = 1:numFrames
         trialInterLayerSource(n)=string(sixgr.util.structGet(rx,'ResidualInterLayerPowerSource',''));
         trialInterLayerStatus(n)=string(sixgr.util.structGet(rx,'ResidualInterLayerPowerStatus','unavailable_receiver_trial'));
         trialPostEqSINRRawEqualizer(n) = double(sixgr.util.structGet(rx, "PostEqSINRRawEqualizer_dB", NaN));
+        trialPostEqSINRRawReduction(n) = string(sixgr.util.structGet(rx, "PostEqSINRRawReduction", "unavailable"));
+        trialPostEqSINRRawEqualizerPerLayer(n) = localFormatNumericVector( ...
+            sixgr.util.structGet(rx, "PostEqSINRRawEqualizerPerLayer_dB", NaN));
+        trialPostEqSINRDecisionResidualBoundApplied(n) = logical(sixgr.util.structGet( ...
+            rx, "PostEqSINRDecisionResidualBoundApplied", false));
         trialPostEqSINRDMRSResidualBoundApplied(n) = logical(sixgr.util.structGet(rx, "PostEqSINRDMRSResidualBoundApplied", false));
         trialPostEqSINRDMRSResidual(n) = double(sixgr.util.structGet(rx, "PostEqSINRDMRSResidual_dB", NaN));
         trialPostEqDMRSResidualNoiseVar(n) = double(sixgr.util.structGet(rx, "PostEqDMRSResidualNoiseVar", NaN));
@@ -1649,6 +1705,18 @@ for n = 1:numFrames
         trialCarrierPhaseOffsetStatus(n) = string(sixgr.util.structGet(replay, "CarrierPhaseOffsetExecutionStatus", ""));
         trialEstimatedCFOPre(n) = double(sixgr.util.structGet(replay, "EstimatedCFO_PreCorrection_Hz", NaN));
         trialResidualCFOPost(n) = double(sixgr.util.structGet(replay, "ResidualCFO_PostCorrection_Hz", NaN));
+        % Receiver measurement and simulator scoring reference are distinct.
+        % Never reconstruct a missing measured residual from injected CFO.
+        trialResidualCFOEstimatedPost(n) = double(sixgr.util.structGet(rx, ...
+            "ResidualCFO_EstimatedPostCorrection_Hz", NaN));
+        trialResidualCFOEstimateSource(n) = string(sixgr.util.structGet(rx, ...
+            "ResidualCFOEstimateSource", ""));
+        trialCFOObservation{n}=sixgr.util.structGet(rx,"CFOObservation",struct());
+        trialCFOSynchronization{n}=sixgr.util.structGet(rx,"SynchronizationState",struct());
+        trialCFOCorrectionApplied(n) = logical(sixgr.util.structGet(rx, ...
+            "CFOCorrectionApplied", false));
+        trialCFOCorrectionAppliedHz(n) = double(sixgr.util.structGet(rx, ...
+            "CFOCorrectionApplied_Hz", NaN));
         trialEstimatedCFO(n) = trialEstimatedCFOPre(n);
         trialTrueCFO(n) = trialInjectedCFO(n);
         if isfinite(trialEstimatedCFOPre(n))
@@ -2035,6 +2103,8 @@ for n = 1:numFrames
                 "SampleRate_Hz", double(localResolveSampleRate(tx, txInfo)), ...
                 "PostChannelWaveform", sixgr.util.structGet(replay, ...
                     "PostChannelWaveformPreview", complex([])), ...
+                "PostChannelWaveformStartSample", sixgr.util.structGet(replay, ...
+                    "PostChannelWaveformPreviewStartSample", 1), ...
                 "PostChannelWaveformSHA256", string(sixgr.util.structGet(replay, ...
                     "PostChannelWaveformSHA256", "")), ...
                 "RuntimeChannelPathGains", sixgr.util.structGet(replay, ...
@@ -2229,7 +2299,7 @@ for n = 1:numFrames
                 'ConfiguredSNR_dB',trialConfiguredSNR(n),'Frame',trialFrame(n), ...
                 'Seed',trialSeed(n),'RNTI',trialRNTI(n));
             trialIndependentChannelScore{n}=sixgr.link.scoreIsolatedDataChannelEstimate( ...
-                rx,desiredScoringWaveform,cfgFrame,"UL",scoreContext);
+                rx,desiredScoringWaveform,cfgFrame,"UL",scoreContext,replay);
         end
     catch ME
         if prepareOnly || receivedCompletion
@@ -2586,6 +2656,9 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         T.ReplayGridNoiseVariance = trialReplayGridNoiseVariance(idx);
         T.ReceiverInputSampleNoiseVariance = trialReceiverInputSampleNoiseVariance(idx);
         T.PreEqualizationNoiseVariance = trialPreEqualizationNoiseVariance(idx);
+        T.PostEqSINRScalarNoiseVariance = trialPostEqSINRScalarNoiseVariance(idx);
+        T.PostEqSINRScalarNoiseVarianceSource = trialPostEqSINRScalarNoiseVarianceSource(idx);
+        T.PostEqSINRModelScope = trialPostEqSINRModelScope(idx);
         T.PostEqualizationNoiseVariance = trialPostEqualizationNoiseVariance(idx);
         T.SampleToGridNoiseVarianceGain = trialSampleToGridNoiseVarianceGain(idx);
         T.ReplaySampleNoiseVarianceDomain = trialReplaySampleNoiseVarianceDomain(idx);
@@ -2620,6 +2693,9 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         T.CRCApplicable = logical(trialULSCHDecodeAttempted(idx) & ...
             trialULSCHDecodeAvailable(idx) & isfinite(trialCRC(idx)));
         T.TxWaveformColumns = trialTxWaveformColumns(idx);
+        T.ReceiverReplayCaptureStatus = trialReplayStatus(idx);
+        T.ReceiverReplayMATFile = trialReplayMAT(idx);
+        T.ReceiverReplayMATSHA256 = trialReplayHash(idx);
         T.PhysicalTxAntennas = trialPhysicalTxAntennas(idx);
         T.RxWaveformBranches = trialRxWaveformBranches(idx);
         T.PhysicalRxAntennas = trialPhysicalRxAntennas(idx);
@@ -2776,6 +2852,9 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         T.ResidualInterLayerPowerSource=trialInterLayerSource(idx);
         T.ResidualInterLayerPowerStatus=trialInterLayerStatus(idx);
         T.PostEqSINRRawEqualizer_dB = trialPostEqSINRRawEqualizer(idx);
+        T.PostEqSINRRawReduction = trialPostEqSINRRawReduction(idx);
+        T.PostEqSINRRawEqualizerPerLayer_dB = trialPostEqSINRRawEqualizerPerLayer(idx);
+        T.PostEqSINRDecisionResidualBoundApplied = trialPostEqSINRDecisionResidualBoundApplied(idx);
         T.PostEqSINRDMRSResidualBoundApplied = trialPostEqSINRDMRSResidualBoundApplied(idx);
         T.PostEqSINRDMRSResidual_dB = trialPostEqSINRDMRSResidual(idx);
         T.PostEqDMRSResidualNoiseVar = trialPostEqDMRSResidualNoiseVar(idx);
@@ -2849,6 +2928,7 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         T.PilotPhaseEvolutionStatus=trialPilotPhaseStatus(idx);
         T.NMSESource=repmat("unavailable_independent_applied_channel_reference_not_bound",numel(idx),1);
         T=sixgr.link.bindDataChannelScoreRows(T,trialIndependentChannelScore(idx));
+        T=sixgr.link.bindDataChannelScoreRows(T,trialAppliedPrecoderEvidence(idx));
         T.BeamScoreVector_dB = trialBeamScoreVector(idx);
         T.TopBeamIndexSet = trialTopBeamIndexSet(idx);
         T.TopBeamGainSet_dB = trialTopBeamGainSet(idx);
@@ -2887,6 +2967,16 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         T.LOSComplianceReason = trialLOSComplianceReason(idx);
         T.TimingEstimateUsed = trialTimingEstimateUsed(idx);
         T.UseIdealTimingSync = trialUseIdealTimingSync(idx);
+        T.CFOCorrectionApplied = trialCFOCorrectionApplied(idx);
+        T.CFOCorrectionApplied_Hz = trialCFOCorrectionAppliedHz(idx);
+        T.ResidualCFO_EstimatedPostCorrection_Hz = trialResidualCFOEstimatedPost(idx);
+        T.ResidualCFOEstimateSource = trialResidualCFOEstimateSource(idx);
+        T=sixgr.link.addCFOObservationColumns(T,trialCFOObservation(idx),trialCFOSynchronization(idx));
+        T.ResidualCFOEstimateAvailable = isfinite(T.ResidualCFO_EstimatedPostCorrection_Hz);
+        T.ResidualCFOEstimateDomain = repmat( ...
+            "receiver_measured_common_frequency_after_correction",height(T),1);
+        T.ResidualCFOReferenceDefinition = repmat( ...
+            "ResidualCFO_PostCorrection_Hz_is_injected_oscillator_minus_applied_correction_not_a_receiver_estimate",height(T),1);
         T.AppliedTimingCorrection_samples = trialAppliedTimingCorrection(idx);
         T.TimingEstimateApplicationPolicy = trialTimingEstimateApplicationPolicy(idx);
         T.TimingEstimateStatus = trialTimingEstimateStatus(idx);
@@ -3699,7 +3789,8 @@ row.PABackoff_dB = double(sixgr.util.structGet(txRFReplay, "PABackoff_dB", NaN))
 row.TimingOffsetApplied = logical(sixgr.util.structGet(replay, "TimingOffsetApplied", false));
 row.ADCQuantizationApplied = logical(sixgr.util.structGet(replay, "ADCQuantizationApplied", false));
 row.ADCBits = double(sixgr.util.structGet(replay, "ADCBits", NaN));
-row.DACBits = double(sixgr.util.structGet(replay, "DACBits", NaN));
+row.DACBits = double(sixgr.util.structGet(txRFReplay, "DACBits", NaN));
+row = sixgr.report.bindConverterEvidence(row,replay,txRFReplay);
 row.NoiseOperatingMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", ""));
 row.RFImpairmentChainId = localCompositeRFChainId(row.TxRFImpairmentChainId, row.RxRFImpairmentChainId);
 row.ReferenceTxPower_dBm = double(sixgr.util.structGet(replay, "ReferenceTxPower_dBm", NaN));
@@ -4134,6 +4225,7 @@ row = struct( ...
     "AbsolutePowerReferencePlane", "", "SamplePowerReferencePlane", "", ...
     "InterferencePowerReferencePlane", "");
 row = sixgr.report.bindTransmitPowerEvidence(row, struct());
+row = sixgr.report.bindConverterEvidence(row, struct(), struct());
 end
 
 function id = localCompositeRFChainId(txId, rxId)
@@ -4534,15 +4626,11 @@ elseif isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false
     end
 end
 sampleRateHz = localResolveSampleRate(tx, txInfo);
-diagnosticSampleLimit = double(sixgr.util.structGet( ...
-    cfg, "outputs.phySignalDiagnosticWaveformSamples", 1024));
-if ~(isscalar(diagnosticSampleLimit) && isfinite(diagnosticSampleLimit))
-    diagnosticSampleLimit = 1024;
-end
-diagnosticSamples = min(size(y,1), ...
-    max(64, min(4096, round(diagnosticSampleLimit))));
-if diagnosticSamples > 0
-    replay.PostChannelWaveformPreview = y(1:diagnosticSamples,:);
+[diagnosticIndex,~,~]=sixgr.link.selectPHYDiagnosticSampleWindow( ...
+    cfg,x,min(size(x,1),size(y,1)));
+if ~isempty(diagnosticIndex)
+    replay.PostChannelWaveformPreview = y(diagnosticIndex,:);
+    replay.PostChannelWaveformPreviewStartSample = diagnosticIndex(1);
     replay.PostChannelWaveformSHA256 = ...
         sixgr.channel.ChannelFactory.runtimeNumericArraySHA256(y);
 end
@@ -4713,7 +4801,9 @@ if isfinite(pathDelay)
     cfg = sixgr.util.structSet(cfg, "lls6g.receiverSync.ChannelPathDelay_samples", double(pathDelay));
     cfg = sixgr.util.structSet(cfg, "lls6g.userContext.RuntimeChannelPathDelay_samples", double(pathDelay));
 end
-cfg = sixgr.util.structSet(cfg, "lls6g.receiverSync.RuntimeWaveformSampleAligned", true);
+% A removed implementation/filter delay does not prove radio alignment.
+% Residual arrival timing must come from the receiver, not injected truth.
+cfg = sixgr.util.structSet(cfg, "lls6g.receiverSync.RuntimeWaveformSampleAligned", false);
 end
 
 function replay = localApplyReceiverSynchronizationReplay(replay, syncState, rx)
@@ -5013,6 +5103,10 @@ T.StrictSchedulingOwnership = false(0,1);
 T.ConfiguredSNR_dB = zeros(0,1);
 T.CRCApplicable = false(0,1);
 T.TxWaveformColumns = zeros(0,1);
+T.ReceiverReplayCaptureStatus = strings(0,1);
+T.ReceiverReplayMATFile = strings(0,1);
+T.ReceiverReplayMATSHA256 = strings(0,1);
+T=sixgr.link.addCFOObservationColumns(T,cell(0,1));
 T.PhysicalTxAntennas = zeros(0,1);
 T.RxWaveformBranches = zeros(0,1);
 T.PhysicalRxAntennas = zeros(0,1);
@@ -5066,6 +5160,9 @@ T.ReplaySampleNoiseVariance = zeros(0,1);
 T.ReplayGridNoiseVariance = zeros(0,1);
 T.ReceiverInputSampleNoiseVariance = zeros(0,1);
 T.PreEqualizationNoiseVariance = zeros(0,1);
+T.PostEqSINRScalarNoiseVariance = zeros(0,1);
+T.PostEqSINRScalarNoiseVarianceSource = strings(0,1);
+T.PostEqSINRModelScope = strings(0,1);
 T.PostEqualizationNoiseVariance = zeros(0,1);
 T.SampleToGridNoiseVarianceGain = zeros(0,1);
 T.ReplaySampleNoiseVarianceDomain = strings(0,1);
@@ -5170,6 +5267,9 @@ T.ResidualInterLayerPowerPerLayer=strings(0,1);
 T.ResidualInterLayerPowerSource=strings(0,1);
 T.ResidualInterLayerPowerStatus=strings(0,1);
 T.PostEqSINRRawEqualizer_dB = zeros(0,1);
+T.PostEqSINRRawReduction = strings(0,1);
+T.PostEqSINRRawEqualizerPerLayer_dB = strings(0,1);
+T.PostEqSINRDecisionResidualBoundApplied = false(0,1);
 T.PostEqSINRDMRSResidualBoundApplied = false(0,1);
 T.PostEqSINRDMRSResidual_dB = zeros(0,1);
 T.PostEqDMRSResidualNoiseVar = zeros(0,1);

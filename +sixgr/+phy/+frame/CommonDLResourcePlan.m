@@ -9,6 +9,7 @@ classdef CommonDLResourcePlan
         BroadcastPeriodSlots = []
         SIB1PDSCH
         SIB1PDCCH
+        SIB1AdditionalPlans = {}
         TRS
     end
     methods
@@ -25,9 +26,17 @@ classdef CommonDLResourcePlan
                     'The executed SSB/SIB1 composite requires an enabled SSB timeline.');
                 origin = cfg;
                 origin.phy.carrier.NSlot = 0; origin.phy.carrier.NFrame = 0;
+                indices=sixgr.phy.broadcast.resolveSIB1TransmitSSBIndices(origin);
+                origin.phy.ssb.runtimeSSBIndex=indices(1);
+                origin.phy.sib1.transmissionScope="selected_ssb_occasion";
                 [obj.SIB1PDCCH,siCfg,siCarrier,~,obj.SIB1Slot0] = ...
                     sixgr.phy.broadcast.resolveSIB1ControlOccasion(obj.Carrier,origin);
                 obj.SIB1PDSCH = sixgr.phy.broadcast.configuredSIB1Allocation(siCarrier,siCfg);
+                for ordinal=2:numel(indices)
+                    child=origin;
+                    child.phy.ssb.runtimeSSBIndex=indices(ordinal);
+                    obj.SIB1AdditionalPlans{end+1}=sixgr.phy.frame.CommonDLResourcePlan(child);
+                end
                 timing = sixgr.phy.frame.SSBTimingResolver.resolveFromConfig(cfg);
                 obj.BroadcastPeriodSlots = double(timing.PeriodicityMs)*obj.Carrier.SlotsPerSubframe;
                 validateattributes(obj.BroadcastPeriodSlots,{'numeric'}, ...
@@ -36,6 +45,19 @@ classdef CommonDLResourcePlan
                 % first SSB period; reducing it modulo the period would
                 % reserve a SIB1 transmission that has not started yet.
             end
+        end
+
+        function coordinates = controlReservations(obj,slot0)
+            % Configured ownership, never a claim that reception occurred.
+            % Connected DL assignments AND UL grants share this DL grid.
+            % Include payload and pilots of cell-common signals; a distinct
+            % search-space/CORESET ID does not make colliding REs orthogonal.
+            carrier=obj.carrierAt(slot0);
+            ssb=sixgr.phy.frame.ssbPRBSymbolReservation(obj.Config,carrier,slot0);
+            re=unique([ssb.ReservedCarrierRE0(:);obj.sib1ReservedRE(slot0); ...
+                obj.trsRE(slot0);obj.csirsRE(slot0)]);
+            k=12*carrier.NSizeGrid;
+            coordinates=[mod(re,k)+12*carrier.NStartGrid,floor(re/k)];
         end
 
         function [available,evidence] = checkPDSCH(obj,allocation,slot0)
@@ -56,13 +78,9 @@ classdef CommonDLResourcePlan
             ssb = sixgr.phy.frame.ssbPRBSymbolReservation(obj.Config,carrier,slot0);
             [owners,counts] = localConflict(owners,counts,re,ssb.ReservedCarrierRE0,"SSB_PRB_symbol_reservation");
             [owners,counts] = localConflict(owners,counts,re,obj.trsRE(slot0),"TRS");
-            if obj.hasSIB1(slot0)
-                siRE = localRectangle(carrier,obj.SIB1PDSCH.PRBSet, ...
-                    obj.SIB1PDSCH.SymbolAllocation(1)+(0:obj.SIB1PDSCH.SymbolAllocation(2)-1));
-                [ind,~,dmrs] = nrPDCCHResources(carrier,obj.SIB1PDCCH);
-                siRE = unique([siRE;double(ind(:))-1;double(dmrs(:))-1]);
-                [owners,counts] = localConflict(owners,counts,re,siRE,"SIB1_PDSCH_and_Type0_PDCCH");
-            end
+            [owners,counts] = localConflict(owners,counts,re,obj.csirsRE(slot0),"CSI-RS");
+            [owners,counts] = localConflict(owners,counts,re,obj.sib1ReservedRE(slot0), ...
+                "SIB1_PDSCH_and_Type0_PDCCH");
             available = isempty(owners);
             evidence = struct('AbsoluteSlot0',double(slot0),'Available',available, ...
                 'ConflictingOwners',owners,'OverlapRECounts',counts, ...
@@ -71,26 +89,31 @@ classdef CommonDLResourcePlan
         end
 
         function [available,evidence] = checkConnectedPDSCH(obj,allocation,slot0)
-            % Dedicated periodic NZP-CSI-RS with trs-Info is excluded at RE
-            % granularity by TS 38.211 7.3.1.5. This is NOT the common/RA
-            % allocation policy, aperiodic CSI-RS or the TRS-ResourceSet IE.
+            % Installed periodic CSI-RS (including NZP resources with
+            % trs-Info) is excluded at exact RE granularity. This is NOT
+            % common/RA authority, aperiodic CSI-RS or the TRS-ResourceSet IE.
             % Eligibility here precedes the final rank/MCS-specific PHY
             % feasibility check; it does not freeze capacity or a TB.
             [available,evidence] = obj.checkPDSCH(allocation,slot0);
             isTRS = evidence.ConflictingOwners == "TRS";
+            isCSI = evidence.ConflictingOwners == "CSI-RS";
+            isReference = isTRS | isCSI;
             evidence.TRSRateMatchedRECount = 0;
-            if ~any(isTRS), return; end
+            evidence.CSIRSRateMatchedRECount = 0;
+            if ~any(isReference), return; end
             % SSB and common SI remain hard exclusions. Do not attempt
             % dedicated TRS sharing on an already unavailable candidate:
             % the exact PDSCH allocator correctly rejects an SSB/DM-RS
             % collision, but that is not a fatal scheduling error when
             % another PRB region can be selected before grant freeze.
             % Retain all owners/counts for the rejected candidate.
-            if any(~isTRS), return; end
-            assert(obj.TRS.TRSInfoEnabled && obj.TRS.CSIRSType == "nzp" && ...
-                any(obj.TRS.SlotAuthority == ["periodic_offset","explicit_slot_numbers"]), ...
-                'sixgr:phy:frame:MissingDedicatedTRSAuthority', ...
-                'Connected TRS sharing requires configured periodic NZP-CSI-RS with trs-Info.');
+            if any(~isReference), return; end
+            if any(isTRS)
+                assert(obj.TRS.TRSInfoEnabled && obj.TRS.CSIRSType == "nzp" && ...
+                    any(obj.TRS.SlotAuthority == ["periodic_offset","explicit_slot_numbers"]), ...
+                    'sixgr:phy:frame:MissingDedicatedTRSAuthority', ...
+                    'Connected TRS sharing requires configured periodic NZP-CSI-RS with trs-Info.');
+            end
             cfg = sixgr.phy.grid.applyRuntimeCarrierTimeline(obj.Config,slot0+1);
             carrier = obj.carrierAt(slot0);
             prbs = allocation.PRBStart+(0:allocation.NumPRB-1);
@@ -98,8 +121,9 @@ classdef CommonDLResourcePlan
             [data,~,pdsch] = sixgr.phy.grid.allocREsPDSCH(carrier,cfg, ...
                 'PRBSet',prbs,'SymbolAllocation',symbols);
             plane = 12*carrier.NSizeGrid*carrier.SymbolsPerSlot;
-            trs = intersect(obj.trsRE(slot0),localRectangle(carrier,prbs, ...
-                symbols(1)+(0:symbols(2)-1)));
+            rectangle = localRectangle(carrier,prbs,symbols(1)+(0:symbols(2)-1));
+            trs = intersect(obj.trsRE(slot0),rectangle);
+            csi = intersect(obj.csirsRE(slot0),rectangle);
             reserved = unique(mod(double(pdsch.ReservedRE(:)),plane));
             pilots = [reshape(nrPDSCHDMRSIndices(carrier,pdsch),[],1); ...
                 reshape(nrPDSCHPTRSIndices(carrier,pdsch),[],1)];
@@ -107,15 +131,53 @@ classdef CommonDLResourcePlan
             assert(all(ismember(trs,reserved)) && isempty(intersect(trs,occupied)), ...
                 'sixgr:phy:frame:UnreservedConnectedTRS', ...
                 'Dedicated TRS REs must be reserved before PDSCH coding and must not collide with data or pilots.');
+            assert(all(ismember(csi,reserved)) && isempty(intersect(csi,occupied)), ...
+                'sixgr:phy:frame:UnreservedConnectedCSIRS', ...
+                'Dedicated CSI-RS REs must be reserved before PDSCH coding and must not collide with data or pilots.');
             evidence.TRSRateMatchedRECount = numel(trs);
-            evidence.ConflictingOwners(isTRS) = [];
-            evidence.OverlapRECounts(isTRS) = [];
+            evidence.CSIRSRateMatchedRECount = numel(csi);
+            evidence.ConflictingOwners(isReference) = [];
+            evidence.OverlapRECounts(isReference) = [];
             available = isempty(evidence.ConflictingOwners);
             evidence.Available = available;
-            evidence.Source = "configured_connected_DL_ownership_with_verified_TRS_RE_reservation_not_measured";
+            evidence.Source = "configured_connected_DL_ownership_with_verified_reference_RE_reservation_not_measured";
+        end
+
+        function validateSIB1References(obj)
+            % Broadcast allocations cannot silently inherit a dedicated
+            % receiver's CSI-RS puncturing configuration. Check the actual
+            % common data/control REs throughout the complete calendar cycle.
+            for ordinal=1:numel(obj.SIB1AdditionalPlans)
+                obj.SIB1AdditionalPlans{ordinal}.validateSIB1References();
+            end
+            obj.validateSIB1TRS();
+            if isempty(obj.SIB1Slot0) || ...
+                    ~logical(sixgr.util.structGet(obj.Config,'phy.csirs.enable',false))
+                return;
+            end
+            sixgr.phy.refsig.csirsOccasion(obj.Config,0); % Validate calendar.
+            period = lcm(double(obj.Config.phy.csirs.period_slots),obj.BroadcastPeriodSlots);
+            for slot0 = obj.SIB1Slot0:obj.BroadcastPeriodSlots:obj.SIB1Slot0+period-1
+                reference = obj.csirsRE(slot0);
+                if isempty(reference), continue; end
+                carrier = obj.carrierAt(slot0);
+                data = nrPDSCHIndices(carrier,obj.SIB1PDSCH);
+                pilots = nrPDSCHDMRSIndices(carrier,obj.SIB1PDSCH);
+                [control,~,controlPilots] = nrPDCCHResources(carrier,obj.SIB1PDCCH);
+                plane = 12*carrier.NSizeGrid*carrier.SymbolsPerSlot;
+                siRE = unique(mod(double([data(:);pilots(:);control(:);controlPilots(:)])-1,plane));
+                collision = intersect(siRE,reference);
+                assert(isempty(collision),'sixgr:phy:frame:SIB1CSIRSCollision', ...
+                    ['Configured SIB1/Type0 and CSI-RS overlap on %d carrier REs in absolute slot0 %d. ' ...
+                    'Correct reference_signals.csi_rs_offset_slots or the authored reference allocation; ' ...
+                    'common SI cannot inherit dedicated CSI-RS puncturing.'],numel(collision),slot0);
+            end
         end
 
         function validateSIB1TRS(obj)
+            for ordinal=1:numel(obj.SIB1AdditionalPlans)
+                obj.SIB1AdditionalPlans{ordinal}.validateSIB1TRS();
+            end
             if isempty(obj.SIB1Slot0) || isempty(obj.TRS), return; end
             slots = sixgr.util.structGet(obj.Config,'phy.trs.slotNumbers', ...
                 sixgr.util.structGet(obj.Config,'lls6g.reference_signals.trs.slot_numbers',[]));
@@ -151,6 +213,19 @@ classdef CommonDLResourcePlan
             tf = ~isempty(obj.SIB1Slot0) && slot0>=obj.SIB1Slot0 && ...
                 mod(slot0-obj.SIB1Slot0,obj.BroadcastPeriodSlots)==0;
         end
+        function re = sib1ReservedRE(obj,slot0)
+            re=zeros(0,1);
+            if obj.hasSIB1(slot0)
+                carrier=obj.carrierAt(slot0);
+                re=localRectangle(carrier,obj.SIB1PDSCH.PRBSet, ...
+                    obj.SIB1PDSCH.SymbolAllocation(1)+(0:obj.SIB1PDSCH.SymbolAllocation(2)-1));
+                [ind,~,dmrs]=nrPDCCHResources(carrier,obj.SIB1PDCCH);
+                re=unique([re;double(ind(:))-1;double(dmrs(:))-1]);
+            end
+            for ordinal=1:numel(obj.SIB1AdditionalPlans)
+                re=union(re,obj.SIB1AdditionalPlans{ordinal}.sib1ReservedRE(slot0));
+            end
+        end
         function re = trsRE(obj,slot0)
             re = zeros(0,1);
             if isempty(obj.TRS) || ~sixgr.truth.isActiveTRSOccasion(obj.Config,slot0+1), return; end
@@ -162,6 +237,16 @@ classdef CommonDLResourcePlan
             assert(~isempty(re),'sixgr:phy:frame:EmptyTRSReservation', ...
                 'An active TRS resource must resolve actual CSI-RS indices.');
             re = unique(mod(re,12*carrier.NSizeGrid*carrier.SymbolsPerSlot));
+        end
+        function re = csirsRE(obj,slot0)
+            re = zeros(0,1);
+            if ~sixgr.phy.refsig.csirsOccasion(obj.Config,slot0), return; end
+            cfg = sixgr.phy.grid.applyRuntimeCarrierTimeline(obj.Config,slot0+1);
+            carrier = obj.carrierAt(slot0);
+            indices = sixgr.phy.refsig.csirs(carrier,cfg);
+            assert(~isempty(indices),'sixgr:phy:frame:EmptyCSIRSReservation', ...
+                'An active CSI-RS resource must resolve actual indices at absolute slot0 %d.',slot0);
+            re = unique(mod(double(indices(:))-1,12*carrier.NSizeGrid*carrier.SymbolsPerSlot));
         end
     end
 end

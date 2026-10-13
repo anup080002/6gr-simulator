@@ -26,7 +26,7 @@ collection_fields:
   - validation_starts_per_history
 roles: [fit, validation]
 optional_fields: [evidence_storage]
-evidence_storage_modes: [raw, lossless_path_gains_xor_v1]
+evidence_storage_modes: [raw, lossless_path_gains_xor_v1, lossless_path_gains_xor_dedup_v1]
 evidence_storage_default: raw
 allocation_collection_fields:
   - id

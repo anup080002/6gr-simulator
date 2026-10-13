@@ -147,6 +147,15 @@ powerContext = sixgr.util.structGet(cfg, "lls6g.runtimePowerContext", struct());
 if ~(isstruct(powerContext) && isfield(powerContext, "ContractVersion"))
     powerContext = sixgr.rf.PowerContext(cfg, direction);
 end
+expectedUnit = "sqrt_mW";
+if sixgr.rf.isNormalizedFixedSNRPowerReference(cfg)
+    expectedUnit = "normalized_complex_baseband";
+end
+assert(isfield(powerContext,"WaveformAmplitudeUnit") && ...
+    isscalar(string(powerContext.WaveformAmplitudeUnit)) && ...
+    string(powerContext.WaveformAmplitudeUnit)==expectedUnit, ...
+    'sixgr:rf:WaveformAmplitudeAuthorityMismatch', ...
+    'RF/noise replay cannot reuse a power ledger from a different amplitude domain.');
 
 basePathloss_dB = localFiniteOrNaN(sixgr.util.structGet(userMeta, "RuntimeServingBasePathloss_dB", NaN));
 pathloss_dB = localFiniteOrNaN(sixgr.util.structGet(userMeta, "RuntimeServingPathloss_dB", NaN));

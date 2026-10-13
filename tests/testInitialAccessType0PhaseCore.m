@@ -115,7 +115,9 @@ function testType0ContextualDCIAndCandidates(testCase)
 context = localBaseContext();
 context.InitialDLBWPSize = 52;
 actual = sixgr.phy.pdcch.Type0PDCCHResolver(context);
-[expectedBits, ~] = sixgr.phy.pdcch.dciPayloadSizeBits(52, "1_0");
+% Independently enumerated SI-RNTI fields for this 24-PRB CORESET0:
+% FDRA=9, TDRA=4, VRB=1, MCS=5, RV=2, SI=1, reserved=15.
+expectedBits = 9+4+1+5+2+1+15;
 verifyEqual(testCase, actual.DCIPayloadBits, expectedBits);
 verifyNotEqual(testCase, actual.DCIPayloadBits, 32);
 verifyEqual(testCase, actual.CandidateCounts, [0 0 2 1 0]);

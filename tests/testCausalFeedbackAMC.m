@@ -6,6 +6,7 @@ setup6GRSimToolkit("Verbose", false);
 cfg = sixgr.config.defaultConfig();
 cfg.phy.nRxAnt = 2;
 cfg.phy.nTxAnt = 2;
+cfg.phy.linkAdaptation.rankPolicy = 'measured_ri';
 cfg = sixgr.util.structSet(cfg, "phy.csi.maxRank", 2);
 cfg = sixgr.util.structSet(cfg, "phy.csi.pmiCodebookMode", "noncodebook");
 
@@ -34,6 +35,8 @@ assert(contains(string(est.RISource), "post_equalization_mi") && ...
     "UL SRS RI provenance and MI score must be exported.");
 
 cfgAMC = sixgr.config.defaultConfig();
+cfgAMC.phy.pdsch.numLayers = 1;
+cfgAMC.phy.pdsch.nLayers = 1;
 cfgAMC = sixgr.util.structSet(cfgAMC, "phy.linkAdaptation.mode", "amc");
 cfgAMC = sixgr.util.structSet(cfgAMC, "phy.linkAdaptation.dlPolicy", "baseline");
 cfgAMC = sixgr.util.structSet(cfgAMC, "phy.linkAdaptation.domain", "effective_sinr");

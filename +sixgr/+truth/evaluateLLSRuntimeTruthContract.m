@@ -35,6 +35,7 @@ verdict.Failures = strings(0, 1);
 
 [verdict.RequiredDL, verdict.RequiredUL] = localRequiredDirections(scfg, cfg);
 strictTruthRequired = localRequiresStrictRuntimeTruthContract(scfg, cfg);
+executionScope = sixgr.truth.standalonePHYCalibrationEvidenceScope(scfg, cfg);
 isPRACHOnly = localIsPRACHOnlyScenario(scfg, cfg);
 isPRACHStrict = localIsPRACHStrictScenario(scfg, cfg);
 isPDCCHOnly = localIsPDCCHOnlyScenario(scfg, cfg);
@@ -334,13 +335,13 @@ elseif isRAOnly
 end
 if verdict.RequiredDL
     requiredArtifacts(end + 1, 1) = dlTrialsPath;
-    if strictTruthRequired && ~isFixedSNRSweep
+    if strictTruthRequired && ~isFixedSNRSweep && ~executionScope.IndependentPHY
         requiredArtifacts(end + 1, 1) = fullfile(layout.PacketFlowCSVDir, "live_dl_scheduler_grants.csv");
     end
 end
 if verdict.RequiredUL
     requiredArtifacts(end + 1, 1) = ulTrialsPath;
-    if strictTruthRequired && ~isFixedSNRSweep
+    if strictTruthRequired && ~isFixedSNRSweep && ~executionScope.IndependentPHY
         requiredArtifacts(end + 1, 1) = fullfile(layout.PacketFlowCSVDir, "live_ul_scheduler_grants.csv");
     end
 end
@@ -408,7 +409,11 @@ end
 for ii = 1:size(roundtripFiles, 1)
     artifactPath = roundtripFiles(ii, 1);
     T = localReadTable(artifactPath);
-    [badCount, detailText] = localCountBadStatuses(T, roundtripFiles(ii, 2), roundtripFiles(ii, 3));
+    notApplicable = false(height(T),1);
+    if artifactPath == string(fullfile(layout.ReportCSVDir,"value_source_audit.csv"))
+        notApplicable = localIndependentAuditRows(T,executionScope);
+    end
+    [badCount, detailText] = localCountBadStatuses(T, roundtripFiles(ii, 2), roundtripFiles(ii, 3),notApplicable);
     verdict.RoundtripMismatchCount = verdict.RoundtripMismatchCount + badCount;
     if badCount > 0
         verdict.RoundtripStatusDetails(end + 1, 1) = localRelativePath(runFolder, artifactPath) + ":" + detailText;
@@ -935,7 +940,28 @@ elseif failureClass == "proxy"
 end
 end
 
-function [count, detailText] = localCountBadStatuses(T, statusColumn, expectedPrefix)
+function accepted = localIndependentAuditRows(T,scope)
+% A narrow applicability claim, not acceptance of arbitrary absent evidence.
+accepted=false(height(T),1);
+fields=["FieldName","ConsistencyStatus","ValueStatus","ValueRole", ...
+    "ValueSource","NAReason","ObservedValue","PlaceholderFlag","FallbackFlag"];
+if ~scope.IndependentPHY || isempty(T) || ...
+        ~all(ismember(fields,string(T.Properties.VariableNames)))
+    return;
+end
+value=string(T.ObservedValue);
+accepted=ismember(string(T.FieldName),scope.ConnectedFields) & ...
+    string(T.ConsistencyStatus)=="not_applicable" & ...
+    string(T.ValueStatus)=="NOT_APPLICABLE" & ...
+    string(T.ValueRole)=="not_applicable" & ...
+    string(T.ValueSource)=="configured_execution_scope" & ...
+    string(T.NAReason)==scope.Reason & ...
+    (ismissing(value) | strlength(value)==0) & ...
+    ismember(string(T.PlaceholderFlag),["0","false"]) & ...
+    ismember(string(T.FallbackFlag),["0","false"]);
+end
+
+function [count, detailText] = localCountBadStatuses(T, statusColumn, expectedPrefix, notApplicable)
 count = 0;
 detailText = "rows=0";
 if isempty(T) || height(T) == 0
@@ -960,6 +986,7 @@ elseif expectedPrefix == "observed"
 else
     ok = statuses == expectedPrefix;
 end
+ok = ok | notApplicable;
 count = sum(~ok);
 detailText = "status_column=" + statusColumn + " bad=" + string(count) + "/" + string(height(T)) + ...
     " statuses=" + localStatusCountsText(statuses);
@@ -3554,8 +3581,11 @@ end
 
 function category = localClassifyFailure(failure)
 failure = lower(string(failure));
-if contains(failure, "proxy") || contains(failure, "fallback") || contains(failure, "abstract") || contains(failure, "bler")
+if contains(failure, "proxy") || contains(failure, "fallback") || contains(failure, "abstract") || ...
+        any(contains(failure,["synthetic_bler","sinr_to_bler","bler_lut"]))
     category = "proxy_or_fallback";
+elseif startsWith(failure,"dl_pdsch_objective_failed:")
+    category = "physical_performance";
 elseif contains(failure, "prach_strict") || contains(failure, "prach_")
     category = "prach_waveform";
 elseif contains(failure, "trs_strict") || contains(failure, "trs_")

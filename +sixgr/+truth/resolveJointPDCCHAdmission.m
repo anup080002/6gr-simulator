@@ -2,8 +2,33 @@ function [dlGrants,ulGrants] = resolveJointPDCCHAdmission(state,cfg,userCfg,dlGr
 % Plan physical control resources before either DL or UL DCI is serialized.
 % Does not advance a channel, commit DAI, enqueue IQ or authorize UE reception.
 policy = lower(strtrim(string(sixgr.util.structGet(cfg,'phy.pdcch.jointAdmissionPolicy',""))));
-if strlength(policy) == 0, return; end
 groups = {dlGrants,ulGrants};
+assert(isscalar(policy) && ~ismissing(policy), ...
+    'sixgr:truth:InvalidJointPDCCHAdmissionPolicy', ...
+    'Joint PDCCH admission policy must be one configured value.');
+if strlength(policy) == 0
+    % An absent preference is harmless only when there is no joint admission
+    % decision. Do not silently restore DL-first serialization for competing
+    % DL/UL or multi-UE candidates on the same cell/control occasion. The
+    % priority is scheduler policy, not a direction priority prescribed by NR.
+    owners = zeros(numel(dlGrants)+numel(ulGrants),2);
+    index = 0;
+    for directionIndex = 1:2
+        for k = 1:numel(groups{directionIndex})
+            grant = groups{directionIndex}(k);
+            cellID = double(grant.ServingCell);
+            validateattributes(cellID,{'double'},{'scalar','real','finite','integer','positive'});
+            index = index+1;
+            owners(index,:) = [cellID, ...
+                sixgr.truth.resolvePDCCHControlSlot(grant,state.CurrentSlot)];
+        end
+    end
+    assert(size(unique(owners,'rows'),1)==size(owners,1), ...
+        'sixgr:truth:MissingJointPDCCHAdmissionPolicy', ...
+        ['Competing PDCCH grants require an explicit control.joint_pdcch_admission_policy ' ...
+         '(dl_then_ul or ul_preschedule_first) before DAI or waveform preparation.']);
+    return;
+end
 directions = ["DL","UL"];
 requests = repmat(struct('ControlSlot',0,'CellID',0,'Direction',"", ...
     'Carrier',[],'PDCCH',[],'OccupiedRECoordinates',zeros(0,2)),0,1);
@@ -30,6 +55,8 @@ for directionIndex = 1:2
         [pdcch,~] = sixgr.phy.pdcch.ConnectedPDCCHConfiguration.build(cfgControl,carrier,grant.RNTI,false);
         [~,occupied] = sixgr.truth.PDCCHSlotResourceLedger.lookup( ...
             sixgr.util.structGet(state,'PDCCHResourceLedger',struct()),slot,grant.ServingCell,carrier);
+        occupied=unique([occupied;sixgr.truth.commonPDCCHReservations( ...
+            state,cfgControl,slot-1,grant.ServingCell,carrier)],'rows');
         request = struct('ControlSlot',slot,'CellID',double(grant.ServingCell), ...
             'Direction',direction,'Carrier',carrier,'PDCCH',pdcch, ...
             'OccupiedRECoordinates',occupied);

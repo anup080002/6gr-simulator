@@ -39,6 +39,8 @@ out.FailureIdentifier = "";
 out.NMSE_dB = NaN;
 out.NMSEScoringAvailable = false;
 out.NMSEReferenceSource = "unavailable";
+out.PreRXRFReferenceNMSE_dB = NaN;
+out.PreRXRFReferencePlane = "unavailable";
 out.ChannelNMSEComparedComplexValues = 0;
 out.ChannelNMSEReferencePlane = "unavailable";
 out.ChannelNMSEReferenceIncludesRFImpairments = NaN;
@@ -61,6 +63,12 @@ out.InjectedCFO_Hz = NaN;
 out.CFOEstimateAvailability = "missing";
 out.CFOEstimateSource = "";
 out.CFOEstimateDefinition = "";
+out.CFOCorrectionEnabled = false;
+out.CFOCorrectionApplied = false;
+out.CFOCorrectionApplied_Hz = 0;
+out.CFOCorrectionSampleOrigin = NaN;
+out.CFOCorrectionSource = "not_applied";
+out.TRSFrequencyEvidenceJSON = "";
 out.QCLAccuracy = NaN;
 out.InterpolationLoss_dB = NaN;
 out.MismatchSensitivity_dB = NaN;
@@ -177,6 +185,8 @@ try
     out.NMSE_dB = double(trial.NMSE_dB);
     out.NMSEScoringAvailable = ch.NMSEScoringAvailable;
     out.NMSEReferenceSource = ch.NMSEReferenceSource;
+    out.PreRXRFReferenceNMSE_dB = sixgr.util.structGet(ch,'PreRXRFReferenceNMSE_dB',NaN);
+    out.PreRXRFReferencePlane = sixgr.util.structGet(ch,'PreRXRFReferencePlane',"unavailable");
     out.ChannelEstimationTable = ch.Table;
     out.TrackingTable = tracking.Table;
     out.ChannelNMSEComparedComplexValues = sum(ch.Table.NMSEComparedComplexValues);
@@ -191,6 +201,12 @@ try
     out.EstimatedCommonFrequency_Hz = double(sixgr.util.structGet(trial, "EstimatedCommonFrequency_Hz", NaN));
     out.FrequencyEstimateDomain = string(trial.FrequencyEstimateDomain);
     out.FrequencyUnambiguousHalfRange_Hz = double(trial.FrequencyUnambiguousHalfRange_Hz);
+    out.CFOCorrectionEnabled = freq.CorrectionEnabled;
+    out.CFOCorrectionApplied = freq.CorrectionApplied;
+    out.CFOCorrectionApplied_Hz = freq.CorrectionApplied_Hz;
+    out.CFOCorrectionSampleOrigin = freq.CorrectionSampleOrigin;
+    out.CFOCorrectionSource = freq.CorrectionSource;
+    out.TRSFrequencyEvidenceJSON = string(jsonencode(table2struct(freq.Table)));
     out.PhysicalDoppler_Hz = double(sixgr.util.structGet(trial, "PhysicalDoppler_Hz", ...
         sixgr.util.structGet(freq, "PhysicalDoppler_Hz", NaN)));
     out.InjectedCFO_Hz = double(trial.InjectedCFO_Hz);
@@ -294,6 +310,9 @@ try
     out.SignedPilotSINRLinear = ch.SignedPilotSINRLinear;
     out.PilotPowerEvidenceJSON = string(jsonencode(ch.PilotPowerEvidence));
     out.PowerReferencePlane = "normalized_ofdm_resource_grid_after_receiver_timing_correction";
+    if out.CFOCorrectionApplied
+        out.PowerReferencePlane = "normalized_ofdm_resource_grid_after_receiver_timing_and_common_frequency_correction";
+    end
     out.DesiredPilotPower = double(sixgr.util.structGet(ch, "DesiredPilotPower", NaN));
     out.ResidualPilotPower = double(sixgr.util.structGet(ch, "ResidualPilotPower", NaN));
     if ~isfinite(out.MeasuredTrialSINR_dB)
@@ -317,14 +336,12 @@ try
         (observation.EndSampleExclusive-observation.StartSample) / observation.SampleRateHz;
     out.AcquisitionTime_ms = out.AirInterfaceObservation_ms;
     out.TrackingFailure = double(~runtimeEvidenceOk);
+    out.CFOEstimateSource = freq.FrequencyEstimatorSource;
+    out.CFOEstimateDefinition = freq.FrequencyEstimatorDefinition;
     if isfinite(out.EstimatedCFO_Hz)
         out.CFOEstimateAvailability = "available";
-        out.CFOEstimateSource = "trs_reference_phase_slope_frequency_estimator";
-        out.CFOEstimateDefinition = "common_phase_frequency_slope_hz_from_trs_reference_symbols";
     else
         out.CFOEstimateAvailability = "missing";
-        out.CFOEstimateSource = "trs_reference_phase_slope_frequency_estimator";
-        out.CFOEstimateDefinition = "not_available_without_multiple_valid_trs_symbol_times";
     end
     % Qualification may use independent truth; receiver usability must not.
     out.Ok = logical(runtimeEvidenceOk && score.StrictOk);
@@ -443,7 +460,8 @@ if isempty(fieldnames(reception))
     replay.NoiseVarianceSource=string(replay.NoiseVarianceSource)+ ...
         "_divided_by_actual_constant_receiver_gain_squared";
     replay.InjectedNoiseVarianceDigitalGainCompensatedSource=replay.NoiseVarianceSource;
-    % Retain the SAME executed desired-link samples before noise/RX RF.
+    % Retain the SAME executed desired-link samples on the recorded RX
+    % timing clock, before noise and other RX RF effects.
     % Scoring consumes these only after the practical receiver has finished;
     % never rerun the fading channel or feed this reference to estimation.
     prepared.TransmitStartSample=origin;
@@ -454,7 +472,8 @@ if isempty(fieldnames(reception))
     reception = struct("Prepared",prepared,"Observation",receivedObservation, ...
         "RawObservation",rawObservation, ...
         "Replay",replay,"ChannelState",channelState, ...
-        "DesiredReferenceObservation",desiredReference);
+        "DesiredReferenceObservation",desiredReference, ...
+        "RecordedReceiverTimingOffset_samples",replay.NMSEReferenceTimingOffset_samples);
     localValidateTRSReception(reception);
 else
     prepared = reception.Prepared;
@@ -499,7 +518,8 @@ end
 timing = sixgr.phy.trs.estimateTRSTiming(rx, strictCfg, tx);
 det = sixgr.phy.trs.detectTRSResources(rx, strictCfg, tx, "Timing", timing);
 timing = localRejectTimingIfDetectionFailed(timing, det);
-freq = sixgr.phy.trs.estimateTRSFrequencyOffset(det, strictCfg, tx, rx);
+freq = sixgr.phy.trs.estimateTRSFrequencyOffset(det, strictCfg, tx, rx, cfg);
+[rx,det,freq] = localCorrectReceivedFrequency(rx,det,freq,cfg,tx,reception.Observation.StartSample);
 ch = sixgr.phy.trs.estimateTRSChannel(rx, strictCfg, tx, det);
 references=sixgr.util.structGet(reception,'ScoringChannelReferences',{});
 if ~isempty(references) && ch.EstimateAvailable
@@ -507,13 +527,52 @@ if ~isempty(references) && ch.EstimateAvailable
     ch=sixgr.phy.trs.scoreTRSChannelEstimates(ch,referenceGrids,referenceEvidence);
 elseif ch.EstimateAvailable && isfield(reception,'DesiredReferenceObservation') && ...
         isa(reception.DesiredReferenceObservation,'sixgr.phy.waveform.WaveformObservationBuffer')
-    [referenceGrids,referenceEvidence]=sixgr.truth.sharedTRSScoringWaveformReference( ...
-        prepared,reception.DesiredReferenceObservation,timing,det,ch);
+    [referenceGrids,referenceEvidence,preRFGrids,preRFEvidence]=sixgr.truth.sharedTRSScoringWaveformReference( ...
+        prepared,reception.DesiredReferenceObservation,timing,det,ch, ...
+        sixgr.util.structGet(reception,'RecordedReceiverTimingOffset_samples',NaN),replay,freq);
+    preRFScore=sixgr.phy.trs.scoreTRSChannelEstimates(ch,preRFGrids,preRFEvidence);
     ch=sixgr.phy.trs.scoreTRSChannelEstimates(ch,referenceGrids,referenceEvidence);
+    ch.PreRXRFReferenceNMSE_dB=preRFScore.MeanNMSE_dB;
+    ch.PreRXRFReferencePlane=preRFEvidence{1}.ReferencePlane;
 end
 tracking = sixgr.phy.trs.trackTRSOverTime(det, timing, freq, ch, strictCfg,reception.Observation);
 score = sixgr.phy.trs.scoreTRSDetection(strictCfg, rx, det, timing, freq, ch, tracking, ...
     "TrialId", 1, "TrialType", "runtime_coupled_trs", "NegativeExpected", false);
+end
+
+function [rx,det,freq]=localCorrectReceivedFrequency(rx,det,freq,cfg,tx,origin)
+% Correct once on the actual received sample clock. Detection/availability
+% remain the original acquisition decisions: correction cannot rescue a
+% rejected resource, nor may independent scoring choose a frequency.
+freq.CorrectionEnabled=logical(sixgr.util.structGet(cfg,'phy.rx.cfoCorrectionEnabled', ...
+    sixgr.util.structGet(cfg,'phy.impairments.cfoCorrectionEnabled',false)));
+freq.CorrectionApplied=false; freq.CorrectionApplied_Hz=0;
+freq.CorrectionSampleOrigin=NaN; freq.CorrectionSource="disabled_by_receiver_config";
+if ~freq.CorrectionEnabled, return; end
+freq.CorrectionSource="unavailable_received_frequency";
+if ~freq.EstimateAvailable, return; end
+validateattributes(origin,{'numeric'},{'scalar','real','finite','integer','nonnegative'});
+hz=double(freq.EstimatedCommonFrequency_Hz);
+validateattributes(hz,{'numeric'},{'scalar','real','finite'});
+rotation=exp(-1i*2*pi*hz/double(tx.SampleRateHz)*(origin+(0:size(rx.Waveform,1)-1).'));
+rx.Waveform=rx.Waveform.*rotation;
+for k=1:numel(det.SlotDetections)
+    if ~det.SlotDetections(k).Detected, continue; end
+    first=double(det.Table.ReceiveStartSample1Based(k));
+    last=double(det.Table.ReceiveEndSample1Based(k));
+    wave=rx.Waveform(first:last,:);
+    [grid,info]=sixgr.phy.waveform.ofdmDemodulate(tx.SlotResources(k).Carrier,wave);
+    assert(isequal(size(grid),size(det.SlotDetections(k).RxGrid)), ...
+        'sixgr:phy:trs:FrequencyCorrectionGridIdentity','Frequency correction cannot change the received grid extent.');
+    det.SlotDetections(k).RxGrid=grid;
+    re=reshape(grid,[],size(grid,3));
+    det.SlotDetections(k).RxRE=re(double(det.SlotDetections(k).ReferenceIndices),:);
+    det.SlotDetections(k).CorrectedWaveform=wave;
+    det.SlotDetections(k).OFDMInfo=info;
+end
+freq.CorrectionApplied=true; freq.CorrectionApplied_Hz=hz;
+freq.CorrectionSampleOrigin=double(origin);
+freq.CorrectionSource=freq.FrequencyEstimatorSource+"_on_absolute_received_sample_clock";
 end
 
 function localValidateTRSReception(reception)
@@ -726,6 +785,19 @@ replay.InjectedNoiseVariance = double(preFrontEndNVar);
 [y,replay] = sixgr.link.applyCompositeReceiverFrontEnd( ...
     preFrontEndWaveform,cfg,sampleRateHz,replay,"Direction","DL");
 replay = sixgr.link.applyCompositeFrontEndVarianceReplay(replay);
+% The front end applies timing AFTER the desired-link reference was saved.
+% Put that reference on the same sample clock before both are extracted
+% using the practical timing decision. Otherwise a correctly received
+% delayed waveform is scored against a different OFDM phase ramp.
+% This is scoring only: no fitted alignment, CFO removal, gain fit, new
+% channel execution or change to the received samples/estimator.
+referenceDelay = 0;
+if replay.TimingOffsetApplied
+    referenceDelay = double(replay.InjectedTimingOffset_samples);
+    validateattributes(referenceDelay,{'numeric'},{'scalar','real','finite'});
+    desiredWave = sixgr.util.applyFractionalSampleDelay(desiredWave,referenceDelay);
+end
+replay.NMSEReferenceTimingOffset_samples = referenceDelay;
 replay.ChannelFadingApplied = logical(fadingApplied);
 replay.ChannelModelApplied = char(localResolveTrialChannelModel(cfg));
 replay.ConfiguredMaxDoppler_Hz = double(localResolveConfiguredMaxDopplerHz(cfg));

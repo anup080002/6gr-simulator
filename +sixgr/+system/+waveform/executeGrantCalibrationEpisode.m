@@ -68,11 +68,11 @@ for k=1:n
     % AWGN and fading have their explicit streams. Isolate any RF branch
     % using the global stream too, and restore the caller's RNG on error.
     rng(double(seeds.RF(k)),'twister');
-    initialTime=0;
-    if evolution=="persistent_link_absolute_slot"
-        initialTime=sixgr.system.waveform.resolveReplayChannelTime( ...
-            cfg,grants{k},'ScheduledAbsoluteSlot',[]);
-    end
+    % Realization independence is established by the channel seed, not by
+    % resetting the frozen grant's physical clock. Both policies execute at
+    % the actual slot time; only the persistent policy reuses a link seed.
+    initialTime=sixgr.system.waveform.resolveReplayChannelTime( ...
+        cfg,grants{k},'ScheduledAbsoluteSlot',[]);
     [r,c]=sixgr.system.waveform.replayGrant(cfg,direction,grants{k},payload,snrHistory(k), ...
         'StrictMode',true,'CompactPHYIO',false,'FastAWGNPath',false,'AdaptiveLDPC',false, ...
         'NoiseSeed',seeds.Noise(k),'ChannelSeed',seeds.Channel(k), ...

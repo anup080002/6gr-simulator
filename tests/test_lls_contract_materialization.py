@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import io
+import importlib.util
 import hashlib
 import json
 import shutil
 import sys
 import tempfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from PIL import Image
@@ -16,6 +18,178 @@ REPO_ROOT = Path(__file__).absolute().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "apps"))
 
 import lls_contract_materializer as materializer  # noqa: E402
+
+
+@pytest.mark.parametrize("missing", [False, True])
+def test_availability_audit_uses_complete_inventory_not_failure_list(monkeypatch, missing) -> None:
+    specs = [dict(section_slug="fixture", table_name=name) for name in ("a", "b", "disabled")]
+    monkeypatch.setattr(materializer.output_contract, "iter_table_specs", lambda _: iter(specs))
+    monkeypatch.setattr(materializer, "contract_artifact_is_policy_filtered",
+                        lambda *args, **kwargs: kwargs.get("contract_name") == "disabled")
+    monkeypatch.setattr(materializer, "_table_source_health", lambda name, *_: [dict(
+        source_logical_path=f"raw/{name}.csv", source_present=name != "disabled",
+        source_row_count=0 if name == "disabled" or (missing and name == "b") else 2)])
+    inventory = materializer._specialized_table_materialization(
+        "reports_status_rollup_explanations_v", {}, lambda _: b"", 7, "Audit")
+    failures = materializer._specialized_table_materialization(
+        "reports_partial_or_missing_v", {}, lambda _: b"", 7, "Audit")
+    assert len(materializer._decode_csv_dicts(failures["data"])[1]) == int(missing)
+    path = "reports/csv/reports_status_rollup_explanations_v.csv"
+    existing = {path: dict(artifact_id=1, logical_path=path)}
+    chart = materializer._specialized_chart_materialization(
+        "partial or missing data dashboard", existing, lambda _: inventory["data"], 7)
+    _, rows = materializer._decode_csv_dicts(chart["csv_bytes"])
+    counts = {row["status"]: int(row["table_count"]) for row in rows}
+    assert counts == dict(generated=2-int(missing), missing_source_evidence=int(missing), disabled_by_policy=1)
+    assert all(row["y_value"] == row["table_count"] for row in rows)
+    assert chart["source_row_count"] == 3
+    assert b"availability is not scientific acceptance" in chart["img_bytes"]
+    png = materializer._rasterize_contract_png(chart["img_bytes"],
+        source_mime_type="image/svg+xml", source_logical_path="internal://availability-test")
+    assert materializer._png_low_information_reason(png) == ""
+
+
+@pytest.mark.parametrize("fault", ["missing", "empty", "incomplete", "duplicate", "wrong_run", "bad_status", "bad_count"])
+def test_availability_audit_never_invents_success_without_valid_inventory(monkeypatch, fault) -> None:
+    specs = [dict(section_slug="fixture", table_name=name) for name in ("a", "b")]
+    monkeypatch.setattr(materializer.output_contract, "iter_table_specs", lambda _: iter(specs))
+    rows = [dict(run_id=7, section_slug="fixture", contract_table=name,
+                 status="generated", source_row_count=2) for name in ("a", "b")]
+    if fault == "empty":
+        rows = []
+    elif fault == "incomplete":
+        rows.pop()
+    elif fault == "duplicate":
+        rows.append(dict(rows[0]))
+    elif fault == "wrong_run":
+        rows[0]["run_id"] = 8
+    elif fault == "bad_status":
+        rows[0]["status"] = "PASS"
+    elif fault == "bad_count":
+        rows[0]["source_row_count"] = 0
+    path = "reports/csv/reports_status_rollup_explanations_v.csv"
+    existing = {} if fault == "missing" else {path: dict(artifact_id=1, logical_path=path)}
+    # An empty failure-only artifact never establishes that an audit ran.
+    existing["reports/csv/reports_partial_or_missing_v.csv"] = dict(artifact_id=2)
+    payloads = {1: materializer._encode_rows_from_dicts(rows), 2: b"contract_table,status\n"}
+    invoke = lambda: materializer._specialized_chart_materialization(
+        "partial or missing data dashboard", existing, payloads.__getitem__, 7)
+    if fault in {"missing", "empty"}:
+        assert invoke() is None
+    else:
+        with pytest.raises(ValueError, match="Availability chart"):
+            invoke()
+
+
+def test_same_occasion_equal_prach_peaks_are_real_observations() -> None:
+    path = "air_interface/csv/prach_trials.csv"
+    data = ("RAUEId,PRACHOccasionFrame,PRACHOccasionSlot,PRACHOccasionSymbol,"
+            "Msg1ScheduledSlot,SetupCompleteScheduledSlot,CorrelationPeak,DetectionThreshold\n"
+            "1,1,4,7,14,39,0.498,0.0144\n"
+            "2,1,4,7,14,59,0.498,0.0144\n").encode()
+    existing = {path: dict(artifact_id=1, logical_path=path, byte_size=len(data))}
+    result = materializer._runtime_prach_operational_chart(
+        "PRACH peak search timeline", existing, lambda _: data, 1)
+    assert result is not None and result["source_row_count"] == 2
+    fields, rows = materializer._decode_csv(result["csv_bytes"])
+    values = [dict(zip(fields, row)) for row in rows]
+    assert [float(row["access_latency_slots"]) for row in values] == [25, 45]
+    assert [float(row["correlation_peak"]) for row in values] == [0.498, 0.498]
+    image = materializer._rasterize_contract_png(result["img_bytes"],
+        source_mime_type="image/svg+xml", source_logical_path="internal://prach-test")
+    assert materializer._png_low_information_reason(image) == ""
+
+
+def test_prach_latency_needs_absolute_start_and_threshold_is_not_noise() -> None:
+    path = "air_interface/csv/prach_trials.csv"
+    data = ("PRACHOccasionFrame,PRACHOccasionSlot,SetupCompleteScheduledSlot,"
+            "ThresholdBackgroundComponent,CorrelationPeak\n1,4,39,0.0144,0.498\n").encode()
+    existing = {path: dict(artifact_id=1, logical_path=path, byte_size=len(data))}
+    result = materializer._runtime_prach_operational_chart(
+        "PRACH peak search timeline", existing, lambda _: data, 1)
+    fields, rows = materializer._decode_csv(result["csv_bytes"])
+    row = dict(zip(fields, rows[0]))
+    assert row["access_latency_slots"] == "" and row["noise_floor"] == ""
+
+
+def test_prach_background_exports_receiver_definition_not_noise_variance() -> None:
+    path = "air_interface/csv/prach_trials.csv"
+    definition = "original_energy_normalized_correlation_noise_plus_inter_repetition_variation"
+    data = ("Slot,PDPAverageNoiseFloor,NoiseFloorEstimator,NoiseFloorDefinition,NoiseFloorStatus\n"
+            f"1,0.002,disjoint_received_repetition_differences,{definition},measured\n"
+            f"2,0.002,disjoint_received_repetition_differences,{definition},measured\n").encode()
+    existing = {path: dict(artifact_id=1, logical_path=path, byte_size=len(data))}
+    for build, name in ((materializer._runtime_prach_operational_chart, "noise floor trend"),
+                        (materializer._prach_peak_chart_materialization, "PRACH noise floor distributions")):
+        result = build(name, existing, lambda _: data, 1)
+        assert result is not None
+        fields, rows = materializer._decode_csv(result["csv_bytes"])
+        exported = [dict(zip(fields, row)) for row in rows]
+        assert len(exported) == 2
+        assert all(float(row["noise_floor"]) == 0.002 for row in exported)
+        assert all(row["noise_floor_definition"] == definition for row in exported)
+        assert all(row["noise_floor_estimator"] == "disjoint_received_repetition_differences" for row in exported)
+    wrong_plane = b"Slot,NoiseVariance\n1,0.1\n"
+    assert materializer._prach_peak_chart_materialization(
+        "PRACH noise floor distributions", existing, lambda _: wrong_plane, 1) is None
+
+
+def test_prach_reanalysis_plot_retains_offline_scope_and_capture_hash() -> None:
+    replay_path = "reports/csv/prach_background_replay.csv"
+    raw_path = "air_interface/csv/prach_trials.csv"
+    payloads = {
+        1: b"PDPAverageNoiseFloor,NoiseFloorEstimator,NoiseFloorDefinition,NoiseFloorStatus,EvidenceScope,SourceCaptureSHA256\n0.002,received_difference,noise_plus_variation,measured,offline_reanalysis_not_original_in_path_row,abc123\n",
+        2: b"Slot,PDPAverageNoiseFloor,DetectionMetric,timing_advance_samples\n1,NaN,0.5,77\n",
+    }
+    existing = {p: dict(artifact_id=i, logical_path=p) for i, p in ((1, replay_path), (2, raw_path))}
+    for build, name in ((materializer._runtime_prach_operational_chart, "noise floor trend"),
+                        (materializer._prach_peak_chart_materialization, "PRACH noise floor distributions")):
+        result = build(name, existing, payloads.__getitem__, 1)
+        assert result["source_table_path"] == replay_path
+        fields, rows = materializer._decode_csv(result["csv_bytes"])
+        row = dict(zip(fields, rows[0]))
+        assert row["evidence_scope"] == "offline_reanalysis_not_original_in_path_row"
+        assert row["source_capture_sha256"] == "abc123"
+        assert b"OFFLINE IQ REANALYSIS" in result["img_bytes"]
+    # A measured timing advance is not an estimation error.
+    result = materializer._prach_peak_chart_materialization(
+        "PRACH peak search results", existing, payloads.__getitem__, 1)
+    assert result["source_table_path"] == raw_path
+    fields, rows = materializer._decode_csv(result["csv_bytes"])
+    assert dict(zip(fields, rows[0]))["timing_error_samples"] == ""
+
+
+def test_prach_noise_histogram_does_not_count_each_correlation_lag_as_a_trial() -> None:
+    path = "reports/csv/prach_correlation_trace.csv"
+    data = b"trial_id,lag_samples,correlation_abs,noise_floor,preamble_index\n1,0,0.2,0.002,0\n1,1,0.4,0.002,0\n2,0,0.3,0.003,0\n"
+    existing = {path: dict(artifact_id=1, logical_path=path)}
+    result = materializer._prach_peak_chart_materialization(
+        "PRACH noise floor distributions", existing, lambda _: data, 1)
+    fields, rows = materializer._decode_csv(result["csv_bytes"])
+    assert len(rows) == 2
+    assert [float(dict(zip(fields, row))["noise_floor"]) for row in rows] == [0.002, 0.003]
+
+
+@pytest.mark.parametrize("values", [[3.5557e-5], [-0.2], [-0.2, 0.3], [0.0], [0.02, 0.02]])
+def test_bar_geometry_uses_zero_not_bottom_or_absolute_unit_padding(values) -> None:
+    data = dict(mode="bar", x_label="Observation", y_label="Measured quantity",
+                points=[[i, v] for i, v in enumerate(values, 1)],
+                evidence_shape_policy="observed_distribution", sample_count=len(values))
+    svg = materializer._render_svg_plot("Signed measurements", "Exact values", data, [])
+    root = ET.fromstring(svg)
+    bars = [node for node in root.iter() if "data-bar-value" in node.attrib]
+    assert len(bars) == len(values)
+    for bar, expected in zip(bars, values):
+        assert float(bar.attrib["data-bar-value"]) == expected
+        y, h, baseline = (float(bar.attrib[key]) for key in ("y", "height", "data-zero-y"))
+        if expected > 0:
+            assert abs(y+h-baseline) < 0.2 and y < baseline
+        elif expected < 0:
+            assert y == baseline and h > 0
+        else:
+            assert y == baseline and h == 0
+    if len(values) == 1 and values[0] > 0:
+        assert float(bars[0].attrib["height"]) > 300  # scale to actual quantity, not +/-1
 
 
 def _filesystem_artifacts(root: Path) -> list[dict[str, object]]:
@@ -164,6 +338,43 @@ def test_specialized_config_measured_view_uses_runtime_units_and_snr() -> None:
     assert rows[0]["configured_snr_db"] == "12.0"
     assert rows[0]["mean_csi_rsrp_dbm"] == "-75.0"
     assert rows[0]["measured_minus_configured_snr_db"] == "6.0"
+
+
+def test_truth_violation_view_uses_failures_not_source_presence() -> None:
+    path = "reports/csv/truth_contract_failures.csv"
+    artifacts = {path: {"artifact_id": 1, "logical_path": path,
+                        "artifact_kind": "table_csv", "mime_type": "text/csv"}}
+    for payload, expected in [(b"FailureCode,FailureCategory\nCRC_contract,runtime_evidence\n", 1),
+                              (b"FailureCode,FailureCategory\n", 0)]:
+        result = materializer._specialized_live_report_table(
+            "reports_truth_violations_v", artifacts, lambda _: payload, 7, {}, {})
+        header, rows = materializer._decode_csv_dicts(result["data"])
+        assert "FailureCode" in header and len(rows) == expected
+        assert result["source_logical_path"] == path
+        if rows:
+            assert rows[0]["FailureCode"] == "CRC_contract"
+            assert rows[0]["source_artifact"] == path
+    assert materializer._specialized_live_report_table(
+        "reports_truth_violations_v", {}, lambda _: b"", 7, {}, {}) is None
+
+
+def test_missing_report_view_excludes_healthy_sources(monkeypatch) -> None:
+    specs = [{"table_name": "healthy", "section_slug": "a"},
+             {"table_name": "absent", "section_slug": "b"}]
+    monkeypatch.setattr(materializer.output_contract, "iter_table_specs", lambda _: iter(specs))
+    monkeypatch.setattr(materializer, "contract_artifact_is_policy_filtered", lambda *a, **k: False)
+    monkeypatch.setattr(materializer, "_table_source_health", lambda name, *a: [{
+        "source_row_count": 2 if name == "healthy" else 0, "source_present": name == "healthy",
+        "source_logical_path": name + ".csv"}])
+    result = materializer._specialized_live_report_table(
+        "reports_partial_or_missing_v", {}, lambda _: b"", 7, {}, {})
+    _, rows = materializer._decode_csv_dicts(result["data"])
+    assert [row["contract_table"] for row in rows] == ["absent"]
+    specs.pop()
+    result = materializer._specialized_live_report_table(
+        "reports_partial_or_missing_v", {}, lambda _: b"", 7, {}, {})
+    header, rows = materializer._decode_csv_dicts(result["data"])
+    assert "contract_table" in header and rows == []
 
 
 def test_prach_component_filters_inapplicable_config_measured_view() -> None:
@@ -366,6 +577,77 @@ def test_filesystem_replacement_restores_declared_artifact_pngs_before_indexing(
     assert deletion < report_rasters < filesystem_index
     assert '"declared_artifact_rasters_regenerated"' in source
     assert '"declared_report_rasters_regenerated"' in source
+
+
+@pytest.mark.parametrize("renderer_fails", [False, True])
+def test_browser_rebuild_preserves_other_producers_rasters(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, renderer_fails: bool
+) -> None:
+    """Ownership regression only; stubbed coverage is not PHY acceptance."""
+    monkeypatch.syspath_prepend(str(REPO_ROOT / "scripts"))
+    spec = importlib.util.spec_from_file_location(
+        "raster_ownership_cli", REPO_ROOT / "scripts/materialize_lls_contract_artifacts.py"
+    )
+    assert spec is not None and spec.loader is not None
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+    run = tmp_path / "run"
+    producer_image = run / "air_interface/image/dl_constellation_scatter.png"
+    producer_source = run / "air_interface/csv/dl_constellation_samples.csv"
+    producer_image.parent.mkdir(parents=True)
+    producer_source.parent.mkdir(parents=True)
+    fixture_image = Image.new("RGB", (16, 16))
+    fixture_image.putdata([(i % 256, (i * 3) % 256, 100) for i in range(256)])
+    fixture_image.save(producer_image)
+    producer_source.write_text("SampleIndex,EqualizedReal,EqualizedImag\n1,1,-1\n", encoding="utf-8")
+    image_bytes, source_bytes = producer_image.read_bytes(), producer_source.read_bytes()
+    run_row = {"run_id": 71, "run_folder": str(run)}
+    monkeypatch.setattr(cli, "validate_run_root", lambda path: path)
+    monkeypatch.setattr(cli, "_filesystem_run_policy", lambda _path: (run_row, {"raster_output_enabled": True}))
+    monkeypatch.setattr(cli, "require_primary_csv_semantics", lambda *args, **kwargs: {})
+    monkeypatch.setattr(cli.dash, "filesystem_run_row_from_folder", lambda *args: run_row)
+    cached_index = []
+
+    def filesystem_index(*args):
+        if not cached_index:
+            cached_index.append(_filesystem_artifacts(run))
+        return cached_index[0]
+
+    monkeypatch.setattr(cli.dash, "clear_dashboard_caches", lambda *args: cached_index.clear())
+    monkeypatch.setattr(cli.dash, "filesystem_artifacts_for_run", filesystem_index)
+    monkeypatch.setattr(cli.materializer, "filesystem_contract_cache_current", lambda *args: False)
+    monkeypatch.setattr(cli.materializer, "write_filesystem_contract_cache", lambda *args: None)
+    for name in ("materialize_declared_report_rasters", "materialize_declared_artifact_generation_rasters", "materialize_frc_reference_rasters"):
+        monkeypatch.setattr(cli, name, lambda *args, **kwargs: [])
+    contract_image = run / cli.materializer.chart_contract_image_path(cli.materializer._chart_specs()[0])
+    contract_image.parent.mkdir(parents=True, exist_ok=True)
+    fixture_image.save(contract_image)
+
+    def rebuild(*args, **kwargs):
+        indexed_paths = [Path(row["filesystem_path"]) for row in args[1]]
+        assert contract_image not in indexed_paths, "The renderer received the deleted raster from a stale terminal index."
+        assert all(path.is_file() for path in indexed_paths)
+        if renderer_fails:
+            raise RuntimeError("deliberate renderer failure")
+        contract_image.parent.mkdir(parents=True, exist_ok=True)
+        fixture_image.save(contract_image)
+        return {"created": [], "manifest_path": "", "coverage_path": ""}
+
+    monkeypatch.setattr(cli.materializer, "materialize_filesystem_run_contract_artifacts", rebuild)
+    monkeypatch.setattr(cli.materializer, "coverage_summary", lambda *args, **kwargs: {
+        "missing_table_paths": [], "missing_chart_names": []
+    })
+    monkeypatch.setattr(sys, "argv", ["materialize", "--run-folder", str(run),
+                                     "--force", "--replace-existing-rasters-from-csv"])
+    if renderer_fails:
+        with pytest.raises(RuntimeError, match="deliberate renderer failure"):
+            cli.main()
+    else:
+        assert cli.main() == 0
+    assert producer_image.is_file(), "Browser rebuilding deleted another producer's measured plot."
+    assert producer_image.read_bytes() == image_bytes
+    assert producer_source.read_bytes() == source_bytes
+    assert contract_image.is_file() == (not renderer_fails)
 
 
 def test_runtime_geometry_profile_prach_and_single_ue_adapters_use_exact_rows() -> None:
@@ -651,6 +933,59 @@ def test_reliability_uses_weighted_bit_denominator_and_exports_wilson_interval()
         source_logical_path="internal://test/weighted-ber.vector",
     )
     assert materializer._png_low_information_reason(png) == ""  # noqa: SLF001
+
+
+@pytest.mark.parametrize("row,metric,expected", [
+    ({"MissedDetection": "0", "DecodeSuccess": "0", "RAProcedureType": "four_step"}, "detected", True),
+    ({"MissedDetection": "1", "DecodeSuccess": "1"}, "detected", False),
+    ({"MissedDetection": "1", "FalseAlarmFlag": "1"}, "missed", True),
+    ({"DetectionMetric": "0.9", "Status": "PASS"}, "detected", None),
+    ({"DetectionMetric": "0.9", "Status": "FAIL"}, "missed", None),
+    ({"SignalPresent": "0", "DecodeSuccess": "1"}, "detected", None),
+    ({"SignalPresent": "1", "FalseAlarmFlag": "0"}, "false_alarm", None),
+    ({"FalseAlarmFlag": "0"}, "false_alarm", None),
+    ({"SignalPresent": "0", "FalseAlarmFlag": "1"}, "false_alarm", True),
+    ({"FalseAlarmFlag": "0", "FalseAlarmClassification":
+      "ts38321_no_preamble_transmitted_any_preamble_detected"}, "false_alarm", False),
+    ({"DetectedPreambleSetAvailable": "1", "DetectedPreambleSet": "1|0", "PreambleIndexTx": "0",
+      "PreambleIndexDetected": "1", "DecodeSuccess": "0"}, "detected", True),
+    ({"DetectedPreambleSetAvailable": "1", "DetectedPreambleSet": "1", "PreambleIndexTx": "0",
+      "DecodeSuccess": "1"}, "missed", True),
+    ({"DetectedPreambleSetAvailable": "1", "DetectedPreambleSet": "bad", "PreambleIndexTx": "0",
+      "DecodeSuccess": "1"}, "detected", None),
+])
+def test_prach_probability_requires_receiver_population(row, metric, expected) -> None:
+    assert materializer._prach_receiver_trial_flag(row, metric) is expected
+
+
+def test_prach_shared_occasion_does_not_claim_independent_confidence() -> None:
+    path = "air_interface/csv/prach_trials.csv"
+    payload = materializer._encode_csv(
+        ["MissedDetection", "DecodeSuccess", "DetectionPopulationScope"],
+        [[0, 0, "per_target_shared_occasion_not_independent_trials"],
+         [1, 1, "per_target_shared_occasion_not_independent_trials"]],
+    )
+    existing = {path: {"artifact_id": 1, "logical_path": path, "artifact_kind": "table_csv"}}
+    result = materializer._prach_rate_chart_materialization("P_D", existing, lambda _: payload, 45)
+    assert result is not None
+    _, rows = materializer._decode_csv_dicts(result["csv_bytes"])
+    assert len(rows) == 1 and float(rows[0]["metric_value"]) == .5
+    assert rows[0]["sample_count"] == "2" and rows[0]["ci95_lower"] == rows[0]["ci95_upper"] == ""
+    assert rows[0]["confidence_status"] == "not_evaluated_correlated_target_rows"
+    assert b"Wilson" not in result["img_bytes"]
+    png = materializer._rasterize_contract_png(result["img_bytes"],
+        source_mime_type="image/svg+xml", source_logical_path="internal://test/correlated-prach.vector")
+    assert materializer._png_low_information_reason(png) == ""
+
+
+def test_prach_false_alarm_uses_only_no_signal_opportunities() -> None:
+    path = "air_interface/csv/prach_trials.csv"
+    payload = materializer._encode_csv(["SignalPresent", "FalseAlarmFlag"],
+        [[1, 0]] * 20 + [[0, 0], [0, 1]])
+    existing = {path: {"artifact_id": 1, "logical_path": path, "artifact_kind": "table_csv"}}
+    result = materializer._prach_rate_chart_materialization("P_FA", existing, lambda _: payload, 45)
+    _, rows = materializer._decode_csv_dicts(result["csv_bytes"])
+    assert float(rows[0]["metric_value"]) == .5 and rows[0]["sample_count"] == "2"
 
 
 def test_prach_probability_exports_wilson_bounds_from_trial_flags() -> None:
@@ -1024,12 +1359,14 @@ def main() -> None:
     assert b"IQ imbalance summary" in special["img_bytes"]
 
     prach_csv = materializer._encode_csv(  # noqa: SLF001
-        ["SNR_dB", "SuccessFlag", "FalseAlarmFlag", "DetectionMetric", "Status"],
+        ["SNR_dB", "SuccessFlag", "FalseAlarmFlag", "DetectionMetric", "Status", "SignalPresent"],
         [
-            [0, 0, 0, 0, "FAIL"],
-            [0, 1, 0, 1, "PASS"],
-            [10, 1, 0, 1, "PASS"],
-            [10, 0, 1, 0, "FAIL"],
+            [0, 0, 0, 0, "FAIL", 1],
+            [0, 1, 0, 1, "PASS", 1],
+            [10, 1, 0, 1, "PASS", 1],
+            [10, 0, 1, 0, "FAIL", 1],
+            [0, "", 0, 0, "PASS", 0],
+            [10, "", 1, 1, "FAIL", 0],
         ],
     )
     existing = {

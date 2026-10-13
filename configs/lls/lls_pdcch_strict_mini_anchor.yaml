@@ -88,6 +88,11 @@ frame:
   cp_type: normal
   slot_format: dl
 
+random_access:
+  # This control-only anchor does not execute PRACH or an access procedure.
+  # Do not inherit the TDD PRACH format/index into its FDD carrier.
+  enabled: false
+
 reference_signals:
   ssb_enabled: true
   ssb_case: "Case C"

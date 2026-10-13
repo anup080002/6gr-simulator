@@ -38,6 +38,23 @@ def test_nmse_matches_hashed_complex_reference(error):
     assert radio._scored_data_channel_nmse(m,row,existing,payload.__getitem__)==float(row['NMSE_dB'])
 
 
+def test_isolated_score_has_its_own_identity_not_a_shared_channel_archive():
+    row,existing,payload=fixture()
+    row['ChannelEstimateObservationID']='isolated_hest_measured'
+    del row['ChannelObservationID']
+    rows=list(csv.DictReader(io.StringIO(payload[1].decode())))
+    rows[0]['ChannelEstimateObservationID']=row['ChannelEstimateObservationID']
+    del rows[0]['ChannelObservationID']
+    out=io.StringIO(); writer=csv.DictWriter(out,fieldnames=rows[0])
+    writer.writeheader(); writer.writerows(rows)
+    payload[1]=out.getvalue().encode()
+    row['ChannelEstimateResourcesCSVSHA256']=hashlib.sha256(payload[1]).hexdigest()
+    assert radio._scored_data_channel_nmse(m,row,existing,payload.__getitem__)==float(row['NMSE_dB'])
+    row['ChannelEstimateObservationID']='different_capture'
+    with pytest.raises(ValueError,match='reference identity mismatch'):
+        radio._scored_data_channel_nmse(m,row,existing,payload.__getitem__)
+
+
 @pytest.mark.parametrize('field,value', [
     ('NMSE_dB','12'), ('ChannelEstimateComparedValues','2'),
     ('ChannelEstimateResourcesCSVSHA256','stale'), ('ChannelObservationID','other'),

@@ -76,6 +76,12 @@ if filesystemResult.Status ~= 0
     out.Identifier = "browser_contract_materialization_failed";
     return;
 end
+if ~localMaterializationCoverageComplete(filesystemResult)
+    out.Identifier = "browser_contract_coverage_unverified";
+    out.Message = char(string(out.Message) + newline + ...
+        "Zero process exit status does not prove complete required artifact coverage.");
+    return;
+end
 [receiptOk, receiptStatus, receiptMessage] = ...
     localRefreshPostMaterializationReceipts(runFolder);
 out.PostMaterializationAuditRefreshed = receiptStatus ~= "not_applicable";
@@ -132,6 +138,12 @@ if databaseResult.Status ~= 0
     out.Identifier = "mysql_browser_contract_materialization_failed";
     return;
 end
+if ~localMaterializationCoverageComplete(databaseResult)
+    out.Identifier = "mysql_browser_contract_coverage_unverified";
+    out.Message = char(string(out.Message) + newline + ...
+        "Zero process exit status does not prove complete required database artifact coverage.");
+    return;
+end
 out.DatabasePersisted = true;
 out.Ok = true;
 out.BrowserMaterialized = filesystemComplete && ...
@@ -172,31 +184,7 @@ end
 
 function result = localExecuteMaterializerCommand(cmd)
 [status, raw] = system(cmd);
-payloadText = strtrim(string(raw));
-result = struct( ...
-    "Status", double(status), ...
-    "CreatedCount", 0, ...
-    "MissingTableCount", NaN, ...
-    "MissingChartCount", NaN, ...
-    "PayloadText", payloadText);
-jsonStart = strfind(char(payloadText), "{");
-if isempty(jsonStart)
-    return;
-end
-jsonText = extractAfter(payloadText, jsonStart(1) - 1);
-try
-    payload = jsondecode(char(jsonText));
-    result.CreatedCount = double(sixgr.util.structGet( ...
-        payload, "created_count", 0));
-    result.MissingTableCount = double(sixgr.util.structGet( ...
-        payload, "tables_missing", NaN));
-    result.MissingChartCount = double(sixgr.util.structGet( ...
-        payload, "charts_missing", NaN));
-    result.PayloadText = jsonText;
-catch
-    % Preserve raw output. An unparsable response cannot satisfy the
-    % BrowserMaterialized completeness flag even when the process exits 0.
-end
+result = sixgr.artifact.parseBrowserMaterializerOutput(status, raw);
 end
 
 function tf = localMaterializationCoverageComplete(result)

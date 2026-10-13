@@ -146,6 +146,9 @@
       "power_ramping_step_db": {"value_type": "number", "default": 2, "min": 0},
       "preamble_received_target_power_dbm": {"value_type": "number", "default": -100},
       "temp_crnti": {"value_type": "integer", "default": 4660, "min": 1},
+      "temporary_crnti_pool": {"value_type": "integer_vector", "default": [4660, 65522], "min": 1, "max": 65522, "min_length": 2, "max_length": 2, "description": "Inclusive gNB cell-scoped temporary C-RNTI pool. Allocations are retained without reuse for one independent physical run; exhaustion is explicit."},
+      "preamble_detection_policy": {"value_type": "string", "default": "strongest", "allowed_values": ["strongest", "awgn_sic_unrestricted"], "description": "Native strongest-only or AWGN unrestricted all-preamble search with received-amplitude interference cancellation and original-energy normalization. No transmitted identity is used; not a statistically qualified detector."},
+      "multi_preamble_max_delay_us": {"value_type": "number", "default": 10, "min": 0, "description": "Maximum received arrival delay searched per unrestricted preamble, in microseconds from the gNB occasion origin. Must cover round-trip propagation, filter delay and delay spread; not a transmitted delay estimate."},
       "final_crnti": {"value_type": "integer", "default": 4660, "min": 1},
       "timing": {
         "rar_processing_delay_slots": {"value_type": "integer", "default": 1, "min": 1, "description": "Minimum processing delay after the final PRACH slot; the planner selects a legal RAR allocation within the response window."},

@@ -23,6 +23,9 @@ componentMirrorRoots = ["air_interface","beamforming", ...
 % exact CSV bytes are hashed in the primary trial at capture time; adding
 % identity columns here invalidates that hash and can round numeric values.
 immutableRoots = ["runtime", "raw", "channel_estimation", componentMirrorRoots];
+immutableFiles = ["control/csv/pdcch_channel_estimates.csv", ...
+    "control/csv/pdcch_channel_estimate_plot_lineage.csv"];
+annotationChanges = containers.Map('KeyType','char','ValueType','any');
 
 summary = struct( ...
     "ScannedCount", 0, ...
@@ -48,7 +51,13 @@ for i = 1:numel(files)
         relativePath = extractAfter(normalizedFile, strlength(normalizedRoot) + 1);
     end
     topLevel = extractBefore(relativePath + "/", "/");
-    if any(lower(topLevel) == lower(immutableRoots))
+    [~, fileStem, ~] = fileparts(char(pathValue));
+    browserOwned = startsWith(lower(string(fileStem)),"contract__") || ...
+        strcmpi(fileStem,"contract_plot_lineage");
+    % Only the browser producer may write its rendered chart datasets and
+    % exact lineage. Late generic annotations would invalidate those bytes.
+    if any(lower(topLevel) == lower(immutableRoots)) || ...
+            any(lower(relativePath) == immutableFiles) || browserOwned
         summary.SkippedImmutableCount = summary.SkippedImmutableCount + 1;
         continue;
     end
@@ -80,26 +89,34 @@ for i = 1:numel(files)
         changed = true;
     end
     if changed
-        sixgr.util.csvWriteTable(pathValue, tableValue);
+        beforeHash = localFileSHA256(pathValue);
+        sixgr.util.csvWriteTable(pathValue, tableValue, ...
+            'PreserveSchema',true,'RoundTripNumericText',true);
+        annotationChanges(localPathKey(pathValue)) = struct( ...
+            'Before',beforeHash,'After',localFileSHA256(pathValue));
         summary.AnnotatedCount = summary.AnnotatedCount + 1;
     end
 end
-summary.RefreshedLineageCount = localRefreshLineageHashes(runFolder);
+summary.RefreshedLineageCount = localRefreshLineageHashes(runFolder,annotationChanges);
 end
 
 function values = localConstantColumn(rowCount, value)
 values = repmat(string(value), rowCount, 1);
 end
 
-function refreshed = localRefreshLineageHashes(runFolder)
+function refreshed = localRefreshLineageHashes(runFolder,annotationChanges)
 % CSV identity annotation is an intentional final byte mutation.  Refresh
 % cryptographic lineage only after every mutable report CSV has reached its
 % final schema; image bytes and scientific values are not changed here.
+% Never repair an unrelated stale/corrupt source by blessing its new hash.
+% The previously recorded hash must match the bytes observed immediately
+% before this function's own annotation, and no intervening write may occur.
 refreshed = 0;
 files = dir(fullfile(runFolder, "**", "*plot_lineage.csv"));
 for fileIndex = 1:numel(files)
     lineagePath = string(fullfile(files(fileIndex).folder, files(fileIndex).name));
-    if sixgr.runtime.isNestedExecutionPath(runFolder, lineagePath)
+    if sixgr.runtime.isNestedExecutionPath(runFolder, lineagePath) || ...
+            strcmpi(files(fileIndex).name,"contract_plot_lineage.csv")
         continue;
     end
     try
@@ -115,9 +132,10 @@ for fileIndex = 1:numel(files)
     end
     changed = false;
     for rowIndex = 1:height(T)
-        [existsOk, hashes] = localSourceHashes(runFolder, lineagePath, ...
-            T.(char(sourceName))(rowIndex));
-        if existsOk && string(T.(char(hashName))(rowIndex)) ~= hashes
+        [existsOk, hashes, previousHashes] = localSourceHashes(runFolder, lineagePath, ...
+            T.(char(sourceName))(rowIndex),annotationChanges);
+        if existsOk && string(T.(char(hashName))(rowIndex)) == previousHashes && ...
+                string(T.(char(hashName))(rowIndex)) ~= hashes
             T.(char(hashName))(rowIndex) = hashes;
             changed = true;
         end
@@ -140,21 +158,35 @@ for candidate = string(candidates(:)).'
 end
 end
 
-function [ok, hashes] = localSourceHashes(runFolder, lineagePath, sourceSpec)
+function [ok, hashes, previousHashes] = localSourceHashes(runFolder, lineagePath, sourceSpec,annotationChanges)
 parts = split(strtrim(string(sourceSpec)), "|");
 parts = strtrim(parts(:));
 parts = parts(~ismissing(parts) & strlength(parts) > 0);
 ok = ~isempty(parts);
 values = strings(numel(parts), 1);
+previousValues = strings(numel(parts), 1);
 for index = 1:numel(parts)
     sourcePath = localResolveOwnedPath(runFolder, lineagePath, parts(index));
     existsOne = strlength(sourcePath) > 0 && exist(sourcePath, "file") == 2;
     ok = ok && existsOne;
     if existsOne
         values(index) = localFileSHA256(sourcePath);
+        previousValues(index) = values(index);
+        key = localPathKey(sourcePath);
+        if isKey(annotationChanges,key)
+            change = annotationChanges(key);
+            ok = ok && values(index) == change.After;
+            previousValues(index) = change.Before;
+        end
     end
 end
 hashes = strjoin(values, "|");
+previousHashes = strjoin(previousValues, "|");
+end
+
+function key = localPathKey(pathValue)
+key = char(java.io.File(char(pathValue)).getCanonicalPath());
+if ispc, key = lower(key); end
 end
 
 function resolved = localResolveOwnedPath(runFolder, lineagePath, relativePath)

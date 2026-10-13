@@ -41,5 +41,27 @@ assert(max(abs(ax.Title.Color - [0.12 0.16 0.22])) < 1e-12);
 legendHandle = findall(fig, "Type", "legend");
 assert(numel(legendHandle) == 1 && isequal(legendHandle.Color, [1 1 1]));
 assert(max(abs(legendHandle.TextColor - [0.12 0.16 0.22])) < 1e-12);
+
+% Tiled-chart titles/labels are layout-owned text, not axes text. Runtime
+% constellation figures must remain legible when created under dark theme.
+joint = figure("Visible", "off");
+cleanupJoint = onCleanup(@() close(joint)); %#ok<NASGU>
+tiles = tiledlayout(joint, 1, 2);
+title(tiles, "All captured layers", "Color", [0.87 0.87 0.87]);
+subtitle(tiles, "Retained receiver samples", "Color", [1 1 1]);
+xlabel(tiles, "In-phase", "Color", [1 1 1]);
+ylabel(tiles, "Quadrature", "Color", [1 1 1]);
+tileAxes = nexttile(tiles);
+samplePlot = scatter(tileAxes, [1 2 3], [4 5 6]);
+originalSamples = [samplePlot.XData; samplePlot.YData];
+sixgr.visual.RasterFigureStyle.apply(joint);
+for textHandle = [tiles.Title, tiles.Subtitle, tiles.XLabel, tiles.YLabel]
+    assert(max(abs(textHandle.Color - [0.12 0.16 0.22])) < 1e-12, ...
+        'sixgr:test:TiledRasterTextContrast', ...
+        'Layout-owned text must be dark on the canonical white raster canvas.');
+end
+assert(isequal([samplePlot.XData; samplePlot.YData], originalSamples) && ...
+    string(tiles.Title.String)=="All captured layers", ...
+    'Styling must not modify plotted samples or labels.');
 ok = true;
 end

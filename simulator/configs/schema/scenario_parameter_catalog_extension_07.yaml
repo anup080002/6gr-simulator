@@ -69,6 +69,9 @@ sections:
       preconnection_rsrp_filter_reference_period_ms: {required: false, type: number, min: 0.001}
       validation_snr_db: {required: true, type: number}
       validation_seed: {required: true, type: integer, min: 0}
+      # Cell-wide transmit policy, independent of the UE's receive hypothesis.
+      # Omission retains the selected-occasion standalone benchmark.
+      sib1_transmission_scope: {required: false, type: string, allowed_values: [selected_ssb_occasion, all_active_ssb_occasions]}
       ssb: {required: true, type: struct}
       mib: {required: true, type: struct}
       type0: {required: true, type: struct}

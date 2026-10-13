@@ -29,6 +29,50 @@ def test_canonical_csv_reader_accepts_large_runtime_fields(tmp_path: Path) -> No
     assert rows[0]["ExactRuntimeArray"] == serialized_runtime_array
 
 
+def test_joint_constellation_report_keeps_snr_mcs_and_every_captured_sample(monkeypatch):
+    rows = []
+    for direction in ("DL", "UL"):
+        for snr in (40, 30, 20, 10, 0, -10, -20, -30):
+            for ref, eq in ((1, 1), (2, 2), (3, 4)):
+                rows.append(dict(direction=direction, modulation="QPSK", layer="1",
+                                 snr_db=str(snr), mcs_index="1", reference_symbol_i=str(ref),
+                                 reference_symbol_q="0", equalized_i=str(eq), equalized_q="0",
+                                 truth_status="runtime_measured"))
+    rows.extend([dict(row, mcs_index="2") for row in rows[:3]])
+    # One group exceeds the legacy 450-point display limit.
+    rows.extend([dict(rows[0]) for _ in range(500)])
+    seen = {}
+    def capture(title, subtitle, panels, summary, **options):
+        seen.update(panels=panels, options=options)
+        return b"captured"
+    original = MODULE.contract_materializer._render_scatter_panels_svg
+    monkeypatch.setattr(MODULE.contract_materializer, "_render_scatter_panels_svg", capture)
+    MODULE._render_declared_report_svg("equalized_constellations", "equalized_constellations", rows)
+    panels = seen["panels"]
+    assert len(panels) == 17 and sum(len(panel[1]) for panel in panels) == len(rows)
+    assert all(f"Configured SNR {snr} dB" in panels[i][0]
+               for i, snr in enumerate((40, 30, 20, 10, 0, -10, -20, -30)))
+    assert "MCS 2" in panels[-1][0] and "Capture EVM 26.73%" in panels[-1][0]
+    assert seen["options"] == {"max_points_per_panel": None}
+    svg = original("Numerical fixture", "Not waveform evidence", panels, [],
+                   max_points_per_panel=None).decode()
+    assert svg.count('fill-opacity="0.72"') == len(rows)
+
+
+def test_raster_deletion_requires_installed_browser_chart_ownership() -> None:
+    browser_path = MODULE.contract_materializer.chart_contract_image_path(
+        MODULE.contract_materializer._chart_specs()[0]
+    )
+    inventory = [{"relative_path": path} for path in [
+        browser_path, "air_interface/image/dl_constellation_scatter.png",
+        "reports/image/dl_phy_signal_diagnostic.png", "reports/image/papr_ccdf.png",
+        "raw/image/measurement.png", "reports/image/contract__not_an_installed_chart.png",
+    ]]
+    removed, preserved = MODULE.partition_rasters_by_browser_ownership(inventory)
+    assert removed == inventory[:1]
+    assert preserved == inventory[1:]
+
+
 def _semantic_row(category: str, *, passed: bool) -> dict[str, object]:
     return {
         "category": category,
@@ -353,6 +397,9 @@ def test_run_root_accepts_proven_ul_no_grants_with_real_dl(monkeypatch, tmp_path
     ("reports/csv/slot_trace.csv", "CanonicalSlot,SweepPointIndex,DLGrantCount,ULGrantCount,DLExecutedGrantCount,ULExecutedGrantCount,DLTrialRows,ULTrialRows\n1,1,0,0,0,0,0,0\n2,2,0,0,0,0,0,0\n"),
     ("reports/csv/slot_trace.csv", None),
     ("reports/csv/scenario_summary.csv", "RunCompletion\n"),
+    ("reports/csv/scenario_summary.csv", "RunCompletion,ScenarioID\nfailed,current_generation\n"),
+    ("reports/csv/scenario_summary.csv", "RunCompletion\ncompleted\n"),
+    ("reports/csv/run_state.csv", "CanonicalSlotsPerSweepPoint,CurrentCanonicalSlot,DLGrantRows,ULGrantRows,SlotTraceRows\n2,2,0,0,2\n"),
     ("meta/scenario_config_resolved.json", json.dumps({
         "scenario": {"runner_profile": "ctrl6gr_pdcch_study"},
         "simulation": {"link_direction": "dl"}})),
@@ -715,8 +762,9 @@ def test_frc_reference_raster_rejects_proxy_rows(tmp_path: Path) -> None:
         MODULE.materialize_frc_reference_rasters(run)
 
 
+@pytest.mark.parametrize("plot_id", ["latency_cdf", "access_delay_cdf"])
 def test_declared_report_raster_is_rebuilt_from_exact_csv_and_lineage(
-    tmp_path: Path,
+    tmp_path: Path, plot_id: str,
 ) -> None:
     from PIL import Image
 
@@ -726,12 +774,12 @@ def test_declared_report_raster_is_rebuilt_from_exact_csv_and_lineage(
         [{
             "Availability": "derived",
             "CountsTowardCoverage": "1",
-            "ValueText": "reports/image/latency_cdf.png",
-            "SourceArtifact": "reports/image/latency_cdf.png",
+            "ValueText": f"reports/image/{plot_id}.png",
+            "SourceArtifact": f"reports/image/{plot_id}.png",
         }],
         ["Availability", "CountsTowardCoverage", "ValueText", "SourceArtifact"],
     )
-    source = run / "reports/csv/latency_cdf_plot.csv"
+    source = run / f"reports/csv/{plot_id}_plot.csv"
     MODULE.write_csv(
         source,
         [
@@ -745,7 +793,7 @@ def test_declared_report_raster_is_rebuilt_from_exact_csv_and_lineage(
     MODULE.write_csv(
         run / "reports/csv/plot_manifest.csv",
         [{
-            "PlotId": "latency_cdf",
+            "PlotId": plot_id,
             "PlotRenderStatus": "suppressed",
             "PlotSuppressionReason": "removed_by_csv_authority_raster_replacement",
             "IsUnavailableCard": "0",
@@ -771,7 +819,7 @@ def test_declared_report_raster_is_rebuilt_from_exact_csv_and_lineage(
     )
 
     assert len(generated) == 1
-    image_path = run / "reports/image/latency_cdf.png"
+    image_path = run / f"reports/image/{plot_id}.png"
     with Image.open(image_path) as image:
         image.load()
         assert image.format == "PNG"
@@ -785,7 +833,7 @@ def test_declared_report_raster_is_rebuilt_from_exact_csv_and_lineage(
     lineage = MODULE.read_csv(
         run / "reports/csv/contract_plot_lineage.csv"
     )[0]
-    assert lineage["PlotId"] == "report__latency_cdf"
+    assert lineage["PlotId"] == f"report__{plot_id}"
     assert lineage["SourceCSV_SHA256"] == MODULE.sha256(source)
     assert lineage["ImageSHA256"] == MODULE.sha256(image_path)
     assert lineage["Status"] == "pass"

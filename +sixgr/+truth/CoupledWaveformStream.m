@@ -29,6 +29,7 @@ classdef CoupledWaveformStream < handle
         TxIQRecorder = []
         Decisions = struct('ID',{},'Kind',{},'UE',{},'Context',{})
         PDCCHResourceLedger = struct()
+        CommonRAReservations = sixgr.truth.CommonRAResourceCalendar()
         PUSCHReceiveOnlyCompletions = cell(0,1)
         ScheduledControlRegistrations = cell(0,1)
         UnselectedPUCCHRegistrations = cell(0,1)
@@ -137,14 +138,20 @@ classdef CoupledWaveformStream < handle
         end
     end
     methods
+        function coordinates=commonRAResources(obj,cellID,slot0,direction,carrier)
+            coordinates=obj.CommonRAReservations.lookup(cellID,slot0,direction,carrier);
+        end
         function tf=hasPending(obj,kind,ue)
             tf=any(string({obj.Pending.Kind})==string(kind) & [obj.Pending.UE]==ue);
         end
         function queueRA(obj,ue,prepared,context,transmitOnly)
             if nargin<5, transmitOnly=false; end
             link=obj.linkForUE(ue,string(prepared.Direction));
+            cfg=link.DLConfig;
+            if prepared.Direction=="UL", cfg=link.ULConfig; end
+            unit=sixgr.rf.appliedWaveformAmplitudeUnit(cfg,prepared.PowerContext);
             if prepared.SampleRate_Hz~=obj.SampleRateHz || ~prepared.RFExecutionDeferred || ...
-                    prepared.PhysicalWaveformPlane~="physical_antenna_sqrt_mW_before_shared_tx_rf"
+                    prepared.PhysicalWaveformPlane~="physical_antenna_"+unit+"_before_shared_tx_rf"
                 error('sixgr:truth:SharedRAPreparationAuthority','RA samples need physical antenna/power authority on the shared clock.');
             end
             first=prepared.StartTime_s*obj.SampleRateHz;
@@ -165,6 +172,24 @@ classdef CoupledWaveformStream < handle
                 error('sixgr:truth:DuplicatePendingRAStage','One UE cannot queue a second stage before the prior received stage completes.');
             end
             obj.Serial=obj.Serial+1; id="ra_observation_"+obj.Serial;
+            reservations=sixgr.util.structGet(prepared,'CommonResourceReservations',struct([]));
+            if any(prepared.StageName==["Msg2","Msg4"])
+                assert(~isempty(reservations) && all([reservations.CellID]==link.Cell), ...
+                    'sixgr:truth:MissingCommonRAReservations','Freeze common DL and consequent UL ownership before enqueue.');
+                if prepared.StageName=="Msg4"
+                    peers=obj.Links([obj.Links.Cell]==link.Cell & [obj.Links.UE]~=ue);
+                    for peer=reshape(peers,1,[])
+                        sixgr.truth.CommonRAResourceCalendar.assertPeriodicSRSDisjoint(reservations,peer.ULConfig);
+                        uc=peer.ULConfig;
+                        identity=struct('UEID',peer.UE,'RNTI',uc.phy.pusch.RNTI, ...
+                            'ServingCell',peer.Cell,'PUCCHCell',peer.Cell, ...
+                            'ComponentCarrier',uc.phy.frame.DefaultIdentity.ScheduledCCID, ...
+                            'ActiveULBWP',uc.phy.frame.DefaultIdentity.ULBWPID);
+                        sixgr.truth.CommonRAResourceCalendar.assertInstalledPUCCHDisjoint(reservations,uc,identity);
+                    end
+                end
+                obj.CommonRAReservations=obj.CommonRAReservations.reserve(reservations);
+            end
             obj.Events.enqueue(tx,id,sixgr.phy.waveform.WaveformChunk(samples,first));
             if prepared.Direction=="UL"
                 active=find(any(samples~=0,2),1,'first');
@@ -289,6 +314,9 @@ classdef CoupledWaveformStream < handle
             end
             if prepared.Channel=="PUCCH"
                 identity=sixgr.truth.preparedPUCCHTransmissionIdentity(prepared,ue,id);
+                assignment=prepared.RequestBinding.Assignment;
+                c=prepared.Tx.Carrier;
+                obj.CommonRAReservations.assertPUCCHDisjoint(link.Cell,assignment.DueSlot-1,c,assignment.Resource);
                 assert(identity.RFConfigurationEpoch==obj.Physical.ConfigurationEpoch, ...
                     'sixgr:truth:SharedPUCCHTXIdentityMismatch','The preparation must use the physical owner epoch.');
             end
@@ -389,9 +417,11 @@ classdef CoupledWaveformStream < handle
             % Both DL assignments and UL grants use the same DL radio/RE
             % pool. A queued waveform is NOT a received DCI or a data grant.
             link=obj.linkForUE(ue,"DL");
+            unit=sixgr.rf.appliedWaveformAmplitudeUnit( ...
+                prepared.ReceiverConfig,prepared.PowerContext);
             assert(isstruct(prepared) && isscalar(prepared) && ...
                 prepared.ExecutionStage=="pdcch_waveform_prepared_not_received" && ...
-                prepared.SampleDomain=="physical_antenna_sqrt_mW_before_shared_tx_rf" && ...
+                prepared.SampleDomain=="physical_antenna_"+unit+"_before_shared_tx_rf" && ...
                 prepared.RFExecutionDeferred && prepared.ChannelExecutionDeferred && ...
                 ~prepared.PowerExecutionDeferred && prepared.SampleRateHz==obj.SampleRateHz, ...
                 'sixgr:truth:SharedPDCCHPreparationAuthority', ...
@@ -419,6 +449,8 @@ classdef CoupledWaveformStream < handle
                 'sixgr:truth:SharedPDCCHAntennaLayout','Retain the complete nonempty physical radio contribution.');
             [ledger,occupied]=sixgr.truth.PDCCHSlotResourceLedger.lookup( ...
                 obj.PDCCHResourceLedger,slot0+1,link.Cell,carrier);
+            occupied=unique([occupied;sixgr.truth.commonPDCCHReservations( ...
+                struct('SharedWaveformStream',obj),prepared.ReceiverConfig,slot0,link.Cell,carrier)],'rows');
             allocated=prepared.TxInfo.AllocatedRECoordinates;
             assert(isempty(intersect(occupied,allocated,'rows')), ...
                 'sixgr:truth:SharedPDCCHResourceCollision', ...
@@ -509,6 +541,12 @@ classdef CoupledWaveformStream < handle
                 tx="ue_"+ue; rx="gnb_"+link.Cell+"_rx"; role="ue"; family="PUSCH";
             end
             identity=sixgr.truth.preparedDataTransmissionIdentity(prepared,ue);
+            dataSlot=sixgr.util.structGet(prepared.ReceiverConfig,'lls6g.runtime.AbsoluteSlotIndex0',NaN);
+            coordinates=sixgr.truth.CommonRAResourceCalendar.transmissionRectangle(prepared.Tx,direction);
+            reserved=obj.commonRAResources(link.Cell,dataSlot,direction,prepared.Tx.Carrier);
+            assert(isempty(intersect(reserved,coordinates,'rows')), ...
+                'sixgr:truth:SharedDataCommonRACollision', ...
+                'A frozen connected grant cannot overwrite Msg2/Msg3/Msg4/SRB1 resources.');
             assert(~any(string({obj.PUSCHReceiveOnlyRegistrations.GrantContextID})==identity.PHYGrantContextId), ...
                 'sixgr:truth:ConflictingPUSCHReceiveOnlyTransmission', ...
                 'A receive-only grant cannot subsequently acquire a UE transmission.');
@@ -534,8 +572,8 @@ classdef CoupledWaveformStream < handle
                 all(isfinite(samples),'all') && any(samples~=0,'all'), ...
                 'sixgr:truth:SharedDataAntennaLayout', ...
                 'Coded logical ports must map to the frozen physical radio without changing power.');
-            assert(string(prepared.Tx.PowerContext.WaveformAmplitudeUnit)=="sqrt_mW", ...
-                'sixgr:truth:SharedDataPhysicalPowerUnit','Shared IQ must retain its physical power reference.');
+            sixgr.rf.appliedWaveformAmplitudeUnit( ...
+                prepared.ReceiverConfig,prepared.Tx.PowerContext);
             ch=obj.directionalChannelState(ue,direction);
             obj.Serial=obj.Serial+1; id=lower(family)+"_observation_"+obj.Serial;
             obj.Events.enqueue(tx,id,sixgr.phy.waveform.WaveformChunk(samples,prepared.StartSample));

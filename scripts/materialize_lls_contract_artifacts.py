@@ -19,6 +19,7 @@ from regenerate_lls_rasters_from_csv import (  # noqa: E402
     materialize_frc_reference_rasters,
     reconcile_removed_raster_lineage,
     raster_inventory,
+    partition_rasters_by_browser_ownership,
     require_primary_csv_semantics,
     validate_run_root,
     write_csv,
@@ -53,9 +54,9 @@ def main() -> int:
         "--replace-existing-rasters-from-csv",
         action="store_true",
         help=(
-            "After the primary CSV semantic gate passes, inventory and remove all "
-            "run-local PNG/JPEG files before rebuilding eligible scientific charts "
-            "from exact CSV sources. No reason-card image is generated."
+            "After the primary CSV semantic gate passes, replace browser-owned "
+            "chart rasters from exact CSV sources. Preserve other producers' "
+            "waveform/constellation images and their strict lineage checks."
         ),
     )
     args = parser.parse_args()
@@ -100,6 +101,7 @@ def main() -> int:
             replace_existing_rasters and not exact_cache_hit
         )
         removed_rasters: list[dict[str, object]] = []
+        preserved_rasters: list[dict[str, object]] = []
         declared_artifact_rasters: list[dict[str, str]] = []
         declared_report_rasters: list[dict[str, str]] = []
         if raster_replacement_executed:
@@ -107,17 +109,20 @@ def main() -> int:
             # image claims without their declared CSV-backed rasters. Rebuild
             # only those explicitly available/counting aliases first so the
             # preflight audit can validate a coherent source tree. They are
-            # removed with the complete inventory below and deterministically
-            # regenerated from the same CSV bytes afterward.
+            # checked against the same CSV bytes below. Do not bulk-delete
+            # images owned by other producers: the browser cannot rebuild
+            # every MATLAB waveform/constellation panel.
             materialize_declared_report_rasters(run_folder)
             require_primary_csv_semantics(run_folder, policy_filter=policy_filter)
-            removed_rasters = raster_inventory(run_folder)
+            all_rasters = raster_inventory(run_folder)
+            removed_rasters, preserved_rasters = partition_rasters_by_browser_ownership(all_rasters)
             inventory_path = (
                 run_folder / "reports" / "csv" / "raster_replacement_inventory.csv"
             )
             write_csv(
                 inventory_path,
-                removed_rasters,
+                [dict(row, action="replace_browser_owned") for row in removed_rasters]
+                + [dict(row, action="preserve_producer_owned") for row in preserved_rasters],
                 [
                     "relative_path",
                     "extension",
@@ -126,6 +131,7 @@ def main() -> int:
                     "width_px",
                     "height_px",
                     "format",
+                    "action",
                 ],
             )
             for row in removed_rasters:
@@ -146,6 +152,11 @@ def main() -> int:
             declared_report_rasters = materialize_declared_report_rasters(run_folder)
         # Index only after any raster replacement so the filesystem artifact
         # set cannot be cached from the pre-replacement tree.
+        if raster_replacement_executed:
+            # The initial cache lookup above populated the terminal index.
+            # Image replacement need not change any authority-file timestamp,
+            # so invalidate it here before handing paths to the renderer.
+            dash.clear_dashboard_caches(int(run_row.get("run_id") or 0))
         run_row = dash.filesystem_run_row_from_folder(run_folder)
         if run_row is None:
             raise SystemExit(
@@ -212,6 +223,7 @@ def main() -> int:
             "created_count": len(result.get("created") or []),
             "exact_source_cache_hit": exact_cache_hit,
             "old_rasters_removed": len(removed_rasters),
+            "producer_rasters_preserved": len(preserved_rasters),
             "declared_artifact_rasters_regenerated": len(declared_artifact_rasters),
             "declared_report_rasters_regenerated": len(declared_report_rasters),
             "frc_reference_rasters_regenerated": len(frc_reference_rasters),

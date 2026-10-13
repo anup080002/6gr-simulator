@@ -52,6 +52,18 @@ simulation:
 # declare the UE capability explicitly rather than inheriting an invalid
 # numerology-dependent assumption.
 pucch_resources:
+  # Eight-resource/four-port CSI has 14 Part-1 bits at every allowed RI.
+  # The inherited 2-PRB resource fails already at HARQ=2, SR=1, CSI=14:
+  # (17 information + 6 CRC)/64 coded bits > max_code_rate 0.35.
+  # Install a 4-PRB maximum for combined UCI, retaining the same rate gate.
+  # This covers the tested eight-HARQ-bit envelope including the 11-bit CRC
+  # transition. Dynamic HARQ/CSI still selects its minimum legal width;
+  # CSI-only uses the configured width. Do not discard CSI to fit a fixture.
+  # Resource arrays replace inherited arrays, so retain the short SR/HARQ
+  # resource as well. Both remain in the special slot's UL symbols 12:13.
+  resources:
+    - {id: 0, format: 0, starting_prb: 0, nrof_prbs: 1, starting_symbol: 12, nrof_symbols: 2, intra_slot_hopping: false, second_hop_start_prb: [], initial_cyclic_shift: 0, occ_length: 1, occ_index: 0, additional_dmrs: false, pi2_bpsk: false, nid: 1, hopping_id: 1}
+    - {id: 10, format: 2, starting_prb: 4, nrof_prbs: 4, starting_symbol: 12, nrof_symbols: 2, intra_slot_hopping: false, second_hop_start_prb: [], initial_cyclic_shift: 0, occ_length: 2, occ_index: 0, additional_dmrs: false, pi2_bpsk: false, nid: 1, hopping_id: 1}
   scheduling_request_resources:
     - scheduling_request_resource_id: 1
       scheduling_request_id: 0
@@ -66,10 +78,17 @@ integration:
 
 system:
   scheduler:
+    # The runtime scheduler consumes this field, not only the public alias
+    # below. Do not inherit the short 5-MHz fixture's 25-PRB grant ceiling.
+    # Actual grants still respect control/RS reservations and slot direction.
+    maxPRBAllocationPerUE: 273
     # Grant TBS is calculated from the materialized allocation with nrTBS.
     # No fast-NRE approximation is permitted in this H4 family.
     tbsMode: faithful
     fastNREApprox: false
+
+scheduler:
+  max_prbs_per_grant: 273
 
 power_and_rf_frontend:
   bs_tx_power_dbm: 30
@@ -163,6 +182,9 @@ initial_access:
   spectrum: unpaired
   random_access_procedure: four_step_contention_based
   require_explicit_ssb_bitmap: true
+  # The UE selects from all four measured SSB beams. Each needs its own
+  # cell-authored SI occasion; a receive-beam hint must never choose TX SI.
+  sib1_transmission_scope: all_active_ssb_occasions
   ssb:
     enabled: true
     case: Case B
@@ -184,25 +206,31 @@ initial_access:
     n_crb_ssb: 253
     k_ssb: 0
     selected_ssb_index: 0
-    # All four active Case-B candidates occupy absolute slots 0--1.  The
-    # MIB Type-0 search-space index below resolves its first monitoring
-    # occasion to absolute slot 0, a fixed-DL slot in D,D,D,S,U.  The
-    # alternative inherited index 2 resolves to slot 4, which is fixed UL
-    # and is therefore illegal for Type-0 PDCCH/SIB1 in this TDD pattern.
-    # Candidates 0--3 and the causal slot-0 SIB1 are all inside subframe
-    # zero. A 1 ms capture therefore contains the complete configured
-    # active SS-burst-set and SIB1. Longer
-    # connected tracking is provided by the 100 ms scenario timeline; it
-    # must not inflate the initial acquisition waveform itself.
-    observation_subframes: 1
+    # Case-B candidates occupy slots 0--1. SearchSpaceZero=4 (O=5,M=1)
+    # puts SI on native slots 10--13, after SS/PBCH, avoiding collisions
+    # when SI data correctly occupies the CORESET0 frequency reference.
+    # Slot 13 is special; SI ends before symbol 10. Capture through slot 13.
+    observation_subframes: 7
   mib:
     enabled: true
-    pdcch_config_sib1: 0
+    pdcch_config_sib1: 4
     dmrs_type_a_position: 2
   sib1:
     enabled: true
     decode_from_waveform_required: true
-    observation_subframes: 1
+    observation_subframes: 7
+    pdsch:
+      # TS 38.214 default-A row 4 (zero-based TDRA 3), normal CP,
+      # dmrs-TypeA-Position=2: S=2, L=7. Fits the 10D/2G/2U slot.
+      # The 624-bit SIB1 does not fit MCS 0/1 at this duration. Table-1
+      # QPSK MCS 2 yields a measured-allocation nrTBS of 672 bits.
+      # SI-RNTI FDRA is CORESET0-relative, not full-carrier-relative.
+      prb_start: 0
+      num_prb: 24
+      symbol_start: 2
+      num_symbols: 7
+      mcs: 2
+      rv: 0
   rrc:
     require_setup_complete: true
 
@@ -217,6 +245,11 @@ control:
   coreset_frequency_resource_policy: explicit_bitmap
   coreset_frequency_resources: [1, 1, 1, 1, 1, 1, 1, 1]
   coreset_rb_start: 112
+  coreset_rb_offset_r16_capability: true
+  # Dedicated connected CORESET; ID 0 remains the MIB-derived broadcast
+  # CORESET. Start 112 is encoded as 18 six-RB groups plus rb-Offset-r16=4.
+  connected_dci:
+    coreset_id: 1
   coreset_duration: 2
   aggregation_levels: [1, 2, 4, 8, 16]
   candidate_aggregation_levels: [1, 2, 4, 8, 16]
@@ -226,6 +259,7 @@ control:
   blind_decode_candidates: 16
 
 pdcch:
+  coreset_definitions: [{id: 1, duration: 2}]
   # Keep the schema-level descriptor aligned with control.dci_formats. Type-0
   # broadcast still derives DCI 1_0 locally from MIB/SIB1; these fields own
   # connected C-RNTI monitoring only.
@@ -284,7 +318,9 @@ reference_signals:
   pdsch_dmrs_type_a_position: 2
   pdsch_dmrs_max_length: 1
   pdsch_dmrs_additional_positions: 2
-  pdsch_dmrs_num_cdm_groups_without_data: 1
+  # Ports 0:3 at rank four occupy CDM groups 0 and 1. Keep both
+  # reserved at every adaptive rank; exact allocation accounts for this.
+  pdsch_dmrs_num_cdm_groups_without_data: 2
   pdsch_dmrs_ports: 4
   pdsch_dmrs:
     port_set: [0, 1, 2, 3]
@@ -298,7 +334,8 @@ reference_signals:
     port_set: [0, 1, 2, 3]
   csi_rs_enabled: true
   csi_rs_periodicity_slots: 20
-  csi_rs_offset_slots: 2
+  # Keep full-band CSI-RS disjoint from all four common SI occasions.
+  csi_rs_offset_slots: 5
   csi_rs_ports: 4
   csi_rs_port_count: 4
   csi_rs_num_resources: 8
@@ -313,6 +350,22 @@ reference_signals:
   csi_rs_resource_subcarrier_locations: [0, 0, 0, 0, 0, 0, 0, 0]
   csi_rs_resource_rb_offsets: [0, 0, 0, 0, 0, 0, 0, 0]
   csi_rs_resource_num_rbs: [273, 273, 273, 273, 273, 273, 273, 273]
+  # Measure disturbance on explicit serving-cell-muted REs. The pilot-only
+  # CIR-residual estimate is retained as a diagnostic, not substituted for
+  # this measurement. Pattern 1 at symbol 13/k=4:7 is disjoint from the
+  # installed CSI-RS, DM-RS, PT-RS and control resources at ranks 1/2/4.
+  # NR frequency occupation is in multiples of four CRBs; intersect the
+  # 276-CRB configured range with this 273-PRB carrier (1092 physical REs).
+  csi_im:
+    enabled: true
+    resource_id: 0
+    pattern: 1
+    subcarrier: 4
+    symbol: 13
+    starting_rb: 0
+    num_rbs: 276
+    period_slots: 20
+    offset_slots: 5
   nzp_csi_rs:
     # This descriptive RS object is exported beside the executable resource
     # arrays below. At mu=1, 20 slots are 10 ms; both representations must
@@ -378,6 +431,9 @@ reference_signals:
     periodicity: "20"
     periodicity_slots: 20
     period_offset: 6
+    # Use the periodic resource calendar below, not the inherited fixture's
+    # explicit within-frame slots [7, 8]. Offset 6 is zero-based.
+    slot_numbers: []
     burst_length_slots: 2
     num_ports: 1
     row_number: 1
@@ -413,16 +469,18 @@ csi_acquisition_and_reporting:
   cri_policy: measured_receiver_resource_search
   report_trigger: periodic
   # At mu=1 the 20-slot period is 10 ms. CSI-RS is sent at zero-based
-  # offset 2. For periodic CSI, TS 38.214 section 5.2.2.5 places the H4
-  # reference window before the report; zero-based offset 13 is the first
+  # offset 5, separate from common SI slots 10--13. TS 38.214 section 5.2.2.5 places the H4
+  # reference window before the report; zero-based offset 18 is the first
   # D,D,D,S(10D/2G/2U),U special slot whose PUCCH symbols 12:13 are UL and
-  # whose reference window can contain the completed offset-2 CSI-RS.
+  # whose reference window can contain the completed offset-5 CSI-RS.
+  # Eight CSI resources at mu=1 require n_CSI_ref >= 10 slots; offset 13
+  # would end its reference window before the new CSI-RS occasion.
   # Do not inherit the old five-slot/offset-3 short-fixture calendar: that
   # would request CSI one slot after CSI-RS, before its causal report wire
   # can be prepared, and would create four obligations per H4 CSI-RS period.
   report_periodicity: 10ms
   csi_report_periodicity_slots: 20
-  csi_report_offset_slots: 13
+  csi_report_offset_slots: 18
   csi_reporting_delay_slots: 4
   report_configuration:
     report_config_id: h4-csi-report-0
@@ -471,6 +529,11 @@ link_adaptation:
   operating_point_mode: adaptive
   inner_loop_flag: true
   outer_loop_flag: true
+  # Recovery requires two independently received positive CQI reports.
+  # H4 reports every 20 slots; the inherited five-slot limit reset that
+  # counter at EVERY valid report after CQI 0. Keep the confirmation gate
+  # and reject gaps beyond one configured reporting period (no auto-clamp).
+  outage_recovery_max_gap_slots: 20
   cqi_source: csi_feedback
   cqi_table: table1
   pdsch_link_adaptation_policy: baseline
@@ -488,6 +551,10 @@ harq:
 
 traffic:
   model: full_buffer
+  # Explicit inherited flows take precedence over scalar traffic settings.
+  # Clear the fixture's 5-Mbps flow so the generic resolver uses this H4
+  # saturation profile; do not retain a hidden finite-load fixture override.
+  flows: []
   transport: UDP
   flowDirection: BIDIR
   dlRatio: 0.6
@@ -539,6 +606,9 @@ output_control:
 
 output:
   profile: h4_100_common_connected
+  # The connected exporter reuses actual received burst candidates. It must
+  # not launch another SSB acquisition to populate this artifact.
+  export_ssb_beam_sweep: true
   # A 200-slot, 273-RB run repeats a small set of exact allocation maps.
   # Persist each exact contiguous-RE template once and list every slot where
   # it applies; this changes storage only, never coordinates or RE counts.

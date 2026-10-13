@@ -20,6 +20,9 @@ p.addParameter("CandidateSSBIndex", [], ...
     @(x) isempty(x) || (isnumeric(x) && isscalar(x) && isfinite(x) && ...
     x >= 0 && x == round(x)));
 p.parse(varargin{:});
+sixgr.runtime.RuntimeCallLedger.record( ...
+    "sixgr.phy.broadcast.recoverSIB1FromWaveform", "SIB1", "DL", ...
+    struct("Stage","RX","RecoveryScope",string(p.Results.RecoveryScope)));
 physicalSamples=[];
 if ~isempty(p.Results.PhysicalMeasurementObservation)
     physicalSamples=p.Results.PhysicalMeasurementObservation.readComplete();
@@ -35,6 +38,11 @@ for name = string(fieldnames(evidence)).'
 end
 result.RecoveryScope=string(p.Results.RecoveryScope);
 result.SIB1ReceptionAttempted=false;
+result.SIB1ObservationComplete=false;
+result.SIB1ObservationStatus="not_evaluated";
+result.SIB1ObservationStartSample=NaN;
+result.SIB1ObservationEndSampleExclusive=NaN;
+result.SIB1AvailableCaptureSamples=size(rxWaveform,1);
 result.SSBMIBComplete=false;
 result.Status = "started";
 try
@@ -220,7 +228,6 @@ try
         result.Status="SSB_MIB_COMPLETE_SIB1_NOT_ATTEMPTED";
         return;
     end
-    result.SIB1ReceptionAttempted=true;
     [type0, cfgSI] = sixgr.phy.broadcast.deriveType0PDCCHFromMIB(carrier, cfg, mib, ...
         "RNTI", double(p.Results.ReceiverRNTI));
     monitoringOccasionOrdinal = localMonitoringOccasionOrdinal(cfg);
@@ -254,6 +261,27 @@ try
     result.SearchSpace0AggregationLevel = double(type0.SearchSpace0.AggregationLevel);
     result.PDCCHConfigSIB1Source = "decoded_mib_bch_transport_block";
 
+    % The decoded MIB/SSB can point beyond a completed acquisition buffer.
+    % That is an unobserved SI occasion, not an attempted CRC failure. The
+    % decision uses only decoded scheduling information and capture extent,
+    % never the transmitter's selected SI occasion or payload.
+    [siWave, firstSample, endSample] = localExtractSIB1Waveform( ...
+        rxWaveform, carrier, sampleRate, sib1AbsoluteSlot);
+    result.SIB1ObservationStartSample=firstSample;
+    result.SIB1ObservationEndSampleExclusive=endSample;
+    result.SIB1ObservationComplete=endSample<=size(rxWaveform,1);
+    if ~result.SIB1ObservationComplete
+        result.SIB1ObservationStatus="incomplete_capture";
+        result.Status="INCOMPLETE_OBSERVATION";
+        result.FailureIdentifier="sixgr:phy:broadcast:SIB1WaveformMissing";
+        result.FailureReason=string(sprintf( ...
+            'Scheduled SIB1 slot [%d,%d) is outside the received capture [0,%d).', ...
+            firstSample,endSample,size(rxWaveform,1)));
+        return;
+    end
+    result.SIB1ObservationStatus="complete_received_samples";
+    result.SIB1ReceptionAttempted=true;
+
     % SSB_Rx corrects its own extraction, not the caller's full capture.
     % Transfer that RECEIVER estimate to the same noisy full-carrier samples
     % before SI-RNTI PDCCH/PDSCH demodulation. The deterministic SSB placement
@@ -263,12 +291,10 @@ try
         error("sixgr:phy:broadcast:MissingSIB1FrequencyEstimate", ...
             "SIB1 reception requires the finite frequency estimate recovered from received SSB samples.");
     end
-    sampleTime=(0:size(rxWaveform,1)-1).'/sampleRate;
-    correctedSI=rxWaveform.*cast(exp(-1j*2*pi*cfoHz*sampleTime),"like",rxWaveform);
+    sampleTime=(firstSample+(0:size(siWave,1)-1)).'/sampleRate;
+    siWave=siWave.*cast(exp(-1j*2*pi*cfoHz*sampleTime),"like",siWave);
     result.SIB1CFOCorrectionApplied_Hz=cfoHz;
     result.SIB1CFOCorrectionSource="received_ssb_pss_cp_frequency_estimate";
-    siWave = localExtractSIB1Waveform( ...
-        correctedSI, carrier, sampleRate, sib1AbsoluteSlot);
     faultMode = lower(strtrim(string(p.Results.FaultMode)));
     if faultMode == "nosignal"
         siWave(:) = 0;
@@ -441,6 +467,9 @@ context = struct( ...
     "PDCCHAbsoluteSlot", absoluteSlot, ...
     "PDSCHAbsoluteSlot", absoluteSlot, "K0", 0, ...
     "MCSTable", "qam64", "MCSIndex", double(dci.MCSIndex), ...
+    "DMRSTypeAPosition", double(cfg.phy.mib.dmrsTypeAPosition), ...
+    "Type0MultiplexingPattern", double(cfg.phy.sib1.type0MultiplexingPattern), ...
+    "SIB1FrequencyReference", dci.FrequencyReference, ...
     "TargetCodeRate", double(dci.TargetCodeRate), ...
     "XOverhead", sixgr.phy.dl.resolvePDSCHXOverhead( ...
         cfg, pdsch.SymbolAllocation), ...
@@ -576,7 +605,13 @@ amplitudeUnit = string(sixgr.util.structGet( ...
     powerContext, "WaveformAmplitudeUnit", ""));
 result.SSPhysicalMeasurementStatus = ...
     "unavailable_missing_sqrt_mw_power_context";
-if ~strcmpi(strtrim(amplitudeUnit), "sqrt_mW")
+normalized=sixgr.rf.isNormalizedFixedSNRPowerReference(cfg);
+normalizedUnit=strcmpi(strtrim(amplitudeUnit),"normalized_complex_baseband");
+if normalizedUnit && normalized
+    % Validate the applied contract; enabling a measurement is not authority
+    % to change samples or claim absolute device power.
+    sixgr.rf.appliedWaveformAmplitudeUnit(cfg,powerContext);
+elseif ~strcmpi(strtrim(amplitudeUnit), "sqrt_mW") || normalized
     return;
 end
 nfft = double(sixgr.util.structGet(sync, "Nfft", NaN));
@@ -594,6 +629,9 @@ if ~(isscalar(ncellid) && isfinite(ncellid) && ncellid >= 0 && ...
 end
 
 scale = nfft * sqrt(1000);
+% Internal working scale for the existing per-RE estimator. For normalized
+% samples this is numerical conditioning, not a watts claim: convert every
+% exposed power field back to occupied-RE units before returning below.
 physicalGrid = rxSSB ./ cast(scale, "like", rxSSB);
 iBarSSB = double(sixgr.util.structGet(pbch, "iBar_SSB", NaN));
 try
@@ -669,6 +707,9 @@ catch ME
     result.SSPhysicalMeasurementStatus = ...
         "unavailable_sss_measurement:" + string(ME.identifier);
     result.SSSINRFailureReason = string(ME.message);
+end
+if normalized
+    result=sixgr.link.normalizeReceivedSSBPowerReference(result,cfg,"receive");
 end
 end
 
@@ -850,7 +891,7 @@ catch
 end
 end
 
-function siWave = localExtractSIB1Waveform( ...
+function [siWave, prefixSamples, endSample] = localExtractSIB1Waveform( ...
         rxWaveform, carrier, sampleRate, absoluteSlot)
 prefixSamples = localAbsoluteSlotStartSample( ...
     absoluteSlot, carrier, sampleRate);
@@ -858,9 +899,8 @@ endSample = localAbsoluteSlotStartSample( ...
     absoluteSlot + 1, carrier, sampleRate);
 if prefixSamples >= size(rxWaveform, 1) || ...
         endSample > size(rxWaveform, 1)
-    error("sixgr:phy:broadcast:SIB1WaveformMissing", ...
-        "Received waveform does not contain the complete scheduled SIB1 slot [%d,%d).", ...
-        prefixSamples, endSample);
+    siWave=rxWaveform([],:);
+    return;
 end
 % PDCCH/PDSCH receiver objects and nrChannelEstimate operate on the one-slot
 % grid identified by the decoded Type-0 monitoring occasion.  Passing the

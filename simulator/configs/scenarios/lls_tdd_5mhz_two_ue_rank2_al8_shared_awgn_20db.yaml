@@ -1,0 +1,136 @@
+inherits:
+  - ./lls_tdd_5mhz_rank2_shared_awgn_20db.yaml
+  - ../defaults/traffic_saturated_200mbps.yaml
+  - ../validation/pucch_two_ue_report_bindings.yaml
+
+meta:
+  scenario_id: lls_tdd_5mhz_two_ue_rank2_al8_shared_awgn_20db
+  description: Two-UE TDD shared-waveform diagnostic with explicit CSI/SR/SRS owners and an eight-CCE AL8 control bottleneck.
+  purpose: Verify physical access, AL8 admission/defer, causal per-UE feedback, rank-two data and final artifacts; not statistical qualification.
+  research_class: optional_research_experiment
+  tags: [lls, tdd, 5mhz, two_ue, rank2, al8, shared_feedback, configured_snr]
+
+users:
+  n_users: 2
+  rnti_start: 1
+
+deployment_topology:
+  num_ues: 2
+
+system:
+  scheduler:
+    maxActiveUEsPerSlot: 2
+
+# Preserve the parent's 24-PRB/two-symbol CORESET and eight-CCE capacity.
+# A selected AL8 DCI consumes that occasion; other grants must be deferred.
+# The direction preference is an explicit scheduler policy, not a 3GPP rule.
+control:
+  scheduler_aggregation_level: 8
+  aggregation_selection_policy: configured_scheduler_level
+  joint_pdcch_admission_policy: ul_preschedule_first
+
+# All four SSB candidates need legal Type-0 occasions, not only candidate 0.
+# TS 38.213 Table 13-11 index 4 maps them to slots 5,6,7,8 at 15 kHz;
+# the last is mixed. Default-A TDRA index 3 occupies symbols 2..8,
+# entirely within its ten DL symbols. The receiver decodes the TDRA bits.
+initial_access:
+  sib1_transmission_scope: all_active_ssb_occasions
+  mib:
+    pdcch_config_sib1: 20
+  sib1:
+    pdsch:
+      symbol_start: 2
+      num_symbols: 7
+      mcs: 2
+
+# Installed frequency resources, not an RNTI-derived orthogonality shortcut.
+# Both UEs retain the four-port sounding configuration of the parent.
+reference_signals:
+  # Both disjoint comb resources are due every five slots. Alternating one
+  # UE per occasion would create ten-slot gaps against the five-slot age
+  # guard. Keep that guard and allow both configured resources to execute.
+  srs_max_ues_per_slot: 2
+  srs_scheduling_policy: multiplex_due_users
+  # CSI-RS remains periodic at slots 0+5n. Row 4 occupies one symbol;
+  # symbol 12 is outside both Case-A SSB (2..5,8..11) and SIB1 (2..8).
+  # These CSI-RS occasions are full-DL slots, not the mixed slot.
+  csi_rs_resource_symbol_locations: [12]
+  trs:
+    # Preserve the two-slot/four-resource TRS burst and ten-slot period.
+    # The parent's slots 7,8 collide with SIB1 candidates 2,3. Slots 2,3
+    # avoid every SSB/SIB1/CSI-RS occasion; symbols 4,8 fit the mixed slot.
+    slot_numbers: [2, 3]
+  srs:
+    ue_resource_bindings:
+      - ue_index: 1
+        rnti: 1
+        serving_cell_id: 1
+        resource_id: 0
+        comb_offset: 0
+        cyclic_shift: 0
+        sequence_id: 1
+      - ue_index: 2
+        rnti: 2
+        serving_cell_id: 1
+        resource_id: 1
+        comb_offset: 1
+        cyclic_shift: 0
+        sequence_id: 1
+
+# Both owners need offered traffic; inheriting a one-owner flow would leave
+# the second UE's admission/feedback path unexercised.
+traffic:
+  flows:
+    - name: saturated_bidirectional_flow
+      qfi: 9
+      fiveQi: 9
+      protocol: UDP
+      direction: BIDIR
+      packetDelayBudget_ms: 20
+      packetSize_bytes: 512
+      packetInterval_ms: 1
+      rate_Mbps: 200
+      weight: 1
+      jitterPct: 0
+      burstiness: saturation
+      service_profile: eMBB
+      ue_class: UE_CLASS_EMBB
+      ue_count: 2
+
+# Additional observation time is explicit: acquisition and AL8 deferral must
+# not be bypassed just to create data rows within the single-UE run length.
+run_control:
+  total_slots: 80
+  warmup_slots: 0
+  measurement_slots: 80
+  total_time_ms: 80
+  warmup_time_ms: 0
+  measurement_time_ms: 80
+
+simulation:
+  n_frames: 8
+  n_slots: 80
+  n_subframes: 80
+  min_duration_s: 0.080
+
+random_access:
+  num_slots: 80
+  num_subframes: 80
+  preamble_detection_policy: awgn_sic_unrestricted
+  # Cell receiver coverage, not a UE-specific timing oracle. This short B4
+  # preamble's ZCZ permits <3.36 us; 2 us covers the 200-m-ISD AWGN layout.
+  multi_preamble_max_delay_us: 2
+  # One real RAR contains a grant per independently detected RAPID. Two
+  # 12-PRB Msg3 grants fit in the 25-PRB initial UL BWP without overlap.
+  msg3_pusch:
+    prb_start: 0
+    num_prb: 12
+  # UE1 continues physical PUCCH/SRS while UE2 completes access. Reserve
+  # symbols 12..13 for control and symbol 13 for sounding. SRB1 has its own TBS.
+  setup_complete_pusch:
+    symbol_start: 0
+    num_symbols: 12
+
+output:
+  profile: lls_tdd_5mhz_two_ue_rank2_al8_shared_awgn_20db
+  live_heavy_refresh_interval_frames: 80

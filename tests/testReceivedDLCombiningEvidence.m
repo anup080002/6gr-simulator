@@ -1,7 +1,7 @@
 function ok=testReceivedDLCombiningEvidence()
 % Actual capture replay: exports must project, not recompute, HARQ soft state.
 s=sixgr.lls6g.config.loadScenarioConfig( ...
-    'simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml');
+    'simulator/configs/fixtures/received_dl_harq_calendar_20260913.yaml');
 installed=sixgr.lls6g.buildInternalConfig(s,tempname);
 for k=[1 2 4]
     saved=load(fullfile('docs','lls','evidence_20260913','received_dl_harq_calendar_03',sprintf('attempt_%d.mat',k)));

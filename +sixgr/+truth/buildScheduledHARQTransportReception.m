@@ -15,8 +15,7 @@ ueData=struct('UEID',ue,'RNTI',mapping.RNTI,'ServingCell',cellId,'PUCCHCell',cel
 rrc=sixgr.phy.pucch.PUCCHConfigBuilder.receiverConfiguration(cfg,ueData);
 csiCalendar=sixgr.truth.configuredCSIReportCalendar(cfg,ueData,targetSlot);
 srCalendar=table();
-if ~isempty(rrc.Data.SRResources) || ~isempty(sixgr.util.structGet( ...
-        cfg,'validation.pucch_resources.scheduling_request_resources',struct([])))
+if ~isempty(rrc.Data.SRResources) || ~isempty(rrc.Data.SchedulingRequestResources)
     srCalendar=sixgr.truth.buildConfiguredSRCalendar(cfg,ueData,targetSlot,targetSlot);
 end
 packed=sixgr.phy.pdcch.decodeDCIPayload(grant.DCI.Bits,grant.DCI.Format,grant.DCI.ContextData);

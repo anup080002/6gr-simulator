@@ -5,6 +5,9 @@ function out = recoverLLSRunArtifacts(runFolder, scenarioCfg, varargin)
 % PHY/control/grant artifacts but never reached the normal post-run export
 % bundle. It does not fabricate success; it republishes summary, reporting,
 % truth-contract, and coverage artifacts from the evidence already on disk.
+% ReplaceExistingRastersFromCSV=false skips only the publisher's bulk-raster
+% replacement phase for recovery copies. Source, visual, lineage and terminal
+% acceptance checks remain mandatory according to the executed configuration.
 
 p = inputParser;
 p.addRequired("runFolder", @(x)ischar(x) || isstring(x));
@@ -19,6 +22,7 @@ p.addParameter("ConfigPath", "", @(x)ischar(x) || isstring(x));
 p.addParameter("ConfigHash", "", @(x)ischar(x) || isstring(x));
 p.addParameter("RunID", NaN, @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
 p.addParameter("FinalizationMode", "failed_recovery", @(x)ischar(x) || isstring(x));
+p.addParameter("ReplaceExistingRastersFromCSV", true, @(x)islogical(x) && isscalar(x));
 p.parse(runFolder, scenarioCfg, varargin{:});
 
 runFolder = char(string(p.Results.runFolder));
@@ -83,6 +87,11 @@ cleanupStore = onCleanup(@() sixgr.db.deactivateArtifactStore()); %#ok<NASGU>
 
 localRepairOptionalRAEvidenceSchemas(layout);
 localEnsureResolvedSnapshots(layout, scfg);
+% A failure may precede normal execution-validation publication. Preserve
+% existing receipts byte-for-byte and report absent comparisons explicitly;
+% recovery must never launch checkpoint/FRC jobs or manufacture a pass.
+phase7ExecutionEvidence = sixgr.validation.runPhase7ExecutionEvidence( ...
+    cfg,runFolder,"RecoveryOnly",true,"WriteArtifacts",true);
 sixgr.truth.exportLiveGeometryArtifacts(layout, scfg, cfg);
 localRepairRuntimeOperatingMode(layout, cfg);
 fixedLinkCampaignOnly = logical(scfg.get( ...
@@ -166,6 +175,7 @@ localWriteScenarioManifest(layout, manifest);
 
 reportBundle = sixgr.truth.exportLLSReportingBundle(runFolder, scfg, cfg, result, manifest, runtimeSummary, scenarioStatus);
 reportBundle.GeometryScenarioAudit = geometryScenarioAudit;
+reportBundle.Phase7ExecutionEvidence = phase7ExecutionEvidence;
 truthArtifactScan = sixgr.truth.scanTruthArtifacts(runFolder, struct());
 artifactEvidenceCoverage = table();
 artifactContractResult = struct( ...
@@ -213,7 +223,8 @@ sanitizedCSVs = sixgr.truth.sanitizeLLSArtifactCSVs(runFolder);
 % convenience. Run it only after CSV sanitization so every raster and
 % lineage hash binds to the exact stable source bytes.
 contractMaterialization = ...
-    sixgr.artifact.materializeBrowserContractArtifacts(runFolder);
+    sixgr.artifact.materializeBrowserContractArtifacts(runFolder, ...
+        "ReplaceExistingRastersFromCSV", p.Results.ReplaceExistingRastersFromCSV);
 contractMaterialization.RunID = recoveryRunTag;
 contractMaterialization.GeneratedAtUTC = string(sixgr.util.utcNowISO8601());
 browserReceipt = sixgr.artifact.writeBrowserPublicationReceipt( ...
@@ -280,7 +291,8 @@ for terminalPass = 1:3
         "GeneratedAtUTC", terminalGeneratedAt, ...
         "MaxPasses", 1 + 2*double(browserPublicationRequired || ...
             visualClosureRequired), ...
-        "Required", browserPublicationRequired || visualClosureRequired);
+        "Required", browserPublicationRequired || visualClosureRequired, ...
+        "ReplaceExistingRastersFromCSV", p.Results.ReplaceExistingRastersFromCSV);
     contractMaterialization = terminalClosure.Materialization;
     browserReceipt = terminalClosure.Receipt;
     finalVisualAudit = terminalClosure.VisualAudit;
@@ -380,6 +392,7 @@ out.PostMaterializationPhase7 = postMaterializationPhase7;
 out.PostMaterializationPublicationReadiness = ...
     postMaterializationPublication;
 out.FinalizationMode = finalizationMode;
+out.ReplaceExistingRastersFromCSV = p.Results.ReplaceExistingRastersFromCSV;
 out.RecoveryConfigAuthority = recoveryConfigAuthority;
 end
 

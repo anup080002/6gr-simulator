@@ -33,15 +33,31 @@ for stage=["Msg3","RRCSetupComplete"]
     delay=19;
     x=[tx.Waveform;zeros(delay,size(tx.Waveform,2),'like',tx.Waveform)];
     y=filter([zeros(1,delay) 1],1,x);
-    if stage=="Msg3"
-        [rx,msg]=sixgr.phy.ra.recoverMsg3PUSCH(y,cfg,ra,grant,tx);
-    else
-        [rx,msg]=sixgr.phy.ra.recoverRRCSetupComplete(y,cfg,ra,tx);
+    % A plane label is not evidence of prior receiver alignment. All three
+    % contexts carry identical delayed IQ; channel trim and injection audit
+    % values must not suppress or replace DM-RS acquisition in the caller.
+    for plane=["untrimmed_shared_physical_receive_stream", ...
+            "channel_filter_delay_trimmed", ""]
+        probe=cfg;
+        probe.lls6g.receiverSync.ReceivedWaveformTimingPlane=plane;
+        probe.phy.impairments.timingOffsetSamples=1234;
+        [rx,msg]=receive(stage,y,probe,ra,grant,tx);
+        assert(rx.Ok && isequal(rx.TransportBlock(:),tx.TransportBlockBits(:)), ...
+            '%s failed actual delayed-IQ decoding for plane %s.',stage,plane);
+        assert(rx.TimingEstimateUsed && rx.AppliedTimingCorrection_samples==delay && ...
+            string(rx.TimingEstimateSource)=="nrTimingEstimate_dmrs", ...
+            '%s must acquire actual arrival once, independent of plane label %s.',stage,plane);
+        assert(~isempty(fieldnames(msg)));
     end
-    assert(rx.Ok && isequal(rx.TransportBlock(:),tx.TransportBlockBits(:)));
-    assert(rx.AppliedTimingCorrection_samples==delay, ...
-        'The actual untrimmed arrival must be corrected once, without subtracting a modeled delay.');
-    assert(~isempty(fieldnames(msg)));
+    % A genuine, explicitly established aligned receiver boundary remains
+    % authoritative. Do not re-acquire or apply an upstream shift twice.
+    aligned=cfg;
+    aligned.lls6g.receiverSync.RuntimeWaveformSampleAligned=true;
+    [rx,msg]=receive(stage,tx.Waveform,aligned,ra,grant,tx);
+    assert(rx.Ok && isequal(rx.TransportBlock(:),tx.TransportBlockBits(:)) && ...
+        ~rx.TimingEstimateUsed && rx.AppliedTimingCorrection_samples==0 && ...
+        string(rx.TimingEstimateSource)=="runtime_aligned_waveform_no_timing_reacquisition" && ...
+        ~isempty(fieldnames(msg)));
 end
 % PRACH TA excludes the implementation delay only. The receiver must not
 % subtract the configured propagation delay or consult transmitted timing.
@@ -56,4 +72,12 @@ assert(d.Detected && abs(d.RawTimingOffsetSamples-19)<1 && ...
     d.ImplementationFilterDelay_samples==11);
 disp('UNTRIMMED_RA_UL_TIMING_PASS: Msg3 and SRB1 bits/CRC; measured PRACH delay and filter calibration.');
 ok=true;
+end
+
+function [rx,msg]=receive(stage,y,cfg,ra,grant,tx)
+if stage=="Msg3"
+    [rx,msg]=sixgr.phy.ra.recoverMsg3PUSCH(y,cfg,ra,grant,tx);
+else
+    [rx,msg]=sixgr.phy.ra.recoverRRCSetupComplete(y,cfg,ra,tx);
+end
 end

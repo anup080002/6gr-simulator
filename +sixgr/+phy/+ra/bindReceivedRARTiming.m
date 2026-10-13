@@ -1,6 +1,7 @@
 function ra=bindReceivedRARTiming(cfg,ra,grant,receivedSchedule)
 % Bind the actual CRC-valid RAR slot/TDRA to subsequent physical allocations.
 % The planned Msg2 slot is not receiver authority.
+ra=sixgr.mac.ra.bindReceivedRARIdentity(ra,grant);
 frame=sixgr.phy.FrameStructureEngine(cfg,'FrameCoreOnly',true);
 window=ra.RARMonitoringWindow;
 take=window.MonitoringSlots==ra.Msg2Slot;
@@ -16,7 +17,7 @@ msg2Allocation.NumPRB=double(receivedSchedule.NumPRB);
 msg2Allocation.SymbolStart=double(receivedSchedule.PDSCH.SymbolAllocation(1));
 msg2Allocation.NumSymbols=double(receivedSchedule.PDSCH.SymbolAllocation(2));
 commonDL=sixgr.phy.frame.CommonDLResourcePlan(cfg);
-commonDL.validateSIB1TRS();
+commonDL.validateSIB1References();
 stageAllocations=struct('Msg2',msg2Allocation,'Msg4',ra.Msg4PDSCH);
 schedule=sixgr.phy.ia.RAEventScheduler.resolve( ...
     'PDSCHResourceAvailability',@(stage,slot0) commonDL.checkPDSCH(stageAllocations.(stage),slot0), ...

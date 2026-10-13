@@ -19,7 +19,7 @@ classdef ContentionResolutionState
             identity=upper(string(identity));
             assert(isscalar(identity) && ~isempty(regexp(char(identity),'^[0-9A-F]{12}$','once')), ...
                 'sixgr:mac:ra:InvalidUEContentionIdentity','UE identity must be its locally transmitted 48-bit CCCH identity.');
-            validateattributes(rnti,{'numeric'},{'scalar','finite','integer','>=',1,'<=',65519});
+            validateattributes(rnti,{'numeric'},{'scalar','real','finite','integer','>=',1,'<=',65522});
             start=sixgr.phy.frame.AbsoluteTime.fromTicks(startTicks);
             validateattributes(durationTicks,{'int64'},{'scalar','positive'});
             finish=start.plusTicks(durationTicks);

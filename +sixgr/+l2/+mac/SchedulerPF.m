@@ -239,6 +239,8 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                                     memberGrant, muSpatialDesign, memberIndex, obj.Direction);
                                 memberGrant = obj.attachULSRSAuthorityToGrant( ...
                                     memberGrant, ueStates(stateIndex));
+                                memberGrant = sixgr.l2.mac.bindSchedulerGrantUEIdentity( ...
+                                    memberGrant, ueStates(stateIndex));
                                 memberGrant = sixgr.l2.mac.attachReceivedULTimingAuthority(memberGrant,ueStates(stateIndex));
                                 [memberGrant.DMRSPortSet, memberGrant.DMRSPortSetSource] = ...
                                     sixgr.phy.grant.resolveScheduledDMRSPortSet( ...
@@ -267,6 +269,7 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                         g.GrantReason = "harq_retx";
                         g = localMarkUnpairedRetransmission(g);
                         g = obj.attachULSRSAuthorityToGrant(g, ueStates(k));
+                        g = sixgr.l2.mac.bindSchedulerGrantUEIdentity(g,ueStates(k));
                         g = sixgr.l2.mac.attachReceivedULTimingAuthority(g,ueStates(k));
                         g = obj.freezePHYGrantForGrant(g);
                         g.DCI = obj.buildDCIBitfield(g);
@@ -627,10 +630,6 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                     g.CRI = double(sixgr.util.structGet(ueStates(k), "CRI", NaN));
                     if upper(string(obj.Direction))=="DL"
                         g.ReceivedCSIReport = sixgr.util.structGet(ueStates(k), "ReceivedCSIReport", struct());
-                        if ~isempty(fieldnames(g.ReceivedCSIReport))
-                            g.UEIndex=double(sixgr.util.structGet(ueStates(k),'UEIndex',NaN));
-                            g.ServingCell=double(sixgr.util.structGet(ueStates(k),'ServingCell',NaN));
-                        end
                     end
                     g.MCSIndex = double(plan.MCSIndex);
                     g.DAI = 1;
@@ -710,6 +709,7 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                     end
                     stateIndex = ueIdx(validGroupOrd(gg));
                     g = obj.attachULSRSAuthorityToGrant(g, ueStates(stateIndex));
+                    g = sixgr.l2.mac.bindSchedulerGrantUEIdentity(g,ueStates(stateIndex));
                     g = sixgr.l2.mac.attachReceivedULTimingAuthority(g,ueStates(stateIndex));
                     [g.DMRSPortSet, g.DMRSPortSetSource] = ...
                         sixgr.phy.grant.resolveScheduledDMRSPortSet( ...
@@ -753,7 +753,9 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                     rnti = double(groupGrants(gg).RNTI);
                     candidateRows = localMarkCandidateScheduled(candidateRows, rnti, groupGrants(gg), numel(grants));
                     obj.ensureUE(rnti);
-                    obj.updateAvgThroughput(rnti, groupGrants(gg).TBSBits, true);
+                    % A candidate is not decoded service: control admission
+                    % can still reject it. Only accepted feedback updates
+                    % throughput/ACK history in SchedulerBase.updateAfterRx.
                     obj.UEStats(obj.ensureUE(rnti)).LastServedSlot = slot;
                 end
             end

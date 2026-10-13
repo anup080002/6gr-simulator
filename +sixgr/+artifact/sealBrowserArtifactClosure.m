@@ -45,6 +45,14 @@ for passIndex = 1:options.MaxPasses
         "Receipt", receipt, ...
         "VisualAudit", visualAudit, ...
         "LineageClosure", lineageClosure); %#ok<AGROW>
+    if ~logical(sixgr.util.structGet(materialization,"Ok",false))
+        % A failed source/semantic producer cannot be repaired by repeating
+        % status/hash convergence. Preserve the receipt and original cause.
+        if options.Required
+            sixgr.artifact.assertBrowserMaterializationSucceeded(materialization);
+        end
+        break;
+    end
     ok = logical(sixgr.util.structGet(materialization, "Ok", false)) && ...
         logical(sixgr.util.structGet(visualAudit, "Ok", false)) && ...
         logical(sixgr.util.structGet(lineageClosure, "Ok", false));

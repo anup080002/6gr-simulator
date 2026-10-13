@@ -61,7 +61,13 @@ for invalid={NaN,-1,[1 2;2 1]}
     reject(@()sixgr.phy.rx.equalizeMMSE(ones(2,nr),ones(2,nr),.1, ...
         'Rint',R,'RIncludesNoise',true));
 end
-fprintf('EQUALIZER_NOISE_AUTHORITY_PASS cases=%d invalid_inputs=7 synthesized_noise=0 solve_load_in_output_covariance=0\n',cases);
+for invalid={NaN,Inf,-1,2,[0 1],1+1i,"true"}
+    reject(@()sixgr.phy.rx.equalizeMMSE(ones(2,1),ones(2,1),.1, ...
+        'RIncludesNoise',invalid{1}));
+    reject(@()sixgr.phy.rx.mimoDetect(ones(2,1),ones(2,1),.1, ...
+        'RIncludesNoise',invalid{1}));
+end
+fprintf('EQUALIZER_NOISE_AUTHORITY_PASS cases=%d invalid_inputs=21 synthesized_noise=0 solve_load_in_output_covariance=0\n',cases);
 ok=true;
 end
 function reject(fn)

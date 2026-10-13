@@ -13,17 +13,41 @@ classdef ReceivedULTimingReference
         ObservationStartSample double
     end
     methods
-        function obj=ReceivedULTimingReference(prepared,observation,timing)
+        function obj=ReceivedULTimingReference(prepared,observation,timing,receiverCfg)
             isControl=isa(prepared,'sixgr.link.PreparedUplinkControlTransmission');
             isData=isa(prepared,'sixgr.link.PreparedDataTransmission');
+            isPUCCH=isa(prepared,'sixgr.phy.pucch.PUCCHReceptionAssignment');
             assert(isscalar(prepared) && ((isControl && prepared.Channel=="SRS") || ...
-                (isData && prepared.Direction=="UL")), ...
-                'sixgr:phy:sync:ULTimingPilotRequired','Retain an actually received SRS or PUSCH DM-RS clock.');
-            if isData
+                (isData && prepared.Direction=="UL") || (isPUCCH && prepared.Format>=1)), ...
+                'sixgr:phy:sync:ULTimingPilotRequired','Retain an actually received SRS, PUSCH DM-RS or PUCCH DM-RS clock.');
+            if isPUCCH
+                % A gNB receive assignment, never a prepared UE waveform,
+                % owns PUCCH clock identity and nominal slot coordinates.
+                assert(nargin==4 && isstruct(receiverCfg) && isscalar(receiverCfg), ...
+                    'sixgr:phy:sync:PUCCHTimingConfigurationRequired','Use the actual independent receiver configuration.');
+                cfg=receiverCfg;
+                carrier=sixgr.phy.grid.makeCarrier(cfg);
+                slot0=double(prepared.Data.AbsoluteSlot0);
+                carrier.NFrame=floor(slot0/double(carrier.SlotsPerFrame));
+                carrier.NSlot=mod(slot0,double(carrier.SlotsPerFrame));
+                info=nrOFDMInfo(carrier); fs=double(info.SampleRate);
+                assert(isa(observation,'sixgr.phy.waveform.WaveformObservationBuffer') && ...
+                    isscalar(observation) && observation.SampleRateHz==fs && ...
+                    prepared.Data.RNTI==cfg.phy.pusch.RNTI, ...
+                    'sixgr:phy:sync:ULTimingReferenceIdentityMismatch','PUCCH receive identity and sample clock must agree.');
+                observation.readComplete();
+                nominal=sixgr.phy.frame.slotStartSample(carrier,slot0,fs);
+                source="PUCCH_DMRS";
+            elseif isData
                 prepared.readObservation(observation, ...
                     prepared.RequestBinding.PHYGrant.AntennaArchitecture.NumRxAntennas,'receiver');
             else
                 prepared.readObservation(observation,'receiver');
+            end
+            if ~isPUCCH
+                cfg=prepared.ReceiverConfig; fs=prepared.SampleRateHz;
+                nominal=prepared.PhysicalTiming.NominalStartSample;
+                source="PUSCH_DMRS"; if isControl, source="SRS"; end
             end
             required={'AppliedTimingCorrectionSamples','TimingSource','OracleTimingUsed','ReceiverZeroPaddingUsed'};
             assert(isstruct(timing) && all(isfield(timing,required)) && ...
@@ -36,12 +60,11 @@ classdef ReceivedULTimingReference
             validateattributes(count,{'numeric'},{'scalar','integer','positive','finite'});
             assert(offset+count<=observation.EndSampleExclusive-observation.StartSample, ...
                 'sixgr:phy:sync:ULTimingOutsideCapture','The measured demodulation interval must fit its actual capture.');
-            cfg=prepared.ReceiverConfig;
-            obj.Identity=localIdentity(cfg,prepared.SampleRateHz);
+            obj.Identity=localIdentity(cfg,fs);
             obj.TAG=cfg.SharedULTimingContext;
-            obj.SampleRateHz=prepared.SampleRateHz;
-            obj.SourceSignal="PUSCH_DMRS"; if isControl, obj.SourceSignal="SRS"; end
-            obj.NominalStartSample=prepared.PhysicalTiming.NominalStartSample;
+            obj.SampleRateHz=fs;
+            obj.SourceSignal=source;
+            obj.NominalStartSample=nominal;
             obj.ArrivalOffsetFromNominalSamples=observation.StartSample+offset-obj.NominalStartSample;
             obj.AvailableAtSample=observation.EndSampleExclusive;
             obj.ObservationStartSample=observation.StartSample;

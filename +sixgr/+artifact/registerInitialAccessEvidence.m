@@ -113,11 +113,30 @@ if any(~detected & (frequencyValid | isfinite(frequency)))
 end
 
 n = height(raw);
+[expectedMissed, ~, populationScope] = sixgr.report.prachTargetDetectionEvidence(raw);
+if any(double(raw.MissedDetection) ~= expectedMissed)
+    error('sixgr:artifact:PRACHMissedDetectionMismatch', ...
+        'PRACH target miss must agree with independently received identities.');
+end
+falseAlarm = double(raw.FalseAlarm);
+if any(~isnan(falseAlarm) & ~ismember(falseAlarm, [0 1]))
+    error('sixgr:artifact:InvalidPRACHFalseAlarm', 'FalseAlarm must be 0, 1 or explicitly unavailable.');
+end
+falseAlarmStatus = repmat("legacy_reported", n, 1);
+if ismember("FalseAlarmClassification", string(raw.Properties.VariableNames))
+    falseAlarmStatus = string(raw.FalseAlarmClassification);
+end
+shared = populationScope == "per_target_shared_occasion_not_independent_trials";
+unavailable = falseAlarmStatus == "unavailable_complete_transmitted_occasion_set_not_retained";
+if any(isnan(falseAlarm) & ~unavailable) || any(shared & (~unavailable | ~isnan(falseAlarm)))
+    error('sixgr:artifact:InvalidPRACHFalseAlarm', ...
+        'Without the complete transmitted occasion population, false alarms must remain explicitly unavailable.');
+end
 T = table( ...
     trialID, occasionID, double(raw.PreambleIndexTx), ...
     double(raw.PreambleIndexDetected), detected, ...
     peak, threshold, timing, timingError, frequency, ...
-    localLogical(raw.FalseAlarm), localLogical(raw.MissedDetection), ...
+    falseAlarm, localLogical(raw.MissedDetection), ...
     localLogical(raw.PreambleAmbiguityDetected), repmat("MEASURED", n, 1), ...
     repmat(identity.ScenarioID, n, 1), repmat(identity.ConfigHash, n, 1), ...
     repmat("in_path", n, 1), repmat(identity.RunID, n, 1), ...
@@ -132,6 +151,15 @@ T = table( ...
     'BandwidthHz','SubcarrierSpacingHz','FrequencyEstimationEnabled', ...
     'FrequencyEstimateValid'});
 T.EvidenceOrigin = repmat(evidenceOrigin, n, 1);
+T.FalseAlarmStatus = falseAlarmStatus;
+T.DetectionPopulationScope = populationScope;
+if all(ismember(["DetectedPreambleSet","DetectedPreambleSetAvailable"], string(raw.Properties.VariableNames)))
+    T.DetectedPreambleSet = string(raw.DetectedPreambleSet);
+    T.DetectedPreambleSetAvailable = logical(raw.DetectedPreambleSetAvailable);
+end
+for field = ["RACellId","RAUEId","Msg1ScheduledSlot","PRACHOccasionFrame","PRACHOccasionSlot"]
+    if ismember(field, string(raw.Properties.VariableNames)), T.(field) = raw.(field); end
+end
 if strlength(identity.ExecutionID) == 0
     T.ExecutionID = [];
 end

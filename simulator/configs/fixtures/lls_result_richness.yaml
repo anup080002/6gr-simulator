@@ -42,16 +42,29 @@ channels:
   doppler_hz: 30
 reference_signals:
   trs_enabled: true
+  # Nonzero CFO plus a fading channel needs a usable phase observation
+  # across the scheduled data interval. Preserve actual added pilot RE/TBS
+  # cost; do not substitute the injected CFO in either receiver.
+  pdsch_dmrs_additional_positions: 1
+  pusch_dmrs_additional_positions: 1
 impairments:
   # Values alone do not enable an impairment. Keep the intended nonzero
   # report diagnostic explicit instead of inheriting disabled parent gates.
   cfo_enabled: true
   cfo_model: fixed
   cfo_hz: 40
+  cfo_estimation_method: dmrs_two_symbol
   timing_offset_enabled: true
   timing_offset_model: fixed
   timing_offset_samples: 16
 output:
   profile: lls_richness_smoke
+  antenna_pattern_samples_enabled: true
+  antenna_pattern_azimuth_min_deg: -180
+  antenna_pattern_azimuth_max_deg: 180
+  antenna_pattern_azimuth_step_deg: 15
+  antenna_pattern_elevation_min_deg: -90
+  antenna_pattern_elevation_max_deg: 90
+  antenna_pattern_elevation_step_deg: 15
   save_figures: true
   save_mat: false

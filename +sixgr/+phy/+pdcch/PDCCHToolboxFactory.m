@@ -22,15 +22,33 @@ classdef PDCCHToolboxFactory
             sixgr.phy.pdcch.PDCCHSpecificationProfile.encodedBits(aggregationLevel);
             coresetData = coresetDefinition.Data;
             searchData = searchSpaceDefinition.Data;
+            if coresetData.RBStart + coresetData.NRB > nSizeBWP
+                error("sixgr:phy:pdcch:CORESETOutsideBWP", ...
+                    "CORESET interval [%g,%g) exceeds the %g-RB BWP.", ...
+                    coresetData.RBStart,coresetData.RBStart+coresetData.NRB,nSizeBWP);
+            end
+            rbOffset = mod(coresetData.RBStart,6);
+            if coresetData.CORESETID == 0 && rbOffset ~= 0
+                error("sixgr:phy:pdcch:CORESETZeroOffsetUnsupported", ...
+                    ["CORESET0 ignores rb-Offset-r16. Use its MIB-derived BWP " + ...
+                     "anchor, or a nonzero dedicated CORESET ID; do not round RBStart."]);
+            end
 
             coreset = nrCORESETConfig;
             coreset = localSet(coreset, ["CORESETID","ID"], coresetData.CORESETID, true);
             coreset.Duration = coresetData.DurationSymbols;
-            frequencyResources = zeros(1, ceil((coresetData.RBStart + coresetData.NRB)/6));
+            frequencyResources = zeros(1, floor(coresetData.RBStart/6) + coresetData.NRB/6);
             firstGroup = floor(coresetData.RBStart/6) + 1;
             groupCount = coresetData.NRB/6;
             frequencyResources(firstGroup:firstGroup+groupCount-1) = 1;
             coreset.FrequencyResources = frequencyResources;
+            % Preserve the explicit BWP-relative origin, including a
+            % non-six-aligned start. The native empty value instead aligns
+            % the bitmap to CRBs and cannot represent this configuration.
+            defaultRBOffset = 6*ceil(double(nStartBWP)/6)-double(nStartBWP);
+            if coresetData.CORESETID ~= 0 && rbOffset ~= defaultRBOffset
+                coreset = localSet(coreset,"RBOffset",rbOffset,true);
+            end
             if coresetData.MappingType == "interleaved"
                 coreset.CCEREGMapping = "interleaved";
                 coreset.REGBundleSize = coresetData.REGBundleSize;

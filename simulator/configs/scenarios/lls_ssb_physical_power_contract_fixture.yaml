@@ -1,5 +1,7 @@
 inherits:
-  - ./lls_causal_access_to_data_wiring_tdd.yaml
+  # Shared reception retains enabled data channels, so install the same
+  # explicit paired DCI/TDRA and QCL context as the connected TDD runtime.
+  - ./lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml
 
 meta:
   scenario_id: lls_ssb_physical_power_contract_fixture
@@ -19,3 +21,15 @@ canonical_control:
     run_mode: GEOMETRY_NETWORK
     subprofile: connected_network
     configured_snr_is_link_authority: false
+    power_reference_mode: absolute_calibrated_sqrt_mw
+
+simulation:
+  # Physical TX power needs physical receiver noise, not a unit-RE SNR
+  # argument inherited from the normalized reference scenario.
+  noise_operating_mode: receiver_noise_figure_thermal_noise
+
+channels:
+  # The normalized parent omits large-scale loss. This absolute-power
+  # fixture uses its declared UMa geometry and nrPathLoss model instead;
+  # small-scale array gain alone is not a physical pathloss budget.
+  pathloss_enabled: true

@@ -1,6 +1,8 @@
 function tx = generateSSB_MIB_SIB1_Waveform(cfg, varargin)
 %GENERATESSB_MIB_SIB1_WAVEFORM Generate SSB/PBCH plus SI-RNTI SIB1 waveform.
-
+sixgr.runtime.RuntimeCallLedger.record( ...
+    "sixgr.phy.broadcast.generateSSB_MIB_SIB1_Waveform", "SSB_SIB1", "DL", ...
+    struct("Stage","TX"));
 p = inputParser;
 p.addParameter("SNRdB", Inf, @(x) isnumeric(x) && isscalar(x));
 p.addParameter("Seed", [], @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
@@ -16,6 +18,57 @@ end
 if ~isempty(p.Results.Seed)
     rng(round(double(p.Results.Seed)), "twister");
 end
+cfg=localNormalizeBroadcastCfg(cfg);
+[cfg,~]=sixgr.rf.resolveSSBPowerContract(cfg);
+indices=sixgr.phy.broadcast.resolveSIB1TransmitSSBIndices(cfg);
+% The emitted cell waveform is independent of the receiving UE's chosen
+% candidate. Generate the SSB burst once and each configured SI occasion
+% once. Receiver search hypotheses never decide which samples are emitted.
+cfg.phy.ssb.runtimeSSBIndex=indices(1);
+[ssbWaveform,ssbWaveInfo,ssbInfo]=sixgr.phy.dl.SSB_Tx(cfg, ...
+    'NumSubframes',localSSBObservationSubframes(cfg),'SSBIndex',indices(1));
+parts=cell(1,numel(indices));
+for ordinal=1:numel(indices)
+    occasionCfg=cfg;
+    occasionCfg.phy.ssb.runtimeSSBIndex=indices(ordinal);
+    occasionCfg.phy.sib1.transmissionScope="selected_ssb_occasion";
+    occasionInfo=ssbInfo;
+    occasionInfo.SSBTiming=sixgr.phy.frame.SSBTimingResolver.resolveFromConfig( ...
+        occasionCfg,'SSBIndex',indices(ordinal));
+    parts{ordinal}=localGenerateSIB1Occasion(occasionCfg,ssbWaveform,ssbWaveInfo,occasionInfo);
+    for prior=1:ordinal-1
+        if parts{prior}.SIB1AbsoluteSlot==parts{ordinal}.SIB1AbsoluteSlot
+            overlap=any(parts{prior}.SIB1Grid~=0,3) & any(parts{ordinal}.SIB1Grid~=0,3);
+            assert(~any(overlap,'all'),'sixgr:phy:broadcast:SIB1BeamResourceCollision', ...
+                'Configured SI beam occasions must not superpose independent codewords on the same RE.');
+        end
+        assert(strcmp(parts{prior}.SIB1PayloadHash,parts{ordinal}.SIB1PayloadHash), ...
+            'sixgr:phy:broadcast:InconsistentCellSIB1','All cell SI beam occasions must carry the same SIB1.');
+    end
+end
+tx=parts{1};
+sampleRate=tx.SampleRateHz;
+composer=sixgr.phy.waveform.WaveformStreamComposer(sampleRate,size(ssbWaveform,2),0);
+composer.enqueue('SSB-burst',sixgr.phy.waveform.WaveformChunk(ssbWaveform,0),sampleRate);
+numSamples=size(ssbWaveform,1);
+for ordinal=1:numel(parts)
+    part=parts{ordinal};
+    composer.enqueue("SI-RNTI-SIB1-"+indices(ordinal), ...
+        sixgr.phy.waveform.WaveformChunk(part.SIB1Waveform,part.SIB1WaveformStartSample),sampleRate);
+    numSamples=max(numSamples,part.SIB1WaveformStartSample+size(part.SIB1Waveform,1));
+    % Retain every exact SI allocation/grid/map without duplicating the
+    % full SS burst in each occasion's export contract.
+    parts{ordinal}=rmfield(part,{'SSBWaveform','SSBWaveInfo','SSBBurstPlan','SSBComposite'});
+end
+composite=composer.readThrough(numSamples);
+[tx.Waveform,tx.ReferenceNoise]=localApplyAWGN(composite.Samples,tx.Carrier,p.Results.SNRdB);
+tx.SIB1Transmissions=[parts{:}];
+tx.SIB1TransmitSSBIndices0Based=indices;
+tx.SIB1TransmissionScope=string(sixgr.util.structGet(cfg,'phy.sib1.transmissionScope', ...
+    sixgr.util.structGet(cfg,'initial_access.sib1_transmission_scope','selected_ssb_occasion')));
+end
+
+function tx=localGenerateSIB1Occasion(cfg,ssbWaveform,ssbWaveInfo,ssbInfo)
 localRequireBroadcastFeature(cfg, "ssb", "phy.ssb.enable");
 localRequireBroadcastFeature(cfg, "pbch", "phy.pbch.enable");
 localRequireBroadcastFeature(cfg, "pdcch", "phy.pdcch.enable");
@@ -24,7 +77,7 @@ localRequireEnabledPath(cfg, "phy.pdsch.enable", "SIB1 PDSCH");
 
 cfg = localNormalizeBroadcastCfg(cfg);
 commonDL = sixgr.phy.frame.CommonDLResourcePlan(cfg);
-commonDL.validateSIB1TRS();
+commonDL.validateSIB1References();
 [cfg, ssbPowerContract] = sixgr.rf.resolveSSBPowerContract(cfg);
 tree = sixgr.rrc.asn1.buildBCCHDLSCHMessage(cfg);
 [sib1Bits, asn1Meta] = sixgr.rrc.asn1.encodeSIB1UPER(tree);
@@ -34,8 +87,6 @@ tree = sixgr.rrc.asn1.buildBCCHDLSCHMessage(cfg);
 [pdsch, dci, targetCodeRate, paddedBits] = ...
     localSelectSIB1Allocation(carrierSI, cfgSI, sib1Bits);
 cfgSI = localSanitizeSIB1PDSCHPrecoding(cfgSI, pdsch);
-[ssbWaveform, ssbWaveInfo, ssbInfo] = sixgr.phy.dl.SSB_Tx(cfg, "NumSubframes", localSSBObservationSubframes(cfg), ...
-    "SSBIndex", double(sixgr.util.structGet(cfg, "phy.ssb.runtimeSSBIndex", 0)));
 commonQCL = sixgr.pdsch.CommonPDSCHQCLReference.create("sib1", ...
     ssbInfo.SSBTiming.SelectedSSBIndex,carrierSI.NCellID,"actual_ssb_transmitter_occasion");
 
@@ -72,10 +123,10 @@ localAssertNoSSBSIResourceCollision( ...
 sampleRate = double(sixgr.util.structGet(ssbInfo, "SampleRate_Hz", localSampleRate(carrier)));
 sib1StartSample = localAbsoluteSlotStartSample( ...
     sib1AbsoluteSlot, carrierSI, sampleRate);
-waveform = localComposeAbsoluteTimeline( ...
-    ssbWaveform, siWaveform, sib1StartSample, sampleRate);
-[waveform, referenceNoise] = localApplyAWGN( ...
-    waveform, carrier, p.Results.SNRdB);
+% The cell composer adds the common SSB exactly once after all SI occasions
+% have passed their allocation/ownership checks. This is the exact SI port
+% waveform, not a second copy of the broadcast burst.
+waveform=siWaveform;
 
 [~, treeHash] = sixgr.rrc.asn1.compareSIB1Trees(tree, tree);
 tx = struct();
@@ -88,7 +139,6 @@ tx.SIB1AbsoluteSlot = sib1AbsoluteSlot;
 tx.Type0MonitoringOccasion = type0.MonitoringOccasions( ...
     localMonitoringOccasionOrdinal(cfg), :);
 tx.SampleRateHz = sampleRate;
-tx.ReferenceNoise = referenceNoise;
 tx.Carrier = carrierSI;
 tx.PDCCH = pdcch;
 tx.PDSCH = pdsch;
@@ -188,6 +238,9 @@ context = struct( ...
     "PDCCHAbsoluteSlot", absoluteSlot, ...
     "PDSCHAbsoluteSlot", absoluteSlot, "K0", 0, ...
     "MCSTable", "qam64", "MCSIndex", double(dci.MCSIndex), ...
+    "DMRSTypeAPosition", double(cfg.phy.mib.dmrsTypeAPosition), ...
+    "Type0MultiplexingPattern", double(cfg.phy.sib1.type0MultiplexingPattern), ...
+    "SIB1FrequencyReference", dci.FrequencyReference, ...
     "TargetCodeRate", double(dci.TargetCodeRate), ...
     "XOverhead", sixgr.phy.dl.resolvePDSCHXOverhead( ...
         cfg, pdsch.SymbolAllocation), ...
@@ -262,6 +315,10 @@ xOverhead = sixgr.phy.dl.resolvePDSCHXOverhead( ...
     cfg, pdsch.SymbolAllocation);
 tbs = nrTBS(pdsch.Modulation, pdsch.NumLayers, nRB, ...
     nrePerPRB, dci.TargetCodeRate, xOverhead);
+if tbs > 2976
+    error("sixgr:phy:broadcast:SIB1TBSLimitExceeded", ...
+        "Configured SI-RNTI TBS=%d exceeds the 2976-bit TS 38.214 5.1.3.2 reception limit.",tbs);
+end
 if tbs < numel(sib1Bits)
     error("sixgr:phy:broadcast:SIB1AllocationTooSmall", ...
         "Configured SIB1 allocation provides TBS=%d for %d payload bits.", ...
@@ -468,24 +525,6 @@ grid(1:size(a,1), 1:size(a,2), 1:size(a,3)) = grid(1:size(a,1), 1:size(a,2), 1:s
 grid(1:size(b,1), 1:size(b,2), 1:size(b,3)) = grid(1:size(b,1), 1:size(b,2), 1:size(b,3)) + b;
 end
 
-function waveform = localComposeAbsoluteTimeline( ...
-        ssbWaveform, siWaveform, siStartSample, sampleRate)
-numCols = max(size(ssbWaveform, 2), size(siWaveform, 2));
-ssbWaveform = localPadWaveformColumns(ssbWaveform, numCols);
-siWaveform = localPadWaveformColumns(siWaveform, numCols);
-siStartSample = localNonnegativeInteger( ...
-    siStartSample, "SIB1 absolute start sample");
-numSamples = max(size(ssbWaveform, 1), ...
-    siStartSample + size(siWaveform, 1));
-stream = sixgr.phy.waveform.WaveformStreamComposer(sampleRate, numCols, 0);
-stream.enqueue("SSB-burst", ...
-    sixgr.phy.waveform.WaveformChunk(ssbWaveform, 0), sampleRate);
-stream.enqueue("SI-RNTI-SIB1", ...
-    sixgr.phy.waveform.WaveformChunk(siWaveform, siStartSample), sampleRate);
-composite = stream.readThrough(numSamples);
-waveform = composite.Samples;
-end
-
 function localAssertNoSSBSIResourceCollision( ...
         ssbWaveInfo, ssbInfo, siGrid, siAbsoluteSlot, carrier)
 % Fail before OFDM composition when common SI overwrites an SS/PBCH RE.
@@ -583,13 +622,6 @@ end
 carrierGrid = complex(zeros(numCarrierSubcarriers, size(ssbGrid, 2), ...
     size(ssbGrid, 3), "like", ssbGrid));
 carrierGrid(startOneBased:stopOneBased, :, :) = ssbGrid;
-end
-
-function wave = localPadWaveformColumns(wave, numCols)
-if size(wave, 2) >= numCols
-    return;
-end
-wave(:, end+1:numCols) = 0;
 end
 
 function sampleRate = localSampleRate(carrier)

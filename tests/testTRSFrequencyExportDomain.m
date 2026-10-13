@@ -14,6 +14,16 @@ assert(other.EstimatedCFO_Hz==row.EstimatedCFO_Hz && isnan(other.CFOError_Hz));
 out.FrequencyError_Hz=1;
 scored=sixgr.truth.bindTRSFrequencyEvidence(struct(),out);
 assert(scored.CFOError_Hz==1 && isnan(scored.ResidualCFO_PostCorrection_Hz));
+out.CFOCorrectionEnabled=true; out.CFOCorrectionApplied=true;
+out.CFOCorrectionApplied_Hz=251; out.CFOCorrectionSampleOrigin=430080;
+out.CFOCorrectionSource="received_TRS_window_cyclic_prefix_frequency_estimator_on_absolute_received_sample_clock";
+out.TRSFrequencyEvidenceJSON="received_sample_evidence";
+corrected=sixgr.truth.bindTRSFrequencyEvidence(struct(),out);
+assert(corrected.CFOCorrectionApplied && corrected.CFOCorrectionApplied_Hz==251 && ...
+    corrected.CFOCorrectionSampleOrigin==430080 && ...
+    corrected.TRSFrequencyEvidenceJSON==out.TRSFrequencyEvidenceJSON && ...
+    isnan(corrected.ResidualCFO_PostCorrection_Hz), ...
+    'An applied correction is not an independently measured residual CFO.');
 path=[tempname '.csv']; writetable(struct2table([row;scored]),path);
 saved=readtable(path,'TextType','string');
 assert(all(saved.EstimatedCommonFrequency_Hz==251) && ...
