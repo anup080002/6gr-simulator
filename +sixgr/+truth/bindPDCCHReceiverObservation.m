@@ -15,6 +15,24 @@ if row.DetectionAttempted && ismember('ErrFlag',candidates.Properties.VariableNa
     row.DetectionUsable = numel(flags)==height(candidates) && ...
         all(isfinite(flags) & flags>=0 & flags==fix(flags));
 end
+% ErrFlag is the RNTI-masked CRC result of the retained receiver hypothesis.
+% rx.Ok also includes context parsing/hypothesis selection; TX agreement is
+% a separate audit. Neither may rewrite the physical CRC observation.
+flag = sixgr.util.structGet(rx,'ErrFlag',NaN);
+row.CRCApplicable = true;
+row.CRCPass = NaN;
+row.DCICrcPass = false;
+row.CRCOutcome = "unavailable";
+if row.DetectionUsable && isnumeric(flag) && isreal(flag) && isscalar(flag) && ...
+        isfinite(flag) && flag>=0 && flag==fix(flag)
+    row.DCICrcPass = (flag==0);
+    row.CRCPass = double(row.DCICrcPass);
+    if row.DCICrcPass
+        row.CRCOutcome = "pass";
+    else
+        row.CRCOutcome = "fail";
+    end
+end
 row.DetectionSuccess = row.DetectionUsable && ...
     isequal(sixgr.util.structGet(rx,'Ok',false),true) && ...
     isequal(sixgr.util.structGet(rx,'ErrFlag',NaN),0);

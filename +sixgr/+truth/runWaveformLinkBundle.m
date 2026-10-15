@@ -14864,10 +14864,10 @@ end
 controlLatency_ms = toc(tDecode)*1e3;
 radioTTI_ms = localSlotDuration(cfgTrial)*1e3;
 [be, bt] = localBitErrors(tx.DCIBits, rx.DCIBits);
-dciCrcPass = logical(sixgr.util.structGet(rx, "Ok", false)) && ...
-    double(sixgr.util.structGet(rx, "ErrFlag", 1)) == 0;
+r = sixgr.truth.bindPDCCHReceiverObservation(r,rx,rxInfo);
+dciCrcPass = logical(r.DCICrcPass);
 payloadMatch = logical(sixgr.util.structGet(rx, "DCIPayloadMatch", (be == 0) && (bt == numel(tx.DCIBits))));
-ok = dciCrcPass && payloadMatch;
+ok = dciCrcPass && logical(rx.Ok) && payloadMatch;
 candidateT = sixgr.util.structGet(rxInfo, "CandidateResults", table());
 if ~istable(candidateT)
     candidateT = table();
@@ -14885,10 +14885,6 @@ r.TBSize_bits = double(numel(tx.DCIBits));
 r.DCISize_bits = double(numel(tx.DCIBits));
 r.BitsCompared = double(bt);
 r.BitErrors = double(be);
-r.CRCApplicable = true;
-r.CRCPass = double(ok);
-r.CRCOutcome = string(localPDCCHCRCOutcome(dciCrcPass, payloadMatch));
-r.DCICrcPass = logical(dciCrcPass);
 r.PDCCHPayloadMatch = logical(payloadMatch);
 r.PDCCHCausalGrantDecodeOk = logical(sixgr.util.structGet(rx, "CausalGrantDecodeOk", ok));
 r.PDCCHExpectedDCIBitCount = double(numel(tx.DCIBits));
@@ -15007,7 +15003,6 @@ for evmField=["EVMValueStatus","EVMReferenceSource","EVMErrorEnergy", ...
 end
 r.DecodeAttempted = true;
 r.DecodeUsable = logical(ok);
-r = sixgr.truth.bindPDCCHReceiverObservation(r,rx,rxInfo);
 r.MeasurementAttempted = true;
 r.MeasurementUsable = isfinite(r.ReceiverHestSINR_dB) && ...
     sixgr.util.isAcceptableSINRStatus(r.ReceiverHestSINRValueStatus);
@@ -15498,20 +15493,17 @@ if strlength(strtrim(noiseStatus)) > 0 && noiseStatus ~= "OK"
 end
 end
 
-function outcome = localPDCCHCRCOutcome(dciCrcPass, payloadMatch)
-if logical(dciCrcPass) && logical(payloadMatch)
-    outcome = "pass";
-elseif logical(dciCrcPass)
-    outcome = "crc_pass_payload_mismatch";
-else
-    outcome = "fail";
-end
-end
-
 function reason = localPDCCHStrictFailureReason(r, rx, bitErrors, bitsCompared, payloadMatch, dciCrcPass, noiseOk)
 parts = strings(0, 1);
 if ~logical(dciCrcPass)
-    parts(end+1, 1) = "pdcch_dci_crc_failed"; %#ok<AGROW>
+    if isnan(r.CRCPass)
+        parts(end+1, 1) = "pdcch_crc_evidence_unavailable"; %#ok<AGROW>
+    else
+        parts(end+1, 1) = "pdcch_dci_crc_failed"; %#ok<AGROW>
+    end
+end
+if ~logical(rx.Ok)
+    parts(end+1, 1) = "pdcch_receiver_context_or_hypothesis_rejected"; %#ok<AGROW>
 end
 if ~logical(payloadMatch)
     parts(end+1, 1) = localPDCCHDecodeFailureReason(rx, bitErrors, bitsCompared); %#ok<AGROW>

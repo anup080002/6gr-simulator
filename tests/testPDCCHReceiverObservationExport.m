@@ -42,12 +42,45 @@ for phase=[-17 0 17]
     assert(same.DetectionSuccess==out.DetectionSuccess && ...
         isequaln(same.DetectionMetric,out.DetectionMetric));
 end
+% Replay identical received samples with a deliberately wrong TX audit.
+% The physical CRC still passes, but this must not authorize the grant.
+poisoned=prepared;
+poisoned.Tx.DCIBits(1)=1-poisoned.Tx.DCIBits(1);
+[observed,audit]=sixgr.link.completePDCCHReception(poisoned,buffer);
+assert(observed.Ok && observed.ErrFlag==0 && isequal(observed.DCIBits,bits) && ...
+    ~observed.DCIPayloadMatch && ~observed.CausalGrantDecodeOk);
+row.CRCApplicable=true; row.CRCPass=0; row.DCICrcPass=false; row.CRCOutcome="fail";
+row.Status="FAIL"; row.StrictOk=false; row.GrantValid=false;
+out=sixgr.truth.bindPDCCHReceiverObservation(row,observed,audit);
+assert(out.CRCApplicable && out.CRCPass==1 && out.DCICrcPass && out.CRCOutcome=="pass", ...
+    'test:PDCCHCRCAuditConflation','Actual CRC must not depend on the TX payload audit.');
+assert(out.DetectionSuccess && out.Status=="FAIL" && ~out.StrictOk && ~out.GrantValid, ...
+    'Publishing a CRC pass must not turn a rejected grant into success.');
+% Explicit semantic-rejection fixture: CRC and context validity differ.
+semantic=observed; semantic.Ok=false; semantic.CausalGrantDecodeOk=false;
+out=sixgr.truth.bindPDCCHReceiverObservation(row,semantic,audit);
+assert(out.CRCPass==1 && out.DCICrcPass && ~out.DetectionSuccess);
+for flag=[NaN Inf -1 .5]
+    unavailable=observed; unavailable.ErrFlag=flag;
+    out=sixgr.truth.bindPDCCHReceiverObservation(row,unavailable,audit);
+    assert(isnan(out.CRCPass) && ~out.DCICrcPass && out.CRCOutcome=="unavailable" && ...
+        ~out.DetectionSuccess,'Invalid CRC evidence must not be published as a measured outcome.');
+end
 failed=rx; failed.Ok=false; failed.ErrFlag=1234567;
 out=sixgr.truth.bindPDCCHReceiverObservation(row,failed,info);
-assert(out.DetectionUsable && ~out.DetectionSuccess);
+assert(out.DetectionUsable && ~out.DetectionSuccess && out.CRCPass==0 && ...
+    ~out.DCICrcPass && out.CRCOutcome=="fail");
 missing=info; missing.CandidateResults=table(); missing.TimingEstimate=struct();
 out=sixgr.truth.bindPDCCHReceiverObservation(row,rx,missing);
 assert(~out.DetectionAttempted && ~out.DetectionUsable && ~out.DetectionSuccess && ...
-    ~out.TimingEstimateUsed && isnan(out.AppliedTimingCorrection_samples));
+    ~out.TimingEstimateUsed && isnan(out.AppliedTimingCorrection_samples) && ...
+    isnan(out.CRCPass) && ~out.DCICrcPass && out.CRCOutcome=="unavailable");
+% Coordinator wiring guard supplements the actual coded-IQ checks above.
+source=fileread(which('sixgr.truth.runWaveformLinkBundle'));
+section=regexp(source,'(?s)function \[r,receivedAssignment,channelEvidence\] = localCompletePDCCHTrial.*?(?=\r?\nfunction )','match','once');
+assert(contains(section,'dciCrcPass = logical(r.DCICrcPass);') && ...
+    contains(section,'ok = dciCrcPass && logical(rx.Ok) && payloadMatch;') && ...
+    ~contains(section,'r.CRCPass = double(ok);'), ...
+    'The production completion writer must use the tested CRC binding and preserve semantic grant gates.');
 ok=true; fprintf('PDCCH_RECEIVER_OBSERVATION_EXPORT_PASS\n');
 end

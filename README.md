@@ -25,10 +25,24 @@ in the single `main` worktree, together with the preceding core PHY, RF,
 configuration, WebGUI and publication edits. No source on `D:\SixGR\repairs`
 is needed to use this checkout. Future work and the commands below use the
 repository itself; retained external logs are historical evidence, not another
-code branch. The latest focused candidate evidence comprises 40 unique MATLAB
-tests; their final-source rerun remains pending. The **39 affected Python
-checks passed again on the consolidated main-folder code**. No MATLAB tests,
-scenario or calibration were restarted during consolidation.
+code branch. The **40 affected MATLAB tests passed on consolidated commit
+`d4092466`**, including the actual RA callback and full-band RF component checks;
+the receipt is `logs/h4_main_affected_20261015_v2/receipt.json`. The **39 affected
+Python checks passed again on the consolidated main-folder code**. These are
+focused results, not complete scenario or statistical qualification.
+
+A subsequent core PDCCH reporting repair separates the decoder's RNTI-masked
+CRC from semantic acceptance and transmitted-payload agreement. Six affected
+checks pass, including coded-IQ replay with a poisoned TX audit, independent
+connected monitoring, shared physical reception and strict grant-binding
+publication. The grant rejection checks remain intact. A scheduler check
+initially lacked `tests/helpers` on the launch path and passed when that
+existing helper path was installed. The older standalone control-export test
+remains blocked by its missing `pdcch_strict.validation_campaign` configuration;
+its failure is retained, not converted into a pass or a default campaign.
+See `logs/h4_pdcch_crc_20261015_v1/receipt.json` and `prelaunch_receipt.json` in
+the same directory. This independent qualification-fixture issue is separate
+from the H4 connected receiver and remains pending before broad acceptance.
 
 | Integrated repair | What remains to be verified on the consolidated revision |
 | --- | --- |
@@ -38,10 +52,10 @@ scenario or calibration were restarted during consolidation.
 | Attempt goodput, HARQ terminal/censored populations, committed IQ scope and exact RE-map preservation | Complete DL/UL and terminal artifact acceptance |
 | Separate 100-slot adaptation YAML with unchanged physical feedback calendars | Two received CSI confirmations followed by future adaptive grants |
 
-The next verification configuration is **100 total slots / 50 ms**, including
-initial access, not 100 data slots. It is prepared but has not been run. Do not
-interpret this source-consolidation commit or the commands below as a passing
-100 MHz scenario. The following paragraphs retain earlier, explicitly scoped
+The verification configuration is **100 total slots / 50 ms**, including
+initial access, not 100 data slots. Completion and acceptance require the
+specific run's terminal receipt; this source commit and the commands below
+are not a passing 100 MHz result. The following paragraphs retain earlier, explicitly scoped
 component evidence; they do not supersede this current status.
 
 The latest follow-up has **13 affected tests passing**: standalone SR acquires
