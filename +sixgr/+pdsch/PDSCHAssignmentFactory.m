@@ -138,6 +138,8 @@ classdef PDSCHAssignmentFactory
             end
             data.ReceivedAssignmentDigest=received.AssignmentDigest;
             data.ReceivedContextDigest=received.ContextDigest;
+            data.ReceivedContextData=context.Data;
+            data.ReceivedHARQContextDigest=sixgr.phy.pdcch.harqContextDigest(context);
             data.DAIDomain="received_two_bit_codepoint_not_unwrapped_counter";
             data.AssignmentId=sixgr.pdsch.PDSCHAssignmentFactory.assignmentId(data);
             assignment=sixgr.pdsch.PDSCHSchedulingAssignment(data);

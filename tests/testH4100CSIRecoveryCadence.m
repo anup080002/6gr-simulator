@@ -8,6 +8,16 @@ cfg=sixgr.lls6g.buildInternalConfig(scenario,fullfile(tempdir,'h4_csi_recovery_c
 assert(cfg.phy.csi.reportPeriodicitySlots==20 && ...
     cfg.phy.linkAdaptation.outageRecoveryMaxGapSlots==20 && ...
     cfg.phy.linkAdaptation.outageRecoveryPositiveCQIReports==2);
+% The late-PUCCH fixture also lengthens the inherited reporting calendar.
+% It must declare a compatible gap, not bypass the production validator.
+clockScenario=sixgr.lls6g.config.loadScenarioConfig( ...
+    'simulator/configs/validation/lls_pucch_feedback_clock_connected.yaml');
+clockCfg=sixgr.lls6g.buildInternalConfig(clockScenario,tempname);
+assert(clockCfg.phy.csi.reportPeriodicitySlots==20 && ...
+    clockCfg.phy.linkAdaptation.outageRecoveryMaxGapSlots==20 && ...
+    clockCfg.phy.linkAdaptation.outageRecoveryPositiveCQIReports==2);
+invalidClock=clockCfg; invalidClock.phy.linkAdaptation.outageRecoveryMaxGapSlots=5;
+localReject(@()sixgr.link.validateCSIRecoveryCadence(invalidClock));
 bad=cfg; bad.phy.linkAdaptation.outageRecoveryMaxGapSlots=5;
 localReject(@()sixgr.link.validateCSIRecoveryCadence(bad));
 localReject(@()sixgr.link.computeLinkAdaptationDecision(bad,'DL',struct('CQI',13)));

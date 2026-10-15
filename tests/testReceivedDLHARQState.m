@@ -1,6 +1,7 @@
-function ok=testReceivedDLHARQState(outputRoot)
+function ok=testReceivedDLHARQState(outputRoot,varyBeam)
 % Actual coded control and waveforms; isolated UE endpoint, not full scheduler.
 if nargin<1, outputRoot=tempname; end
+if nargin<2, varyBeam=false; end
 assert(~isfolder(outputRoot),'test:EvidenceAlreadyExists','Preserve previous evidence.');
 setup6GRSimToolkit('Verbose',false); rng(90213,'twister');
 s=sixgr.lls6g.config.loadScenarioConfig( ...
@@ -18,12 +19,21 @@ for k=1:4
     if k==2 || k==3, mcs=31; nprb=8; rv=2; end
     if k==4, ndi=0; end
     cfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(installed,slot);
+    if varyBeam
+        % Change the received per-attempt beam, not the HARQ installation.
+        % The unit link below qualifies protocol/soft-state retention, not
+        % array gain or a physical beam-switching channel.
+        assert(cfg.phy.pdsch.qclTCI.enabled);
+        cfg.phy.pdsch.qclTCI.state_id=16+k;
+        cfg.phy.pdsch.qclTCI.codepoint=k;
+    end
     context=sixgr.phy.pdcch.DCIContextFactory.fromRuntimeConfig(cfg,'1_1');
     defs=sixgr.phy.pdcch.DCISchemaEngine.resolve(context).Definitions;
     f=struct(); for d=defs(:).', f.(d.Name)=d.ValueMin; end
     f.frequency_resource_assignment=cfg.phy.carrier.NSizeGrid*(nprb-1)+3;
     f.mcs=mcs; f.rv=rv; f.ndi=ndi; f.harq_process=2;
     f.antenna_ports=4; f.dmrs_sequence_initialization=1;
+    if varyBeam, f.transmission_configuration_indication=k; end
     packed=sixgr.phy.pdcch.DCIPacker.pack(f,context);
     controlTx=sixgr.link.preparePDCCHTransmission(cfg,'DCIBits',packed.Bits,'RNTI',cfg.phy.pdsch.RNTI);
     [control,controlInfo]=sixgr.phy.dl.PDCCH_Rx(controlTx.TransmitSamples,cfg, ...
@@ -58,6 +68,10 @@ for k=1:4
     delayed=[complex(zeros(43,size(wave,2)));wave;complex(zeros(17,size(wave,2)))];
     before=entity;
     [rx,decision,entity]=entity.receive(cfg,a,delayed,'TimingSearchWindowSamples',[0 60]);
+    assert(entity.ContextDigest==a.ContextDigest && ...
+        entity.HARQContextDigest==before.HARQContextDigest);
+    % Attempt 1 uses the installed beam; later attempts select new beams.
+    if varyBeam && k>1, assert(entity.ContextDigest~=before.ContextDigest); end
     if k==1
         assert(~rx.CRCPass && ~decision.ACK && ~decision.DeliverTransportBlock, ...
             'Stress waveform must cause an actual failed initial decode.');
@@ -79,6 +93,13 @@ for k=1:4
         localReject(@()missing.receive(cfg,a,delayed),'sixgr:pdsch:ReceivedDLHARQHistoryRequired');
         % Mutating the typed assignment cannot attach retained coding to a new NDI.
         bad=rx.Assignment.toStruct(); bad.NDIPerCodeword=0;
+        localReject(@()sixgr.pdsch.PDSCHSchedulingAssignment(bad), ...
+            'sixgr:pdsch:ReceivedDLHARQIdentityMismatch');
+        bad=rx.Assignment.toStruct(); bad.ReceivedContextDigest="tampered";
+        localReject(@()sixgr.pdsch.PDSCHSchedulingAssignment(bad), ...
+            'sixgr:pdsch:ReceivedDLHARQIdentityMismatch');
+        bad=rx.Assignment.toStruct();
+        bad.ReceivedContextData.RNTIValue=bad.ReceivedContextData.RNTIValue+1;
         localReject(@()sixgr.pdsch.PDSCHSchedulingAssignment(bad), ...
             'sixgr:pdsch:ReceivedDLHARQIdentityMismatch');
     end

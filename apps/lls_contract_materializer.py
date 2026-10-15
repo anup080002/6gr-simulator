@@ -9,6 +9,7 @@ import json
 import math
 import os
 import re
+import textwrap
 from collections import Counter, defaultdict
 from contextlib import contextmanager, nullcontext
 from functools import lru_cache
@@ -28,7 +29,7 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-10-13-contract-v93-complete-availability-audit"
+MATERIALIZER_VERSION = "2026-10-14-contract-v101-complete-radio-samples-and-measurement-labels"
 FILESYSTEM_CONTRACT_CACHE_PATH = (
     "artifact_generation/browser_contract_exact_source_cache.json"
 )
@@ -1840,16 +1841,22 @@ def _render_multi_series_svg(
     pad_constant_axes: bool = False,
     y_bounds: tuple[float, float] | None = None,
     max_points_per_series: int | None = MAX_PREVIEW_ROWS,
+    wrap_legend: bool = False,
+    wrap_subtitle: bool = False,
 ) -> bytes:
     width = 1280
     height = 720
     left = 72
-    top = 108
+    subtitle_lines = ((textwrap.wrap(str(subtitle), 132) or [""]) if wrap_subtitle
+                      else [_ellipsize_svg_text(subtitle, 132)])
+    top = 108 + 19 * (len(subtitle_lines) - 1)
     plot_w = 820
     plot_h = 458
     info_x = 930
     legend_limit = len(series) if (evidence_shape_policy == "operating_point" or show_all_series) else 8
-    info_h = max(plot_h, 100 + 22 * (min(len(summary_lines) + 6, 14) + legend_limit))
+    legend_rows = (sum(max(1, len(textwrap.wrap(str(item.get("name") or ""), 28)))
+                       for item in series[:legend_limit]) if wrap_legend else legend_limit)
+    info_h = max(plot_h, 100 + 22 * (min(len(summary_lines) + 6, 14) + legend_rows))
     height = max(height, top + info_h + 64)
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
@@ -1858,7 +1865,8 @@ def _render_multi_series_svg(
         '<rect x="40" y="24" width="190" height="24" rx="12" fill="#ccfbf1"/>',
         '<text x="135" y="41" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="700" letter-spacing="1.2" fill="#115e59">RUNTIME MEASUREMENT</text>',
         f'<text x="40" y="76" font-family="Segoe UI,Arial,sans-serif" font-size="29" font-weight="700" fill="#0f172a">{html.escape(_display_chart_title(title))}</text>',
-        f'<text x="40" y="99" font-family="Segoe UI,Arial,sans-serif" font-size="14" fill="#475569">{html.escape(_ellipsize_svg_text(subtitle, 132))}</text>',
+        *[f'<text x="40" y="{99 + 19 * i}" font-family="Segoe UI,Arial,sans-serif" font-size="14" fill="#475569">{html.escape(line)}</text>'
+          for i, line in enumerate(subtitle_lines)],
         f'<rect x="{left}" y="{top}" width="{plot_w}" height="{plot_h}" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>',
         f'<rect x="{info_x}" y="{top}" width="310" height="{info_h}" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>',
     ]
@@ -2028,8 +2036,12 @@ def _render_multi_series_svg(
                 parts.append(f'<circle cx="{info_x + 27}" cy="{y_cursor}" r="3" fill="{prepared_series["color"]}"/>')
         else:
             parts.append(f'<line x1="{info_x + 18}" y1="{y_cursor}" x2="{info_x + 36}" y2="{y_cursor}" stroke="{prepared_series["color"]}" stroke-width="3"{dash_attr}/>')
-        parts.append(f'<text x="{info_x + 46}" y="{y_cursor + 4}" font-family="Segoe UI,Arial,sans-serif" font-size="13" fill="#334155">{html.escape(_ellipsize_svg_text(prepared_series["name"], 28))}</text>')
-        y_cursor += 22
+        legend_lines = (textwrap.wrap(prepared_series["name"], 28) or [""]) if wrap_legend else [_ellipsize_svg_text(prepared_series["name"], 28)]
+        parts.append(f'<g><title>{html.escape(prepared_series["name"])}</title>')
+        for legend_line in legend_lines:
+            parts.append(f'<text x="{info_x + 46}" y="{y_cursor + 4}" font-family="Segoe UI,Arial,sans-serif" font-size="13" fill="#334155">{html.escape(legend_line)}</text>')
+            y_cursor += 22
+        parts.append('</g>')
     parts.append('</svg>')
     return "".join(parts).encode("utf-8")
 
@@ -9767,65 +9779,101 @@ def _runtime_cfo_tracking_chart(
     source_path, rows = _first_available_rows(
         existing,
         fetch_artifact_bytes,
-        ["reports/csv/cfo_to_tracking_traces.csv"],
+        ["reports/csv/cfo_to_tracking_traces.csv",
+         "reports/csv/rf_synchronization_observations.csv"],
     )
     if not rows:
         return None
     csv_rows: list[dict[str, Any]] = []
-    series: dict[str, list[tuple[float, float]]] = {
-        "True CFO": [],
-        "Estimated CFO": [],
-        "Residual CFO": [],
-    }
+    series: dict[str, list[tuple[float, float]]] = defaultdict(list)
     for row in rows:
-        true_cfo = _row_float(row, "TrueCFO_Hz")
+        true_cfo = _row_float(row, "InjectedCFO_Hz", "TrueCFO_Hz")
         estimated_cfo = _row_float(
             row, "EstimatedCFO_PreCorrection_Hz", "EstimatedCFO_Hz"
         )
         residual_cfo = _row_float(row, "ResidualCFO_PostCorrection_Hz")
-        if true_cfo is None and estimated_cfo is None and residual_cfo is None:
-            continue
+        measured_residual = _row_float(row, "ResidualCFO_EstimatedPostCorrection_Hz")
+        pilot_rate = _row_float(row, "PilotCommonPhaseRate_Hz")
+        applied = _row_float(row, "CFOCorrectionApplied_Hz")
+        reused = _row_float(row, "ResidualCFOReusesAcquisitionObservation")
         sample_index = float(len(csv_rows) + 1)
+        point = _row_text(row, "SweepPointIndex")
+        snr = _row_text(row, "ConfiguredSNR_dB")
+        direction = _row_text(row, "Direction")
+        trace = _row_text(row, "TraceSource")
+        ue = _row_text(row, "UEID", "UEIndex", "RNTI")
+        group = f"{direction} {trace} UE={ue or '?'} point={point or '?'} SNR={snr or '?'}"
         csv_rows.append({
             "run_id": run_id,
             "chart_name": chart_name,
             "sample_index": int(sample_index),
-            "trace_source": _row_text(row, "TraceSource"),
-            "direction": _row_text(row, "Direction"),
+            "trace_source": trace,
+            "direction": direction,
             "frame": _row_text(row, "Frame"),
             "slot": _row_text(row, "Slot"),
             "true_cfo_hz": "" if true_cfo is None else float(true_cfo),
             "estimated_cfo_hz": "" if estimated_cfo is None else float(estimated_cfo),
             "residual_cfo_hz": "" if residual_cfo is None else float(residual_cfo),
+            "receiver_common_residual_hz": "" if measured_residual is None else measured_residual,
+            "pilot_common_phase_rate_hz": "" if pilot_rate is None else pilot_rate,
+            "pilot_phase_fit_residual_rms_deg": _row_text(row, "PilotPhaseFitResidualRMS_deg"),
+            "pilot_phase_pair_count": _row_text(row, "PilotPhasePairCount"),
+            "pilot_phase_unaliased_half_width_hz": _row_text(row, "PilotPhaseUnaliasedHalfWidth_Hz"),
+            "pilot_phase_source": _row_text(row, "PilotPhaseEvolutionSource"),
+            "pilot_phase_status": _row_text(row, "PilotPhaseEvolutionStatus"),
+            "doppler_measurement_status": _row_text(row, "DopplerMeasurementStatus"),
+            "applied_correction_hz": "" if applied is None else applied,
+            "sweep_point_index": point,
+            "configured_snr_db": snr,
+            "ue": ue,
+            "receiver_residual_source": _row_text(row, "ResidualCFOEstimateSource"),
+            "receiver_residual_domain": _row_text(row, "ResidualCFOEstimateDomain"),
+            "receiver_residual_role": _row_text(row, "ResidualCFOEstimateRole"),
+            "reuses_acquisition_observation": "" if reused is None else reused,
+            "reference_residual_definition": _row_text(row, "ResidualCFOReferenceDefinition"),
+            "status": _row_text(row, "Status", "ReceiverResidualObservationStatus"),
             "source_table_logical_path": source_path,
         })
-        if true_cfo is not None:
-            series["True CFO"].append((sample_index, float(true_cfo)))
-        if estimated_cfo is not None:
-            series["Estimated CFO"].append((sample_index, float(estimated_cfo)))
-        if residual_cfo is not None:
-            series["Residual CFO"].append((sample_index, float(residual_cfo)))
-    if not csv_rows or any(not series[name] for name in series):
+        metrics = [
+            ("Injected oscillator CFO", true_cfo),
+            ("Pre-correction estimate", estimated_cfo),
+            ("Applied correction", applied),
+            ("Oscillator reference difference", residual_cfo),
+            ("Estimator self-consistency" if reused == 1 else "Post-correction common frequency", measured_residual),
+            ("Pilot channel common phase rate (not Doppler spread)", pilot_rate),
+        ]
+        for label, value in metrics:
+            if value is not None:
+                series[f"{label} | {group}"].append((sample_index, float(value)))
+    if not csv_rows or not series:
         return None
     summary = [
         f"source={source_path}",
         f"rows={len(csv_rows)}",
         "missing values remain blank",
         "no configured-value substitution",
+        "Oscillator reference != RX residual",
+        "Self-check does not qualify accuracy",
     ]
     return {
         "csv_bytes": _encode_dict_rows(
             [
                 "run_id", "chart_name", "sample_index", "trace_source",
                 "direction", "frame", "slot", "true_cfo_hz",
-                "estimated_cfo_hz", "residual_cfo_hz",
+                "estimated_cfo_hz", "residual_cfo_hz", "receiver_common_residual_hz",
+                "pilot_common_phase_rate_hz", "pilot_phase_fit_residual_rms_deg",
+                "pilot_phase_pair_count", "pilot_phase_unaliased_half_width_hz",
+                "pilot_phase_source", "pilot_phase_status", "doppler_measurement_status",
+                "applied_correction_hz", "sweep_point_index", "configured_snr_db", "ue",
+                "receiver_residual_source", "receiver_residual_domain", "receiver_residual_role",
+                "reuses_acquisition_observation", "reference_residual_definition", "status",
                 "source_table_logical_path",
             ],
             csv_rows,
         ),
         "img_bytes": _render_multi_series_svg(
             chart_name,
-            "Persisted runtime CFO truth, receiver estimate, and post-correction residual.",
+            "Separate injection, correction, oscillator-reference difference and receiver common-frequency observations. Not accuracy qualification.",
             [
                 {"name": name, "points": [[x, y] for x, y in points]}
                 for name, points in series.items()
@@ -9833,13 +9881,15 @@ def _runtime_cfo_tracking_chart(
             summary,
             x_label="Runtime observation index",
             y_label="CFO (Hz)",
+            mode="scatter", evidence_shape_policy="operating_point",
+            pad_constant_axes=True, max_points_per_series=None, wrap_legend=True,
         ),
         "csv_status": "explicit_runtime_cfo_tracking_dataset",
         "image_status": "generated_runtime_cfo_tracking_svg",
         "source_table_path": source_path,
         "source_row_count": len(csv_rows),
         "source_mapping_status": "exact",
-        "note": "CFO series use only persisted runtime truth, estimate, and residual fields.",
+        "note": "Separate measurement planes; no oscillator-reference substitution for missing receiver residuals. All points retained in one CSV; no independence or accuracy claim.",
     }
 
 
@@ -9859,7 +9909,7 @@ def _runtime_reference_signal_occupancy_chart(
         ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"],
     )
     csv_rows: list[dict[str, Any]] = []
-    totals: Counter[str] = Counter()
+    series: dict[str, list[list[float]]] = defaultdict(list)
     for source_path, rows in sources:
         direction_default = "DL" if "dl_pdsch" in source_path else "UL"
         for index, row in enumerate(rows, start=1):
@@ -9869,51 +9919,81 @@ def _runtime_reference_signal_occupancy_chart(
             if dmrs is None and ptrs is None:
                 continue
             direction = _row_text(row, "Direction").upper() or direction_default
-            dmrs_value = float(dmrs or 0.0)
-            ptrs_value = float(ptrs or 0.0)
-            totals[f"{direction} DM-RS"] += dmrs_value
-            totals[f"{direction} PT-RS"] += ptrs_value
+            transform = _row_text(row, "TransformPrecodingApplied").strip().lower()
+            dft_spread = direction == "UL" and transform in {"1", "true"}
+            ptrs_domain = ("pre_transform_samples_not_isolated_carrier_RE" if dft_spread
+                           else "carrier_grid_RE" if direction == "DL" or transform in {"0", "false"}
+                           else "reported_count_waveform_domain_unspecified")
+            # Missing telemetry is not an executed zero. Keep point/rank
+            # identities instead of pooling unrelated sweep allocations.
+            point = _row_text(row, "SweepPointIndex")
+            sweep = _row_text(row, "SweepIndex")
+            snr = _row_text(row, "ConfiguredSNR_dB")
+            ue = _row_text(row, "UEIndex", "UEID", "RNTI")
+            layers = _row_text(row, "Layers", "NumLayers")
+            group = direction
+            if any((point, sweep, snr, ue, layers)):
+                group += (f" point={point or '?'} sweep={sweep or '?'}"
+                          f" SNR={snr or '?'} UE={ue or '?'} layers={layers or '?'}")
+            observation_index = len(csv_rows) + 1
+            if dmrs is not None:
+                series[f"DM-RS | {group}"].append([observation_index, dmrs])
+            if ptrs is not None:
+                label = "PT-RS pre-DFT samples" if dft_spread else "PT-RS"
+                series[f"{label} | {group}"].append([observation_index, ptrs])
             csv_rows.append({
                 "run_id": run_id,
                 "chart_name": chart_name,
                 "direction": direction,
                 "trial_index": index,
+                "observation_index": observation_index,
                 "frame": _row_text(row, "Frame"),
                 "slot": _row_text(row, "Slot"),
-                "dmrs_re_count": dmrs_value,
-                "ptrs_re_count": ptrs_value,
+                "dmrs_re_count": "" if dmrs is None else float(dmrs),
+                "ptrs_re_count": "" if ptrs is None else float(ptrs),
+                "ptrs_count_domain": ptrs_domain,
+                "transform_precoding_applied": transform,
                 "data_re_count": "" if data is None else float(data),
                 "ptrs_configured_enabled": _row_text(row, "PTRSConfiguredEnabled"),
+                "sweep_point_index": point,
+                "sweep_index": sweep,
+                "configured_snr_db": snr,
+                "ue": ue,
+                "layers": layers,
+                "dmrs_measurement_status": "reported" if dmrs is not None else "not_reported",
+                "ptrs_measurement_status": "reported" if ptrs is not None else "not_reported",
+                "summary_group": group,
                 "source_table_logical_path": source_path,
             })
     if not csv_rows:
         return None
-    named_values = [(name, float(value)) for name, value in sorted(totals.items())]
-    dataset, labels = _bar_dataset_from_named_values(
-        "Direction/reference-signal bucket", "Occupied RE count", named_values
-    )
-    dataset["tick_labels"] = [name for name, _value in named_values]
     return {
         "csv_bytes": _encode_dict_rows(
             [
-                "run_id", "chart_name", "direction", "trial_index", "frame",
-                "slot", "dmrs_re_count", "ptrs_re_count", "data_re_count",
-                "ptrs_configured_enabled", "source_table_logical_path",
+                "run_id", "chart_name", "direction", "trial_index", "observation_index", "frame",
+                "slot", "dmrs_re_count", "ptrs_re_count", "ptrs_count_domain",
+                "transform_precoding_applied", "data_re_count",
+                "ptrs_configured_enabled", "sweep_point_index", "sweep_index",
+                "configured_snr_db", "ue", "layers", "dmrs_measurement_status",
+                "ptrs_measurement_status", "summary_group", "source_table_logical_path",
             ],
             csv_rows,
         ),
-        "img_bytes": _render_svg_plot(
+        "img_bytes": _render_multi_series_svg(
             chart_name,
-            "Measured DM-RS/PT-RS resource occupancy from executed PDSCH/PUSCH trials.",
-            dataset,
-            labels + [f"runtime_trials={len(csv_rows)}"],
+            "Reported RS counts by sweep/layers. DFT-s-OFDM PT-RS counts pre-transform samples, not isolated carrier RE. Missing counts are not zero.",
+            [{"name": name, "points": points} for name, points in series.items()],
+            [f"runtime_trials={len(csv_rows)}", "All observed points retained", "Missing counts stay blank"],
+            x_label="Runtime observation index", y_label="Reported RS count (domain in legend/CSV)",
+            mode="scatter", evidence_shape_policy="operating_point",
+            pad_constant_axes=True, max_points_per_series=None, wrap_legend=True, wrap_subtitle=True,
         ),
         "csv_status": "specialized_runtime_rs_occupancy_dataset",
         "image_status": "generated_specialized_runtime_summary_svg",
         "source_table_path": "|".join(path for path, _rows in sources),
         "source_row_count": len(csv_rows),
         "source_mapping_status": "exact",
-        "note": "Occupancy uses measured DMRSRECount/PTRSRECount fields from the executed waveform chain.",
+        "note": "Exact reported DMRSRECount/PTRSRECount values; all points share one CSV. PT-RS in DFT-s-OFDM is counted before spreading, not as isolated carrier RE. Missing measurements stay blank. No cross-trial resource union or overhead percentage is inferred.",
     }
 
 

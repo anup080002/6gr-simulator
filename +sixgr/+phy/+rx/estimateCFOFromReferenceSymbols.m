@@ -8,6 +8,8 @@ function [freqHz, info] = estimateCFOFromReferenceSymbols(rxGrid, refInd, refSym
 % ambiguity interval; no injected frequency or channel coefficients are used.
 % ReferenceGroupIDs separates installed resources/precoders whose unknown
 % effective channels must not be correlated. The default is one fixed grant.
+% Bounded receiver grids (e.g. PBCH) must supply their acquired symbol indices
+% and actual FFT size; a four-symbol SSB is not the first four symbols of a slot.
 arguments
     rxGrid
     refInd
@@ -15,6 +17,8 @@ arguments
     carrier
     sampleRateHz
     options.ReferenceGroupIDs = []
+    options.SymbolIndicesZeroBased = []
+    options.Nfft = []
 end
 
 info = struct( ...
@@ -112,7 +116,8 @@ if isempty(amplitude) || amplitude==0
 end
 rxGrid=rxGrid/amplitude;
 
-symbolTimes = localSymbolCenterTimes(carrier, sampleRateHz, L);
+[symbolTimes, symbolIndices] = localSymbolCenterTimes( ...
+    carrier, sampleRateHz, L, options.SymbolIndicesZeroBased, options.Nfft);
 if numel(symbolTimes) < L
     info.Status = "symbol_times_unavailable";
     return;
@@ -127,7 +132,9 @@ if logical(pairInfo.EstimateAvailable)
     info.Source = "reference_symbol_common_re_phase_slope";
     info.NumReferenceRE = double(numel(refInd));
     info.NumSymbolsUsed = double(pairInfo.NumSymbolsUsed);
-    info.SymbolIndices = double(pairInfo.SymbolIndices(:));
+    info.SymbolIndices = symbolIndices(double(pairInfo.SymbolIndices(:))+1);
+    info.SymbolTimes_s = symbolTimes;
+    info.SymbolTimeSource = "receiver_numerology_half_CP_FFT_window_centers";
     info.SampleRate_Hz = double(sampleRateHz);
     info.NumSymbolPairsUsed = double(pairInfo.NumSymbolPairsUsed);
     info.NumCommonRESamplesUsed = double(pairInfo.NumCommonRESamplesUsed);
@@ -276,17 +283,26 @@ sampling = sixgr.phy.frame.OFDMSamplingResolver.resolve(carrier);
 sampleRate = double(sampling.SampleRateHz);
 end
 
-function symbolTimes = localSymbolCenterTimes(carrier, sampleRateHz, symbolsPerSlot)
-validateattributes(symbolsPerSlot, {'numeric'}, ...
+function [symbolTimes, indices] = localSymbolCenterTimes(carrier, sampleRateHz, gridSymbols, indices, nfft)
+validateattributes(gridSymbols, {'numeric'}, ...
     {'scalar','integer','positive','finite'});
-sampling = sixgr.phy.frame.OFDMSamplingResolver.resolve(carrier);
-if double(symbolsPerSlot) ~= double(sampling.SymbolsPerSlot)
+if isempty(nfft)
+    sampling = sixgr.phy.frame.OFDMSamplingResolver.resolve(carrier);
+else
+    sampling = sixgr.phy.frame.OFDMSamplingResolver.resolve( ...
+        carrier,'Nfft',nfft,'SampleRate',sampleRateHz);
+end
+if isempty(indices) && double(gridSymbols) ~= double(sampling.SymbolsPerSlot)
     error("sixgr:phy:frame:InconsistentOFDMNumerology", ...
         "Reference grid has %d symbols, while the canonical carrier has %d.", ...
-        symbolsPerSlot, sampling.SymbolsPerSlot);
+        gridSymbols, sampling.SymbolsPerSlot);
 end
-symbolLengths = double(sampling.Nfft) + ...
-    double(sampling.CyclicPrefixLengthsPerSlot(:));
+if isempty(indices), indices=(0:gridSymbols-1).'; end
+assert(isnumeric(indices) && isreal(indices) && numel(indices)==gridSymbols && ...
+    all(isfinite(indices(:)) & indices(:)>=0 & indices(:)==fix(indices(:))) && ...
+    all(diff(indices(:))>0), 'sixgr:phy:rx:ReferenceCFOSymbolClock', ...
+    'Each grid column requires its ordered, zero-based symbol index from the receiver slot.');
+indices=double(indices(:));
 if abs(double(sampleRateHz) - double(sampling.SampleRateHz)) > ...
         max(1e-9 * double(sampling.SampleRateHz), 1e-6)
     error("sixgr:phy:frame:InconsistentOFDMSampleRate", ...
@@ -294,6 +310,16 @@ if abs(double(sampleRateHz) - double(sampling.SampleRateHz)) > ...
         "canonical carrier rate %.15g Hz.", ...
         sampleRateHz, sampling.SampleRateHz);
 end
-symbolTimes = (cumsum(symbolLengths) - 0.5 .* symbolLengths) ./ ...
+% Start at this carrier slot, including the long CP wherever the acquired
+% window crosses a slot/subframe boundary. nrOFDMDemodulate's default FFT
+% starts at fix(CP/2); use the center of those Nfft received samples.
+cpBySlot=double(sampling.CyclicPrefixLengthsBySlot);
+allSymbols=(0:max(indices)).';
+slot=mod(double(carrier.NSlot)+floor(allSymbols/sampling.SymbolsPerSlot), ...
+    sampling.SlotsPerSubframe)+1;
+cp=cpBySlot(sub2ind(size(cpBySlot),mod(allSymbols,sampling.SymbolsPerSlot)+1,slot));
+lengths=double(sampling.Nfft)+cp;
+centers=(cumsum(lengths)-lengths+fix(cp/2)+(double(sampling.Nfft)-1)/2)/ ...
     double(sampling.SampleRateHz);
+symbolTimes=centers(indices+1);
 end

@@ -1,5 +1,9 @@
-function ok = testLLSRawTrialProvenance()
+function [ok, rawTrials] = testLLSRawTrialProvenance(noiseOperatingMode)
 %TESTLLSRAWTRIALPROVENANCE Verify DL/UL raw trial tables preserve grant/runtime provenance.
+arguments
+    noiseOperatingMode (1,1) string {mustBeMember(noiseOperatingMode, ...
+        ["standalone_awgn_snr_argument","receiver_noise_figure_thermal_noise"])} = "standalone_awgn_snr_argument"
+end
 
 setup6GRSimToolkit("Verbose", false);
 
@@ -21,7 +25,7 @@ cfg.run.numFrames = 1;
 cfg.channel.snr_dB = 10;
 cfg.channel.model = "AWGN";
 cfg.channel.awgnOnly = true;
-cfg.run.noiseOperatingMode = "standalone_awgn_snr_argument";
+cfg.run.noiseOperatingMode = noiseOperatingMode;
 cfg.run.interferenceExecutionMode = "none";
 cfg.phy.rx.useIdealTimingSync = true;
 % Antenna dimensions are channel-state construction inputs. Resolve this
@@ -148,6 +152,7 @@ ul = sixgr.link.runULPUSCHThroughput(cfgUL, ...
 localAssertRawTrialTable(dl.TrialTable, "DL");
 localAssertRawTrialTable(ul.TrialTable, "UL");
 localAssertLiveExportsKeepDataArtifactsWithPUCCHSideColumns(dl.TrialTable, ul.TrialTable, tmp);
+rawTrials=struct('DL',dl.TrialTable,'UL',ul.TrialTable);
 ok = true;
 end
 
@@ -532,7 +537,7 @@ if availability == "missing" || status == "NOT_AVAILABLE"
         "Raw %s trial table must preserve missing-estimate CFO lineage instead of backfilling a fake error value.", direction);
 else
     assert(availability == "available" && ...
-        definition == "residual_post_correction_hz_relative_to_estimated_pre_correction" && ...
+        definition == "injected_oscillator_cfo_minus_applied_correction_not_independent_common_frequency_estimate" && ...
         any(status == ["OK","PARTIAL"]) && isfinite(cfoError), ...
         "Raw %s trial table must preserve explicit available-estimate CFO lineage and finite residual error.", direction);
 end

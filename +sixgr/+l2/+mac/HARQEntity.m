@@ -520,6 +520,8 @@ classdef HARQEntity < handle
         end
 
         function applied = onFeedback(obj, rnti, harqId0, feedback, varargin)
+            sixgr.runtime.RuntimeCallLedger.record("sixgr.l2.mac.HARQEntity.onFeedback", ...
+                "HARQ","",struct("Stage","received_feedback","RNTI",rnti,"HarqID",harqId0));
             % onFeedback Apply a typed ACK/NACK/DTX outcome.
             % Callers may update dependent buffers/adaptation only when this
             % exact process attempt accepted the feedback (not a stale one).

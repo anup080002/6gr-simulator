@@ -225,6 +225,12 @@ function [rxOut, freqOffsetHz, NID2, info] = freqOffsetCorrect(rxWaveform, block
     info.SSBCenterFrequencyOffsetHz = double(ssbCenterOffsetHz);
     info.SSBPlacementCorrectionAppliedHz = double(-ssbCenterOffsetHz);
     info.OscillatorCFOEstimateHz = double(freqOffsetHz);
+    % Record the correction that produced rxOut, separately from the
+    % configured RF injection and SSB subcarrier-placement translation.
+    info.CFOCorrectionApplied = true;
+    info.CFOCorrectionApplied_Hz = double(freqOffsetHz);
+    info.CFOCorrectionSampleOrigin = 0;
+    info.CFOCorrectionSource = 'received_PSS_CP_estimate_capture_local_sample_clock';
     info.Candidates_Hz = candHz;
     info.Candidates_NID2 = candNID2;
     info.MetricMatrix = metricMatrix;

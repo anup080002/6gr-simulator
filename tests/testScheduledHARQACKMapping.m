@@ -61,6 +61,17 @@ for target=unique(due)
         ~any(isfield(mapping.Records,{'ExpectedACK','Ack','Bits','DecodedBits'})));
     actualIDs=arrayfun(@(tx)string(tx.Identity.TransmissionID),owner.DataTransmissions);
     assert(all(ismember(string({mapping.Records.TransmissionID}),actualIDs)));
+    beamChanged=dl;
+    beamChanged.phy.pdsch.qclTCI.state_id=dl.phy.pdsch.qclTCI.state_id+1;
+    later=sixgr.truth.buildScheduledHARQACKMapping(state,beamChanged,1,target);
+    assert(isequaln(later,mapping) && later.Digest==mapping.Digest, ...
+        'A current beam selection cannot rewrite historical scheduled DCI/DAI ownership.');
+    badCfg=beamChanged;
+    badCfg.phy.pdcch.operatorControl.connected_dci.configuration_epoch= ...
+        badCfg.phy.pdcch.operatorControl.connected_dci.configuration_epoch+1;
+    badCfg.phy.pdsch.qclTCI.configuration_epoch=badCfg.phy.pdcch.operatorControl.connected_dci.configuration_epoch;
+    localReject(@()sixgr.truth.buildScheduledHARQACKMapping(state,badCfg,1,target), ...
+        'sixgr:truth:HARQMappingContextMismatch');
     poisoned=state;
     % Deliberately contradictory observer data must not influence gNB mapping.
     poisoned.SharedUEHARQACKEvents={struct('Event',"not_a_received_event")};

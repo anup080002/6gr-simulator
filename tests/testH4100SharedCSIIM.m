@@ -4,6 +4,9 @@ function ok=testH4100SharedCSIIM()
 setup6GRSimToolkit('Verbose',false);
 source=sixgr.lls6g.config.loadScenarioConfig( ...
     'simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_gate.yaml');
+previousRNG=rng; restoreRNG=onCleanup(@()rng(previousRNG)); %#ok<NASGU>
+assert(logical(source.get('simulation.deterministic_mode')));
+rng(double(source.get('simulation.random_seed')),'twister');
 folder=fullfile(pwd,'results','lls','h4_shared_csiim', ...
     char(datetime('now','Format','yyyyMMdd_HHmmss_SSS')));
 mkdir(folder);
@@ -31,7 +34,11 @@ for slot=1:6
 end
 rows=state.ControlTrials.CSIRS;
 assert(height(rows)==1 && rows.Slot==6 && rows.CSIMeasurementAvailable);
-sixgr.util.csvWriteTable(fullfile(folder,'csirs_trials.csv'),rows,'PreserveSchema',true);
+file=fullfile(folder,'csirs_trials.csv');
+sixgr.util.csvWriteTable(file,rows,'PreserveSchema',true,'RoundTripNumericText',true);
+persisted=sixgr.util.csvReadTable(file,'TextType','string');
+assert(isequaln(persisted.ReferenceSINRMeasurementJSON,rows.ReferenceSINRMeasurementJSON), ...
+    'CSV must retain the exact receiver-produced signed-power/CSI-IM evidence.');
 fprintf('H4_SHARED_CSIIM_PASS folder=%s\n',folder);
 ok=true;
 end
@@ -49,9 +56,22 @@ for item=reshape(items,1,[])
     measurement=jsondecode(rx.CSIRSObservation.ReferenceSINRMeasurementJSON);
     assert(measurement.InterferenceMeasurement.Available && ...
         string(measurement.DisturbanceSource)=="configured_CSI_IM_received_RE_second_moment");
+    assert(string(measurement.Source)== ...
+        "received_CDM_despread_CSI_IM_noise_debiased_port3000_reference_RE_power" && ...
+        ~measurement.SignalPowerEstimation.ClippedToNonnegative && ...
+        measurement.SignalPowerEstimation.CDMGroupCount==273 && ...
+        measurement.SignalPowerEstimation.PilotCount==546 && ...
+        abs(measurement.SignalPowerEstimation.UnitDisturbancePowerBias-.5)<1e-12);
+    assert(max(abs(measurement.DesiredPowerPerReceiveAntenna(:)- ...
+        (measurement.SignalPowerEstimation.RawPort3000PowerPerBranch(:)- ...
+         measurement.SignalPowerEstimation.EstimatedNoiseBiasPerBranch(:))))<1e-12);
+    resources=rx.CSIRSObservation.MeasurementPhysicalResources;
+    assert(numel(resources)==8 && all(cellfun(@(x) ...
+        x.SINR.SignalPowerEstimation.CDMGroupCount==273,resources)), ...
+        'Every configured CSI beam must use its actual received CDM measurement.');
     contextFolder=char(item.Context.Config.run.rootRunFolder);
     scope="actual_shared_CDL_C_and_RX_RF_not_grid_fixture_or_injected_variance";
-    save(fullfile(contextFolder,'received_measurement.mat'),'im','row','csi','measurement','scope');
+    save(fullfile(contextFolder,'received_measurement.mat'),'im','row','csi','measurement','resources','scope');
     fprintf('H4_SHARED_CSIIM_RECEIVED noise=%g SINR=%g RI=%g CQI=%g\n', ...
         im.MeanPower,measurement.CSI_SINR_dB,csi.RI,csi.CQI);
 end

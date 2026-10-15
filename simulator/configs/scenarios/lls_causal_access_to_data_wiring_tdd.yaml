@@ -1186,9 +1186,9 @@ validation:
         dependency_stages: ["pss_sss_cell_search"]
         feature_authority: "beam_sweep"
         required: true
-        consumer_source_files: ["+sixgr/+truth/runWaveformLinkBundle.m", "+sixgr/+system/selectBestBeamPerLink.m"]
-        measurement_artifact: "beamforming/csv/beam_sweep_measurements.csv"
-        measured_fields: ["SelectedBeamId", "MeasurementSource"]
+        consumer_functions: ["sixgr.truth.runWaveformLinkBundle.localCollectCoupledPBCHBeamSweep"]
+        measurement_artifact: "beamforming/csv/ssb_beam_sweep.csv"
+        measured_fields: ["SSBIndex", "SelectedSSBIndex", "SelectionSource"]
         measurement_min_rows: 1
       - stage_id: "prach_occasion_resolution"
         order: 70
@@ -1316,7 +1316,7 @@ validation:
         dependency_stages: ["rrc_setup_complete"]
         feature_authority: "csi_rs"
         required: true
-        consumer_source_files: ["+sixgr/+phy/+refsig/csirs.m", "+sixgr/+phy/+rsla/CSIRSResourceEngine.m"]
+        consumer_source_files: ["+sixgr/+phy/+refsig/receiveCSIRSFromGrid.m"]
         measurement_artifact: "air_interface/csv/csi_rs_trials.csv"
         measured_fields: ["Scheduled", "Transmitted", "Observed", "Consumed", "ChannelEstimateAvailable", "ReferenceMeasuredSINR_dB", "SINR_dB"]
         measurement_min_rows: 1

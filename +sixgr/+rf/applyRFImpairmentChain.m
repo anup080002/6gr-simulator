@@ -51,12 +51,18 @@ if opt.ResolveOnly
 end
 xRef = x;
 y = x;
+if chain.IncludeTx && chain.TxDAC.Enabled && ...
+        isfinite(chain.TxDAC.Reference.NumTransmitPorts) && ...
+        size(x,2)~=chain.TxDAC.Reference.NumTransmitPorts
+    error('RF:DACReferencePorts','DAC input columns must match its frozen physical TX port reference.');
+end
 beforeHash = localWaveformHash(y);
 
 stageRows = repmat(localStageRowTemplate(), 0, 1);
 stageOrder = strings(0, 1);
+converterEvidence=struct('DAC',[],'ADC',[]);
 if chain.IncludeTx
-    [y, stageRows] = localApplyDACStage(y, chain.TxDAC, "tx_dac", "tx", stageRows, stream);
+    [y, stageRows, converterEvidence.DAC] = localApplyDACStage(y, chain.TxDAC, "tx_dac", "tx", stageRows, stream);
     [y, stageRows] = localApplyIQStage(y, chain.TxIQ, "tx_iq", "tx", stageRows);
     [y, stageRows] = localApplyElementRFStage(y, chain.TxElementRF, cfg, "tx_element_rf", "tx", stageRows,stream);
     [y, stageRows] = localApplyPAStage(y, chain.TxPA, cfg, "tx_pa", "tx", stageRows,stream);
@@ -74,7 +80,7 @@ if chain.IncludeRx
     [y, stageRows] = localApplyElementRFStage(y, chain.RxElementRF, cfg, "rx_element_rf", "rx", stageRows,stream);
     [y, stageRows] = localApplySampleClockOffsetStage(y, chain.RxSampleClockOffset, "rx_sample_clock_offset", "rx", stageRows);
     [y, stageRows] = localApplyAGCStage(y, chain.RxAGC, "rx_agc", "rx", stageRows,stream);
-    [y, stageRows] = localApplyADCStage(y, chain.RxADC, "rx_adc", "rx", stageRows,stream);
+    [y, stageRows, converterEvidence.ADC] = localApplyADCStage(y, chain.RxADC, "rx_adc", "rx", stageRows,stream);
     stageOrder = [stageOrder; "rx_timing"; "rx_lo_cfo"; "rx_phase_noise"; "rx_iq"; "rx_element_rf"; "rx_sample_clock_offset"; "rx_agc"; "rx_adc"]; %#ok<AGROW>
 end
 if strlength(string(chain.CarrierPhase.StageName)) > 0
@@ -93,6 +99,11 @@ if chain.IncludeRx && chain.RxAGC.Enabled
 end
 if ~isempty(stream)
     replay.RFProcessingMode="retained_sample_stream";
+    for converter=["ADC","DAC"]
+        if ~isempty(converterEvidence.(converter))
+            replay.(converter+"SampleEvidence")=converterEvidence.(converter);
+        end
+    end
     replay.RFStreamStartSample=stream.NextSampleIndex;
     replay.RFStreamEndSampleExclusive=stream.NextSampleIndex+size(y,1);
     replay.RFConfigurationEpoch=stream.ConfigurationEpoch;
@@ -201,7 +212,7 @@ chain.TxElementRF = localResolveElementRFConfig(cfg, "tx", direction, legacyToTx
 chain.RxElementRF = localResolveElementRFConfig(cfg, "rx", direction, legacyToRx);
 chain.TxSampleClockOffset = localResolveSampleClockOffsetConfig(cfg, "tx", legacyToTx);
 chain.RxSampleClockOffset = localResolveSampleClockOffsetConfig(cfg, "rx", legacyToRx);
-chain.TxDAC = localResolveDACConfig(cfg, fs);
+chain.TxDAC = localResolveDACConfig(cfg, fs, direction, includeTx);
 chain.TxPA = localResolvePAConfig(cfg, logical(applyPA));
 chain.RxAGC = localResolveAGCConfig(cfg, logical(applyADC));
 chain.RxADC = localResolveADCConfig(cfg, logical(applyADC), fs);
@@ -325,7 +336,7 @@ cfgPN = struct("Enabled", logical(enabled), "Model", pn, "Seed", double(seed), .
     "ApproximationReason", string(pn.ApproximationReason), "Endpoint", char(endpoint));
 end
 
-function cfgDAC = localResolveDACConfig(cfg, fs)
+function cfgDAC = localResolveDACConfig(cfg, fs, direction, includeTx)
 raw = sixgr.util.structGet(cfg, "rf.frontend.dac", struct());
 enabled = false;
 if isstruct(raw) && isscalar(raw)
@@ -356,8 +367,18 @@ if enabled
             "A disabled DAC dither stage must declare dither_rms=0.");
     end
 end
+reference=sixgr.rf.resolveDACAmplitudeReference(struct(),struct(),fs,direction);
+if enabled && includeTx
+    reference=sixgr.rf.resolveDACAmplitudeReference(cfg,raw,fs,direction);
+end
+configuredFullScale=fullScale;
+configuredDitherRMS=ditherRMS;
+fullScale=fullScale*reference.WaveformUnitsPerReferenceUnit;
+ditherRMS=ditherRMS*reference.WaveformUnitsPerReferenceUnit;
 cfgDAC = struct("Enabled", enabled, "Bits", bits, ...
     "FullScale", fullScale, "Convention", convention, ...
+    "ConfiguredFullScale",configuredFullScale,"ConfiguredDitherRMS",configuredDitherRMS, ...
+    "Reference",reference, ...
     "DitherEnabled", ditherEnabled, "DitherRMS", ditherRMS, ...
     "ApertureJitter_s", apertureJitter, "ProfileID", profileID, ...
     "Version", version, "SampleRate_Hz", double(fs));
@@ -648,7 +669,8 @@ end
 rows(end + 1, 1) = row;
 end
 
-function [y, rows] = localApplyDACStage(x, stageCfg, stageName, endpoint, rows, stream)
+function [y, rows, evidence] = localApplyDACStage(x, stageCfg, stageName, endpoint, rows, stream)
+evidence=[];
 if stageCfg.Enabled
     if isempty(stream)
         seed = 1;
@@ -665,6 +687,7 @@ if stageCfg.Enabled
     [~, row] = localApplyGenericStage(x, true, stageName, endpoint, @(z)y);
     row.ErrorVariance = double(result.ErrorVariance);
     row = localBindConverterMeasurement(row,result);
+    evidence=localConverterSampleEvidence(x,result,stream);
 else
     y = x;
     [~, row] = localApplyGenericStage(x, false, stageName, endpoint, @(z)z);
@@ -779,7 +802,8 @@ end
 rows(end + 1, 1) = row;
 end
 
-function [y, rows] = localApplyADCStage(x, stageCfg, stageName, endpoint, rows,stream)
+function [y, rows, evidence] = localApplyADCStage(x, stageCfg, stageName, endpoint, rows,stream)
+evidence=[];
 if stageCfg.Enabled
     if isempty(stream)
         result = sixgr.rf.runtime.ADCModel.quantize(x, stageCfg.Profile);
@@ -790,6 +814,7 @@ if stageCfg.Enabled
     [~, row] = localApplyGenericStage(x, true, stageName, endpoint, @(z)y);
     row.ErrorVariance = double(result.ErrorVariance);
     row = localBindConverterMeasurement(row,result);
+    evidence=localConverterSampleEvidence(x,result,stream);
 else
     y = x;
     [~, row] = localApplyGenericStage(x, false, stageName, endpoint, @(z)z);
@@ -965,6 +990,7 @@ replay = struct( ...
     "MutualCouplingApplied", localMutualCouplingApplied(chain, elementRows), ...
     "MutualCouplingMatrixSize", char(localMutualCouplingMatrixSize(chain)), ...
     "AGCEnabled", ~isempty(agcRows) && any([agcRows.Enabled]), ...
+    "AGCExecuted", ~isempty(agcRows) && any([agcRows.Executed]), ...
     "AGCApplied", ~isempty(agcRows) && any([agcRows.Applied]), ...
     "AGCGain_dB", localSumRowParameter(agcRows, "agc_gain_dB"), ...
     "AGCTargetRMS", double(chain.RxAGC.TargetRMS), ...
@@ -983,6 +1009,16 @@ replay = struct( ...
     "DACQuantizationApplied", ~isempty(dacRows) && any([dacRows.Applied]), ...
     "DACBits", double(chain.TxDAC.Bits), ...
     "DACFullScale", double(chain.TxDAC.FullScale), ...
+    "DACConfiguredFullScale",double(chain.TxDAC.ConfiguredFullScale), ...
+    "DACReferenceDomain",string(chain.TxDAC.Reference.Domain), ...
+    "DACReferenceSource",string(chain.TxDAC.Reference.Source), ...
+    "DACReferenceRMS",double(chain.TxDAC.Reference.ReferenceRMS), ...
+    "DACReferenceHeadroom_dB",double(chain.TxDAC.Reference.Headroom_dB), ...
+    "DACReferenceREEnergy",double(chain.TxDAC.Reference.ReferenceREEnergy), ...
+    "DACReferenceNfft",double(chain.TxDAC.Reference.Nfft), ...
+    "DACReferenceSubcarriers",double(chain.TxDAC.Reference.NumSubcarriers), ...
+    "DACReferenceTxPorts",double(chain.TxDAC.Reference.NumTransmitPorts), ...
+    "DACReferencePayloadDependent",false, ...
     "DACClippingRatio", localLastFiniteRowValue(dacRows, "Parameter3Value"), ...
     "DACQuantizationErrorVariance", localLastFiniteRowValue(dacRows, "ErrorVariance"), ...
     "SampleClockOffsetTxPpm", double(chain.SampleClockOffset.TxPPM), ...
@@ -994,6 +1030,27 @@ for prefix=["ADC","DAC"]
     for name=["ClippedSampleCount","ClippingSampleCount","ClippingStatus", ...
             "ClippingPopulation","ClippingSource","ClippingThresholdRule"]
         replay.(prefix+name)=converterRows(end).(name);
+    end
+    % Additive sufficient statistics from the actual converter input/output.
+    % ErrorVariance is a historical name for mean squared error, not a
+    % demeaned variance. Do not relabel converter distortion as post-EQ EVM.
+    for name=["ErrorSampleCount","InputEnergy","ErrorEnergy","ErrorMeanSquare"]
+        replay.(prefix+name)=NaN;
+    end
+    replay.(prefix+"ErrorMeasurementStatus")="not_executed";
+    replay.(prefix+"ErrorDefinition")="mean_abs_output_minus_converter_input_squared_including_clipping_and_converter_impairments";
+    replay.(prefix+"ErrorDomain")="converter_sample_amplitude_squared_not_post_equalization_EVM";
+    if replay.(prefix+"QuantizationExecuted")
+        row=converterRows(end); count=double(row.ClippingSampleCount);
+        assert(isfinite(count) && count>0 && count==fix(count) && ...
+            all(isfinite([row.InputPower row.ErrorVariance])) && ...
+            row.InputPower>=0 && row.ErrorVariance>=0, ...
+            'RF:InvalidConverterErrorPopulation','Converter energy requires actual executed sample counts and measured input/error powers.');
+        replay.(prefix+"ErrorSampleCount")=count;
+        replay.(prefix+"InputEnergy")=double(row.InputPower)*count;
+        replay.(prefix+"ErrorEnergy")=double(row.ErrorVariance)*count;
+        replay.(prefix+"ErrorMeanSquare")=double(row.ErrorVariance);
+        replay.(prefix+"ErrorMeasurementStatus")="measured_actual_converter_samples";
     end
 end
 end
@@ -1148,6 +1205,23 @@ xi = min(max(imag(double(x)), -scale), scale);
 yr = round((xr ./ scale) * maxCode) ./ maxCode .* scale;
 yi = round((xi ./ scale) * maxCode) ./ maxCode .* scale;
 y = complex(yr, yi);
+end
+
+function evidence=localConverterSampleEvidence(x,result,stream)
+% Sufficient statistics for arbitrary receive-window crops. Three real
+% vectors per time sample, independent of antenna count; no duplicate IQ.
+% Record the executed converter plane before any following RF operator.
+evidence=[];
+if isempty(stream), return; end
+assert(isequal(size(x),size(result.Output)), 'RF:ConverterSampleClock', ...
+    'Converter input/output must retain the physical sample and channel axes.');
+evidence=struct('Contract',"executed_converter_sample_statistics/v1", ...
+    'StartSample',stream.NextSampleIndex, ...
+    'EndSampleExclusive',stream.NextSampleIndex+size(x,1), ...
+    'NumChannels',size(x,2), ...
+    'InputEnergy',sum(abs(double(x)).^2,2), ...
+    'ErrorEnergy',sum(abs(double(result.Output)-double(x)).^2,2), ...
+    'ClippedCount',sum(double(result.Clipped),2));
 end
 
 function row = localBindConverterMeasurement(row,result)

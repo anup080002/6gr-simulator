@@ -1757,7 +1757,97 @@ def test_cfo_chart_uses_persisted_true_estimated_and_residual_series() -> None:
     svg_text = chart["img_bytes"].decode("utf-8")
     assert "true_cfo_hz,estimated_cfo_hz,residual_cfo_hz" in csv_text
     assert "120.0,118.5,1.5" in csv_text
-    assert "True CFO" in svg_text and "Estimated CFO" in svg_text and "Residual CFO" in svg_text
+    assert "Injected oscillator CFO" in svg_text and "Pre-correction estimate" in svg_text
+    assert "Oscillator reference difference" in svg_text
+
+
+def test_cfo_chart_retains_receiver_only_evidence_without_reference_substitution() -> None:
+    import csv
+
+    path = "reports/csv/rf_synchronization_observations.csv"
+    payload = materializer._encode_csv(
+        ["Direction", "Slot", "ResidualCFO_EstimatedPostCorrection_Hz",
+         "ResidualCFOEstimateRole", "ResidualCFOReusesAcquisitionObservation"],
+        [["DL", 43, 0, "same_observation_estimator_consistency_not_independent_residual", 1],
+         ["UL", 44, "", "unavailable", ""]],
+    )
+    chart = materializer._runtime_cfo_tracking_chart(
+        "CFO true vs estimated vs residual", {path: {"artifact_id": 1}}, lambda _: payload, 97)
+    assert chart is not None
+    rows = list(csv.DictReader(io.StringIO(chart["csv_bytes"].decode())))
+    assert len(rows) == 2 and rows[0]["receiver_common_residual_hz"] == "0.0"
+    assert all(row["true_cfo_hz"] == row["residual_cfo_hz"] == "" for row in rows)
+    assert rows[1]["receiver_common_residual_hz"] == ""
+    svg = chart["img_bytes"].decode()
+    assert "Estimator self-consistency" in svg
+    assert "visual_gate=" not in svg and "does not qualify accuracy" in svg
+
+
+def test_cfo_chart_keeps_all_sweep_points_and_distinct_residual_planes() -> None:
+    import csv
+
+    snrs = [40, 30, 20, 10, 0, -10, -20, -30]
+    path = "reports/csv/cfo_to_tracking_traces.csv"
+    payload = materializer._encode_csv(
+        ["Direction", "UEID", "Slot", "SweepPointIndex", "ConfiguredSNR_dB",
+         "InjectedCFO_Hz", "ResidualCFO_PostCorrection_Hz",
+         "ResidualCFO_EstimatedPostCorrection_Hz", "ResidualCFOEstimateDomain"],
+        [["DL", 1, 43, index, snr, 400, -50, index / 10,
+          "receiver_measured_common_frequency_after_correction"]
+         for index, snr in enumerate(snrs, 1)],
+    )
+    chart = materializer._runtime_cfo_tracking_chart(
+        "CFO true vs estimated vs residual", {path: {"artifact_id": 1}}, lambda _: payload, 97)
+    assert chart is not None
+    rows = list(csv.DictReader(io.StringIO(chart["csv_bytes"].decode())))
+    assert len(rows) == 8
+    assert [float(row["configured_snr_db"]) for row in rows] == snrs
+    assert [float(row["receiver_common_residual_hz"]) for row in rows] == [i / 10 for i in range(1, 9)]
+    assert all(float(row["residual_cfo_hz"]) == -50 for row in rows)
+    assert all(row["estimated_cfo_hz"] == "" for row in rows)
+    svg = chart["img_bytes"].decode()
+    assert "Post-correction common frequency" in svg and "Oscillator reference difference" in svg
+
+
+def test_cfo_reference_only_does_not_create_measured_residual() -> None:
+    import csv
+
+    path = "reports/csv/cfo_to_tracking_traces.csv"
+    payload = materializer._encode_csv(["Direction", "Slot", "ResidualCFO_PostCorrection_Hz"],
+                                       [["DL", 43, -48.943]])
+    chart = materializer._runtime_cfo_tracking_chart(
+        "CFO true vs estimated vs residual", {path: {"artifact_id": 1}}, lambda _: payload, 97)
+    assert chart is not None
+    row = next(csv.DictReader(io.StringIO(chart["csv_bytes"].decode())))
+    assert row["receiver_common_residual_hz"] == "" and float(row["residual_cfo_hz"]) == -48.943
+    assert "Post-correction common frequency" not in chart["img_bytes"].decode()
+
+
+def test_tracking_chart_keeps_pilot_rate_separate_from_cfo_and_doppler() -> None:
+    payload = materializer._encode_csv(
+        ["Direction", "Slot", "PilotCommonPhaseRate_Hz", "PilotPhaseFitResidualRMS_deg",
+         "PilotPhasePairCount", "PilotPhaseUnaliasedHalfWidth_Hz", "PilotPhaseEvolutionSource",
+         "PilotPhaseEvolutionStatus", "DopplerMeasurementStatus"],
+        [["DL", 43, 125, .2, 2, 1500, "matched_pilot_cross_products", "measured_common_phase_rate",
+          "not_measured_common_phase_rate_is_not_maximum_Doppler_or_spread"],
+         ["UL", 45, -65, "", 1, 900, "matched_pilot_cross_products", "measured_common_phase_rate",
+          "not_measured_common_phase_rate_is_not_maximum_Doppler_or_spread"]],
+    )
+    path = "reports/csv/cfo_to_tracking_traces.csv"
+    chart = materializer._runtime_cfo_tracking_chart(
+        "CFO true vs estimated vs residual", {path: {"artifact_id": 1}}, lambda _: payload, 97)
+    assert chart is not None
+    header, rows = materializer._decode_csv(chart["csv_bytes"])
+    values = [dict(zip(header, row)) for row in rows]
+    assert [float(row["pilot_common_phase_rate_hz"]) for row in values] == [125, -65]
+    assert [row["pilot_phase_pair_count"] for row in values] == ["2", "1"]
+    assert [row["pilot_phase_unaliased_half_width_hz"] for row in values] == ["1500", "900"]
+    assert values[1]["pilot_phase_fit_residual_rms_deg"] == ""
+    for row in values:
+        assert row["estimated_cfo_hz"] == row["residual_cfo_hz"] == row["receiver_common_residual_hz"] == ""
+        assert row["pilot_phase_source"] == "matched_pilot_cross_products"
+        assert row["doppler_measurement_status"].startswith("not_measured_")
+    assert "Pilot channel common phase rate (not Doppler spread)" in chart["img_bytes"].decode()
 
 
 def test_runtime_source_selection_skips_unavailable_mirror_row() -> None:
@@ -1858,6 +1948,97 @@ def test_runtime_prach_rs_papr_and_harq_contract_charts_are_exact() -> None:
     )
     assert rv_chart is not None
     assert ",0.0,1.0," in rv_chart["csv_bytes"].decode("utf-8")
+
+
+def test_rs_occupancy_preserves_missing_counts_and_explicit_zero() -> None:
+    payload = materializer._encode_csv(
+        ["Direction", "Slot", "DMRSRECount", "PTRSRECount", "PTRSConfiguredEnabled"],
+        [["DL", 43, 1632, "", 1], ["DL", 44, "", 0, 0]],
+    )
+    path = "air_interface/csv/dl_pdsch_trials.csv"
+    chart = materializer._runtime_reference_signal_occupancy_chart(
+        "DMRS/PTRS occupancy map", {path: {"artifact_id": 1}}, lambda _: payload, 98)
+    assert chart is not None
+    header, rows = materializer._decode_csv(chart["csv_bytes"])
+    values = [dict(zip(header, row)) for row in rows]
+    assert values[0]["dmrs_re_count"] == "1632.0"
+    assert values[0]["ptrs_re_count"] == ""
+    assert values[0]["ptrs_measurement_status"] == "not_reported"
+    assert values[0]["ptrs_configured_enabled"] == "1"
+    assert values[1]["dmrs_re_count"] == ""
+    assert values[1]["dmrs_measurement_status"] == "not_reported"
+    assert values[1]["ptrs_re_count"] == "0.0"
+    assert values[1]["ptrs_measurement_status"] == "reported"
+
+
+def test_rs_occupancy_joint_export_retains_eight_points_and_both_directions() -> None:
+    snrs = [40, 30, 20, 10, 0, -10, -20, -30]
+    fields = ["Direction", "Slot", "DMRSRECount", "PTRSRECount", "DataRECount",
+              "SweepPointIndex", "SweepIndex", "ConfiguredSNR_dB", "UEIndex", "Layers"]
+    payloads = {
+        index: materializer._encode_csv(fields, [
+            [direction, 43, 100 + point, 10 + point, 500, point, 1, snr, 7, 2]
+            for point, snr in enumerate(snrs, start=1)
+        ])
+        for index, direction in ((1, "DL"), (2, "UL"))
+    }
+    paths = {"air_interface/csv/dl_pdsch_trials.csv": {"artifact_id": 1},
+             "air_interface/csv/ul_pusch_trials.csv": {"artifact_id": 2}}
+    chart = materializer._runtime_reference_signal_occupancy_chart(
+        "DMRS/PTRS occupancy map", paths, lambda index: payloads[index], 98)
+    assert chart is not None and chart["source_row_count"] == 16
+    header, rows = materializer._decode_csv(chart["csv_bytes"])
+    values = [dict(zip(header, row)) for row in rows]
+    assert [int(row["observation_index"]) for row in values] == list(range(1, 17))
+    for direction in ("DL", "UL"):
+        subset = [row for row in values if row["direction"] == direction]
+        assert [float(row["configured_snr_db"]) for row in subset] == snrs
+        assert [float(row["dmrs_re_count"]) for row in subset] == list(range(101, 109))
+        assert [float(row["ptrs_re_count"]) for row in subset] == list(range(11, 19))
+        assert all(row["layers"] == "2" and row["ue"] == "7" for row in subset)
+        assert all(row["slot"] == "43" for row in subset)
+    assert len({row["summary_group"] for row in values}) == 16
+    svg = chart["img_bytes"].decode()
+    for point, snr in enumerate(snrs, start=1):
+        assert f"point={point} sweep=1 SNR={snr}" in svg
+
+
+def test_rs_occupancy_identifies_pre_transform_ptrs_counts() -> None:
+    path = "air_interface/csv/ul_pusch_trials.csv"
+    payload = materializer._encode_csv(
+        ["Direction", "Slot", "DMRSRECount", "PTRSRECount", "TransformPrecodingApplied"],
+        [["UL", 1, 144, 52, 1], ["UL", 2, 144, 52, 0]],
+    )
+    chart = materializer._runtime_reference_signal_occupancy_chart(
+        "DMRS/PTRS occupancy map", {path: {"artifact_id": 1}}, lambda _: payload, 98)
+    header, rows = materializer._decode_csv(chart["csv_bytes"])
+    values = [dict(zip(header, row)) for row in rows]
+    assert values[0]["ptrs_count_domain"] == "pre_transform_samples_not_isolated_carrier_RE"
+    assert values[1]["ptrs_count_domain"] == "carrier_grid_RE"
+    assert all(row["ptrs_re_count"] == "52.0" for row in values)
+    assert b"PT-RS pre-DFT samples" in chart["img_bytes"]
+
+
+def test_rs_occupancy_chart_keeps_every_observation_without_downsampling(monkeypatch) -> None:
+    count = 501
+    payload = materializer._encode_csv(
+        ["Direction", "Slot", "DMRSRECount"],
+        [["DL", index, index + 1] for index in range(count)],
+    )
+    calls = []
+    def capture_renderer(title, subtitle, series, summary, **kwargs):
+        calls.append((series, kwargs))
+        return b"<svg/>"
+    monkeypatch.setattr(materializer, "_render_multi_series_svg", capture_renderer)
+    chart = materializer._runtime_reference_signal_occupancy_chart(
+        "DMRS/PTRS occupancy plot",
+        {"air_interface/csv/dl_pdsch_trials.csv": {"artifact_id": 1}}, lambda _: payload, 98)
+    header, rows = materializer._decode_csv(chart["csv_bytes"])
+    assert len(rows) == count
+    assert all(row[header.index("ptrs_re_count")] == "" for row in rows)
+    assert len(calls) == 1 and calls[0][1]["max_points_per_series"] is None
+    assert len(calls[0][0]) == 1  # No fabricated PT-RS series.
+    assert calls[0][0][0]["points"] == [[index + 1, index + 1] for index in range(count)]
 
 
 def test_harq_rtt_prefers_canonical_attempt_timeline_and_pucch_zero_format_is_valid() -> None:

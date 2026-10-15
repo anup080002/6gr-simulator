@@ -48,16 +48,12 @@ cfgStrictABG.channel.complianceMode = "strict_38901";
 localAssertThrows(@() sixgr.channel.TR38901Plus(cfgStrictABG, "Scenario", "UMa", "Seed", 13), ...
     "TR38901Plus:StrictPathlossModel");
 
-[~, losStatusUnknown] = sixgr.channel.LOSProbability("mysteryScenario", 100);
-assert(strcmpi(char(string(losStatusUnknown.Source)), "generic_exponential_fallback") && ...
-    strcmpi(char(string(losStatusUnknown.ComplianceStatus)), "generic_fallback_not_strict_38901"), ...
-    "Unknown LOS scenarios must disclose the generic fallback explicitly.");
-
-[~, losStatusInf] = sixgr.channel.LOSProbability("InF", 100);
-assert(strcmpi(char(string(losStatusInf.Source)), "approximate_inf_factory_proxy_los_probability") && ...
-    strcmpi(char(string(losStatusInf.ComplianceStatus)), "approximate_factory_proxy_not_strict_38901") && ...
-    ~logical(losStatusInf.StrictSupported), ...
-    "InF LOS must remain labeled as an approximate factory proxy unless a stricter model exists.");
+% Production no longer synthesizes a generic LOS curve for unknown or
+% unspecified factory scenarios. Require that guard, not the removed proxy.
+localAssertThrows(@() sixgr.channel.LOSProbability("mysteryScenario",100), ...
+    "CHANNEL:UnknownLOSScenario");
+localAssertThrows(@() sixgr.channel.LOSProbability("InF",100), ...
+    "CHANNEL:UnknownLOSScenario");
 
 [pInH5, losStatusInH] = sixgr.channel.LOSProbability("InH", 5);
 expectedInH5 = exp(-(5 - 1.2) / 4.7);
@@ -120,6 +116,25 @@ assert(abs(double(plFR3dB) - expectedFR3) < 1e-9 && ...
 
 haveNrPathLoss = exist("nrPathLossConfig", "class") == 8 && exist("nrPathLoss", "file") == 2;
 if haveNrPathLoss
+    % Accepted names must select that actual toolbox model, never leave its
+    % default UMa silently installed after an alias-property rejection.
+    aliasCfg=cfgFR3; aliasCfg.phy.fc_Hz=4e9;
+    for scenario=["UMi-StreetCanyon","RMa","InH-Office"]
+        heights=[10 1.5]; nativeName='UMi';
+        if scenario=="RMa", heights=[35 1.5]; nativeName='RMa'; end
+        if scenario=="InH-Office", heights=[3 1.5]; nativeName='InH'; end
+        aliasCfg.channel.propagationScenario=scenario;
+        aliasCfg.channel.pathloss.streetWidth_m=12;
+        aliasCfg.channel.pathloss.buildingHeight_m=8;
+        aliasModel=sixgr.channel.TR38901Plus(aliasCfg,'Scenario',scenario,'Seed',19);
+        native=nrPathLossConfig('Scenario',nativeName);
+        if scenario=="RMa", native.StreetWidth=12; native.BuildingHeight=8; end
+        tx=[0;0;heights(1)]; rx=[50;0;heights(2)];
+        expected=nrPathLoss(native,4e9,false,tx,rx);
+        [actual,~,execution]=aliasModel.pathloss(tx,rx,'LOS',false);
+        assert(abs(actual-expected)<1e-10 && ...
+            string(execution.pathlossExecutionBackend)=="nrpathloss_runtime_backend");
+    end
     cfgStrictNR = sixgr.config.defaultConfig();
     cfgStrictNR.channel.model = "TR38901";
     cfgStrictNR.channel.pathlossModel = "nrPathLoss";
@@ -132,7 +147,7 @@ if haveNrPathLoss
 
     strictLOS = sixgr.channel.TR38901Plus(cfgStrictNR, "Scenario", "mysteryScenario", "Seed", 17);
     localAssertThrows(@() strictLOS.pathloss([0; 0; 25], [50; 0; 1.5]), ...
-        "TR38901Plus:StrictLOSUnsupported");
+        "CHANNEL:UnknownLOSScenario");
 end
 
 ok = true;

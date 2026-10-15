@@ -265,6 +265,8 @@ trialEVMLayers = strings(numFrames,1);
 trialEVMLayerSource = strings(numFrames,1);
 trialEVMEnergies = NaN(numFrames,3);
 trialEVMStatus = strings(numFrames,1);
+trialEVMValueStatus = repmat("NOT_AVAILABLE",numFrames,1);
+trialEVMReferenceSource = repmat("unavailable_no_matched_symbols",numFrames,1);
 trialEVMDomain = strings(numFrames,1);
 trialNMSE = NaN(numFrames,1);
 trialIndependentChannelScore = cell(numFrames,1);
@@ -497,6 +499,7 @@ trialEstimatedTimingPre = NaN(numFrames,1);
 trialResidualTimingPost = NaN(numFrames,1);
 trialTrueTiming = NaN(numFrames,1);
 trialTimingError = NaN(numFrames,1);
+trialTimingReferenceSource = strings(numFrames,1);
 trialRank = NaN(numFrames,1);
 trialMinimumSnapshotRank = NaN(numFrames,1);
 trialSpatialSpanRank = NaN(numFrames,1);
@@ -631,6 +634,12 @@ trialCarrierPhaseOffsetStatus = strings(numFrames,1);
 trialEstDoppler = NaN(numFrames,1);
 trialDopplerErr = NaN(numFrames,1);
 trialPhaseTrackErr = NaN(numFrames,1);
+trialPilotCommonPhaseRate = NaN(numFrames,1);
+trialPilotPhaseFitResidual = NaN(numFrames,1);
+trialPilotPhasePairCount = NaN(numFrames,1);
+trialPilotPhaseUnaliasedHalfWidth = NaN(numFrames,1);
+trialPilotPhaseSource = strings(numFrames,1);
+trialPilotPhaseStatus = strings(numFrames,1);
 trialQCL = NaN(numFrames,1);
 [~,qclEmpty]=sixgr.phy.rx.applyQCLTimingTransfer(struct(),struct(),[],NaN,[]);
 trialQCLRuntime=repmat(qclEmpty,numFrames,1);
@@ -1578,6 +1587,8 @@ for n = 1:numFrames
         trialTrueTiming(n) = double(sixgr.util.structGet(replay, ...
             "TrueReceiverTimingOffset_samples", trialInjectedTiming(n)));
         trialTimingError(n) = trialResidualTimingPost(n);
+        trialTimingReferenceSource(n) = string(sixgr.util.structGet(replay, ...
+            "TrueReceiverTimingOffsetSource", "injected_RF_offset_not_channel_correlation_peak"));
         trialTimingEstimateUsed(n) = logical(sixgr.util.structGet(replay, "TimingEstimateUsed", false));
         trialUseIdealTimingSync(n) = logical(sixgr.util.structGet(replay, "UseIdealTimingSync", useIdealTimingSync));
         trialInterferenceMode(n) = string(sixgr.util.structGet(replay, "InterferenceMode", "none"));
@@ -1655,6 +1666,12 @@ for n = 1:numFrames
             continue;
         end
         pilotTrack = localPilotTrackingMetrics(rx);
+        trialPilotCommonPhaseRate(n) = pilotTrack.CommonPhaseRate_Hz;
+        trialPilotPhaseFitResidual(n) = pilotTrack.PhaseFitResidualRMS_deg;
+        trialPilotPhasePairCount(n) = double(sixgr.util.structGet(pilotTrack,"PairCount",NaN));
+        trialPilotPhaseUnaliasedHalfWidth(n) = double(sixgr.util.structGet(pilotTrack,"UnaliasedHalfWidth_Hz",NaN));
+        trialPilotPhaseSource(n) = pilotTrack.Source;
+        trialPilotPhaseStatus(n) = pilotTrack.Status;
         metrics = localAnalyzeChannelMetrics( ...
             sixgr.util.structGet(rx, "ChannelEstimate", []), ...
             trialNoise(n), cfgFrame, rx, dlPrecoding);
@@ -1863,6 +1880,8 @@ for n = 1:numFrames
         trialEVMEnergies(n,:)=[modTrack.EVMErrorEnergy, ...
             modTrack.EVMReferenceEnergy,modTrack.EVMSymbolCount];
         trialEVMStatus(n)=modTrack.EVMStatus;
+        trialEVMValueStatus(n)=modTrack.EVMValueStatus;
+        trialEVMReferenceSource(n)=modTrack.EVMReferenceSource;
         trialEVMDomain(n)=modTrack.EVMComputationDomain;
         [trialDecoderTruthProxySINR(n), decoderTruthProxyMeta] = sixgr.link.deriveDecoderTruthProxySINR(modTrack);
         trialDecoderTruthProxySINRSource(n) = string(sixgr.util.structGet(decoderTruthProxyMeta, "Source", ""));
@@ -1926,17 +1945,9 @@ for n = 1:numFrames
         trialAgingLoss(n) = double(sixgr.util.structGet(modTrack, "ChannelAgingLoss_dB", NaN));
         trialInterpLoss(n) = double(sixgr.util.structGet(modTrack, "InterpolationLoss_dB", NaN));
         trialMismatch(n) = double(sixgr.util.structGet(modTrack, "MismatchSensitivity_dB", NaN));
-        if isfinite(double(sixgr.util.structGet(pilotTrack, "NMSE_dB", NaN)))
-            trialNMSE(n) = double(pilotTrack.NMSE_dB);
-            trialDet(n) = double(sixgr.util.structGet(pilotTrack, "DetectionMetric", trialDet(n)));
-        end
-        if isfinite(double(sixgr.util.structGet(pilotTrack, "EstimatedDopplerHz", NaN)))
-            trialEstDoppler(n) = double(pilotTrack.EstimatedDopplerHz);
-            trialDopplerErr(n) = trialEstDoppler(n) - dopplerHz;
-        end
-        if isfinite(double(sixgr.util.structGet(pilotTrack, "PhaseTrackingError_deg", NaN)))
-            trialPhaseTrackErr(n) = double(pilotTrack.PhaseTrackingError_deg);
-        end
+        % Pilot common phase includes residual oscillator/channel evolution.
+        % Keep its measured rate/fit residual separate from Doppler spread,
+        % true channel-estimate NMSE and phase-tracker accuracy.
         trialEstDoppler(n) = localSanitizeEstimatedDoppler(trialEstDoppler(n), cfgFrame, trialNMSE(n));
         if isfinite(trialEstDoppler(n)) && isfinite(dopplerHz)
             trialDopplerErr(n) = trialEstDoppler(n) - dopplerHz;
@@ -2510,6 +2521,7 @@ end
             'Status','Crash', ...
             'LinkAdaptationApplied','LinkAdaptationScheduled','Notes'});
         T.ComputeLatencySource = trialComputeLatencySource(idx);
+        T.TimingReferenceSource = trialTimingReferenceSource(idx);
         T.EqualizerSolveCount=trialEqualizerWork(idx,1);
         T.EqualizerUniqueSolveCount=trialEqualizerWork(idx,2);
         T.EqualizerCovarianceFactorizationCount=trialEqualizerWork(idx,3);
@@ -2519,10 +2531,20 @@ end
         T.EVMReferenceEnergy=trialEVMEnergies(idx,2);
         T.EVMSymbolCount=trialEVMEnergies(idx,3);
         T.EVMStatus=trialEVMStatus(idx);
+        T.EVMValueStatus=trialEVMValueStatus(idx);
+        T.EVMReferenceSource=trialEVMReferenceSource(idx);
         T.EVMComputationDomain=trialEVMDomain(idx);
         T.EVMEnergyUnit=repmat("sum_squared_complex_symbol_amplitude_not_joules",height(T),1);
         T.PAPRMeasurementJSON=trialPAPRMeasurementJSON(idx);
         T.PilotReconstructionResidualRatio_dB=T.NMSE_dB;
+        T.PilotCommonPhaseRate_Hz=trialPilotCommonPhaseRate(idx);
+        T.PilotPhaseFitResidualRMS_deg=trialPilotPhaseFitResidual(idx);
+        T.PilotPhasePairCount=trialPilotPhasePairCount(idx);
+        T.PilotPhaseUnaliasedHalfWidth_Hz=trialPilotPhaseUnaliasedHalfWidth(idx);
+        T.PilotPhaseEvolutionSource=trialPilotPhaseSource(idx);
+        T.PilotPhaseEvolutionStatus=trialPilotPhaseStatus(idx);
+        T.DopplerMeasurementStatus=repmat( ...
+            "not_measured_common_phase_rate_is_not_maximum_Doppler_or_spread",height(T),1);
         T.NMSE_dB=NaN(height(T),1);
         T.NMSESource=repmat("unavailable_without_independent_channel_reference",height(T),1);
         T=sixgr.link.bindDataChannelScoreRows(T,trialIndependentChannelScore(idx));
@@ -5588,6 +5610,13 @@ T.EVMComputationDomain = strings(0,1);
 T.EVMEnergyUnit = strings(0,1);
 T.PAPRMeasurementJSON = strings(0,1);
 T.PilotReconstructionResidualRatio_dB=zeros(0,1);
+T.PilotCommonPhaseRate_Hz=zeros(0,1);
+T.PilotPhaseFitResidualRMS_deg=zeros(0,1);
+T.PilotPhasePairCount=zeros(0,1);
+T.PilotPhaseUnaliasedHalfWidth_Hz=zeros(0,1);
+T.PilotPhaseEvolutionSource=strings(0,1);
+T.PilotPhaseEvolutionStatus=strings(0,1);
+T.DopplerMeasurementStatus=strings(0,1);
 T.NMSESource=strings(0,1);
 T.QCLMeasurementStatus = strings(0,1);
 T.EstimatedChannelReferenceCorrelationMagnitude = zeros(0,1);
@@ -7222,147 +7251,25 @@ metric = metric ./ max(size(H,3),1);
 end
 
 function metrics = localPilotTrackingMetrics(rx)
-metrics = struct( ...
-    "NMSE_dB", NaN, ...
-    "DetectionMetric", NaN, ...
-    "EstimatedDopplerHz", NaN, ...
-    "PhaseTrackingError_deg", NaN);
-if ~(isstruct(rx) && ~isempty(fieldnames(rx)))
+metrics=struct('CommonPhaseRate_Hz',NaN,'PhaseFitResidualRMS_deg',NaN, ...
+    'Source',"",'Status',"unavailable_receiver_channel_reference");
+if ~isstruct(rx) || isempty(sixgr.util.structGet(rx,"ChannelEstimate",[]))
     return;
 end
-rxGrid = sixgr.util.structGet(rx, "RxGrid", []);
-Hest = sixgr.util.structGet(rx, "ChannelEstimate", []);
-dmrsInd = sixgr.util.structGet(rx, "DMRSIndices", []);
-dmrsSym = sixgr.util.structGet(rx, "DMRSSymbols", []);
-carrier = sixgr.util.structGet(rx, "Carrier", []);
-if isempty(rxGrid) || isempty(Hest) || isempty(dmrsInd) || isempty(dmrsSym) || isempty(carrier)
+if string(sixgr.util.structGet(rx,"ChannelEstimationMode","")) == "awgn_scalar_per_physical_port"
+    % This receiver intentionally estimated one flat gain per spatial link.
+    % Replicating it over symbols would invent a zero temporal phase rate.
+    metrics.Source="canonical_PDSCH_flat_AWGN_channel_estimate";
+    metrics.Status="not_measured_flat_channel_estimator_has_no_temporal_observations";
+    metrics.PairCount=0;
     return;
 end
-try
-    referenceMetrics = sixgr.phy.rx.referenceSignalMetrics( ...
-        rxGrid, Hest, dmrsInd, dmrsSym, ...
-        "NoiseVariance", double(sixgr.util.structGet( ...
-            rx, "PreEqualizationNoiseVar", NaN)), ...
-        "ContextLabel", "runDLPDSCHThroughput_tracking_metrics");
-catch
-    return;
-end
-nmseLin = double(referenceMetrics.NMSELinear);
-if isfinite(nmseLin) && nmseLin >= 0
-    metrics.NMSE_dB = 10 * log10(max(nmseLin, eps));
-    metrics.DetectionMetric = 1 / (1 + nmseLin);
-end
-
-pilotH = localCollapsePilotEstimate( ...
-    referenceMetrics.ChannelAtReference);
-symTimes_s = localPilotSymbolTimes( ...
-    carrier, referenceMetrics.PhysicalLinearIndices);
-estHz = localEstimatePilotDoppler(symTimes_s, pilotH);
-metrics.EstimatedDopplerHz = estHz;
-if isfinite(estHz)
-    metrics.PhaseTrackingError_deg = localPilotPhaseTrackingError(symTimes_s, pilotH);
-end
-end
-
-function pilotH = localCollapsePilotEstimate(dmrsHest)
-pilotH = squeeze(mean(dmrsHest, [2 3 4], "omitnan"));
-pilotH = double(pilotH(:));
-end
-
-function symTimes_s = localPilotSymbolTimes(carrier, pilotInd)
-K = double(carrier.NSizeGrid) * 12;
-L = double(carrier.SymbolsPerSlot);
-[~, symIdx, ~] = ind2sub([K, L, 1], double(pilotInd(:)));
-symIdx = double(symIdx(:));
-symbolTimes = localSymbolCenterTimes(carrier);
-symTimes_s = symbolTimes(symIdx);
-end
-
-function symbolTimes_s = localSymbolCenterTimes(carrier)
-L = double(carrier.SymbolsPerSlot);
-symbolTimes_s = [];
-try
-    ofdmInfo = nrOFDMInfo(carrier);
-    sampleRateHz = double(sixgr.util.structGet(ofdmInfo, "SampleRate", NaN));
-    symbolLengths = double(sixgr.util.structGet(ofdmInfo, "SymbolLengths", []));
-    if isfinite(sampleRateHz) && sampleRateHz > 0 && ~isempty(symbolLengths)
-        symbolLengths = symbolLengths(:);
-        if numel(symbolLengths) < L
-            symbolLengths(end+1:L, 1) = symbolLengths(end);
-        end
-        symbolLengths = symbolLengths(1:L);
-        symbolTimes_s = (cumsum(symbolLengths) - 0.5 * symbolLengths) / sampleRateHz;
-    end
-catch
-end
-if isempty(symbolTimes_s)
-    slotDur_s = localSlotDuration(struct("phy", struct("carrier", struct("SubcarrierSpacing", carrier.SubcarrierSpacing))));
-    symbolTimes_s = ((0:L-1).' + 0.5) * (slotDur_s / max(L, 1));
-end
-end
-
-function estHz = localEstimatePilotDoppler(symTimes_s, hEst)
-estHz = NaN;
-symTimes_s = symTimes_s(:);
-hEst = hEst(:);
-N = min(numel(symTimes_s), numel(hEst));
-if N < 2
-    return;
-end
-symTimes_s = symTimes_s(1:N);
-hEst = hEst(1:N);
-mask = isfinite(symTimes_s) & isfinite(real(hEst)) & isfinite(imag(hEst));
-if nnz(mask) < 2
-    return;
-end
-[uTimes, ~, grp] = unique(symTimes_s(mask), "stable");
-if numel(uTimes) < 2
-    return;
-end
-hMean = accumarray(grp, hEst(mask), [], @localComplexMean);
-phaseObs = unwrap(angle(hMean(:)));
-if numel(phaseObs) < 2
-    return;
-end
-p = polyfit(uTimes(:), phaseObs(:), 1);
-estHz = p(1) / (2 * pi);
-end
-
-function phaseErr_deg = localPilotPhaseTrackingError(symTimes_s, hEst)
-phaseErr_deg = NaN;
-symTimes_s = symTimes_s(:);
-hEst = hEst(:);
-N = min(numel(symTimes_s), numel(hEst));
-if N < 2
-    return;
-end
-symTimes_s = symTimes_s(1:N);
-hEst = hEst(1:N);
-mask = isfinite(symTimes_s) & isfinite(real(hEst)) & isfinite(imag(hEst));
-if nnz(mask) < 2
-    return;
-end
-[uTimes, ~, grp] = unique(symTimes_s(mask), "stable");
-if numel(uTimes) < 2
-    return;
-end
-hMean = accumarray(grp, hEst(mask), [], @localComplexMean);
-phaseObs = unwrap(angle(hMean(:)));
-if numel(phaseObs) < 2
-    return;
-end
-p = polyfit(uTimes(:), phaseObs(:), 1);
-phaseFit = polyval(p, uTimes(:));
-phaseErr_deg = sqrt(mean((phaseObs - phaseFit).^2, "omitnan")) * (180 / pi);
-end
-
-function y = localComplexMean(x)
-x = x(isfinite(real(x)) & isfinite(imag(x)));
-if isempty(x)
-    y = complex(NaN, NaN);
-else
-    y = mean(x, "omitnan");
-end
+% These are the PDSCH receiver's actual DM-RS coordinates and FFT clock.
+% Pair identical subcarrier/RX/port observations before summation; never
+% average unrelated spatial channels or regenerate a nominal CP schedule.
+metrics=sixgr.phy.rx.pilotChannelPhaseEvolution(rx.Carrier, ...
+    rx.ChannelEstimate,rx.DMRSIndices,rx.DMRSSymbols, ...
+    sixgr.util.structGet(rx,"OFDMInfo",struct()));
 end
 
 function tf = localDLSINRIsCQIEligible(source, role, status)

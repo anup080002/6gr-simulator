@@ -468,13 +468,12 @@ for direction = ["DL","UL"]
         row.MaxMCS = localMaxNumeric(subset, "MCS");
         row.MeanLayers = localMeanNumeric(subset, "Layers");
         row.MaxLayers = localMaxNumeric(subset, "Layers");
-        row.RawBLER = localBLER(subset);
-        row.RawBER = localBER(subset);
-        row.ThroughputMbps = localMeanNumeric(subset, "Throughput_Mbps");
-        row.GoodputMbps = localMeanNumericFallback(subset, ["Goodput_Mbps","OfferedThroughput_Mbps"]);
-        row.HARQRetxRate = localHARQRetxRate(ctx, direction, ueList(i));
-        row.PacketLossRate = localPacketLossRate(subset);
-        row.LatencyMeanMs = localMeanNumericFallback(subset, ["Latency_ms","DecodeLatency_ms"]);
+        % Aggregate actual attempt evidence without promoting offered bits,
+        % decoder compute time or a failed retry into delivered performance.
+        attempts = sixgr.validation.summarizeLLSAttemptPerformance(subset);
+        for name = string(fieldnames(attempts)).'
+            row.(name) = attempts.(name);
+        end
         row.OutcomePass = localDirectionBlockPass(matrixT, direction);
         row.FailureReason = localDirectionFailureReason(matrixT, direction);
         rows(end+1, 1) = row; %#ok<AGROW>
@@ -1939,6 +1938,10 @@ row = struct("RunId", "", "Direction", "", "UEId", NaN, "DistanceStart_m", NaN, 
     "MeanMCS", NaN, "MinMCS", NaN, "MaxMCS", NaN, "MeanLayers", NaN, "MaxLayers", NaN, "RawBLER", NaN, ...
     "RawBER", NaN, "ThroughputMbps", NaN, "GoodputMbps", NaN, "HARQRetxRate", NaN, "PacketLossRate", NaN, ...
     "LatencyMeanMs", NaN, "OutcomePass", false, "FailureReason", "");
+attempts = sixgr.validation.summarizeLLSAttemptPerformance(table());
+for name = string(fieldnames(attempts)).'
+    row.(name) = attempts.(name);
+end
 end
 
 function row = localEmptyBlockCorrectnessRow()
@@ -2289,58 +2292,6 @@ if isempty(vals)
     out = defaultValue;
 else
     out = vals(end);
-end
-end
-
-function out = localBLER(T)
-crc = localOptionalLogicalColumn(T, "CRCPass", false(height(T), 1));
-if isempty(crc)
-    out = NaN;
-else
-    out = 1 - mean(double(crc), "omitnan");
-end
-end
-
-function out = localBER(T)
-bitErr = localNumericColumn(T, "BitErrors");
-bits = localNumericColumn(T, "BitsCompared");
-mask = isfinite(bitErr) & isfinite(bits) & bits > 0;
-if ~any(mask)
-    out = NaN;
-else
-    out = sum(bitErr(mask), "omitnan") ./ sum(bits(mask), "omitnan");
-end
-end
-
-function out = localPacketLossRate(T)
-crc = localOptionalLogicalColumn(T, "CRCPass", false(height(T), 1));
-if isempty(crc)
-    out = NaN;
-else
-    out = 1 - mean(double(crc), "omitnan");
-end
-end
-
-function out = localHARQRetxRate(ctx, direction, ueId)
-T = ctx.Tables.HARQTimeline;
-if isempty(T)
-    T = ctx.Tables.HARQProcessTimeline;
-end
-if isempty(T)
-    out = NaN;
-    return;
-end
-if isfinite(ueId) && ismember("UEID", string(T.Properties.VariableNames))
-    T = localFilterByNumeric(T, "UEID", ueId);
-end
-if ismember("Direction", string(T.Properties.VariableNames))
-    T = T(string(T.Direction) == string(direction), :);
-end
-retx = localOptionalLogicalColumn(T, "RetxFlag", false(height(T), 1));
-if isempty(retx)
-    out = NaN;
-else
-    out = mean(double(retx), "omitnan");
 end
 end
 

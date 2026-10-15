@@ -1520,16 +1520,12 @@ fillMeasured = ~isfinite(measuredWideband) & isfinite(postEqWideband);
 measuredWideband(fillMeasured) = postEqWideband(fillMeasured);
 T.MeasuredWidebandSINR_dB = measuredWideband;
 
+T = localBindCoverageSINRProvenance(T);
 widebandSource = strtrim(string(T.WidebandSINRSource));
 widebandRole = strtrim(string(T.WidebandSINRValueRole));
 widebandStatus = strtrim(string(T.WidebandSINRValueStatus));
 
 measuredMask = isfinite(postEqWideband) | isfinite(measuredWideband);
-if any(measuredMask)
-    widebandSource(measuredMask) = "post_equalization_sinr_from_equalizer_channel_estimate";
-    widebandRole(measuredMask) = "measured_post_equalization_scheduling_input";
-    widebandStatus(measuredMask) = "available_post_equalization_measurement";
-end
 
 receiverOnlyMask = ~measuredMask & isfinite(double(T.ReceiverHestWidebandSINR_dB));
 if any(receiverOnlyMask)
@@ -1547,6 +1543,55 @@ widebandStatus(blankMask) = "unavailable";
 T.WidebandSINRSource = widebandSource;
 T.WidebandSINRValueRole = widebandRole;
 T.WidebandSINRValueStatus = widebandStatus;
+end
+
+function T = localBindCoverageSINRProvenance(T)
+% Preserve the producer's actual estimator, including residual bounds and
+% failed/unavailable status. A finite number alone is not a qualified SINR.
+suffixes = ["Source","ValueRole","ValueStatus","ValueDefinition","MeasurementDomain"];
+for suffix = suffixes
+    name = "WidebandSINR" + suffix;
+    if ~ismember(name,string(T.Properties.VariableNames))
+        T.(name) = strings(height(T),1);
+    end
+end
+for i = 1:height(T)
+    target = NaN;
+    for name = ["EstimatedWidebandSINR_dB","PostEqWidebandSINR_dB","MeasuredWidebandSINR_dB"]
+        if ismember(name,string(T.Properties.VariableNames)) && isfinite(double(T.(name)(i)))
+            target = double(T.(name)(i));
+            break;
+        end
+    end
+    if ~isfinite(target), continue; end
+    for prefix = ["PostEqSINR","MeasuredTrialSINR"]
+        valueName = prefix + "_dB";
+        if ~ismember(valueName,string(T.Properties.VariableNames)) || ...
+                ~isequal(double(T.(valueName)(i)),target)
+            continue;
+        end
+        sourceName = prefix + "Source";
+        if ~ismember(sourceName,string(T.Properties.VariableNames)), continue; end
+        source = string(T.(sourceName)(i));
+        current = string(T.WidebandSINRSource(i));
+        if ismissing(source) || strlength(strtrim(source)) == 0 || ...
+                (~ismissing(current) && strlength(strtrim(current)) > 0 && current ~= source)
+            continue;
+        end
+        for suffix = suffixes
+            input = prefix + suffix;
+            output = "WidebandSINR" + suffix;
+            previous = string(T.(output)(i));
+            if (ismissing(previous) || strlength(strtrim(previous)) == 0) && ...
+                    ismember(input,string(T.Properties.VariableNames))
+                values = string(T.(output));
+                values(i) = string(T.(input)(i));
+                T.(output) = values;
+            end
+        end
+        break;
+    end
+end
 end
 
 function T = localBuildCoverageLayerTable(mobilityArtifacts, userPerfT)
@@ -1707,6 +1752,7 @@ end
 if ~ismember("WidebandSINRValueStatus", string(coverageT.Properties.VariableNames))
     coverageT.WidebandSINRValueStatus = strings(height(coverageT), 1);
 end
+coverageT = localBindCoverageSINRProvenance(coverageT);
 widebandRole = strtrim(string(coverageT.WidebandSINRValueRole));
 postEqWideband = double(coverageT.PostEqWidebandSINR_dB);
 measuredWideband = double(coverageT.MeasuredWidebandSINR_dB);
@@ -1717,7 +1763,6 @@ measuredWidebandMask = isfinite(postEqWideband) | isfinite(measuredWideband);
 systemWidebandMask = ~measuredWidebandMask & isfinite(systemWideband);
 largeScaleWidebandMask = ~measuredWidebandMask & ~systemWidebandMask & isfinite(largeScaleWideband);
 receiverDiagnosticMask = ~measuredWidebandMask & ~systemWidebandMask & ~largeScaleWidebandMask & isfinite(receiverWideband);
-widebandRole(strlength(widebandRole) == 0 & measuredWidebandMask) = "measured_post_equalization_scheduling_input";
 widebandRole(strlength(widebandRole) == 0 & systemWidebandMask) = "runtime_state_derived";
 widebandRole(strlength(widebandRole) == 0 & largeScaleWidebandMask) = "derived_preview";
 widebandRole(strlength(widebandRole) == 0 & receiverDiagnosticMask) = "diagnostic_estimate_not_scheduling_input";
@@ -1737,9 +1782,6 @@ else
     end
 end
 blankOrUnavailableSource = strlength(widebandSource) == 0 | contains(lower(widebandSource), "unavailable");
-fillMask = blankOrUnavailableSource & measuredWidebandMask;
-widebandSource(fillMask) = "post_equalization_sinr_from_equalizer_channel_estimate";
-blankOrUnavailableSource = strlength(widebandSource) == 0 | contains(lower(widebandSource), "unavailable");
 fillMask = blankOrUnavailableSource & systemWidebandMask & strlength(systemSource) > 0;
 widebandSource(fillMask) = systemSource(fillMask);
 blankOrUnavailableSource = strlength(widebandSource) == 0 | contains(lower(widebandSource), "unavailable");
@@ -1750,7 +1792,7 @@ fillMask = blankOrUnavailableSource & receiverDiagnosticMask & strlength(receive
 widebandSource(fillMask) = "receiver_hest_diagnostic_not_scheduling_input";
 coverageT.WidebandSINRSource = widebandSource;
 widebandStatus = strtrim(string(coverageT.WidebandSINRValueStatus));
-widebandStatus(strlength(widebandStatus) == 0 & measuredWidebandMask) = "available_post_equalization_measurement";
+widebandStatus(strlength(widebandStatus) == 0 & measuredWidebandMask) = "unavailable_measurement_provenance";
 widebandStatus(strlength(widebandStatus) == 0 & systemWidebandMask) = "available_system_level_estimate";
 widebandStatus(strlength(widebandStatus) == 0 & largeScaleWidebandMask) = "available_large_scale_preview";
 widebandStatus(strlength(widebandStatus) == 0 & receiverDiagnosticMask) = "available_receiver_hest_diagnostic";
@@ -2013,9 +2055,10 @@ for i = 1:height(sourceT)
     rows{i,27} = double(localLastValue(row, "PMI"));
     rows{i,28} = double(localLastValue(row, "CRI"));
     rows{i,29} = double(localLastValue(row, "RankIndicator", localLastValue(row, "RI")));
-    rows{i,30} = string(localLastValue(row, "SINRValueRole", "post_equalization_sinr_required"));
-    rows{i,31} = string(localLastValue(row, "SINRSource", "post_equalization_sinr_from_equalizer_channel_estimate"));
-    rows{i,32} = string(localLastValue(row, "Status", ""));
+    [~, source, role, status] = sixgr.link.selectReceiverDataSINR(row);
+    rows{i,30} = role;
+    rows{i,31} = source;
+    rows{i,32} = status;
     rows{i,33} = string(localLastValue(row, "Notes", ""));
 end
 T = cell2table(rows, 'VariableNames', vars);

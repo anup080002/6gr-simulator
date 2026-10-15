@@ -19,7 +19,7 @@ if isempty(trialSets)
 end
 localValidateIdentity(identity);
 
-[channelT, snapshotT, pathGainT] = localChannelTables(cfg, identity, trialSets);
+[channelT, snapshotT, pathGainT, pathMeasurementT] = localChannelTables(cfg, identity, trialSets);
 largeScaleT = localLargeScaleTable(cfg, identity, trialSets);
 interferenceT = localInterferenceTable(cfg, identity, trialSets);
 noiseT = localNoiseTable(cfg, identity, trialSets);
@@ -39,6 +39,7 @@ result.LargeScaleParameters = largeScaleT;
 result.ChannelRealizations = channelT;
 result.ChannelSnapshots = snapshotT;
 result.ChannelPathGains = pathGainT;
+result.ChannelPathMeasurements = pathMeasurementT;
 result.InterferenceTopology = interferenceT;
 result.ThermalNoise = noiseT;
 result.RFImpairmentChain = rfT;
@@ -100,7 +101,8 @@ if strlength(hash) ~= 64 || isempty(regexp(char(hash), '^[0-9a-f]{64}$', 'once')
 end
 end
 
-function [realizationT, snapshotT, pathGainT] = localChannelTables(cfg, identity, sets)
+function [realizationT, snapshotT, pathGainT, pathMeasurementT] = localChannelTables(cfg, identity, sets)
+pathMeasurementT=table();
 realRows = repmat(localChannelRow(), 0, 1);
 snapRows = repmat(localSnapshotRow(), 0, 1);
 gainRows = repmat(localPathGainRow(), 0, 1);
@@ -110,7 +112,8 @@ for si = 1:size(sets, 1)
     T = sets{si, 2};
     for ii = 1:height(T)
         if localHasChannelArtifactClaim(T,ii)
-            [r,s,g]=localVerifiedChannelRows(cfg,identity,direction,T(ii,:));
+            [r,s,g,p]=localVerifiedChannelRows(cfg,identity,direction,T(ii,:));
+            pathMeasurementT=[pathMeasurementT;p]; %#ok<AGROW>
             realRows(end+1,1)=r; %#ok<AGROW>
             snapRows=[snapRows;s]; gainRows=[gainRows;g]; %#ok<AGROW>
             continue;
@@ -221,7 +224,7 @@ count=double(localValue(T,"ChannelObservationSegmentCount",k,NaN));
 tf=tf || (isfinite(count) && count>0);
 end
 
-function [row,snaps,gains]=localVerifiedChannelRows(cfg,identity,direction,T)
+function [row,snaps,gains,pathT]=localVerifiedChannelRows(cfg,identity,direction,T)
 v=sixgr.channel.validateSharedChannelObservationArtifact( ...
     sixgr.util.structGet(cfg,'run.rootRunFolder',""),T);
 m=v.Manifest; segments=m.Segments; configured=localConcreteConfiguredModel(cfg);
@@ -235,6 +238,12 @@ row.AppliedChannelModelType=models;
 nt=unique([segments.NumTransmitAntennas]); nr=unique([segments.NumReceiveAntennas]);
 assert(isscalar(nt) && isscalar(nr),'sixgr:channel:ChannelArrayChangedWithinObservation','One receiver observation must retain its physical array layout.');
 row.NumTxAntennas=nt; row.NumRxAntennas=nr;
+pathT=sixgr.channel.buildMeasuredChannelPathTable(v,T);
+pathT.RunId=repmat(string(identity.RunID),height(pathT),1);
+pathT.ScenarioName=repmat(string(identity.ScenarioID),height(pathT),1);
+pathT.TrialId=repmat(row.TrialId,height(pathT),1);
+pathT.Direction=repmat(direction,height(pathT),1);
+pathT.ChannelRealizationId=repmat(row.ChannelRealizationId,height(pathT),1);
 row.WaveformChanged=any(string({segments.RuntimeChannelInputWaveformSHA256})~=string({segments.RuntimeChannelOutputWaveformSHA256}));
 row.WaveformHashScope="see_original_hashes_per_executed_segment";
 row.PathGainsExported=true; row.ChannelSnapshotExported=true;

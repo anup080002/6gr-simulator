@@ -212,6 +212,7 @@ for k = 1:numel(ibarCandidates)
         selected.msbidxoffset = msbidxoffset;
         selected.evidence = evidence;
         selected.hest = hest;
+        selected.equalizedSymbols = pbchEq;
         break;
     end
 end
@@ -266,6 +267,7 @@ if ~selectedFound
     selected.msbidxoffset = msbidxoffset;
     selected.evidence = evidence;
     selected.hest = hest;
+    selected.equalizedSymbols = pbchEq;
 end
 
 % -----------------------------
@@ -344,6 +346,10 @@ pb.MIBSSBIndex = double(ssbIndex);
 evidence = sixgr.util.structGet(selected, "evidence", struct());
 pb.ChannelEstimateAvailable = logical(sixgr.util.structGet(evidence, "ChannelEstimateAvailable", false));
 pb.ChannelEstimateGrid = sixgr.util.structGet(selected,"hest",complex(zeros(0,0,0)));
+% Retain the actual receiver output for post-reception scoring. No TX
+% symbols are supplied to synchronization, channel estimation or decoding.
+pb.EqualizedSymbols = selected.equalizedSymbols;
+pb.SymbolIndicesOneBased = double(pbchInd(:));
 pb.ChannelEstimateSource = string(sixgr.util.structGet(evidence, "ChannelEstimateSource", ""));
 pb.EqualizationAvailable = logical(sixgr.util.structGet(evidence, "EqualizationAvailable", false));
 pb.EqualizerType = string(sixgr.util.structGet(evidence, "EqualizerType", ""));

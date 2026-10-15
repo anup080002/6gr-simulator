@@ -11,6 +11,8 @@ metrics = struct( ...
     "EVMPerLayer_rms", zeros(1,0), ...
     "EVMPerLayerSource", "", ...
     "EVMStatus", "unavailable", ...
+    "EVMValueStatus", "NOT_AVAILABLE", ...
+    "EVMReferenceSource", "unavailable_no_matched_symbols", ...
     "EVMComputationDomain", "", ...
     "SymbolErrors", NaN, ...
     "SymbolsCompared", NaN, ...
@@ -63,7 +65,7 @@ constellationT = table();
 modulation = localResolveModulation(tx, cfg, direction);
 [eqSymRaw, eqDomain, eqOrder] = localEqualizedLayerSymbols(rx, direction);
 [txSym, refDomain, refOrder] = localReferenceSymbols(tx, direction);
-detectorSym = localDetectorSymbols(rx, direction);
+[detectorSym, detectorInfo] = localDetectorSymbols(rx, direction, size(eqSymRaw));
 
 [refSym, eqSymAligned, eqSymRawUse, orderInfo] = localPrepareMatchedLayerSymbols( ...
     txSym, eqSymRaw, refDomain, eqDomain, refOrder, eqOrder);
@@ -110,6 +112,8 @@ if ~isempty(eqSymAligned) && ~isempty(refSym)
         metrics.EVMReferenceEnergy = sum(abs(refSym).^2);
         metrics.EVMSymbolCount = numel(refSym);
         metrics.EVMStatus = evmStatus;
+        metrics.EVMValueStatus = "MEASURED_KNOWN_REFERENCE";
+        metrics.EVMReferenceSource = "post_decode_matched_transmitted_layer_symbols_no_payload_fit";
         if isfinite(metrics.EVM_rms) && metrics.EVM_rms > 1
             metrics.EVMStatus = "warning_gt_100pct_check_timing_or_channel_estimate";
         end
@@ -204,7 +208,7 @@ if isfinite(metrics.SymbolErrorRate)
     metrics.HighOrderRobustness = robustness;
 end
 
-tracking = localTrackingMetrics(sixgr.util.structGet(rx, "ChannelEstimate", []), cfg);
+tracking = localTrackingMetrics(sixgr.util.structGet(rx, "ChannelEstimate", []));
 fields = fieldnames(tracking);
 for i = 1:numel(fields)
     metrics.(fields{i}) = tracking.(fields{i});
@@ -216,7 +220,7 @@ if ~isscalar(captureScope) || ~any(captureScope == ["preview", "full_allocation"
         "outputs.constellationCaptureScope must be preview or full_allocation.");
 end
 constellationT = localConstellationTable(direction, symbolModulation, ...
-    sixgr.util.structGet(cfg, "channel.snr_dB", NaN), tx, refSym, eqSymRawUse, eqSymAligned, hardSym, detectorSym, orderInfo, refOrder, captureScope);
+    sixgr.util.structGet(cfg, "channel.snr_dB", NaN), tx, refSym, eqSymRawUse, eqSymAligned, hardSym, detectorSym, detectorInfo, orderInfo, refOrder, captureScope);
 if ~isempty(constellationT)
     constellationT.SymbolDecisionStatus = repmat(metrics.SymbolDecisionStatus, height(constellationT), 1);
 end
@@ -256,8 +260,17 @@ if direction == "UL"
         modulation=string(sixgr.util.structGet(cfg,"phy.pusch.modulation",""));
     end
 else
-    modulation = string(sixgr.util.structGet(tx, "PDSCH.Modulation", ...
+    modulation = string(localConfigurationValue(sixgr.util.structGet(tx,"PDSCH",struct()), "Modulation", ...
         sixgr.util.structGet(cfg, "phy.pdsch.modulation", "")));
+end
+end
+
+function value = localConfigurationValue(configuration, name, missingValue)
+% Runtime transmitters retain NR configuration objects, not only structs.
+value = missingValue;
+if isscalar(configuration) && ((isstruct(configuration) && isfield(configuration,name)) || ...
+        (isobject(configuration) && isprop(configuration,name)))
+    value = configuration.(name);
 end
 end
 
@@ -377,13 +390,48 @@ if isvector(x)
 end
 end
 
-function decSym = localDetectorSymbols(rx, direction)
+function [decSym, info] = localDetectorSymbols(rx, direction, layerShape)
+% nrPDSCHDecode/nrPUSCHDecode return constellation samples after layer
+% demapping, in codeword order. The exported rows use layer-major RE/QAM
+% coordinates. Reapply TS 38.211 layer mapping before pairing those rows;
+% flattening the codeword directly silently swaps layer/resource identities.
+decSym=[];
+info=struct('Source',"",'Status',"unavailable_no_received_codeword_symbols", ...
+    'InputDomain',"codeword",'CoordinateDomain',"layer");
+if isempty(layerShape) || prod(layerShape)==0, return; end
 if direction == "UL"
-    decSym = sixgr.util.structGet(rx, "PUSCHRxSymbols", []);
+    names=["DemappedCodewordSymbolsForEvidence","PUSCHRxSymbolsForEvidence","PUSCHRxSymbols"];
 else
-    decSym = sixgr.util.structGet(rx, "PDSCHRxSymbols", []);
+    % PDSCHRxSymbolsForEvidence is a different, PRE-equalization plane.
+    % It cannot stand in for missing detector output.
+    names=["DemappedCodewordSymbolsForEvidence","PDSCHRxSymbols"];
 end
-decSym = localEnsureColumn(decSym);
+[received,source]=localFirstPresent(rx,names);
+if isempty(received), return; end
+info.Source=source;
+layers=layerShape(2);
+expectedCodewords=1+double(layers>4);
+if ~iscell(received), received={received}; end
+if direction=="DL" && source=="PDSCHRxSymbols" && expectedCodewords>1
+    % Older retained DL captures expose CW0 only. Do not pad, repeat it,
+    % or substitute the equalizer plane for the missing second codeword.
+    info.Status="unavailable_legacy_capture_missing_second_codeword";
+    return;
+end
+assert(numel(received)==expectedCodewords && ...
+    all(cellfun(@(x)isnumeric(x) && isvector(x) && ~isempty(x) && ...
+        all(isfinite(real(x(:))) & isfinite(imag(x(:)))),received)), ...
+    'sixgr:link:InvalidDetectorSymbolEvidence', ...
+    'Detector evidence requires every finite received codeword, without padding or truncation.');
+assert(sum(cellfun(@numel,received))==prod(layerShape), ...
+    'sixgr:link:DetectorSymbolCountMismatch', ...
+    'Received detector codewords must cover exactly the paired layer/QAM allocation.');
+mapped=nrLayerMap(cellfun(@(x)x(:),received,'UniformOutput',false),layers);
+assert(isequal(size(mapped),layerShape), ...
+    'sixgr:link:DetectorSymbolCountMismatch', ...
+    'Received codeword layer mapping does not match the exported symbol coordinates.');
+decSym=mapped(:);
+info.Status="received_codeword_symbols_mapped_to_layer_coordinates";
 end
 
 function [papr_dB,evidenceJSON] = localPAPRdB(waveform, ofdmInfo, measurementPoint)
@@ -558,32 +606,66 @@ if isstruct(acct) && ~isempty(fieldnames(acct))
 end
 if direction == "UL"
     dataIdx = sixgr.util.structGet(tx, "PUSCHIndices", []);
-    numLayers = double(sixgr.util.structGet(tx, "PUSCH.NumLayers", NaN));
+    channel = sixgr.util.structGet(tx, "PUSCH", struct());
 else
     dataIdx = sixgr.util.structGet(tx, "PDSCHIndices", []);
-    numLayers = double(sixgr.util.structGet(tx, "PDSCH.NumLayers", NaN));
+    channel = sixgr.util.structGet(tx, "PDSCH", struct());
 end
-dmrsIdx = sixgr.util.structGet(tx, "DMRSIndices", []);
-ptrsIdx = sixgr.util.structGet(tx, "PTRSIndices", []);
-if ~(isscalar(numLayers) && isfinite(numLayers) && numLayers >= 1)
-    numLayers = 1;
+carrier = sixgr.util.structGet(tx,"Carrier",struct());
+nSC = 12*double(localConfigurationValue(carrier,"NSizeGrid",NaN));
+nSym = double(localConfigurationValue(carrier,"SymbolsPerSlot",NaN));
+numLayers = double(localConfigurationValue(channel,"NumLayers",NaN));
+dimensions = [nSC,nSym,numLayers];
+if isempty(dataIdx) || numel(dimensions)~=3 || ...
+        ~all(isfinite(dimensions) & dimensions>0 & dimensions==fix(dimensions))
+    % Missing grid/rank evidence is not a one-layer allocation or zero RS.
+    return;
 end
-numLayers = max(1, round(numLayers));
-totalDataRE = double(numel(dataIdx));
-dataREPerLayer = totalDataRE / double(numLayers);
+numPorts = double(localConfigurationValue(channel,"NumAntennaPorts",numLayers));
+assert(isscalar(numPorts) && isfinite(numPorts) && numPorts>=1 && ...
+    numPorts==fix(numPorts),'sixgr:link:InvalidResourceObservation', ...
+    'Recorded port count must be a positive integer.');
+numPorts = max(numPorts,numLayers);
+gridSize = nSC*nSym;
+dataBase = localObservedBaseRE(dataIdx,gridSize,numPorts);
+dmrsBase = []; ptrsBase = [];
+if isfield(tx,'DMRSIndices')
+    dmrsBase = localObservedBaseRE(tx.DMRSIndices,gridSize,numPorts);
+    dmrsRE = numel(dmrsBase);
+end
+if isfield(tx,'PTRSIndices')
+    ptrsBase = localObservedBaseRE(tx.PTRSIndices,gridSize,numPorts);
+    ptrsRE = numel(ptrsBase);
+end
+if direction=="UL" && logical(localConfigurationValue(channel,"TransformPrecoding",false))
+    % Native DFT-s-OFDM port indices include PT-RS puncture positions;
+    % those positions are not coded data symbols (nrPUSCHIndices Gd).
+    if ~isfield(tx,'PTRSIndices'), return; end
+    dataBase = setdiff(dataBase,ptrsBase);
+end
+assert(isempty(intersect(dataBase,dmrsBase)) && isempty(intersect(dataBase,ptrsBase)) && ...
+    isempty(intersect(dmrsBase,ptrsBase)), 'sixgr:link:OverlappingResourceObservation', ...
+    'Recorded data, DM-RS and PT-RS physical resource sets must be disjoint.');
+dataREPerLayer = double(numel(dataBase));
+totalDataRE = dataREPerLayer*numLayers;
 dataRE = dataREPerLayer;
-dmrsRE = double(numel(dmrsIdx));
-ptrsRE = double(numel(ptrsIdx));
-    % dataREPerLayer and the unique reference-signal indices share the
-    % physical base-grid domain; totalDataRE is layer-domain and must not be
-    % used in this ratio.
-    totalRE = dataREPerLayer + dmrsRE + ptrsRE;
+% Collapse only the port dimension of the recorded 1-based carrier indices.
+% CDM ports sharing a time/frequency location occupy one physical RE.
+totalRE = dataREPerLayer + dmrsRE + ptrsRE;
 if totalRE > 0
     rsFrac = (dmrsRE + ptrsRE) / totalRE;
 end
 if isscalar(qm) && isfinite(qm) && qm > 0 && isfinite(dataREPerLayer)
     computedE = dataREPerLayer * double(qm) * double(numLayers);
 end
+end
+
+function base = localObservedBaseRE(indices, gridSize, numPorts)
+assert(isnumeric(indices) && isreal(indices) && ...
+    all(isfinite(indices(:)) & indices(:)>=1 & indices(:)==fix(indices(:)) & ...
+    indices(:)<=gridSize*numPorts), 'sixgr:link:InvalidResourceObservation', ...
+    'Require recorded 1-based carrier-oriented linear resource indices.');
+base = unique(mod(double(indices(:))-1,gridSize));
 end
 
 function [layerDataRE, portIndexCellCount, qamSymbolCount, rateMatchedBitCount, demapperLLRCount] = localDomainCountMetrics(tx, rx)
@@ -647,9 +729,10 @@ if ~isfinite(demapperLLRCount)
 end
 end
 
-function metrics = localTrackingMetrics(Hest, cfg)
+function metrics = localTrackingMetrics(Hest)
 metrics = struct( ...
     "EstimatedDopplerHz", NaN, ...
+    "DopplerMeasurementStatus", "not_measured_common_phase_rate_is_not_maximum_Doppler_or_spread", ...
     "PhaseTrackingError_deg", NaN, ...
     "QCLAccuracy", NaN, ...
     "QCLMeasurementStatus", "not_measured_requires_QCL_TCI_binding_evidence", ...
@@ -669,19 +752,11 @@ if numel(gainPerSym) >= 2
     metrics.ChannelAgingLoss_dB = max(0, 10 * log10(max(gainPerSym(1), eps) / max(gainPerSym(end), eps)));
 end
 
-if size(H2, 2) >= 2
-    symCorr = sum(conj(H2(:, 1:end-1)) .* H2(:, 2:end), 1, "omitnan");
-    valid = isfinite(real(symCorr)) & isfinite(imag(symCorr)) & (abs(symCorr) > 0);
-    if nnz(valid) >= 1
-        slotDur_s = localSlotDuration(cfg);
-        symDur_s = slotDur_s / max(size(H2, 2) - 1, 1);
-        phaseStep = angle(symCorr(valid));
-        meanStep = mean(phaseStep, "omitnan");
-        metrics.EstimatedDopplerHz = meanStep / (2 * pi * max(symDur_s, eps));
-        resid = phaseStep - meanStep;
-        metrics.PhaseTrackingError_deg = sqrt(mean(resid.^2, "omitnan")) * (180 / pi);
-    end
-end
+% A phase slope of interpolated Hest is neither maximum Doppler/spread nor
+% an error against an independently known phase trajectory. Actual matched
+% pilot evolution is measured by pilotChannelPhaseEvolution with the RX
+% FFT clock and exported separately by the DL/UL runners. Do not substitute
+% a coherent spatial average or an assumed slot/(L-1) clock here.
 
 ref = H2(:, 1);
 refNorm = norm(ref);
@@ -816,7 +891,7 @@ catch
 end
 end
 
-function constellationT = localConstellationTable(direction, modulation, snr_dB, tx, refSym, eqSymRaw, eqSymAligned, hardSym, detectorSym, orderInfo, referenceOrder, captureScope)
+function constellationT = localConstellationTable(direction, modulation, snr_dB, tx, refSym, eqSymRaw, eqSymAligned, hardSym, detectorSym, detectorInfo, orderInfo, referenceOrder, captureScope)
 constellationT = table();
 if isempty(eqSymAligned)
     return;
@@ -876,10 +951,9 @@ end
 if isempty(detectorSym)
     detUse = complex(nan(L, 1));
 else
-    detUse = detectorSym(1:min(numel(detectorSym), L));
-    if numel(detUse) < L
-        detUse(end+1:L,1) = complex(nan);
-    end
+    assert(numel(detectorSym)==numel(eqSymAligned), ...
+        'sixgr:link:DetectorSymbolCountMismatch','Detector coordinates must cover the complete observation.');
+    detUse = detectorSym(1:L);
 end
 [subcarrierIdx, ofdmSymbolIdx, layerIdx, codewordIdx] = localConstellationRECoordinates(tx, direction, L, referenceOrder);
 cwByLayer = double(sixgr.util.structGet(tx, "CodewordLayerMapping.CodewordIndexByLayer", []));
@@ -924,6 +998,10 @@ constellationT = table( ...
     'HardDecisionReal','HardDecisionImag','DecisionReal','DecisionImag', ...
     'DetectorOutputReal','DetectorOutputImag','SymbolErrorMagnitude','SymbolEVM_rms'});
 constellationT.EVMReferencePower = repmat(refPower, L, 1);
+constellationT.DetectorOutputSource = repmat(detectorInfo.Source, L, 1);
+constellationT.DetectorOutputStatus = repmat(detectorInfo.Status, L, 1);
+constellationT.DetectorOutputInputDomain = repmat(detectorInfo.InputDomain, L, 1);
+constellationT.DetectorOutputCoordinateDomain = repmat(detectorInfo.CoordinateDomain, L, 1);
 constellationT.EqualizationSource = repmat("receiver_output_without_payload_gain_or_phase_fit", L, 1);
 constellationT.Normalization = repmat("receiver_equalized_symbols_average_reference_power_no_payload_fit", L, 1);
 constellationT.CaptureScope = repmat("paired_sample_preview", L, 1);
@@ -933,10 +1011,13 @@ end
 constellationT.ObservationSymbolCount = repmat(double(numel(refSym)), L, 1);
 constellationT.CapturedSymbolCount = repmat(double(L), L, 1);
 constellationT.SymbolCoordinateDomain = repmat("layer_resource_elements", L, 1);
-if direction == "UL" && logical(sixgr.util.structGet(tx, "PUSCH.TransformPrecoding", false))
+if direction == "UL" && logical(localConfigurationValue( ...
+        sixgr.util.structGet(tx,"PUSCH",struct()), "TransformPrecoding", false))
     % After inverse DFT, QAM positions share an OFDM-symbol identity but are
     % not individual physical subcarrier REs. Do not label them as such.
     constellationT.SymbolCoordinateDomain(:) = "pre_transform_qam_positions";
+    constellationT.DetectorOutputCoordinateDomain(:) = "pre_transform_qam_positions";
+    constellationT.SubcarrierIndex(:) = NaN;
 end
 end
 
@@ -1053,10 +1134,6 @@ switch upper(char(string(modScheme)))
     otherwise
         qm = NaN;
 end
-end
-
-function slotDur_s = localSlotDuration(cfg)
-slotDur_s = sixgr.time.slotDurationSec(cfg);
 end
 
 function x = localUnwrapCellSignal(x)

@@ -16,6 +16,11 @@ methods(Static)
         r=sixgr.phy.broadcast.recoverSIB1FromWaveform(post,p.ReceiverConfig, ...
             'RecoveryScope','SSB_MIB','CandidateSSBIndex',h.SSBIndex, ...
             'PhysicalMeasurementObservation',pre);
+        score=sixgr.truth.scoreSharedPBCHReception(r);
+        if isfield(c,'DesiredReferencePlane')
+            [reference,source]=sixgr.truth.sharedLinkScoringObservation(item.Planes,p,c.DesiredReferencePlane);
+            score=sixgr.truth.scoreSharedPBCHReception(r,reference,source);
+        end
         if ~logical(sixgr.util.structGet(r,'SSPowerReferenceNormalized',false))
             r=sixgr.link.normalizeReceivedSSBPowerReference(r,p.Config);
         end
@@ -38,6 +43,13 @@ methods(Static)
             'EstimatedTimingOffset_samples','EstimatedCFO_Hz', ...
             'SSBWindowRSSIPerReceiveAntenna_dBm','SSBWindowPowerMeasurementJSON'});
         row.MeasurementSource="actual_shared_ssb_occasion_pre_rx_rf_measurement";
+        frequencyFields=sixgr.phy.broadcast.measurePBCHResidualFrequency();
+        for field=string(fieldnames(frequencyFields)).'
+            row.(field)=r.(field);
+        end
+        for field=string(fieldnames(score)).'
+            row.(field)=score.(field);
+        end
         row.MeasurementValid=logical(valid);
         row.MeasuredSSBIndex=double(r.SSBIndex);
         row.MeasuredNCellID=double(r.NCellID);
@@ -86,6 +98,17 @@ methods(Static)
             % Preserve actual sample-clock/RSSI evidence in the already exported
             % canonical measurement ledger, including failures and missing data.
             ledger=state.ReferenceSignalMeasurementTable;
+            defaults=sixgr.truth.scoreSharedPBCHReception();
+            frequencyFields=sixgr.phy.broadcast.measurePBCHResidualFrequency();
+            for field=string(fieldnames(frequencyFields)).'
+                defaults.(field)=frequencyFields.(field);
+            end
+            for field=string(fieldnames(defaults)).'
+                if ~ismember(field,string(ledger.Properties.VariableNames))
+                    ledger.(field)=repmat(defaults.(field),height(ledger),1);
+                end
+                ledger.(field)(end)=row.(field);
+            end
             powerFields=sixgr.link.ssbPowerReferenceEvidence();
             for field=string(fieldnames(powerFields)).'
                 if ~ismember(field,string(ledger.Properties.VariableNames))

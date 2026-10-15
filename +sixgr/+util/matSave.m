@@ -8,6 +8,7 @@ arguments
     data
     options.UseArtifactStore (1,1) logical = true
     options.ForceV73 (1,1) logical = false
+    options.TimeChunkedVariables (1,:) string = strings(1,0)
 end
 
 filePath = char(filePath);
@@ -25,10 +26,10 @@ tmpPath = char(string(tempname()) + ".mat");
 cleanupTmp = onCleanup(@() localDeleteIfExists(tmpPath)); %#ok<NASGU>
 
 payloadInfo = whos("data");
-useV73 = logical(options.ForceV73) || ...
+useV73 = logical(options.ForceV73) || ~isempty(options.TimeChunkedVariables) || ...
     (~isempty(payloadInfo) && double(payloadInfo.bytes) >= 1.75 * 1024^3);
 try
-    localSavePayload(tmpPath, data, useV73);
+    localSavePayload(tmpPath, data, useV73, options.TimeChunkedVariables);
 catch firstME
     if useV73
         rethrow(firstME);
@@ -38,7 +39,7 @@ catch firstME
     % exact payload with HDF5-backed v7.3 instead of dropping run evidence.
     localDeleteIfExists(tmpPath);
     try
-        localSavePayload(tmpPath, data, true);
+        localSavePayload(tmpPath, data, true, options.TimeChunkedVariables);
     catch secondME
         secondME = addCause(secondME, firstME);
         rethrow(secondME);
@@ -70,7 +71,14 @@ end
 localPublishValidatedCopy(tmpPath, filePath, sourceBytes, sourceHash);
 end
 
-function localSavePayload(filePath, data, useV73)
+function localSavePayload(filePath, data, useV73, timeChunkedVariables)
+if ~isempty(timeChunkedVariables)
+    % Compression selection is explicit and applies only to the immutable
+    % local staging file. All inventory, byte-hash and destination-readback
+    % checks below remain identical to ordinary MAT publication.
+    sixgr.util.writeTimeChunkedMATPayload(filePath,data,timeChunkedVariables);
+    return;
+end
 args = {};
 if useV73
     args = {"-v7.3"};

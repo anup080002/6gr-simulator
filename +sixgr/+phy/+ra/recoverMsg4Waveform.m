@@ -1,5 +1,6 @@
 function [pdcchRx, pdschRx, msg4] = recoverMsg4Waveform(rxWaveform, cfg, raCfg, sched, tx)
 %RECOVERMSG4WAVEFORM Decode temp-C-RNTI PDCCH and Msg4 DL-SCH.
+sixgr.runtime.RuntimeCallLedger.record("sixgr.phy.ra.recoverMsg4Waveform","MSG4","DL",struct("Stage","RX"));
 cfgRx = sixgr.phy.ra.localizeCarrierConfig(cfg, raCfg, raCfg.Msg4Slot);
 [carrier,~] = sixgr.phy.grid.makeCarrier(cfgRx);
 context = sixgr.phy.pdcch.TCMsg4DCIContext.create(raCfg.Msg4DCIReference, ...

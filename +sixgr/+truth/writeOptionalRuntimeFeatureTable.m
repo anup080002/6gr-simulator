@@ -22,8 +22,15 @@ written = hasRows;
 
 for path = paths.'
     if written
+        % These are versioned receiver tables. Blank evidence and its
+        % availability flag form one schema (notably the PRACH detected
+        % set); pruning the blank half breaks failed-run recovery.
+        [~,stem]=fileparts(path);
+        receiverTable=any(stem==["prach_trials","pbch_trials","srs_trials", ...
+            "trs_trials","pdcch_trials","pucch_trials","csi_rs_trials"]);
         sixgr.util.csvWriteTable(path, T, ...
-            "PreserveSchema", options.PreserveSchema);
+            "PreserveSchema", options.PreserveSchema || receiverTable);
+        sixgr.report.exportControlEVMSamples(path,T);
     elseif isfile(path)
         delete(path);
     end

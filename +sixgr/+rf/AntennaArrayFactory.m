@@ -29,6 +29,8 @@ classdef AntennaArrayFactory
                 opts.numRFChains (1,1) double = NaN
             end
 
+            sixgr.runtime.RuntimeCallLedger.record("sixgr.rf.AntennaArrayFactory.build", ...
+                "ANTENNA","",struct("Stage","array_construction","Role",role));
             roleL = lower(string(role));
             if roleL == "gnb"
                 roleL = "bs";

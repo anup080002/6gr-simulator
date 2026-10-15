@@ -3,11 +3,15 @@ function ok=testPDCCHSharedPhysicalQueue()
 % component fixture, not a connected-data or main-campaign qualification.
 setup6GRSimToolkit('Verbose',false);
 s=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs', ...
-    'scenarios','lls_pdcch_shared_queue_fixture.yaml'));
+    'validation','lls_pdcch_known_candidate_queue.yaml'));
 cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
 % Known-candidate timing is explicit in this fixture. The separately tested
 % blind receiver must obtain a causal SS/PBCH clock before being enqueued.
 assert(~cfg.phy.pdcch.blindSearch && ~s.get('control.blind_search_enabled'));
+assert(~isfield(cfg.phy.pdcch.operatorControl,'connected_dci'), ...
+    'An arbitrary known codec payload must not masquerade as connected blind DCI.');
+assert(~cfg.phy.pdsch.enable && ~cfg.phy.pusch.enable, ...
+    'This isolated control-queue test must not declare scheduled data execution.');
 multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
 state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,tempname,multi,struct(),1);
 state.CurrentSlot=1; state.CurrentServingIdx(:)=1;

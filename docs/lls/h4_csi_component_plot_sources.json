@@ -1,0 +1,8 @@
+{
+  "evidence_scope": "Physical shared CSI-RS/PUCCH component with declared preconnected access and TAG. These files do not establish access, PDSCH/PUSCH, throughput, or complete scenario acceptance. Read the test receipt for completion status.",
+  "sources": {
+    "air_interface/csv/csi_rs_trials.csv": "csirs_trials.csv",
+    "air_interface/csv/received_csi_reports.csv": "received_csi_reports.csv",
+    "air_interface/csv/pucch_trials.csv": "pucch_trials.csv"
+  }
+}

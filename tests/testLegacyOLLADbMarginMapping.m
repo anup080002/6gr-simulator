@@ -20,10 +20,25 @@ cfg.phy.linkAdaptation.ollaMarginMaxDb = 10;
 cfg.phy.pdsch.mcsTable = 'qam64_table1';
 cfg.phy.pusch.mcsTable = 'qam64_table1';
 cfg.phy.csi.cqiTable = 'table1';
+% Declared SISO AMC unit fixture. The catalog's general-purpose DL default
+% is rank four; rank-one CQI must never be accepted as rank-four quality.
+cfg.phy.linkAdaptation.rankPolicy='fixed';
+cfg.phy.pdsch.nLayers=1; cfg.phy.pdsch.numLayers=1;
+cfg.phy.pusch.nLayers=1; cfg.phy.pusch.numLayers=1;
 for direction = ["DL","UL"]
     metrics = struct('CQI',12,'RI',1);
+    mismatch=cfg;
+    if direction=="DL"
+        mismatch.phy.pdsch.nLayers=2; mismatch.phy.pdsch.numLayers=2;
+    else
+        mismatch.phy.pusch.nLayers=2; mismatch.phy.pusch.numLayers=2;
+    end
+    rejected=decisionFcn(mismatch,direction,metrics);
+    assert(~rejected.Valid && string(rejected.Reason)=="held_fixed_rank_feedback_mismatch", ...
+        'Do not weaken production rank-conditioned CQI ownership to make this OLLA unit test pass.');
     [initial,state] = decisionFcn(cfg,direction,metrics);
-    assert(initial.Valid,'Legacy regression needs a valid initial decision.');
+    assert(initial.Valid,'Legacy regression needs a valid initial decision: %s reason=%s MCS=%g rank=%g RI=%g.', ...
+        direction,string(initial.Reason),initial.MCSIndex,initial.NumLayers,initial.RI);
     feedback = struct('Ack',false,'RV',0,'IsRetransmission',false);
     for k = 1:6
         [state,event] = sixgr.link.updateOLLAStateFromHARQFeedback( ...

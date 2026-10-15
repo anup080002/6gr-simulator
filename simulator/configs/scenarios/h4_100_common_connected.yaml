@@ -416,6 +416,11 @@ reference_signals:
     frequency_scaling_factor: 1
     start_rb_index: 0
     b_hop: 0
+    # TS 38.211 SRS bandwidth table: C_SRS=61, B_SRS=0 sounds 272 RB.
+    # Override the inherited 5-MHz C_SRS=6 (24 RB); num_rb alone does not
+    # override an explicitly installed native bandwidth-table index.
+    c_srs: 61
+    b_srs: 0
     num_rb: 273
     expected_rb_start: 0
     expected_num_rb: 273

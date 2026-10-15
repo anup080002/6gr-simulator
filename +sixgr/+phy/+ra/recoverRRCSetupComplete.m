@@ -1,6 +1,7 @@
 function [rx, message] = recoverRRCSetupComplete( ...
         rxWaveform, cfg, raCfg, tx)
 %RECOVERRRCSETUPCOMPLETE Decode UL-DCCH/SRB1 from PUSCH/UL-SCH at the gNB.
+sixgr.runtime.RuntimeCallLedger.record("sixgr.phy.ra.recoverRRCSetupComplete","RRC","UL",struct("Stage","RX"));
 grant = tx.Grant;
 cfgRx = sixgr.phy.ra.localizeRAPUSCHConfig(cfg, raCfg, grant, ...
     raCfg.SetupCompleteSlot, "RRCSetupComplete");

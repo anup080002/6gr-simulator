@@ -143,6 +143,36 @@ localReject(@()sixgr.truth.CoupledTruthRuntime.observePUCCHFeedbackRuntime( ...
     plan,table()),'sixgr:truth:ExecutionFromPlanningView');
 localReject(@()sixgr.truth.CoupledTruthRuntime.futureULPlanningView( ...
     plan,10),'sixgr:truth:ExecutionFromPlanningView');
+
+% Slot-46 PDCCH schedules slot-50 PUSCH. TRS delivered at 29 is fresh
+% for the CONTROL reception (age 17), not age 21 at the future UL resource.
+% The SRS must nevertheless remain fresh for PUSCH (45 -> 50, age 5).
+boundary=state;
+boundary.CurrentSlot=46; boundary.CurrentCanonicalSlot=46;
+boundary.LastTrafficFrameApplied=46; boundary.ULQueueBits(:)=8000;
+boundary.ControlGating.PBCHRequired=false;
+boundary.ControlGating.PRACHRequired=false;
+boundary.ControlGating.TRSRequired=true;
+boundary.ControlGating.TRSMaxAgeSlots=20;
+boundary.ControlGating.SRSRequired=true;
+boundary.ControlGating.SRSMaxAgeSlots=5;
+boundary.LastSuccessfulTRSSlotByCell(:)=29;
+boundary.LastSuccessfulSRSSlotByUE(:)=45;
+boundary.ReferenceSignalMeasurementTable=table("SRS","UE",1,45,46,true, ...
+    'VariableNames',{'SignalType','TargetType','TargetId','ProducerSlot','AvailableSlot','Valid'});
+futurePlan=sixgr.truth.CoupledTruthRuntime.futureULPlanningView(boundary,50);
+[refreshed,ue]=sixgr.truth.CoupledTruthRuntime.buildSchedulerUEStateRuntime(futurePlan,cfg,1,'UL',1);
+assert(ue.Active && all(refreshed.TRSValidityStateByCell=="valid"), ...
+    'Fresh decision-time DL tracking must not block an SRS-qualified future UL grant.');
+assert(sixgr.truth.CoupledTruthRuntime.trsAgeSlotsRuntime(refreshed,1,1)==17, ...
+    'Reported TRS age must use the same decision clock as UL control admission.');
+futurePlan.ControlGating.SRSMaxAgeSlots=4;
+[~,ue]=sixgr.truth.CoupledTruthRuntime.buildSchedulerUEStateRuntime(futurePlan,cfg,1,'UL',1);
+assert(~ue.Active,'Do not relax the PUSCH-time SRS freshness requirement.');
+futurePlan.ControlGating.SRSMaxAgeSlots=5;
+futurePlan.LastSuccessfulTRSSlotByCell(:)=25;
+[~,ue]=sixgr.truth.CoupledTruthRuntime.buildSchedulerUEStateRuntime(futurePlan,cfg,1,'UL',1);
+assert(~ue.Active,'Stale tracking at the PDCCH decision must still block the UL grant.');
 localReject(@()sixgr.truth.CoupledTruthRuntime.futureULPlanningView( ...
     state,2),'sixgr:truth:InvalidULPlanningOccasion');
 bad = state; bad.LastTrafficFrameApplied=5;

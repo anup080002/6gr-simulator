@@ -27,7 +27,7 @@ cfoEstimateMask = isfinite(estimatedCFOPre) | isfinite(estimatedCFO);
 T.CFOEstimateAvailability = repmat("missing", n, 1);
 T.CFOEstimateAvailability(cfoEstimateMask) = "available";
 T.CFOErrorDefinition = repmat("not_available_without_cfo_estimate", n, 1);
-T.CFOErrorDefinition(cfoEstimateMask) = "residual_post_correction_hz_relative_to_estimated_pre_correction";
+T.CFOErrorDefinition(cfoEstimateMask) = "injected_oscillator_CFO_minus_applied_correction_not_independent_common_frequency_estimate";
 invalidCfoErrorMask = ~cfoEstimateMask & isfinite(double(localOptionalColumn(T, "CFOError_Hz", NaN)));
 if any(invalidCfoErrorMask)
     T.CFOError_Hz(invalidCfoErrorMask) = NaN;
@@ -76,7 +76,16 @@ inferredTimingClipMask = timingEstimateMask & isfinite(rawTimingEstimate) & isfi
 timingWasClipped = timingWasClipped | inferredTimingClipMask;
 T.TimingEstimateWasClipped = timingWasClipped;
 T.TimingErrorDefinition = repmat("not_available_without_timing_estimate", n, 1);
-T.TimingErrorDefinition(timingEstimateMask) = "residual_post_correction_samples_relative_to_estimated_pre_correction";
+T.TimingErrorDefinition(timingEstimateMask) = "declared_timing_reference_minus_applied_sample_correction";
+% An earliest physical arrival is not the noiseless correlation peak of a
+% dispersive channel. Do not claim that this diagnostic is an acquisition
+% accuracy measurement, or infer qualification from a finite value.
+timingReferenceSource=string(localOptionalColumn(T,"TimingReferenceSource",""));
+T.TimingMetricRole=repmat("reference_definition_unavailable_not_timing_qualification",n,1);
+earliest=contains(timingReferenceSource,"minimum_path_delay");
+injected=timingReferenceSource=="injected_RF_offset_not_channel_correlation_peak";
+T.TimingMetricRole(earliest)="earliest_arrival_relative_alignment_not_correlation_peak_accuracy";
+T.TimingMetricRole(injected)="RF_offset_relative_alignment_not_channel_correlation_peak_accuracy";
 T.TimingValueStatus = repmat("NOT_AVAILABLE", n, 1);
 validTimingMask = timingEstimateMask & isfinite(double(localOptionalColumn(T, "TimingError_samples", NaN)));
 partialTimingMask = timingEstimateMask & ~validTimingMask;

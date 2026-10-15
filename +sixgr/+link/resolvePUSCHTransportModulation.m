@@ -12,5 +12,11 @@ if experimental
 else
     modulation=string(sixgr.util.structGet(tx,'Modulation', ...
         sixgr.util.structGet(tx,'PUSCH.Modulation','')));
+    if strlength(modulation)==0
+        pusch=sixgr.util.structGet(tx,'PUSCH',[]);
+        if isscalar(pusch) && isobject(pusch) && isprop(pusch,'Modulation')
+            modulation=string(pusch.Modulation);
+        end
+    end
 end
 end

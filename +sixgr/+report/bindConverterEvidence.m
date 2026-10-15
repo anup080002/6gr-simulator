@@ -14,6 +14,16 @@ for prefix=["ADC","DAC"]
     row.(prefix+"ClippingStatus")=string(sixgr.util.structGet( ...
         replay,prefix+"ClippingStatus","unavailable_no_converter_execution_evidence"));
 end
+for field=["DACFullScale","DACConfiguredFullScale","DACReferenceRMS", ...
+        "DACReferenceHeadroom_dB","DACReferenceREEnergy","DACReferenceNfft", ...
+        "DACReferenceSubcarriers","DACReferenceTxPorts"]
+    row.(field)=double(sixgr.util.structGet(txReplay,field,NaN));
+end
+for field=["DACReferenceDomain","DACReferenceSource"]
+    row.(field)=string(sixgr.util.structGet(txReplay,field,""));
+end
+row.DACReferencePayloadDependent=logical(sixgr.util.structGet( ...
+    txReplay,'DACReferencePayloadDependent',false));
 row.ADCConventionConfigured=string(sixgr.util.structGet(rxReplay,'ADCConventionConfigured',''));
 for field=["ADCDitherRMSConfigured","ADCApertureJitterSecondsConfigured", ...
         "ADCINLLSBConfigured","ADCDNLLSBConfigured","ADCSeedConfigured"]

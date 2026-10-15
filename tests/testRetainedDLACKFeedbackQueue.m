@@ -63,6 +63,22 @@ assert(isa(entry.Event,'sixgr.phy.pucch.HARQACKEvent') && ...
 book=sixgr.truth.buildReceivedHARQACKCodebook(state,current,1,a.HARQFeedbackAbsoluteSlot+1);
 assert(numel(book.Events)==1 && book.Events.Digest==entry.Event.Digest && ...
     book.Bits(end)==1 && all(book.SourceEventIndex(1:end-1)==0));
+beamChanged=current;
+beamChanged.phy.pdsch.qclTCI.state_id=current.phy.pdsch.qclTCI.state_id+1;
+beamContext=sixgr.phy.pdcch.DCIContextFactory.fromRuntimeConfig(beamChanged,'1_1');
+assert(beamContext.Digest~=entry.Event.Data.ReceivedContextDigest);
+same=sixgr.truth.buildReceivedHARQACKCodebook(state,beamChanged,1,a.HARQFeedbackAbsoluteSlot+1);
+assert(same.Digest==book.Digest, ...
+    'A subsequent beam selection cannot erase or relabel already received HARQ decisions.');
+bad=state; bad.SharedUEHARQACKEvents{1}.ReceivedContextData.RNTIValue=a.RNTI+1;
+localReject(@()sixgr.truth.buildReceivedHARQACKCodebook(bad,current,1,a.HARQFeedbackAbsoluteSlot+1), ...
+    'sixgr:truth:ReceivedHARQCodebookContextMismatch');
+badCfg=beamChanged;
+badCfg.phy.pdcch.operatorControl.connected_dci.configuration_epoch= ...
+    badCfg.phy.pdcch.operatorControl.connected_dci.configuration_epoch+1;
+badCfg.phy.pdsch.qclTCI.configuration_epoch=badCfg.phy.pdcch.operatorControl.connected_dci.configuration_epoch;
+localReject(@()sixgr.truth.buildReceivedHARQACKCodebook(state,badCfg,1,a.HARQFeedbackAbsoluteSlot+1), ...
+    'sixgr:truth:ReceivedHARQCodebookContextMismatch');
 poisoned=state;
 poisoned.SharedDLHARQExpectations={struct('Ack',false)};
 poisoned.PendingFeedbackTable.Ack=false;
@@ -105,7 +121,7 @@ mkdir(outputRoot);
 sixgr.util.csvWriteTable(fullfile(outputRoot,'protocol_decisions.csv'),struct2table(protocol),'PreserveSchema',true);
 sixgr.util.csvWriteTable(fullfile(outputRoot,'pending_feedback.csv'),state.PendingFeedbackTable,'PreserveSchema',true);
 sixgr.util.csvWriteTable(fullfile(outputRoot,'pucch_reservations.csv'),state.PUCCHGrantTraceTable,'PreserveSchema',true);
-fprintf('RETAINED_DL_ACK_QUEUE_PASS guards=11 protocol_rows=1 new_decode_rows=0 gNB_feedback_updates=0 no_UCI_execution_claim=1 folder=%s\n',outputRoot);
+fprintf('RETAINED_DL_ACK_QUEUE_PASS guards=13 protocol_rows=1 new_decode_rows=0 gNB_feedback_updates=0 no_UCI_execution_claim=1 folder=%s\n',outputRoot);
 ok=true;
 end
 

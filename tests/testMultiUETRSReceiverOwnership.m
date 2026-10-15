@@ -21,6 +21,9 @@ assert(isempty(ready));
 state.CurrentSlot=9;
 [state,ready]=sixgr.truth.TRSResultDelivery.takeAvailable(state);
 assert(isscalar(ready) && ready.UEIndex==1);
+wrongCell=ready.Trial; wrongCell.ServingCell=2;
+localError(@()sixgr.truth.CoupledTruthRuntime.applyTRSTrial(state,1,wrongCell), ...
+    'sixgr:truth:TRSMeasurementCellMismatch');
 state=sixgr.truth.CoupledTruthRuntime.applyTRSTrial(state,1,ready.Trial);
 one=sixgr.truth.CoupledTruthRuntime.resolveTRSRuntimeContextRuntime(state,cfg,1,1);
 two=sixgr.truth.CoupledTruthRuntime.resolveTRSRuntimeContextRuntime(state,cfg,2,1);

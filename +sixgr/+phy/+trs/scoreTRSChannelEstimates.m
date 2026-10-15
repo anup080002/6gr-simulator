@@ -3,6 +3,8 @@ function ch=scoreTRSChannelEstimates(ch,references,evidence)
 assert(iscell(references) && numel(references)==numel(ch.ChannelEstimates) && ...
     iscell(evidence) && numel(evidence)==numel(references), ...
     'sixgr:phy:trs:MissingIndependentChannelReference','Each received TRS slot needs an independent channel reference.');
+ch.Table.ChannelNMSEPilotResourceCount=zeros(height(ch.Table),1);
+ch.Table.ChannelNMSEQualificationMode=repmat("unavailable",height(ch.Table),1);
 for k=1:numel(references)
     e=evidence{k};
     allowedSource=any(e.Source==[ ...
@@ -20,6 +22,8 @@ for k=1:numel(references)
     ch.Table.NMSEScoringAvailable(k)=true;
     ch.Table.NMSEReferenceSource(k)=e.Source;
     ch.Table.NMSEComparedComplexValues(k)=score.ComparedComplexValueCount;
+    ch.Table.ChannelNMSEPilotResourceCount(k)=score.PilotResourceCount;
+    ch.Table.ChannelNMSEQualificationMode(k)="independent_complex_pilot_resources_no_gain_or_phase_fit";
     ch.Table.ChannelErrorEnergy(k)=score.ErrorEnergy;
     ch.Table.ChannelReferenceEnergy(k)=score.ReferenceEnergy;
     ch.Table.Status(k)="practical_channel_with_independent_NR_channel_NMSE";

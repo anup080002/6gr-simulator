@@ -155,10 +155,12 @@ classdef WaveformEventRuntime < handle
                 obj.validateOutputs(outputs,execution,first,stop);
                 segment=struct('StartSample',first,'EndSampleExclusive',stop, ...
                     'Execution',execution);
+                metadataSegment=obj.metadataTraceSegment(segment);
                 for k=1:numel(obj.Windows)
                     w=obj.Windows(k);
                     if w.Start<stop && w.Stop>first
-                        obj.Windows(k).Segments{end+1}=segment;
+                        obj.Windows(k).Segments{end+1}= ...
+                            obj.observationSegment(segment,metadataSegment,w);
                     end
                 end
                 for k=1:numel(obj.Receivers)
@@ -181,7 +183,7 @@ classdef WaveformEventRuntime < handle
                 % until their receiver and exporter consume them. The
                 % lifetime trace must not also pin every 64-TXRU tensor:
                 % that grows by gigabytes per grant after publication.
-                obj.ExecutionTrace{end+1,1}=obj.metadataTraceSegment(segment);
+                obj.ExecutionTrace{end+1,1}=metadataSegment;
                 obj.NextSampleIndex=stop;
                 event.Execution=execution;
                 event.PhysicalExecutionPerformed=true;
@@ -193,6 +195,44 @@ classdef WaveformEventRuntime < handle
         end
     end
     methods (Access=private)
+        function retained=observationSegment(~,segment,metadata,window)
+            retained=segment;
+            execution=segment.Execution;
+            if ~isfield(execution,'ChannelReferences') || ~isfield(execution,'ScoringPlanes')
+                % Generic processors without a registered scoring-plane
+                % contract keep their existing observation semantics.
+                return;
+            end
+            % Shared physical coefficients belong only to the registered
+            % desired-link scoring plane AND exact requested observation.
+            % An overlapping SSB/SIB1 or another UE's RX window must not pin
+            % multi-GiB data-channel arrays after that grant is published.
+            % All endpoint/RF/channel execution metadata remains available;
+            % the returned immediate event still holds all original arrays.
+            retained=metadata;
+            planes=execution.ScoringPlanes;
+            plane=planes(string({planes.ID})==window.ReceiverID);
+            if isempty(plane), return; end
+            assert(isscalar(plane),'WAVEFORM:AmbiguousScoringReferenceOwner', ...
+                'A scoring observation must have one physical link owner.');
+            captures=execution.ChannelReferences;
+            keep=false(size(captures));
+            for k=1:numel(captures)
+                capture=captures(k); reference=capture.Reference;
+                assert(all(isfield(capture,{'LinkID','TX','RX'})) && ...
+                    all(isfield(reference,{'ObservationStartSample','ObservationEndSampleExclusive'})), ...
+                    'WAVEFORM:UnscopedChannelReference', ...
+                    'Shared physical coefficient arrays require an explicit link and requested window.');
+                keep(k)=plane.Active && capture.LinkID==plane.LinkID && ...
+                    capture.TX==plane.TX && capture.RX==plane.RX && ...
+                    reference.ObservationStartSample==window.Start && ...
+                    reference.ObservationEndSampleExclusive==window.Stop;
+            end
+            % Keep the typed empty collection on inactive scoring segments;
+            % never substitute another link/direction's coefficients.
+            retained.Execution.ChannelReferences=captures(keep);
+        end
+
         function trace=metadataTraceSegment(~,segment)
             trace=segment;
             if ~isfield(trace.Execution,'ChannelReferences'), return; end
@@ -216,7 +256,7 @@ classdef WaveformEventRuntime < handle
             trace.Execution=rmfield(trace.Execution,'ChannelReferences');
             trace.Execution.ChannelReferenceMetadata=metadata;
             trace.Execution.ChannelReferenceRetention= ...
-                "full_arrays_in_observation_windows_and_returned_events_not_lifetime_trace";
+                "full_arrays_only_in_owning_scoring_windows_and_returned_events_not_lifetime_trace";
         end
 
         function assertMutable(obj)

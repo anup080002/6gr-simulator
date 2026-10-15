@@ -225,6 +225,10 @@ if exist("nrPDSCHPrecode", "file") ~= 2
 end
 
 prec.Active = true;
+if logical(sixgr.util.structGet(cfg,'phy.beamManagement.enabled',false))
+    sixgr.runtime.RuntimeCallLedger.record("sixgr.phy.dl.resolvePDSCHPrecoding", ...
+        "BEAMFORMING","DL",struct("Stage","configured_beam_precoder_resolution"));
+end
 if size(WportsPerPRG, 3) > 1
     prec.Mode = "explicit-prg-bundled";
 else

@@ -346,7 +346,7 @@ CONTRACT_CHART_ALIAS_PATHS: dict[str, list[str]] = {
     "precoder mode distribution": ["beamforming/csv/beam_precoder_table.csv"],
     "UE trajectory views": ["system/image/system_ue_trajectories.png", "system/maps/system_topology_snapshot.csv"],
     "detection rate": ["reports/csv/prach_correlation_trace.csv", "reports/csv/prach_correlation_traces.csv", "reports/csv/initial_access_random_access_outputs.csv"],
-    "CFO true vs estimated vs residual": ["reports/image/cfo_to_tracking_traces.png", "reports/csv/cfo_to_tracking_traces.csv"],
+    "CFO true vs estimated vs residual": ["reports/image/cfo_to_tracking_traces.png", "reports/csv/cfo_to_tracking_traces.csv", "reports/csv/rf_synchronization_observations.csv"],
     "IQ imbalance summary": ["rf/csv/probe_rf_iq_imbalance.csv", "rf/csv/iq_imbalance_timeline_trace.csv"],
     "DL Tx power per cell / beam / UE": ["reports/csv/live_power_runtime_table.csv"],
     "active bandwidth vs power": ["rf/csv/energy_timeline_trace.csv", "reports/csv/live_power_runtime_table.csv"],

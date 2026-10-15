@@ -18,6 +18,8 @@ arguments
 end
 
 direction = upper(strtrim(string(direction)));
+sixgr.runtime.RuntimeCallLedger.record("sixgr.truth.exportRuntimeTxIQCapture", ...
+    "WAVEFORM_EXPORT",direction,struct("Stage","committed_TX_IQ_export"));
 if ~ismember(direction, ["DL","UL"])
     error("sixgr:truth:InvalidTxIQDirection", ...
         "Runtime Tx-IQ direction must be DL or UL.");

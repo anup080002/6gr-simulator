@@ -153,6 +153,16 @@ runtimeTrials.ResidualCFOEstimateAvailable = [true;true;false];
 runtimeTrials.ResidualCFOEstimateSource = ["dmrs_receiver";"cp_receiver";"unavailable"];
 runtimeTrials.ResidualCFOEstimateDomain = repmat("receiver_measured_common_frequency_after_correction",3,1);
 runtimeTrials.ResidualCFOReferenceDefinition = repmat("simulation_scoring_reference_only",3,1);
+runtimeTrials.SweepPointIndex = [1;2;3];
+runtimeTrials.ConfiguredSNR_dB = [40;30;20];
+runtimeTrials.TimingReferenceSource = repmat("injected_RF_offset_not_channel_correlation_peak",3,1);
+runtimeTrials.PilotCommonPhaseRate_Hz = [125;-80;NaN];
+runtimeTrials.PilotPhaseFitResidualRMS_deg = [0.1;0.2;NaN];
+runtimeTrials.PilotPhasePairCount = [2;2;0];
+runtimeTrials.PilotPhaseUnaliasedHalfWidth_Hz = [1500;1500;NaN];
+runtimeTrials.PilotPhaseEvolutionSource = repmat("matched_pilot_channel_cross_products_common_phase_not_doppler_spread",3,1);
+runtimeTrials.PilotPhaseEvolutionStatus = ["measured";"measured";"insufficient_repeated_pilot_coordinates"];
+runtimeTrials.DopplerMeasurementStatus = repmat("not_measured_common_phase_rate_is_not_maximum_Doppler_or_spread",3,1);
 writetable(runtimeTrials, ...
     fullfile(tmpConstRuntime, "air_interface", "csv", "dl_pdsch_trials.csv"));
 runtimeBeamStats = table( ...
@@ -239,11 +249,15 @@ assert(all(ismember(["SourceRow","UEID","RNTI","TransportBlockId"], ...
 dlTracking = trackingT(trackingT.TraceSource=="DL",:);
 assert(height(dlTracking)==3);
 for field=["ResidualCFO_PostCorrection_Hz","ResidualCFO_EstimatedPostCorrection_Hz", ...
-        "CFOCorrectionApplied_Hz","CFOCorrectionApplied","ResidualCFOEstimateAvailable"]
+        "CFOCorrectionApplied_Hz","CFOCorrectionApplied","ResidualCFOEstimateAvailable", ...
+        "SweepPointIndex","ConfiguredSNR_dB","PilotCommonPhaseRate_Hz", ...
+        "PilotPhaseFitResidualRMS_deg","PilotPhasePairCount","PilotPhaseUnaliasedHalfWidth_Hz"]
     assert(isequaln(double(dlTracking.(field)),double(runtimeTrials.(field))), ...
         'CFO reporting changed the source value or filled a missing receiver estimate.');
 end
-for field=["ResidualCFOEstimateSource","ResidualCFOEstimateDomain","ResidualCFOReferenceDefinition"]
+for field=["ResidualCFOEstimateSource","ResidualCFOEstimateDomain","ResidualCFOReferenceDefinition", ...
+        "TimingReferenceSource","PilotPhaseEvolutionSource", ...
+        "PilotPhaseEvolutionStatus","DopplerMeasurementStatus"]
     assert(isequal(string(dlTracking.(field)),runtimeTrials.(field)));
 end
 

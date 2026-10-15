@@ -13,7 +13,9 @@ p = inputParser;
 p.addParameter("OnlyPaths", strings(0, 1), ...
     @(x) ischar(x) || isstring(x) || iscellstr(x));
 p.parse(varargin{:});
-onlyPaths = string(p.Results.OnlyPaths(:));
+% Convert a char path before reshaping; charPath(:) splits it into letters.
+onlyPaths = string(p.Results.OnlyPaths);
+onlyPaths = onlyPaths(:);
 onlyPaths = onlyPaths(strlength(strtrim(onlyPaths)) > 0);
 
 runFolder = char(localCanonicalPath(runFolder));
@@ -257,9 +259,16 @@ function tf = localPreserveDeclaredRawSchemaFile(filePath)
 % Browser chart sources retain even blank axes/series fields: the Python
 % producer hashes these exact bytes after rendering. Recovery must neither
 % rewrite them nor certify changed measurements with replacement hashes.
+% Exact executed RE maps are primary, schema-preserved coordinate evidence
+% shared by grid views and plots. Generic live-table canonicalization must
+% not prune absent beam/hash fields or rewrite their literal identities.
+% This also avoids materializing the full high-cardinality map solely for
+% cosmetic pruning; coordinate/ownership validation remains with its audits.
 [~, name, ~] = fileparts(char(string(filePath)));
 name = lower(string(name));
 tf = any(name == [ ...
+    "live_re_allocation_snapshot", ...
+    "observed_re_allocation", ...
     "contract_plot_lineage", ...
     "applied_data_precoder_weights", ...
     "applied_data_precoder_patterns", ...

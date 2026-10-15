@@ -1,5 +1,6 @@
 function ta = estimateTimingAdvanceFromPRACH(det, sampleRateHz, firstULSCSkHz)
 %ESTIMATETIMINGADVANCEFROMPRACH Convert calibrated PRACH timing evidence to TA.
+sixgr.runtime.RuntimeCallLedger.record("sixgr.phy.ra.estimateTimingAdvanceFromPRACH","PRACH","UL",struct("Stage","measured_timing_to_TA"));
 if nargin ~= 3
     error('sixgr:phy:ra:MissingRARTimingClock', ...
         'PRACH delay conversion requires its actual sample rate and the first scheduled UL SCS.');

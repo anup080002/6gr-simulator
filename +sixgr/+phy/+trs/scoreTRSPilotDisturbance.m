@@ -1,0 +1,56 @@
+function score=scoreTRSPilotDisturbance(det,references,evidence)
+% Independent post-reception pilot SNDR, not a practical CSI-SINR estimator.
+% Desired pilots come from the same executed link on the recorded receiver
+% FFT/CFO clock. Residual includes noise, interference and unmodelled RX RF
+% distortion. No Hest, fitted gain/phase, extra RF or channel execution.
+score=struct('IndependentPilotSNDRAvailable',false,'IndependentPilotSNDR_dB',NaN, ...
+    'IndependentPilotSignalEnergy',NaN,'IndependentPilotDisturbanceEnergy',NaN, ...
+    'IndependentPilotComparedComplexValues',0,'IndependentPilotReferencePlane',"unavailable", ...
+    'IndependentPilotSource',"unavailable_no_same_execution_pilot_reference", ...
+    'IndependentPilotValueRole',"post_reception_scoring_only_not_receiver_or_scheduler_input", ...
+    'IndependentPilotEvidenceJSON',"");
+if nargin==0, return; end
+assert(numel(references)==numel(det.SlotDetections) && numel(evidence)==numel(references) && ...
+    ~isempty(references),'sixgr:phy:trs:IncompletePilotDisturbanceReference', ...
+    'Every received slot needs its same-clock independent reference.');
+rows=struct([]); planes=strings(numel(references),1);
+for k=1:numel(references)
+    d=det.SlotDetections(k); e=evidence{k}; h=references{k};
+    assert(d.Detected && e.Source=="same_executed_desired_link_waveform_post_decode_TRS_pilot_ratio" && ...
+        ~e.ReceiverEstimatorInput && ~e.GainOrPhaseFitted && ...
+        e.AdditionalChannelExecutions==0 && e.AdditionalRFExecutions==0, ...
+        'sixgr:phy:trs:InvalidPilotDisturbanceAuthority', ...
+        'A fitted or regenerated reference is not independent receiver evidence.');
+    K=size(d.RxGrid,1); L=size(d.RxGrid,2); R=size(d.RxGrid,3);
+    indices=double(d.ReferenceIndices(:)); pilots=d.ReferenceSymbols(:);
+    assert(size(h,1)==K && size(h,2)==L && size(h,3)==R && size(h,4)==1 && ...
+        numel(indices)==numel(pilots) && numel(unique(indices))==numel(indices) && ...
+        all(indices>=1 & indices<=K*L),'sixgr:phy:trs:PilotDisturbanceGridMismatch', ...
+        'Compare the same pilot resources and every receive branch without truncation.');
+    received=reshape(d.RxGrid,K*L,R); desired=reshape(h,K*L,R);
+    received=received(indices,:); desired=desired(indices,:).*pilots;
+    assert(~isempty(received) && all(isfinite(received),'all') && all(isfinite(desired),'all'), ...
+        'sixgr:phy:trs:MissingPilotDisturbanceSamples','Do not discard missing pilot samples.');
+    residual=received-desired;
+    rows(k).Slot=d.Slot; %#ok<AGROW>
+    rows(k).PilotResourceCount=numel(indices); %#ok<AGROW>
+    rows(k).ReceiveBranchCount=R; %#ok<AGROW>
+    rows(k).SignalEnergyPerBranch=sum(abs(desired).^2,1); %#ok<AGROW>
+    rows(k).DisturbanceEnergyPerBranch=sum(abs(residual).^2,1); %#ok<AGROW>
+    rows(k).ComparedComplexValues=numel(received); %#ok<AGROW>
+    planes(k)=string(e.ReferencePlane);
+end
+assert(numel(unique(planes))==1,'sixgr:phy:trs:MixedPilotDisturbancePlanes', ...
+    'Do not pool observations on different reference planes.');
+signal=sum([rows.SignalEnergyPerBranch]); residual=sum([rows.DisturbanceEnergyPerBranch]);
+assert(isfinite(signal) && signal>0 && isfinite(residual) && residual>=0, ...
+    'sixgr:phy:trs:InvalidPilotDisturbanceEnergy','Retain finite measured energies and a nonzero reference.');
+score.IndependentPilotSNDRAvailable=true;
+score.IndependentPilotSNDR_dB=10*log10(signal/residual); % Zero residual remains Inf, never epsilon-clipped.
+score.IndependentPilotSignalEnergy=signal;
+score.IndependentPilotDisturbanceEnergy=residual;
+score.IndependentPilotComparedComplexValues=sum([rows.ComparedComplexValues]);
+score.IndependentPilotReferencePlane=planes(1);
+score.IndependentPilotSource="same_execution_pilots_ratio_of_total_linear_energies_no_fit";
+score.IndependentPilotEvidenceJSON=string(jsonencode(rows));
+end

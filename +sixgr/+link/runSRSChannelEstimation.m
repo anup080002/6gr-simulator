@@ -39,6 +39,7 @@ out.EVM_rms = NaN;
 out.Notes = "";
 out.NMSE_dB = NaN;
 out.RawChannelNMSE_dB = NaN;
+out.PreRXClockChannelNMSE_dB = NaN;
 out.ChannelNMSEPhaseAligned = false;
 out.ChannelNMSECommonPhaseRotation_rad = NaN;
 out.ChannelNMSEQualificationMode = "raw_complex_plane_aligned";
@@ -226,6 +227,13 @@ try
         tx=prepared.Tx; info=prepared.TxInfo;
     else
         [cfgSRS, srsCfg] = localBindRuntimeSRSConfig(cfg, slotIdx);
+    end
+    assert(logical(sixgr.util.structGet(srsCfg,'StrictValidation.StrictValid',false)), ...
+        'sixgr:link:SRS:InvalidRuntimeConfiguration', ...
+        'SRS execution requires valid installed resource coverage/configuration: %s', ...
+        string(sixgr.util.structGet(srsCfg,'StrictValidation.StrictUnsupportedReason', ...
+        'strict_srs_validation_missing')));
+    if ~received
         [tx, info] = sixgr.phy.ul.SRS_Tx(cfgSRS, ...
             "Carrier", srsCfg.ToolboxCarrier, ...
             "SRS", srsCfg.ToolboxSRS);
@@ -361,12 +369,40 @@ try
     out.EstimatedTimingOffset_samples=rx.Timing.TimingOffsetSamples;
     out.AppliedTimingCorrection_samples=rx.Timing.AppliedTimingCorrectionSamples;
     out.TimingEstimateSource=rx.Timing.TimingSource;
+    scoringClock=struct(); scoringFrequency=struct();
+    unmatchedScoringWaveform=[];
     if received && ~isempty(txWaveForReference)
-        % Scoring-only desired reference uses the SAME measured receiver
-        % alignment. Never fit a separate oracle timing to improve NMSE.
+        % Practical reception is complete. Retain the old pre-RX clock
+        % comparison separately, then put scoring-only IQ on the actual RX
+        % clock BEFORE using the same measured receive-window extraction.
+        % TX timing/CFO is already present in the retained link contribution.
         first=rx.Timing.AppliedTimingCorrectionSamples;
         count=rx.Timing.DemodulatedSampleCount;
-        txWaveForReference=txWaveForReference(first+(1:count),:);
+        unmatchedScoringWaveform=txWaveForReference(first+(1:count),:);
+        if isfield(replay,'ReceiveStreamExecutionSegments') || ...
+                isfield(context,'DesiredReferenceEvidence')
+            assert(isfield(context,'DesiredReferenceEvidence') && ...
+                isfield(context.DesiredReferenceEvidence,'ReceiverClockExecution'), ...
+                'sixgr:link:SRS:MissingScoringClockEvidence', ...
+                'Shared SRS scoring requires the retained desired-link RX clock execution.');
+            source=context.DesiredReferenceEvidence;
+            receiveFirst=context.Observation.StartSample+first;
+            [txWaveForReference,scoringClock]=sixgr.truth.sharedReceiverClockScoringWindow( ...
+                context.DesiredReferenceObservation,source,source.ReceiverClockExecution, ...
+                receiveFirst,count);
+            [txWaveForReference,scoringFrequency]= ...
+                sixgr.truth.applyExecutedReceiverFrequencyForScoring( ...
+                txWaveForReference,sampleRateHz,receiveFirst,source.ReceiverClockExecution);
+        else
+            % Explicit component observations without an RX RF execution
+            % ledger keep their caller-aligned reference; do not invent one.
+            txWaveForReference=unmatchedScoringWaveform;
+        end
+        if nargout>1
+            capture.AlignedScoringReferenceWaveform=txWaveForReference;
+            capture.ScoringReferenceClockEvidence=scoringClock;
+            capture.ScoringReferenceFrequencyEvidence=scoringFrequency;
+        end
     end
     out.NoiseVariance = double(sixgr.util.structGet(rx, "NoiseVar", NaN));
     out.RuntimeNoiseApplied = isfinite(out.NoiseVariance) && out.NoiseVariance > 0;
@@ -506,7 +542,12 @@ try
             'UseFastMex',false,'StrictMode',true, ...
             'ChannelModel',string(sixgr.util.structGet(cfgSRS,'channel.model','AWGN')), ...
             'ExpectedTxPorts',double(tx.SRS.NumSRSPorts), ...
+            'CDMLengths',sixgr.phy.srs.resolveCDMLengths(tx.SRS), ...
             'Method',"LS",'ContextLabel',"SRS_post_decode_scoring_reference");
+        % Do not infer four-port SRS geometry from the correlation of the
+        % first two pilot sequences. This is the same configured geometry
+        % used by SRS_Rx, but these noiseless samples remain scoring-only.
+        referenceEstimatorInfo.CDMLengthsSource="nr_srs_cyclic_shift_port_multiplexing";
         rawScore=sixgr.phy.srs.pilotChannelNMSE( ...
             rx.Hest,referenceGrid,tx.SRSIndices);
         phaseEquivalentScore=sixgr.phy.srs.pilotChannelPhaseEquivalentNMSE( ...
@@ -522,6 +563,33 @@ try
             'PhaseEquivalenceScope',phaseEquivalentScore.PhaseEquivalenceScope, ...
             'AdditionalChannelExecutions',0, ...
             'AdditionalRFExecutions',0,'ScoringEstimatorInfo',referenceEstimatorInfo);
+        referenceEvidence.ReceiverTimingIncluded=false;
+        referenceEvidence.ReceiverCFOIncluded=false;
+        if ~isempty(fieldnames(scoringClock))
+            referenceEvidence.Source= ...
+                "same_executed_desired_link_waveform_SRS_pilot_LS_recorded_RX_clock_and_CFO_common_receiver_LO_phase_equivalent";
+            referenceEvidence.ReferencePlane= ...
+                "effective_SRS_port_channel_on_recorded_RX_timing_clock_with_executed_RX_CFO_before_noise_and_other_RX_RF";
+            referenceEvidence.ReceiverTimingIncluded=true;
+            referenceEvidence.RecordedReceiverTimingOffset_samples= ...
+                scoringClock.RecordedReceiverTimingOffset_samples;
+            referenceEvidence.ReceiverCFOIncluded=true;
+            referenceEvidence.ExecutedReceiverCFO_Hz=scoringFrequency.ExecutedReceiverCFO_Hz;
+            referenceEvidence.ClockEvidence=scoringClock;
+            referenceEvidence.FrequencyEvidence=scoringFrequency;
+            referenceEvidence.ResidualOscillatorQualification=false;
+            unmatchedRxGrid=sixgr.phy.waveform.ofdmDemodulate(tx.Carrier,unmatchedScoringWaveform);
+            unmatchedReference=sixgr.phy.rx.channelEstimate( ...
+                tx.Carrier,unmatchedRxGrid,tx.SRSIndices,tx.SRSSymbols, ...
+                'UseFastMex',false,'StrictMode',true, ...
+                'ChannelModel',string(sixgr.util.structGet(cfgSRS,'channel.model','AWGN')), ...
+                'ExpectedTxPorts',double(tx.SRS.NumSRSPorts), ...
+                'CDMLengths',sixgr.phy.srs.resolveCDMLengths(tx.SRS), ...
+                'Method',"LS",'ContextLabel',"SRS_pre_RX_clock_scoring_diagnostic");
+            unmatchedScore=sixgr.phy.srs.pilotChannelPhaseEquivalentNMSE( ...
+                rx.Hest,unmatchedReference,tx.SRSIndices);
+            out.PreRXClockChannelNMSE_dB=unmatchedScore.dB;
+        end
         out.RawChannelNMSEScoring=rawScore;
         out.RawChannelNMSE_dB=rawScore.dB;
         out.ChannelNMSEScoring=phaseEquivalentScore;

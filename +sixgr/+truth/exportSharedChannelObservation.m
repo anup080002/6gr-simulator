@@ -120,8 +120,19 @@ assert(~reuse || (isfile(matPath) && isfile(csvPath)), ...
     'An incomplete prior publication must not be overwritten or silently repaired.');
 if ~reuse
 archivePayload.ManifestJSON=manifestJSON;
+timeChunkedVariables=strings(1,0);
+if endsWith(archiveContract,'/v2')
+    % Preserve the v2 native MAT variable/metadata contract. Only the exact
+    % captured coefficient arrays get a time-contiguous lossless layout;
+    % their precision, sample coverage and array hashes remain unchanged.
+    timeChunkedVariables=string(fieldnames(archivePayload)).';
+    timeChunkedVariables=timeChunkedVariables(startsWith(timeChunkedVariables,"PathGains_"));
+    assert(numel(timeChunkedVariables)==numel(captures), ...
+        'sixgr:truth:ChannelArchiveVariableCount','Every captured segment requires its exact numeric archive variable.');
+end
 sixgr.util.matSave(matPath,archivePayload, ...
-    'UseArtifactStore',false,'ForceV73',endsWith(archiveContract,'/v2'));
+    'UseArtifactStore',false,'ForceV73',endsWith(archiveContract,'/v2'), ...
+    'TimeChunkedVariables',timeChunkedVariables);
 segmentT=struct2table(rows,'AsArray',true);
 segmentT.ChannelObservationID=repmat("chobs_"+manifestHash,height(segmentT),1);
 segmentT.ObservationStartSample=repmat(observation.StartSample,height(segmentT),1);

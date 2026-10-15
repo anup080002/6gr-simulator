@@ -868,7 +868,13 @@ switch key
     case "analog_jscc_jscm_robustness_metrics"
         T = localAnalogJSCCJSCMRows(cat, metric, ctx);
     case "csi_rsrp"
-        T = localCSIPhysicalMeasurementRows(cat, metric, ctx.Tables.CSIRS, "MeasurementRelativeRSRP_dB", "CSI-RSRP", "dB_re_UnitOccupiedRE_Es");
+        % The legacy relative scalar averages post-front-end reference-grid
+        % power; it is not the selected port-3000/receive-branch CSI-RSRP.
+        % Never pool absolute and normalized power observations into one mean.
+        T = [localCSIPhysicalMeasurementRows(cat, metric, ctx.Tables.CSIRS, ...
+            "MeasurementRSRP_dB_re_UnitOccupiedRE_Es", "CSI-RSRP_normalized", "dB_re_UnitOccupiedRE_Es"); ...
+            localCSIPhysicalMeasurementRows(cat, metric, ctx.Tables.CSIRS, ...
+            "MeasurementRSRP_dBm", "CSI-RSRP_absolute", "dBm")];
     case "csi_rsrq"
         T = localCSIPhysicalMeasurementRows(cat, metric, ctx.Tables.CSIRS, "MeasurementRSRQ_dB", "CSI-RSRQ", "dB");
     case "csi_sinr"
@@ -934,8 +940,9 @@ switch key
         T = localClusteringGainPenaltyRows(cat, metric, ctx);
     case "ss_rsrp"
         T = localSSMeasurementRows(cat, metric, ctx.Tables.PBCH, "SS_RSRP_dB_re_UnitOccupiedRE_Es", "SS-RSRP", "dB_re_UnitOccupiedRE_Es");
+        T = [T; localSSMeasurementRows(cat, metric, ctx.Tables.PBCH, "SS_RSRP_dBm", "SS-RSRP_absolute", "dBm")];
     case "ss_rsrq"
-        T = localSSMeasurementRows(cat, metric, ctx.Tables.PBCH, "SSBWindowReferenceRSRQPerReceiveAntenna_dB", "SS-RSRQ", "dB");
+        T = localSSMeasurementRows(cat, metric, ctx.Tables.PBCH, "SSBWindowReferenceRSRQPerReceiveAntenna_dB", "SSB-window-reference-RSRQ", "dB");
     case "ss_sinr"
         T = localSSMeasurementRows(cat, metric, ctx.Tables.PBCH, "SS_SINR_dB", "SS-SINR", "dB");
     case "wrong_identity_probability"
@@ -1654,50 +1661,43 @@ end
 
 function T = localHARQInitialBLERRows(cat, metric, timeline)
 T = localEmptyMetricTable();
-if ~(istable(timeline) && ~isempty(timeline) && ...
-        all(ismember(["Attempt","CurrentDecodeOK"], string(timeline.Properties.VariableNames))))
-    return;
-end
-attempt = sixgr.truth.numericMeasurementColumn(timeline.Attempt, "Attempt");
-decodeOK = sixgr.truth.numericMeasurementColumn(timeline.CurrentDecodeOK, "CurrentDecodeOK");
-if numel(attempt) ~= height(timeline) || numel(decodeOK) ~= height(timeline)
-    return;
-end
-directions = localDirectionSet(timeline);
-for entity = directions(:).'
-    mask = localDirectionMask(timeline, entity) & attempt == 1 & isfinite(decodeOK);
-    if any(mask)
-        T = [T; localRateWithCounts(cat, metric, entity, "initial_tb_error", ...
-            ~logical(decodeOK(mask)), "harq/csv/harq_process_timeline.csv", ...
-            "Initial BLER uses only HARQ attempt 1; retransmissions are excluded.")]; %#ok<AGROW>
-    end
+S=sixgr.truth.summarizeHARQResidualBLER(timeline);
+source="harq/csv/harq_process_timeline.csv";
+for i=1:height(S)
+    r=S(i,:);
+    entity=r.Direction+"@"+r.ProbeMode+"@point="+compose('%.17g',r.SweepPointIndex)+ ...
+        "@configured_snr_dB="+compose('%.17g',r.ConfiguredSNR_dB);
+    state="not_available";
+    if isfinite(r.InitialBLER), state="observed"; end
+    notes="Original first-transmission receiver CRC only, within one experiment point. Left-censored retransmissions and missing CRC outcomes are excluded and counted.";
+    T=[T;localMetricTableRow(cat,metric,entity,"initial_tb_error_rate", ...
+        state,r.InitialBLER,"","fraction",source,notes); ...
+        localMetricTableRow(cat,metric,entity,"initial_tb_error_count", ...
+        "observed",r.InitialErrors,"","count",source,notes); ...
+        localMetricTableRow(cat,metric,entity,"sample_count", ...
+        "observed",r.InitialTrials,"","count",source,notes); ...
+        localMetricTableRow(cat,metric,entity,"excluded_packet_count", ...
+        "observed",r.ObservedPackets-r.InitialTrials,"","count",source,notes)]; %#ok<AGROW>
 end
 end
 
 function T = localHARQResidualBLERRows(cat, metric, timeline)
 T = localEmptyMetricTable();
-required = ["PacketID","Attempt","CombinedDecodeOK"];
-if ~(istable(timeline) && ~isempty(timeline) && all(ismember(required, string(timeline.Properties.VariableNames))))
-    return;
-end
-packet = string(timeline.PacketID);
-attempt = sixgr.truth.numericMeasurementColumn(timeline.Attempt, "Attempt");
-combinedOK = sixgr.truth.numericMeasurementColumn(timeline.CombinedDecodeOK, "CombinedDecodeOK");
-directions = localDirectionSet(timeline);
-for entity = directions(:).'
-    dmask = localDirectionMask(timeline, entity);
-    ids = unique(packet(dmask), "stable");
-    finalError = false(0, 1);
-    for i = 1:numel(ids)
-        rows = find(dmask & packet == ids(i) & isfinite(attempt) & isfinite(combinedOK));
-        if isempty(rows), continue; end
-        [~, k] = max(attempt(rows));
-        finalError(end+1, 1) = ~logical(combinedOK(rows(k))); %#ok<AGROW>
-    end
-    if ~isempty(finalError)
-        T = [T; localRateWithCounts(cat, metric, entity, "final_harq_tb_error", ...
-            finalError, "harq/csv/harq_process_timeline.csv", ...
-            "Residual BLER uses the final observed HARQ attempt for each source-labelled packet.")]; %#ok<AGROW>
+S=sixgr.truth.summarizeHARQResidualBLER(timeline);
+source="harq/csv/harq_process_timeline.csv";
+for i=1:height(S)
+    r=S(i,:);
+    entity=r.Direction+"@"+r.ProbeMode+"@point="+compose('%.17g',r.SweepPointIndex)+ ...
+        "@configured_snr_dB="+compose('%.17g',r.ConfiguredSNR_dB);
+    state="not_available";
+    if isfinite(r.ResidualBLER), state="observed"; end
+    notes="Terminal RX delivery errors, not feedback ACK/NACK. Entire observed packet cohort must have original/complete receiver evidence and explicit stop evidence. "+r.PopulationStatus;
+    T=[T;localMetricTableRow(cat,metric,entity,"final_harq_tb_error_rate", ...
+        state,r.ResidualBLER,"","fraction",source,notes)]; %#ok<AGROW>
+    for field=["ObservedPackets","TerminalPackets","QualifiedPackets", ...
+            "ResidualErrors","UnresolvedPackets","LeftCensoredPackets"]
+        T=[T;localMetricTableRow(cat,metric,entity,field,"observed", ...
+            r.(field),"","count",source,notes)]; %#ok<AGROW>
     end
 end
 end
@@ -1903,7 +1903,14 @@ end
 function T = localCSIPhysicalMeasurementRows(cat, metric, csirs, varName, entity, unit)
 T = localEmptyMetricTable();
 if ~(istable(csirs) && ~isempty(csirs)), return; end
-note = "Receiver measurement on executed CSI-RS resources. Relative power remains referenced to unit occupied-RE Es and is not relabeled as dBm.";
+note = "Receiver measurement on executed CSI-RS resources; exact source column: " + varName + ". ";
+if unit=="dBm"
+    note = note + "Absolute calibrated power plane; not substituted from normalized or post-front-end grid power.";
+elseif unit=="dB_re_UnitOccupiedRE_Es"
+    note = note + "Normalized occupied-RE reference power; not an absolute dBm claim or the legacy post-front-end aggregate.";
+else
+    note = note + "Dimensionless received reference-resource ratio; not the rank/PMI scheduling objective.";
+end
 T = localCustomNumericSummaryRows(cat, metric, csirs, varName, entity, unit, ...
     "air_interface/csv/csi_rs_trials.csv", note);
 end
@@ -1913,13 +1920,76 @@ T = localEmptyMetricTable();
 if ~(istable(pbch) && ~isempty(pbch) && ismember(varName, string(pbch.Properties.VariableNames)))
     return;
 end
-x = localNumericVectorColumn(pbch.(varName));
-if isempty(x), return; end
-note = "Measured from the received SS/PBCH observation. Normalized power uses the unit occupied-RE Es reference and is not an absolute dBm claim.";
-T = [T; ...
-    localMetricTableRow(cat, metric, entity, "mean", "observed", mean(x, "omitnan"), "", unit, "air_interface/csv/pbch_trials.csv", note); ...
-    localMetricTableRow(cat, metric, entity, "p95", "observed", prctile(x, 95), "", unit, "air_interface/csv/pbch_trials.csv", note); ...
-    localMetricTableRow(cat, metric, entity, "sample_count", "observed", numel(x), "", "count", "air_interface/csv/pbch_trials.csv", note)];
+% Do not pool SNR points, beams or branches, or substitute the primary
+% noise-debiased SSS RSRP into the toolbox window-reference RSRQ ratio.
+values=zeros(0,1); identities=strings(0,1); notes=strings(0,1);
+isWindow=varName=="SSBWindowReferenceRSRQPerReceiveAntenna_dB";
+for row=1:height(pbch)
+    raw=pbch.(varName)(row,:);
+    if iscell(raw), raw=raw{1}; end
+    x=localSSBranchVector(raw);
+    if ~any(isfinite(x)), continue; end
+    identity=entity;
+    for names={["SweepPointIndex","SweepIndex"],["ConfiguredSNR_dB","ConfiguredSNRdB"], ...
+            ["UEID","UEIndex"],["CellID","ServingCell","Cell"],"SSBIndex"}
+        fields=string(names{1}); value=localTableNumericAtRow(pbch,row,fields);
+        identity=identity+"@"+fields(1)+"="+compose('%.17g',value);
+    end
+    note="Same-producer field "+varName+"; mean/p95 describe the retained dB observation distribution, not a linear-power time-average or independent-trial qualification. ";
+    if isWindow
+        scope=localTableStringAtRow(pbch,row,"SSBWindowReferenceRSRQScope");
+        nrb=localTableNumericAtRow(pbch,row,"SSBWindowReferenceRSRQNumRB");
+        if scope=="" || ismissing(scope) || ~(isfinite(nrb) && nrb>0 && nrb==fix(nrb))
+            continue; % A finite ratio alone cannot establish its bandwidth/symbol scope.
+        end
+        identity=identity+"@scope="+scope+"@N_RB="+compose('%.17g',nrb);
+        note=note+"Measurement scope="+scope+"; N_RB="+compose('%.17g',nrb)+ ...
+            ". Uses the matching nrSSBMeasurements reference RSRP and RSSI operands, not primary noise-debiased SSS RSRP. Not a full configured NR-carrier/SMTC RSRQ claim. ";
+    end
+    plane=localTableStringAtRow(pbch,row,"PowerReferencePlane");
+    if plane~="" && ~ismissing(plane)
+        identity=identity+"@power_plane="+plane;
+        note=note+"PowerReferencePlane="+plane+". ";
+    end
+    if unit=="dB_re_UnitOccupiedRE_Es"
+        note=note+"Relative to unit occupied-RE Es; not dBm. ";
+    end
+    for branch=find(isfinite(x))
+        branchIdentity=identity;
+        if isWindow, branchIdentity=identity+"@RxBranch1Based="+string(branch); end
+        values(end+1,1)=x(branch); %#ok<AGROW>
+        identities(end+1,1)=branchIdentity; %#ok<AGROW>
+        notes(end+1,1)=note; %#ok<AGROW>
+    end
+end
+for key=unique(identities,'stable').'
+    selected=identities==key; x=values(selected); note=notes(find(selected,1));
+    T=[T; ...
+        localMetricTableRow(cat,metric,key,"mean","observed",mean(x),"",unit,"air_interface/csv/pbch_trials.csv",note); ...
+        localMetricTableRow(cat,metric,key,"p95","observed",prctile(x,95),"",unit,"air_interface/csv/pbch_trials.csv",note); ...
+        localMetricTableRow(cat,metric,key,"sample_count","observed",numel(x),"","count","air_interface/csv/pbch_trials.csv",note)]; %#ok<AGROW>
+end
+end
+
+function values=localSSBranchVector(raw)
+% Preserve NaN/Inf positions so branch 3 cannot silently become branch 2.
+if isnumeric(raw) || islogical(raw)
+    assert(isreal(raw),'sixgr:report:InvalidSSBMeasurementVector','SSB measurements must be real.');
+    values=double(raw(:).'); return;
+end
+token=strtrim(string(raw));
+assert(isscalar(token),'sixgr:report:InvalidSSBMeasurementVector','Expected one vector token per receiver observation.');
+if ismissing(token) || token=="" || token=="[]", values=[]; return; end
+bracketed=startsWith(token,"[") && endsWith(token,"]");
+assert(~xor(startsWith(token,"["),endsWith(token,"]")), ...
+    'sixgr:report:InvalidSSBMeasurementVector','Unbalanced SSB vector brackets.');
+if bracketed, token=extractBetween(token,2,strlength(token)-1); end
+if token=="", values=[]; return; end
+assert(isempty(regexp(char(token),'(^[,;|]|[,;|]$|[,;|]\s*[,;|])','once')), ...
+    'sixgr:report:InvalidSSBMeasurementVector','Missing branch values must be explicit NaN.');
+parts=regexp(char(token),'[\s,;|]+','split'); values=str2double(parts);
+assert(all(~isnan(values) | strcmpi(parts,'NaN')), ...
+    'sixgr:report:InvalidSSBMeasurementVector','Malformed SSB measurement token.');
 end
 
 function T = localWrongIdentityRows(cat, metric, prach)
@@ -6978,11 +7048,15 @@ function T = localAppendReceiverCFOMeasurements(T, sourceT)
 n = height(T);
 for name = ["CFOCorrectionApplied","CFOCorrectionApplied_Hz", ...
         "ResidualCFO_EstimatedPostCorrection_Hz","ResidualCFOEstimateAvailable", ...
-        "ResidualCFOReusesAcquisitionObservation","ResidualCFOEstimatorConsistency_Hz"]
+        "ResidualCFOReusesAcquisitionObservation","ResidualCFOEstimatorConsistency_Hz", ...
+        "SweepPointIndex","SweepIndex","ConfiguredSNR_dB","SampleRate_Hz", ...
+        "PilotCommonPhaseRate_Hz","PilotPhaseFitResidualRMS_deg", ...
+        "PilotPhasePairCount","PilotPhaseUnaliasedHalfWidth_Hz"]
     T.(name) = localDebugNumericColumn(sourceT, name, n);
 end
 for name = ["ResidualCFOEstimateSource","ResidualCFOEstimateDomain","ResidualCFOReferenceDefinition", ...
-        "ResidualCFOEstimateRole"]
+        "ResidualCFOEstimateRole","TimingMetricRole","TimingReferenceSource","TimingErrorDefinition", ...
+        "PilotPhaseEvolutionSource","PilotPhaseEvolutionStatus","DopplerMeasurementStatus"]
     T.(name) = localDebugStringColumn(sourceT, name, n);
 end
 end
@@ -7083,7 +7157,9 @@ function localPlotTrackingTraceOrPlaceholder(pathOut, ctx)
 T = localBuildTrackingTraceTable(ctx);
 usableMask = localUsableTrackingTraceRows(T);
 if istable(T) && ~isempty(T) && any(usableMask)
-    Tplot = T(usableMask, :);
+    % Every panel uses the same CSV observation index. Missing measurements
+    % must not compact one panel and shift it against the others.
+    Tplot = T;
     traceStatus = sixgr.visual.validatePlotData("trace", (1:height(Tplot)).', ones(height(Tplot), 1));
     if traceStatus.PlotRenderStatus ~= "rendered"
         if localShouldEmitPlaceholderArtifacts(ctx)
@@ -7095,15 +7171,17 @@ if istable(T) && ~isempty(T) && any(usableMask)
     cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
     tl = tiledlayout(fig, 3, 2, "Padding", "compact", "TileSpacing", "compact");
     localTraceAxes(nexttile(tl), localTrackingPlotColumn(Tplot, ["ResidualCFO_PostCorrection_Hz","CFOError_Hz"]), ...
-        "Simulation-Reference CFO Residual / Error", "Hz");
+        "Oscillator-Reference Difference", "Hz");
     localTraceAxes(nexttile(tl), localTrackingPlotColumn(Tplot, "ResidualCFO_EstimatedPostCorrection_Hz"), ...
-        "Receiver-Measured Residual Frequency", "Hz");
+        "Post-Correction Common-Frequency Estimate", "Hz");
     localTraceAxes(nexttile(tl), localTrackingPlotColumn(Tplot, ["ResidualTimingError_PostCorrection_samples","TimingError_samples"]), ...
-        "Residual Timing Post-Correction", "samples");
+        "Declared-Reference Timing Alignment", "samples");
     localTraceAxes(nexttile(tl), localTrackingPlotColumn(Tplot, ["DopplerError_Hz"]), ...
         "Doppler Error Trace", "Hz");
     localTraceAxes(nexttile(tl), localTrackingPlotColumn(Tplot, ["PhaseTrackingError_deg"]), ...
         "Phase Tracking Trace", "deg");
+    localTraceAxes(nexttile(tl), localTrackingPlotColumn(Tplot, "PilotCommonPhaseRate_Hz"), ...
+        "Matched-Pilot Common Phase Rate (not Doppler Spread)", "Hz");
     sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
     return;
 end
@@ -7125,7 +7203,8 @@ if ismember("Status", string(T.Properties.VariableNames))
 end
 cols = ["ResidualCFO_PostCorrection_Hz","CFOError_Hz","ResidualCFO_EstimatedPostCorrection_Hz", ...
     "ResidualTimingError_PostCorrection_samples","TimingError_samples", ...
-    "DopplerError_Hz","PhaseTrackingError_deg","EstimatedCFO_PreCorrection_Hz","EstimatedDopplerHz"];
+    "DopplerError_Hz","PhaseTrackingError_deg","EstimatedCFO_PreCorrection_Hz","EstimatedDopplerHz", ...
+    "PilotCommonPhaseRate_Hz","PilotPhaseFitResidualRMS_deg"];
 hasFinite = false(height(T), 1);
 for i = 1:numel(cols)
     col = cols(i);
@@ -7145,8 +7224,9 @@ end
 for i = 1:numel(names)
     name = names(i);
     if ismember(name, string(T.Properties.VariableNames))
-        vals = localFiniteColumn(T, name);
-        if ~isempty(vals)
+        candidate = localDebugNumericColumn(T, name, height(T));
+        if any(isfinite(candidate))
+            vals = candidate;
             return;
         end
     end
@@ -7285,9 +7365,11 @@ if isempty(x)
     text(ax, 0.5, 0.5, "No samples", "HorizontalAlignment", "center");
     return;
 end
-plot(ax, x, "LineWidth", 1.1);
+% These rows can span directions, UEs and sweep points. Show observations,
+% not connecting lines that imply continuity between unrelated captures.
+plot(ax, (1:numel(x)).', x, 'o', "LineStyle", "none");
 title(ax, plotTitle);
-xlabel(ax, "Sample index");
+xlabel(ax, "Runtime observation index");
 ylabel(ax, yLabel);
 grid(ax, "on");
 end

@@ -77,6 +77,29 @@ reportMaster = sixgr.analytics.buildPhase7ReadinessArtifacts(cfgMaster, tmp);
 assert(logical(reportMaster.Gates.AntennaArrayReconciliationOk), ...
     "Master-YAML antenna_and_array endpoint counts must reconcile for both DL and UL.");
 
+% No active population is not a measured array-count mismatch, even when
+% a prior producer accidentally left affirmative flags in its empty row.
+missingArray=arrayT; missingArray.ObservedRows(2)=0;
+missingArray.ObservedPhysicalTxAntennas(2)=NaN;
+missingArray.ObservedPhysicalRxAntennas(2)=NaN;
+sixgr.util.csvWriteTable(fullfile(tmp,'reports','csv','channel_array_consistency.csv'),missingArray);
+missingReport=sixgr.analytics.buildPhase7ReadinessArtifacts(cfg,tmp);
+A=missingReport.PhysicalChannelReconciliation.AntennaArray;
+u=A(A.Direction=="UL",:);
+assert(u.ObservedRows==0 && ~u.AntennaArrayReconciliationOk && ~u.RuntimeGeometryCoupledOk);
+assert(contains(u.FailureReason,"required_active_runtime_trials_missing") && ...
+    ~contains(u.FailureReason,"physical_array_count_mismatch"));
+assert(~missingReport.Gates.AntennaArrayReconciliationOk);
+% All observed populations must agree; the first finite count cannot hide
+% a different physical dimension in a later same-direction population.
+mixed=[arrayT;arrayT(1,:)]; mixed.ObservedPhysicalTxAntennas(3)=32;
+sixgr.util.csvWriteTable(fullfile(tmp,'reports','csv','channel_array_consistency.csv'),mixed);
+mixedReport=sixgr.analytics.buildPhase7ReadinessArtifacts(cfg,tmp);
+A=mixedReport.PhysicalChannelReconciliation.AntennaArray;
+d=A(A.Direction=="DL",:);
+assert(~d.AntennaArrayReconciliationOk && contains(d.FailureReason,"physical_array_count_mismatch"));
+sixgr.util.csvWriteTable(fullfile(tmp,'reports','csv','channel_array_consistency.csv'),arrayT);
+
 cfgYAML = rmfield(cfg,'channel');
 cfgYAML.channels = struct('model_type',"CDL",'profile',"CDL-C");
 reportYAML = sixgr.analytics.buildPhase7ReadinessArtifacts(cfgYAML,tmp);

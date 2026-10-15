@@ -321,7 +321,10 @@ rx.ReceiverHestSINRSource = "pdcch_candidate_dmrs_unavailable";
 rx.ReceiverHestSINRValueRole = "unavailable";
 rx.ReceiverHestSINRValueStatus = "unavailable";
 rx.ReceiverHestSINRNAReason = "no_candidate_channel_estimate_attempted";
-rx.EVM_rms = NaN;
+[rx.EVM_rms,evmEvidence] = localPDCCHSymbolEVM([]);
+for evmField=string(fieldnames(evmEvidence)).'
+    rx.(evmField)=evmEvidence.(evmField);
+end
 rx.NoiseVar = NaN;
 rx.NoiseVarStatus = "unavailable";
 rx.NoiseVarSource = "pdcch_receiver_not_attempted";
@@ -451,7 +454,10 @@ for c = 1:numel(candSymInd)
     rx.ReceiverHestSINRValueRole = "estimated";
     rx.ReceiverHestSINRValueStatus = char(string(candidateSINRStatus));
     rx.ReceiverHestSINRNAReason = char(string(candidateSINRReason));
-    rx.EVM_rms = localPDCCHSymbolEVM(eqSym);
+    [rx.EVM_rms,evmEvidence] = localPDCCHSymbolEVM(eqSym);
+    for evmField=string(fieldnames(evmEvidence)).'
+        rx.(evmField)=evmEvidence.(evmField);
+    end
 
     row = localEmptyCandidateRow();
     row.CandidateIndex = double(c);
@@ -583,6 +589,10 @@ info.ReceiverHestSINRSource = char(string(rx.ReceiverHestSINRSource));
 info.ReceiverHestSINRValueStatus = char(string(rx.ReceiverHestSINRValueStatus));
 info.ReceiverHestSINRNAReason = char(string(rx.ReceiverHestSINRNAReason));
 info.EVM_rms = double(rx.EVM_rms);
+for evmField=["EVMValueStatus","EVMReferenceSource","EVMErrorEnergy", ...
+        "EVMReferenceEnergy","EVMSymbolCount","EVMEnergyUnit","EVMComputationDomain"]
+    info.(evmField)=rx.(evmField);
+end
 
 end
 
@@ -792,8 +802,13 @@ else
 end
 end
 
-function evm = localPDCCHSymbolEVM(eqSym)
+function [evm,evidence] = localPDCCHSymbolEVM(eqSym)
 evm = NaN;
+evidence=struct('EVMValueStatus',"NOT_AVAILABLE", ...
+    'EVMReferenceSource',"unavailable_no_finite_candidate_symbols", ...
+    'EVMErrorEnergy',NaN,'EVMReferenceEnergy',NaN,'EVMSymbolCount',0, ...
+    'EVMEnergyUnit',"sum_squared_complex_symbol_amplitude_not_joules", ...
+    'EVMComputationDomain',"receiver_equalized_candidate_QPSK_no_gain_or_phase_fit");
 if isempty(eqSym)
     return;
 end
@@ -809,6 +824,11 @@ zeroMask = imag(ref) == 0;
 ref(zeroMask) = ref(zeroMask) + 1i;
 ref = ref ./ sqrt(2);
 evm = sqrt(mean(abs(x - ref).^2, "omitnan") / max(mean(abs(ref).^2, "omitnan"), eps));
+evidence.EVMValueStatus="MEASURED_DECISION_DIRECTED";
+evidence.EVMReferenceSource="nearest_QPSK_candidate_symbols_no_transmitted_payload_reference";
+evidence.EVMErrorEnergy=sum(abs(x-ref).^2);
+evidence.EVMReferenceEnergy=sum(abs(ref).^2);
+evidence.EVMSymbolCount=numel(x);
 end
 
 function rxCW = localApplyPDCCHCSIWeighting(rxCW, csi)

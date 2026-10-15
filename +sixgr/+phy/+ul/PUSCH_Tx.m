@@ -322,6 +322,22 @@ puschDomainInfo.PortSymbolCount = double(numel(puschSym));
 puschLayerInd = localLayerIndicesFromPortIndices(puschInd, puschLayerSym);
 puschLayerOrder = sixgr.phy.resource.buildSymbolOrderingMap(carrier, puschLayerInd, "layer");
 puschPortOrder = sixgr.phy.resource.buildSymbolOrderingMap(carrier, puschInd, "port");
+qamLayerInd=puschLayerInd;
+if pusch.TransformPrecoding
+    % QAM evidence is before the DFT and excludes inserted PT-RS samples;
+    % its order cannot be borrowed from the longer transformed allocation.
+    keep=true(size(puschLayerInd));
+    keep(nrPUSCHPTRSIndices(carrier,pusch))=false;
+    assert(nnz(keep)==numel(dftInputSym), ...
+        'sixgr:phy:ul:PUSCHQAMOrderMismatch', ...
+        'Pre-transform data sample order must match actual modulated QAM symbols.');
+    qamLayerInd=reshape(puschLayerInd(keep),size(dftInputSym));
+end
+qamOrder=sixgr.phy.resource.buildSymbolOrderingMap(carrier,qamLayerInd,"layer");
+if pusch.TransformPrecoding
+    qamOrder.SubcarrierIndex(:)=NaN;
+    qamOrder.CoordinateDomain="pre_transform_qam_positions";
+end
 
 % DMRS
 [dmrsInd, dmrsSym, dmrsInfo] = sixgr.phy.refsig.dmrsPUSCH(carrier, pusch);
@@ -452,6 +468,7 @@ tx.PUSCHDFTInputSymbols = dftInputSym;
 tx.PUSCHLayerIndices = puschLayerInd;
 tx.PUSCHPortIndices = puschInd;
 tx.LayerSymbolOrder = puschLayerOrder;
+tx.QAMSymbolOrder = qamOrder;
 tx.PortSymbolOrder = puschPortOrder;
 tx.LayerSymbolDomain = "layer";
 tx.PortSymbolDomain = "port";
@@ -1652,6 +1669,9 @@ ctx.DimensionContract = struct( ...
     "WaveformSize", double(size(txWaveform)));
 if isfield(tx, "LayerSymbolOrder")
     ctx.LayerSymbolOrder = tx.LayerSymbolOrder;
+end
+if isfield(tx, "QAMSymbolOrder")
+    ctx.QAMSymbolOrder = tx.QAMSymbolOrder;
 end
 if isfield(tx, "PortSymbolOrder")
     ctx.PortSymbolOrder = tx.PortSymbolOrder;

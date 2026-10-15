@@ -2,8 +2,8 @@ function artifacts = writeRFInterferenceReconciliation(cfg, runFolder, rawTrials
 %WRITERFINTERFERENCERECONCILIATION Publish RF/interference evidence gates.
 %
 % These are derived audit artifacts. A gate passes only when backed by
-% concrete runtime trial columns or by explicit identity configuration for a
-% disabled RF stage. Missing evidence is written as a false reconciliation
+% concrete runtime trial columns. A disabled-stage configuration alone is
+% not proof of execution. Missing evidence is written as a false reconciliation
 % row, not as a fabricated primary result.
 
 if nargin < 1 || ~isstruct(cfg)
@@ -41,6 +41,7 @@ noiseT = localBuildNoiseTable(cfg, dlT, ulT);
 interferenceT = localBuildInterferenceTable(dlT, ulT, cfg);
 rfChainT = localBuildRFChainTable(cfg);
 cfoT = localBuildCFOTable(dlT, ulT, cfg);
+syncObservationsT = localBuildSynchronizationObservations(dlT, ulT);
 phaseNoiseT = localBuildPhaseNoiseTable(dlT, ulT, cfg);
 timingT = localBuildTimingTable(dlT, ulT, cfg);
 iqT = localBuildIQTable(dlT, ulT, cfg);
@@ -57,6 +58,7 @@ artifacts.NoiseReconciliation = localWrite(layout.ReportCSVDir, "noise_reconcili
 artifacts.InterferenceAccounting = localWrite(layout.ReportCSVDir, "interference_accounting.csv", interferenceT);
 artifacts.RFChainDefinition = localWrite(layout.ReportCSVDir, "rf_chain_definition.csv", rfChainT);
 artifacts.CFOReconciliation = localWrite(layout.ReportCSVDir, "cfo_reconciliation.csv", cfoT);
+artifacts.SynchronizationObservations = localWrite(layout.ReportCSVDir, "rf_synchronization_observations.csv", syncObservationsT);
 artifacts.PhaseNoiseReconciliation = localWrite(layout.ReportCSVDir, "phase_noise_reconciliation.csv", phaseNoiseT);
 artifacts.TimingOffsetReconciliation = localWrite(layout.ReportCSVDir, "timing_offset_reconciliation.csv", timingT);
 artifacts.IQImbalanceReconciliation = localWrite(layout.ReportCSVDir, "iq_imbalance_reconciliation.csv", iqT);
@@ -73,6 +75,7 @@ artifacts.Tables = struct( ...
     "Interference", interferenceT, ...
     "RFChain", rfChainT, ...
     "CFO", cfoT, ...
+    "SynchronizationObservations", syncObservationsT, ...
     "PhaseNoise", phaseNoiseT, ...
     "Timing", timingT, ...
     "IQ", iqT, ...
@@ -276,7 +279,10 @@ else
     estimatorOk = true;
     estimatorStatus = "not_applicable_disabled_zero_cfo_identity";
 end
-injectionOk = observed && injectionComplete && isfinite(mismatch) && mismatch <= 1;
+% This compares configuration with execution metadata, not a noisy estimate.
+% A one-hertz acceptance window would silently accept a different injection.
+metadataTolerance = 32 * eps(max(abs(double(configured)), 1));
+injectionOk = observed && injectionComplete && isfinite(mismatch) && mismatch <= metadataTolerance;
 ok = injectionOk && estimatorOk;
 row = struct("Direction", char(direction), "ObservedRows", double(localHeight(T)), ...
     "ConfiguredCFO_Hz", double(configured), "MeanInjectedCFO_Hz", localMean(inj), ...
@@ -284,8 +290,15 @@ row = struct("Direction", char(direction), "ObservedRows", double(localHeight(T)
     "MaxConfiguredAppliedMismatch_Hz", double(mismatch), "MaxResidualCFO_Hz", double(residual), ...
     "CFOEstimationRequired", logical(estimationRequired), "CFOEstimationStatus", char(estimatorStatus), ...
     "CFOInjectionConfiguredAppliedOk", logical(injectionOk), ...
-    "CFOEstimatorQualificationOk", logical(estimatorOk), ...
-    "CfoConfiguredAppliedOk", logical(ok), "EvidenceSource", char(localEvidenceSource(observed, "trial_rf_cfo_columns")));
+    "CFOReferenceResidualCheckOk", logical(estimatorOk), ...
+    "CFOEstimatorQualificationOk", false, ...
+    "CFOEstimatorQualificationStatus", 'not_established_by_injected_oscillator_reference_difference', ...
+    "ReferenceResidualLimit_Hz", 1, ...
+    "ReferenceResidualLimitSource", 'legacy_reconciliation_policy_not_a_3GPP_accuracy_requirement', ...
+    "InjectionMetadataTolerance_Hz", metadataTolerance, ...
+    "CfoConfiguredAppliedOk", logical(ok), ...
+    "EvaluationScope", 'legacy_injection_and_reference_residual_checks_not_receiver_accuracy_qualification', ...
+    "EvidenceSource", char(localEvidenceSource(observed, "trial_rf_cfo_columns")));
 end
 
 function T = localBuildTimingTable(dlT, ulT, cfg)
@@ -309,8 +322,9 @@ complete = n > 0 && numel(inj) == n && numel(est) == n && numel(res) == n && ...
     all(isfinite(inj)) && all(isfinite(est)) && all(isfinite(res));
 mismatch = localMaxAbs(inj - configured);
 residual = localMaxAbs(res);
+metadataTolerance = 32 * eps(max(abs(double(configured)), 1));
 injectionOk = observed && n > 0 && numel(inj) == n && all(isfinite(inj)) && ...
-    isfinite(mismatch) && mismatch <= 1;
+    isfinite(mismatch) && mismatch <= metadataTolerance;
 ok = injectionOk && complete && ...
     isfinite(residual) && residual <= 1;
 row = struct("Direction", char(direction), "ObservedRows", double(localHeight(T)), ...
@@ -319,14 +333,73 @@ row = struct("Direction", char(direction), "ObservedRows", double(localHeight(T)
     "MeanResidualTimingOffset_samples", localMean(res), ...
     "MaxConfiguredAppliedMismatch_samples", double(mismatch), "MaxResidualTimingError_samples", double(residual), ...
     "TimingInjectionConfiguredAppliedOk", logical(injectionOk), ...
-    "TimingOffsetConfiguredAppliedOk", logical(ok), "EvidenceSource", char(localEvidenceSource(observed, "trial_rf_timing_columns")));
+    "TimingReceiverAccuracyQualified", false, ...
+    "TimingReceiverAccuracyStatus", 'requires_matched_timing_reference_and_declared_accuracy_policy', ...
+    "ReferenceResidualLimit_samples", 1, ...
+    "ReferenceResidualLimitSource", 'legacy_reconciliation_policy_not_a_3GPP_accuracy_requirement', ...
+    "InjectionMetadataTolerance_samples", metadataTolerance, ...
+    "TimingOffsetConfiguredAppliedOk", logical(ok), ...
+    "EvaluationScope", 'legacy_reference_alignment_check_not_correlation_peak_accuracy', ...
+    "EvidenceSource", char(localEvidenceSource(observed, "trial_rf_timing_columns")));
+end
+
+function out = localBuildSynchronizationObservations(dlT, ulT)
+% Lossless scalar observation view of actual trial rows. Do not substitute
+% an injected/reference error for a missing post-correction measurement, or
+% call a same-observation re-estimate independent residual qualification.
+out = table();
+numericFields = ["SweepPointIndex","SweepIndex","ConfiguredSNR_dB","UEIndex","RNTI", ...
+    "Frame","Slot","SampleRate_Hz","InjectedCFO_Hz", ...
+    "EstimatedCFO_PreCorrection_Hz","CFOCorrectionApplied_Hz", ...
+    "ResidualCFO_PostCorrection_Hz","ResidualCFO_EstimatedPostCorrection_Hz", ...
+    "ResidualCFOReusesAcquisitionObservation","ResidualCFOEstimatorConsistency_Hz", ...
+    "InjectedTimingOffset_samples","EstimatedTimingOffset_PreCorrection_samples", ...
+    "RawTimingEstimate_samples", ...
+    "AppliedTimingCorrection_samples","ResidualTimingError_PostCorrection_samples"];
+textFields = ["RunID","ObservationID","ResidualCFOEstimateSource","ResidualCFOEstimateDomain", ...
+    "ResidualCFOEstimateRole","ResidualCFOReferenceDefinition", ...
+    "TimingReferenceSource","TimingMetricRole","TimingErrorDefinition"];
+for direction = ["DL","UL"]
+    if direction == "DL", source = dlT; else, source = ulT; end
+    n = localHeight(source);
+    if n == 0, continue; end
+    row = table(repmat(direction,n,1),'VariableNames',{'Direction'});
+    for name = numericFields
+        row.(name) = localNumericColumn(source,name);
+    end
+    for name = textFields
+        value = localStringColumn(source,name);
+        if isempty(value), value = strings(n,1); end
+        row.(name) = value;
+    end
+    present = isfinite(row.ResidualCFO_EstimatedPostCorrection_Hz);
+    row.ReceiverResidualObservationAvailable = present;
+    row.ReceiverResidualObservationStatus = repmat("not_reported_by_receiver",n,1);
+    row.ReceiverResidualObservationStatus(present) = "reported_independence_not_established";
+    reused = present & row.ResidualCFOReusesAcquisitionObservation == 1;
+    row.ReceiverResidualObservationStatus(reused) = "same_observation_consistency_not_independent_accuracy";
+    row.ReceiverAccuracyQualified = false(n,1);
+    row.EvaluationScope = repmat("actual_trial_observations_not_accuracy_qualification",n,1);
+    row.SourceTableRole = repmat(direction + "_trial_input_to_RF_reconciliation",n,1);
+    out = [out;row]; %#ok<AGROW>
+end
 end
 
 function T = localBuildIQTable(dlT, ulT, cfg)
-configuredEnabled = localBool(cfg, ["impairments.iq_imbalance.enabled","impairments.iq.enabled"], false);
-gainCfg = localNumber(cfg, ["impairments.iq_imbalance.amplitude_imbalance_db","impairments.iq_amplitude_imbalance_dB"], 0);
-phaseCfg = localNumber(cfg, ["impairments.iq_imbalance.phase_imbalance_deg","impairments.iq_phase_imbalance_deg"], 0);
-model = localString(cfg, ["impairments.iq_imbalance.model","impairments.iq.model"], "none");
+% Match the RX operator's endpoint -> internal -> authored YAML precedence.
+% Nested legacy identity values must not hide the active scalar YAML fields.
+configuredEnabled = localBool(cfg, ["rf.rx.iqImbalance.enable","rf.rx.iqImbalance.enabled", ...
+    "rf.iqImbalance.enable","phy.impairments.iqImbalanceEnabled", ...
+    "impairments.iq_imbalance_enabled","impairments.iq_imbalance.enabled","impairments.iq.enabled"], false);
+gainCfg = localNumber(cfg, ["rf.rx.iqImbalance.gainImbalance_dB","rf.rx.iqImbalance.ampImb_dB", ...
+    "rf.iqImbalance.gainImbalance_dB","rf.iqImbalance.ampImb_dB", ...
+    "impairments.iq_amplitude_imbalance_dB","impairments.iq_imbalance.gain_imbalance_db", ...
+    "impairments.iq_imbalance.amplitude_imbalance_db"], 0);
+phaseCfg = localNumber(cfg, ["rf.rx.iqImbalance.phaseImbalance_deg","rf.rx.iqImbalance.phaseImb_deg", ...
+    "rf.iqImbalance.phaseImbalance_deg","rf.iqImbalance.phaseImb_deg", ...
+    "impairments.iq_phase_imbalance_deg","impairments.iq_imbalance.phase_imbalance_deg"], 0);
+model = localString(cfg, ["rf.rx.iqImbalance.model","rf.iqImbalance.model", ...
+    "impairments.iq_imbalance.model","impairments.iq.model"], "none");
 rows = [localIQTrialRow("DL", dlT, configuredEnabled, gainCfg, phaseCfg, model); ...
     localIQTrialRow("UL", ulT, configuredEnabled, gainCfg, phaseCfg, model)];
 T = struct2table(rows, "AsArray", true);
@@ -340,10 +413,10 @@ cfgCol = localLogicalColumn(T, "IQImbalanceConfigured");
 appliedCol = localLogicalColumn(T, "IQImbalanceApplied");
 gain = localFiniteColumn(T, "ConfiguredIQGainImbalance_dB");
 phase = localFiniteColumn(T, "ConfiguredIQPhaseImbalance_deg");
-configuredMatches = isempty(cfgCol) || all(cfgCol == logical(configuredEnabled));
+configuredMatches = numel(cfgCol) == localHeight(T) && all(cfgCol == logical(configuredEnabled));
 appliedMatches = ~isempty(appliedCol) && all(appliedCol == logical(configuredEnabled));
-gainMatches = isempty(gain) || localMaxAbs(gain - gainCfg) <= 1e-9;
-phaseMatches = isempty(phase) || localMaxAbs(phase - phaseCfg) <= 1e-9;
+gainMatches = numel(gain) == localHeight(T) && localMaxAbs(gain - gainCfg) <= 1e-9;
+phaseMatches = numel(phase) == localHeight(T) && localMaxAbs(phase - phaseCfg) <= 1e-9;
 ok = observed && configuredMatches && appliedMatches && gainMatches && phaseMatches;
 row = struct("Direction", char(direction), "ObservedRows", double(localHeight(T)), ...
     "ConfiguredIQEnabled", logical(configuredEnabled), "AppliedIQEnabled", localAny(appliedCol), ...
@@ -354,38 +427,82 @@ row = struct("Direction", char(direction), "ObservedRows", double(localHeight(T)
 end
 
 function T = localBuildPhaseNoiseTable(dlT, ulT, cfg)
-configuredEnabled = localBool(cfg, ["impairments.phase_noise.enabled","rf.phase_noise.enabled"], false);
-model = localString(cfg, ["impairments.phase_noise.model","rf.phase_noise.model"], "none");
-floorDbc = localNumber(cfg, ["impairments.phase_noise.psd_floor_dbc_hz","rf.phase_noise.psd_floor_dbc_hz"], -150);
-observed = localHasColumn(dlT, "PhaseNoiseApplied") || localHasColumn(ulT, "PhaseNoiseApplied");
-applied = any([localLogicalColumn(dlT, "PhaseNoiseApplied"); localLogicalColumn(ulT, "PhaseNoiseApplied")]);
-if ~observed
-    applied = configuredEnabled;
+% The legacy flat trial fields belong to RX, not the TX oscillator.
+configuredEnabled = localBool(cfg, ["rf.rx.phaseNoise.enable","rf.rx.phaseNoise.enabled", ...
+    "rf.phaseNoise.enable","phy.impairments.phaseNoiseEnabled", ...
+    "impairments.phase_noise_enabled","impairments.phase_noise.enabled","rf.phase_noise.enabled"], false);
+model = localString(cfg, ["rf.phaseNoise.model","impairments.phase_noise_model", ...
+    "impairments.phase_noise.model","rf.phase_noise.model"], "");
+floorDbc = localNumber(cfg, ["rf.phaseNoise.floor_dBcHz","impairments.phase_noise_floor_dBcHz", ...
+    "impairments.phase_noise.psd_floor_dbc_hz","rf.phase_noise.psd_floor_dbc_hz"], NaN);
+if ~isempty(localGet(cfg,"rf.phaseNoise.model",[])) || ...
+        ~isempty(localGet(cfg,"rf.frontend.phase_noise.profile_id",[]))
+    floorDbc=localNumber(cfg,["rf.phaseNoise.floor_dBcHz", ...
+        "rf.frontend.phase_noise.floor_dbc_hz"],NaN);
 end
-cleanIdentity = ~configuredEnabled && any(lower(strtrim(string(model))) == ["none","disabled","off","ideal"]);
-ok = (observed && applied == configuredEnabled) || cleanIdentity;
+[observed, applied, flagsOk, count] = localStageFlags( ...
+    dlT, ulT, "PhaseNoiseConfigured", "PhaseNoiseApplied", configuredEnabled);
+backend = [localStringColumn(dlT,"PhaseNoiseAvailableBackend"); localStringColumn(ulT,"PhaseNoiseAvailableBackend")];
+classification = [localStringColumn(dlT,"PhaseNoiseTruthClassification"); localStringColumn(ulT,"PhaseNoiseTruthClassification")];
+backendOk = ~configuredEnabled || (localAllNonblank(backend,count) && localAllNonblank(classification,count));
+ok = observed && flagsOk && backendOk;
 T = table(logical(configuredEnabled), logical(applied), string(model), floorDbc, ok, ...
-    string(localTernary(observed, "trial_rf_phase_noise_columns", "configured_clean_identity_rf_stage")), ...
+    string(localEvidenceSource(observed,"trial_RX_phase_noise_columns")), ...
     'VariableNames', {'ConfiguredPhaseNoiseEnabled','AppliedPhaseNoiseEnabled','ConfiguredModel', ...
     'PSD_floor_dBc_Hz','PhaseNoiseConfiguredAppliedOk','EvidenceSource'});
+T.Endpoint = "RX";
+T.ObservedRows = count;
+T.ObservedBackend = strjoin(unique(backend,"stable"),"|");
+T.ObservedTruthClassification = strjoin(unique(classification,"stable"),"|");
+T.EvaluationScope = "observed_RX_stage_execution_not_oscillator_mask_qualification";
+T.PSDFloorStatus = string(localTernary(isfinite(floorDbc), ...
+    "explicit_configured_floor_not_measured_PSD", "not_supplied_by_selected_profile_no_default_floor"));
 end
 
 function T = localBuildPATable(dlT, ulT, cfg)
-configuredEnabled = localBool(cfg, ["impairments.pa_nonlinearity.enabled","power_and_rf_frontend.pa_enabled"], false);
-model = localString(cfg, ["impairments.pa_nonlinearity.model","power_and_rf_frontend.pa_model"], "ideal_linear");
-iip3 = localNumber(cfg, ["impairments.pa_nonlinearity.iip3_dbm","power_and_rf_frontend.pa_iip3_dbm"], 60);
-p1db = localNumber(cfg, ["impairments.pa_nonlinearity.p1db_dbm","power_and_rf_frontend.pa_p1db_dbm"], 50);
-observed = localHasColumn(dlT, "PAApplied") || localHasColumn(ulT, "PAApplied");
-applied = any([localLogicalColumn(dlT, "PAApplied"); localLogicalColumn(ulT, "PAApplied")]);
-if ~observed
-    applied = configuredEnabled;
+configuredEnabled = localBool(cfg, ["rf.pa.enable","phy.impairments.paNonlinearityEnabled", ...
+    "rf_frontend.pa.enabled","impairments.pa_nonlinearity_enabled", ...
+    "impairments.pa_nonlinearity.enabled","power_and_rf_frontend.pa_enabled"], false);
+model = localString(cfg, ["rf.pa.method","rf_frontend.pa.model", ...
+    "impairments.pa_nonlinearity.model","power_and_rf_frontend.pa_model"], "");
+backoff = localNumber(cfg, ["rf.pa.backoff_dB","rf_frontend.pa.input_backoff_db", ...
+    "impairments.pa_output_backoff_dB","lls6g.impairments.pa_output_backoff_dB"], NaN);
+% These are optional authored parameters, never measured PA intercepts.
+% In particular a Rapp PA does not supply IIP3/P1dB from its backoff.
+iip3 = localNumber(cfg, ["impairments.pa_nonlinearity.iip3_dbm","power_and_rf_frontend.pa_iip3_dbm"], NaN);
+p1db = localNumber(cfg, ["impairments.pa_nonlinearity.p1db_dbm","power_and_rf_frontend.pa_p1db_dbm"], NaN);
+if configuredEnabled && any(lower(string(model)) == ["rapp","memoryless"])
+    iip3=NaN; p1db=NaN;
 end
-cleanIdentity = ~configuredEnabled && any(lower(strtrim(string(model))) == ["ideal_linear","linear","none","disabled","off"]);
-ok = (observed && applied == configuredEnabled) || cleanIdentity;
+[observed, applied, flagsOk, count] = localStageFlags(dlT,ulT,"PAEnabled","PAApplied",configuredEnabled);
+models = [localStringColumn(dlT,"PAModel"); localStringColumn(ulT,"PAModel")];
+backoffs = [localNumericColumn(dlT,"PABackoff_dB"); localNumericColumn(ulT,"PABackoff_dB")];
+parametersOk = ~configuredEnabled || (localAllNonblank(models,count) && ...
+    all(strcmpi(models,string(model))) && numel(backoffs)==count && ...
+    all(isfinite(backoffs)) && isfinite(backoff) && localMaxAbs(backoffs-backoff)<=1e-9);
+ok = observed && flagsOk && parametersOk;
 T = table(logical(configuredEnabled), logical(applied), string(model), iip3, p1db, ok, ...
-    string(localTernary(observed, "trial_rf_pa_columns", "configured_clean_identity_rf_stage")), ...
+    string(localEvidenceSource(observed,"trial_TX_pa_columns")), ...
     'VariableNames', {'ConfiguredPAEnabled','AppliedPAEnabled','ConfiguredModel','IIP3_dBm','P1dB_dBm', ...
     'PaConfiguredAppliedOk','EvidenceSource'});
+T.Endpoint = "TX";
+T.ObservedRows = count;
+T.ConfiguredBackoff_dB = backoff;
+T.ObservedMeanBackoff_dB = localMean(backoffs);
+T.InterceptParameterStatus = "configured_if_model_applicable_not_measured_intercept_or_compression";
+T.EvaluationScope = "observed_TX_PA_execution_not_PA_conformance_qualification";
+end
+
+function [observed,applied,ok,count] = localStageFlags(dlT,ulT,configuredField,appliedField,expected)
+% A present header or one successful row cannot qualify missing/NaN rows.
+configured=[localNumericColumn(dlT,configuredField);localNumericColumn(ulT,configuredField)];
+executed=[localNumericColumn(dlT,appliedField);localNumericColumn(ulT,appliedField)];
+count=localHeight(dlT)+localHeight(ulT);
+observed=count>0 && numel(configured)==count && numel(executed)==count && ...
+    all(isfinite(configured) & ismember(configured,[0 1])) && ...
+    all(isfinite(executed) & ismember(executed,[0 1]));
+applied=any(executed==1);
+ok=observed && all(configured==double(expected)) && all(executed==double(expected));
 end
 
 function T = localBuildEVMTable(dlT, ulT, cfg)

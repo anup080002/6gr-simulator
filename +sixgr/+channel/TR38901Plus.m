@@ -583,14 +583,21 @@ classdef TR38901Plus < handle
             end
 
             try
-                % Try to configure nrPathLossConfig; keep minimal to avoid version issues.
+                % Translate accepted aliases explicitly. Silently ignoring
+                % a rejected Scenario property would execute default UMa
+                % while claiming the requested UMi/RMa/InH propagation.
                 plc = nrPathLossConfig;
-                if ~isempty(scenarioName)
-                    try
-                        plc.Scenario = char(scenarioName);
-                    catch
-                        % Ignore if property differs by release
-                    end
+                switch scenarioToken
+                    case "uma", plc.Scenario = 'UMa';
+                    case "umi", plc.Scenario = 'UMi';
+                    case "rma"
+                        plc.Scenario = 'RMa';
+                        plc.StreetWidth = obj.StreetWidth_m;
+                        plc.BuildingHeight = obj.BuildingHeight_m;
+                    case {"inh","inhoffice"}, plc.Scenario = 'InH';
+                    otherwise
+                        error('TR38901Plus:UnsupportedPathlossConfiguration', ...
+                            'No installed pathloss mapping for scenario %s.',scenarioName);
                 end
 
                 % nrPathLoss expects LOS as logical. Ensure correct shape.
@@ -627,8 +634,8 @@ classdef TR38901Plus < handle
             else
                 losRow = los.';
             end
-            if isscalar(losRow) && numel(d3d) > 1
-                losRow = repmat(losRow, 1, numel(d3d));
+            if isscalar(losRow) && numel(d2d) > 1
+                losRow = repmat(losRow, 1, numel(d2d));
             end
 
             switch scenarioToken

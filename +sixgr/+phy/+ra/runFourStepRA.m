@@ -480,6 +480,13 @@ try
     cfgMsg1Rx = localApplyRuntimeReceiverSyncContext(cfg, runtime, "UL");
     det = sixgr.phy.ra.detectMsg1PRACH(msg1RxWave, cfgMsg1Rx, raCfg, occasion);
     det = localAttachMsg1ReferenceEvidence(det, stageInfo, cfgMsg1Rx);
+    if string(runtime.Mode)=="shared_physical_waveform_stream"
+        % Measurement only, after the independent PRACH detector finished.
+        physical=runtime.StageWaveforms.Msg1PhysicalExecution;
+        [~,~,transmitted]=sixgr.truth.sharedObservationEvidence(physical.Planes);
+        paired=sixgr.phy.prach.pairPRACHTransmitterSymbols(msg1Tx,physical.Prepared,transmitted);
+        result.ControlEVMSamplesJSON=string(jsonencode(paired));
+    end
     localProgress(opt, "msg1_detect_done", sprintf("detected=%d", logical(det.Detected)));
     if isfield(det, "CorrelationTrace")
         result.Msg1DetectionTrace = det.CorrelationTrace;

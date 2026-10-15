@@ -29,7 +29,23 @@ assert(P.CombinedDecodeOK(1) && ~P.ACK(1) && ~P.CombinedDecodeOK(2) && P.ACK(2),
 assert(all(isnan([P.ACK(4),P.NACK(4),P.DTX(4)])) && all(isnan(P.FeedbackBits)));
 assert(isequal(P.DecodedHARQInformationBits(1:3),[1;1;0]));
 assert(isequal(out.FeedbackObservationTable,F));
+T.MeasuredSINR_dB=zeros(height(T),1); T.WidebandCQI=ones(height(T),1);
+T.CQIDerivedMCS=zeros(height(T),1);
+state=struct('HARQTimelineTable',T,'SharedGNBUCIHARQTable',F);
+summary=sixgr.truth.CoupledTruthRuntime.harqSummaryRuntime(state);
+dl=summary(string(summary.Direction)=="DL",:);
+assert(dl.ReceiverCRCPassRate==2/3 && dl.AckRate==1/3 && ...
+    dl.NackRate==1/3 && dl.DTXRate==1/3 && dl.FeedbackObservationCount==3);
+state.SharedGNBUCIHARQTable=table();
+pending=sixgr.truth.CoupledTruthRuntime.harqSummaryRuntime(state);
+assert(all(isnan(pending.AckRate)) && all(pending.FeedbackObservationCount==0) && ...
+    pending.FeedbackUnobservedCount(string(pending.Direction)=="DL")==3, ...
+    'CRC success before feedback reception must not publish a received ACK.');
+assert(all(P.StopCondition=="unavailable_transmitter_lifecycle_not_bound") && ...
+    P.ReceiverDecodeOutcome(1)=="crc_pass");
 S=out.SummaryTable; rows=string(S.MetricKey)=="feedback_overhead";
+stops=string(S.MetricKey)=="stop_condition_distribution" & string(S.Statistic)=="ack_rate";
+assert(all(isnan(S.Value(stops))) && all(S.Availability(stops)=="not_available"));
 assert(all(isnan(S.Value(rows))) && all(string(S.Availability(rows))=="not_available"));
 rows=string(S.Entity)=="DL@canonical_slot_runtime" & string(S.Statistic)=="dtx_rate";
 assert(S.Value(rows)==1/3);

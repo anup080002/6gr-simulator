@@ -1,5 +1,6 @@
 function [rx, msg3] = recoverMsg3PUSCH(rxWaveform, cfg, raCfg, grant, tx)
 %RECOVERMSG3PUSCH Decode Msg3 PUSCH/UL-SCH at gNB.
+sixgr.runtime.RuntimeCallLedger.record("sixgr.phy.ra.recoverMsg3PUSCH","MSG3","UL",struct("Stage","RX"));
 slot = sixgr.phy.ra.resolveMsg3SlotFromRAR(raCfg,grant);
 cfgRx = sixgr.phy.ra.localizeRAPUSCHConfig(cfg, raCfg, grant, slot);
 % Decoded TA and channel implementation-delay trimming do not establish

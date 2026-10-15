@@ -1,0 +1,40 @@
+inherits:
+  - ./h4_100_cdlc100_connected_impaired_40db_gate.yaml
+
+meta:
+  scenario_id: h4_100_cdlc100_connected_impaired_40db_short
+  description: >
+    Short 60-slot (30 ms) H4 4 GHz / 100 MHz TDD connected functional gate.
+    Retains physical initial access, the original CSI/SRS/TRS calendars,
+    adaptive rank, RF impairments and all enabled measurement exports.
+    The horizon includes initial access; it is not 60 scheduled data slots.
+    Actual data grants depend on received control and causal feedback.
+    This bounded diagnostic is not statistical BLER/HARQ qualification.
+  purpose: Short connected DL/UL and terminal-publication check before the longer H4 campaign.
+
+# Keep every public duration alias on the same mu=1 clock. The inherited
+# 200-slot gate and eight-point campaign are intentionally unchanged.
+# This is an experiment horizon, not an attach deadline. Access follows the
+# inherited SSB/SI/PRACH calendars and received response/timer events. A UE
+# still acquiring, waiting for a response, or backing off is right-censored.
+run_control:
+  total_slots: 60
+  total_time_ms: 30
+  measurement_slots: 60
+  measurement_time_ms: 30
+
+simulation:
+  n_frames: 3
+  n_slots: 60
+  n_subframes: 30
+  min_duration_s: 0.03
+  # Pin the parent's authoritative seed in this override: do not let an
+  # inherited legacy run_control alias select a different realization.
+  random_seed: 20260927
+
+random_access:
+  num_slots: 60
+  num_subframes: 30
+
+output:
+  profile: h4_100_cdlc100_connected_impaired_40db_short

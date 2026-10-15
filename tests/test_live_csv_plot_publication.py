@@ -44,6 +44,37 @@ def test_runtime_png_uses_exact_snapshot_and_updates(tmp_path):
     assert not (tmp_path / "meta/manifest.json").exists()
 
 
+def test_received_csi_sweep_has_one_csv_and_png_per_metric(tmp_path):
+    # Export fixture only: verifies joint publication, not eight PHY passes.
+    snrs = [40, 30, 20, 10, 0, -10, -20, -30]
+    path = tmp_path / live.radio.RECEIVED_CSI
+    path.parent.mkdir(parents=True)
+    header = ("Direction,UEIndex,SourceSlot,DeliveredSlot,DeliveryStatus,RI,CQI,PMI,CRI,"
+              "SourceSignal,CSIUCIDecodeOk,SNR_dB,SweepPointIndex,SchedulerAcceptedRank\n")
+    path.write_text(header + "".join(
+        f"DL,1,34,39,delivered,2,9,3,{point-1},received_CSI_UCI,1,{snr},{point},1\n"
+        for point, snr in enumerate(snrs, 1)), encoding="utf-8")
+    # Legacy producer values cannot contaminate received-report plots.
+    feedback(tmp_path, value=15)
+    result = live.publish(tmp_path)
+    manifest_path = Path(result["Manifest"])
+    manifest = json.loads(manifest_path.read_text())
+    for name in ("CSI CQI timeline", "CSI RI timeline", "CSI PMI components timeline", "CSI CRI timeline"):
+        matched = [c for c in manifest["charts"] if c["name"] == name]
+        assert len(matched) == 1
+        chart = matched[0]
+        rows = list(csv.DictReader((manifest_path.parent / chart["csv"]).open(encoding="utf-8")))
+        assert len(rows) == len(snrs)
+        assert [float(r["snr_db"]) for r in rows] == snrs
+        assert [int(r["sweep_point_index"]) for r in rows] == list(range(1, 9))
+        assert all(r["source_table_logical_path"] == live.radio.RECEIVED_CSI for r in rows)
+        if name == "CSI CRI timeline":
+            assert [json.loads(r["component_values"]) for r in rows] == [[i] for i in range(8)]
+        with Image.open(manifest_path.parent / chart["png"]) as png:
+            assert png.format == "PNG"
+            png.verify()
+
+
 def test_absent_measurements_do_not_generate_reason_png_or_primary_rows(tmp_path):
     result = live.publish(tmp_path)
     manifest = json.loads(Path(result["Manifest"]).read_text())

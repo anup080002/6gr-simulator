@@ -20,6 +20,11 @@ csi_acquisition_and_reporting:
   report_periodicity: 20ms
   csi_report_periodicity_slots: 20
   csi_report_offset_slots: 18
+link_adaptation:
+  # The parent uses five-slot reports. Retain its two-report recovery rule,
+  # but make the permitted gap consistent with this fixture's own calendar.
+  # Do not disable the production cadence validator or confirmation policy.
+  outage_recovery_max_gap_slots: 20
 pucch_resources:
   # Retain the enabled CSI calendar for its initialization/causality guard.
   # This HARQ clock test has no configured scheduling-request producer.

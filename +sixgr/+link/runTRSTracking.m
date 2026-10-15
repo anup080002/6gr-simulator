@@ -42,6 +42,10 @@ out.NMSEReferenceSource = "unavailable";
 out.PreRXRFReferenceNMSE_dB = NaN;
 out.PreRXRFReferencePlane = "unavailable";
 out.ChannelNMSEComparedComplexValues = 0;
+out.ChannelNMSEPilotResourceCount = 0;
+out.ChannelNMSEQualificationMode = "unavailable";
+out.ChannelNMSEErrorEnergy = NaN;
+out.ChannelNMSEReferenceEnergy = NaN;
 out.ChannelNMSEReferencePlane = "unavailable";
 out.ChannelNMSEReferenceIncludesRFImpairments = NaN;
 out.QCLMeasurementStatus = "not_measured_requires_QCL_TCI_binding_evidence";
@@ -91,6 +95,10 @@ out.MinCoverageRatio = NaN;
 out.TimingTrackingAttempted = false;
 out.TRSTimingEstimateAvailable = false;
 out.TRSTimingEstimateUsable = false;
+appliedTiming=sixgr.phy.trs.summarizeAppliedTiming();
+for field=string(fieldnames(appliedTiming)).'
+    out.(field)=appliedTiming.(field);
+end
 out.EstimatedTimingOffset_samples = NaN;
 out.InjectedTimingOffset_samples = NaN;
 out.TimingError_samples = NaN;
@@ -119,6 +127,10 @@ out.DesiredPilotPower = NaN;
 out.SignedPilotSINRLinear = NaN;
 out.PilotPowerEvidenceJSON = "";
 out.ResidualPilotPower = NaN;
+pilotScore=sixgr.phy.trs.scoreTRSPilotDisturbance();
+for field=string(fieldnames(pilotScore)).'
+    out.(field)=pilotScore.(field);
+end
 out.TRSRuntimeEvidenceUsable = false;
 out.NoiseVariance = NaN;
 out.StrictOk = false;
@@ -189,8 +201,22 @@ try
     out.PreRXRFReferencePlane = sixgr.util.structGet(ch,'PreRXRFReferencePlane',"unavailable");
     out.ChannelEstimationTable = ch.Table;
     out.TrackingTable = tracking.Table;
+    pilotScore=sixgr.util.structGet(ch,'IndependentPilotScore',pilotScore);
+    for field=string(fieldnames(pilotScore)).'
+        out.(field)=pilotScore.(field);
+    end
     out.ChannelNMSEComparedComplexValues = sum(ch.Table.NMSEComparedComplexValues);
+    out.ChannelNMSEPilotResourceCount = sum(ch.Table.ChannelNMSEPilotResourceCount);
     if ch.NMSEScoringAvailable
+        modes=unique(string(ch.Table.ChannelNMSEQualificationMode));
+        assert(isscalar(modes) && modes~="unavailable", ...
+            'sixgr:phy:trs:IncompleteScoringMetadata','Every scored TRS slot must retain its qualification mode.');
+        out.ChannelNMSEQualificationMode=modes;
+        out.ChannelNMSEErrorEnergy=sum(ch.Table.ChannelErrorEnergy);
+        out.ChannelNMSEReferenceEnergy=sum(ch.Table.ChannelReferenceEnergy);
+        assert(out.ChannelNMSEPilotResourceCount>0 && ...
+            out.ChannelNMSEComparedComplexValues>=out.ChannelNMSEPilotResourceCount, ...
+            'sixgr:phy:trs:IncompleteScoringMetadata','Retain actual scored pilot and receive-branch populations.');
         out.ChannelNMSEReferencePlane = ch.ChannelReferenceEvidence{1}.ReferencePlane;
         out.ChannelNMSEReferenceIncludesRFImpairments = double(ch.ChannelReferenceEvidence{1}.RFImpairmentsIncluded);
     end
@@ -272,6 +298,10 @@ try
     out.TRSDetectionPolicy = string(strictCfg.DetectionPolicy);
     out.TRSDetectionEvidenceJSON = string(jsonencode(table2struct(det.Table)));
     out.DetectionTable = det.Table;
+    appliedTiming=sixgr.phy.trs.summarizeAppliedTiming(det.Table);
+    for field=string(fieldnames(appliedTiming)).'
+        out.(field)=appliedTiming.(field);
+    end
     out.ResourceCoverageRatio = double(trial.ResourceCoverageRatio);
     out.MinCoverageRatio = localFirstTableNumber(sixgr.util.structGet(det, "Table", table()), "MinCoverageRatio", NaN);
     out.TimingTrackingAttempted = logical(trial.TimingTrackingAttempted);
@@ -280,6 +310,9 @@ try
     out.EstimatedTimingOffset_samples = double(trial.EstimatedTimingOffset_samples);
     out.InjectedTimingOffset_samples = double(trial.InjectedTimingOffset_samples);
     out.TimingError_samples = double(trial.TimingError_samples);
+    out.TrueTimingOffset_samples=double(timing.TrueTimingOffset_samples);
+    out.TimingScoringReferenceSource=string(timing.TimingScoringReferenceSource);
+    out.TRSTimingEvidenceJSON=string(jsonencode(table2struct(timing.Table)));
     out.FrequencyTrackingAttempted = logical(trial.FrequencyTrackingAttempted);
     out.TRSCFOEstimateAvailable = logical(trial.TRSCFOEstimateAvailable);
     out.TRSCFOEstimateUsable = localFrequencyEstimateUsable(trial, strictCfg);
@@ -534,6 +567,11 @@ elseif ch.EstimateAvailable && isfield(reception,'DesiredReferenceObservation') 
     ch=sixgr.phy.trs.scoreTRSChannelEstimates(ch,referenceGrids,referenceEvidence);
     ch.PreRXRFReferenceNMSE_dB=preRFScore.MeanNMSE_dB;
     ch.PreRXRFReferencePlane=preRFEvidence{1}.ReferencePlane;
+    ch.IndependentPilotScore=sixgr.phy.trs.scoreTRSPilotDisturbance(det,referenceGrids,referenceEvidence);
+end
+if isfield(reception,'DesiredReferenceObservation') && ...
+        isa(reception.DesiredReferenceObservation,'sixgr.phy.waveform.WaveformObservationBuffer')
+    timing=sixgr.phy.trs.scoreTRSTimingReference(timing,reception);
 end
 tracking = sixgr.phy.trs.trackTRSOverTime(det, timing, freq, ch, strictCfg,reception.Observation);
 score = sixgr.phy.trs.scoreTRSDetection(strictCfg, rx, det, timing, freq, ch, tracking, ...

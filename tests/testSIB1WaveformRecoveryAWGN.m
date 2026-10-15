@@ -12,6 +12,12 @@ assert(logical(supported), "SI-RNTI Type0 CSS waveform support must be available
 tx = sixgr.phy.broadcast.generateSSB_MIB_SIB1_Waveform(cfg, "SNRdB", 35, "Seed", 1501);
 rx = sixgr.phy.broadcast.recoverSIB1FromWaveform(tx.Waveform, cfg);
 assert(logical(rx.StrictOk), "Strict SIB1 waveform recovery must pass at high SNR.");
+assert(rx.PBCHResidualFrequencyAvailable && isfinite(rx.PBCHResidualCommonFrequency_Hz) && ...
+    ~rx.PBCHResidualFrequencyIndependentCapture, ...
+    'Real BCH recovery must publish the distinct post-correction received DM-RS measurement.');
+assert(rx.CFOCorrectionApplied && rx.CFOCorrectionApplied_Hz==rx.FrequencyOffsetHz && ...
+    rx.CFOCorrectionSampleOrigin==0 && ...
+    rx.CFOCorrectionSource=="received_PSS_CP_estimate_capture_local_sample_clock");
 assert(logical(rx.StrictReceiverEvidenceOk), ...
     "Strict SIB1 recovery must include measured PBCH and SI-RNTI PDSCH receiver evidence.");
 assert(isfinite(double(rx.ReceiverHestSINR_dB)) && ...
@@ -33,6 +39,28 @@ assert(logical(treeEqual) && ...
     string(compareEvidence.TxTreeHash) == string(compareEvidence.RxTreeHash), ...
     "Test-side decoded SIB1 tree must equal transmitted tree.");
 assert(isempty(rx.UsedOracleFields), "Receiver must not consume transmitter oracle fields before decode.");
+paired=sixgr.phy.broadcast.pairPBCHReceivedSymbols(rx,tx);
+assert(~isempty(paired) && numel(paired.SampleIndex)==432 && ...
+    ~paired.ReceiverUsesScoringReference && ~paired.GainOrPhaseFitted);
+measured=complex(paired.MeasuredReal,paired.MeasuredImag);
+reference=complex(paired.ReferenceReal,paired.ReferenceImag);
+assert(isequal(measured,rx.PBCHEqualizedSymbols(:)) && ...
+    sqrt(sum(abs(measured-reference).^2)/sum(abs(reference).^2))<.1);
+poison=tx; poison.SSBWaveInfo.ResourceGridSSBurst.ResourceGrid= ...
+    -poison.SSBWaveInfo.ResourceGridSSBurst.ResourceGrid;
+wrong=sixgr.phy.broadcast.pairPBCHReceivedSymbols(rx,poison);
+assert(isequal(wrong.MeasuredReal,paired.MeasuredReal) && ...
+    isequal(wrong.MeasuredImag,paired.MeasuredImag) && ...
+    isequal(wrong.ReferenceReal,-paired.ReferenceReal), ...
+    'Changing scoring reference must not change decoded or equalized receiver outputs.');
+trial=table("DL",1,17,1,1,35,string(jsonencode(paired)), ...
+    'VariableNames',{'Direction','UEIndex','CellID','Slot','SweepPointIndex','ConfiguredSNR_dB','ControlEVMSamplesJSON'});
+exportRoot=tempname; mkdir(exportRoot);
+path=sixgr.report.exportControlEVMSamples(fullfile(exportRoot,'pbch_trials.csv'),trial);
+saved=readtable(path,'TextType','string');
+assert(height(saved)==432 && all(saved.ConfiguredSNR_dB==35) && ...
+    all(saved.SweepPointIndex==1) && all(saved.SignalName=="PBCH"));
+localPublicationGuards(exportRoot,trial,paired,path);
 
 cfgRank2 = cfg;
 cfgRank2.phy.pdsch.numLayers = 2;
@@ -60,6 +88,40 @@ assert(logical(cfgRank2.phy.pdsch.enablePTRS) && ...
     isequal(double(cfgRank2.phy.pdsch.dmrs.portSet), [0 1]), ...
     "SIB1 generation must not mutate connected-data reference-signal configuration.");
 ok = true;
+end
+
+function localPublicationGuards(folder,trial,paired,path)
+trialPath=fullfile(folder,'pbch_trials.csv');
+originalHash=sixgr.util.sha256File(path);
+[~,rewritten]=sixgr.report.exportControlEVMSamples(trialPath,trial);
+assert(~rewritten,'An unchanged physical sample set must not be repeatedly serialized.');
+changed=trial; changed.ConfiguredSNR_dB=36;
+[~,rewritten]=sixgr.report.exportControlEVMSamples(trialPath,changed);
+assert(rewritten && sixgr.util.sha256File(path)~=originalHash, ...
+    'Sweep identity must participate in publication invalidation.');
+% A malformed reference cannot hide behind a previous successful cache.
+bad=paired; bad.ReceiverUsesScoringReference=true;
+changed.ControlEVMSamplesJSON=string(jsonencode(bad));
+try
+    sixgr.report.exportControlEVMSamples(trialPath,changed);
+    error('test:ExpectedRejection','A receiver-oracle reference must be rejected.');
+catch cause
+    assert(strcmp(cause.identifier,'sixgr:report:ControlEVMPairAuthority'));
+end
+sixgr.report.exportControlEVMSamples(trialPath,trial);
+% Simulate a replacement destination, not loss of raw receiver evidence.
+sixgr.util.csvWriteTable(path,table(1,'VariableNames',{'Corrupt'}));
+[~,rewritten]=sixgr.report.exportControlEVMSamples(trialPath,trial);
+assert(rewritten && sixgr.util.sha256File(path)==originalHash, ...
+    'Byte-level destination mutation must be detected and exactly repaired.');
+allPoints=repmat(trial,8,1);
+allPoints.SweepPointIndex=(1:8).'; allPoints.ConfiguredSNR_dB=[40;30;20;10;0;-10;-20;-30];
+sixgr.report.exportControlEVMSamples(trialPath,allPoints);
+joint=readtable(path,'TextType','string');
+assert(height(joint)==8*432 && numel(unique(joint.SweepPointIndex))==8 && ...
+    isequal(sort(unique(joint.ConfiguredSNR_dB)),sort(allPoints.ConfiguredSNR_dB)), ...
+    'The writer must retain all points of a joint sample table.');
+fprintf('PBCH_EVM_PUBLICATION_GUARDS_PASS joint_csv=%s\n',path);
 end
 
 function cfg = localCfg()

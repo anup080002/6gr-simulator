@@ -9,6 +9,24 @@ meta = struct( ...
 contract = sixgr.truth.llsOutputContract();
 
 baseTables = struct();
+% Explicit export fixture, not additional physical qualification evidence.
+baseTables.ssb_pbch_table=table(1,-16,NaN,-23,true, ...
+    "declared_export_fixture",144,576, ...
+    'VariableNames',{'Slot','SS_RSRP_dB_re_UnitOccupiedRE_Es','SS_RSRP_dBm', ...
+    'NMSE_dB','NMSEScoringAvailable','NMSEReferenceSource', ...
+    'ChannelNMSEPilotResourceCount','ChannelNMSEComparedComplexValues'});
+frequencyFields=sixgr.phy.broadcast.measurePBCHResidualFrequency();
+frequencyFields.PBCHResidualCommonFrequency_Hz=-24.5;
+frequencyFields.PBCHResidualFrequencyAvailable=true;
+frequencyFields.PBCHResidualFrequencyStatus="declared_export_fixture";
+for name=string(fieldnames(frequencyFields)).'
+    baseTables.ssb_pbch_table.(name)=frequencyFields.(name);
+end
+baseTables.csi_rs_table=table(6,-18.69,-10.61,18.225,-4.474,2, ...
+    "normalized_fixed_esn0_unit_occupied_re_es", ...
+    'VariableNames',{'Slot','MeasurementRSRP_dB', ...
+    'MeasurementRSRP_dB_re_UnitOccupiedRE_Es','MeasurementRSSI_dB_re_UnitOccupiedRE_Es', ...
+    'MeasurementRSRQ_dB','MeasurementReceiveAntennaIndex1Based','PowerReferencePlane'});
 baseTables.pdsch_table = table( ...
     [0; 1], [1e-3; NaN], [true; false], ...
     'VariableNames', {'Slot','NoiseVar','CRCPass'});
@@ -27,6 +45,16 @@ baseTables.srs_table = table( ...
     'SRSReceiveTimingSource'});
 
 publicTables = sixgr.truth.buildLLSPublicOutputTables(baseTables, contract, meta);
+ssb=publicTables.ssb_pbch_cell_search_table;
+for field=string(baseTables.ssb_pbch_table.Properties.VariableNames)
+    assert(isequaln(ssb.(field),baseTables.ssb_pbch_table.(field)), ...
+        'Public PBCH rows must retain measured NMSE and its power plane without unit substitution.');
+end
+csirs=publicTables.csi_rs_runtime_event_table;
+for field=string(baseTables.csi_rs_table.Properties.VariableNames)
+    assert(isequaln(csirs.(field),baseTables.csi_rs_table.(field)), ...
+        'Public CSI-RS evidence must preserve the exact physical measurement and reference plane.');
+end
 
 pdsch = publicTables.pdsch_runtime_event_table;
 assert(strcmp(string(pdsch.NoiseVarStatus(1)), "OK"), ...
@@ -57,6 +85,36 @@ assert(srs.NMSE_dB==-25 && srs.RawChannelNMSE_dB==4.775 && ...
     srs.ExpectedCaptureOffset_samples==1229 && ...
     srs.ExpectedReceiveCenterSample==1165760, ...
     "Public SRS export must keep raw/qualified NMSE and residual/capture timing distinct.");
+clockFields=["PreRXClockChannelNMSE_dB","ChannelNMSEReceiverTimingIncluded", ...
+    "ChannelNMSERecordedReceiverTimingOffset_samples","ChannelNMSEReceiverCFOIncluded", ...
+    "ChannelNMSEExecutedReceiverCFO_Hz"];
+for field=clockFields
+    assert(isnan(srs.(field)), 'Absent scoring-clock evidence must remain unknown.');
+end
+assert(srs.ChannelNMSEReferencePlane=="");
+% Scoring-only execution metadata is not a practical timing/CFO estimate.
+baseTables.srs_table.PreRXClockChannelNMSE_dB=2.01595915559808;
+baseTables.srs_table.ChannelNMSEReferencePlane="declared_scoring_clock_export_fixture";
+baseTables.srs_table.ChannelNMSEReceiverTimingIncluded=true;
+baseTables.srs_table.ChannelNMSERecordedReceiverTimingOffset_samples=1;
+baseTables.srs_table.ChannelNMSEReceiverCFOIncluded=true;
+baseTables.srs_table.ChannelNMSEExecutedReceiverCFO_Hz=400;
+baseTables.srs_table.InjectedCFO_Hz=999;
+baseTables.srs_table.InjectedTimingOffset_samples=999;
+withClock=sixgr.truth.buildLLSPublicOutputTables(baseTables,contract,meta);
+scored=withClock.srs_measurement_table;
+for field=clockFields
+    assert(scored.(field)==baseTables.srs_table.(field));
+end
+assert(scored.ChannelNMSEReferencePlane==baseTables.srs_table.ChannelNMSEReferencePlane && ...
+    scored.ResidualTimingOffset_samples==srs.ResidualTimingOffset_samples && ...
+    scored.CaptureExtractionOffset_samples==srs.CaptureExtractionOffset_samples);
+baseTables.srs_table=removevars(baseTables.srs_table,cellstr(clockFields));
+missingClock=sixgr.truth.buildLLSPublicOutputTables(baseTables,contract,meta);
+for field=clockFields
+    assert(isnan(missingClock.srs_measurement_table.(field)), ...
+        'Injected RF metadata must not fill missing scoring-clock evidence.');
+end
 
 noiseEvidence = publicTables.noise_variance_evidence_table;
 badStatusTokens = ["RUNTIME_METADATA","UNAVAILABLE_MISSING","UNAVAILABLE_INVALID_NONPOSITIVE"];

@@ -1,5 +1,6 @@
 function [rx, rar] = recoverMsg2RAR(rxWaveform, cfg, raCfg, sched, tx)
 %RECOVERMSG2RAR Decode RAR PDSCH after RA-RNTI PDCCH has been recovered.
+sixgr.runtime.RuntimeCallLedger.record("sixgr.phy.ra.recoverMsg2RAR","RAR","DL",struct("Stage","RX"));
 cfgRx = sixgr.phy.ra.localizeCarrierConfig(cfg, raCfg, raCfg.Msg2Slot);
 [carrier,~] = sixgr.phy.grid.makeCarrier(cfgRx);
 [controlRx, controlInfo] = sixgr.phy.ra.blindDecodeRARPDCCH( ...

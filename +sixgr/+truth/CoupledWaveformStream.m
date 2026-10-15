@@ -935,7 +935,7 @@ classdef CoupledWaveformStream < handle
             for plane=planes
                 obj.Events.observe(plane,id,first,first+prepared.NumSamples);
             end
-            if kind=="TRS"
+            if any(kind==["TRS","PBCH"])
                 rx="ue_"+ue+"_rx";
                 context.DesiredReferencePlane=obj.Physical.registerLinkScoringPlane(obj.Events,link.ID,rx);
                 obj.Events.observe(context.DesiredReferencePlane,id,first,first+prepared.NumSamples);
@@ -953,6 +953,8 @@ classdef CoupledWaveformStream < handle
                     for plane=planes
                         obj.Events.observe(plane,id,first,first+horizons.ObservationEndSampleExclusive(k));
                     end
+                    obj.Events.observe(context.DesiredReferencePlane,id,first, ...
+                        first+horizons.ObservationEndSampleExclusive(k));
                     obj.Pending(end+1)=struct('ID',id,'Kind',"SSBOccasion",'UE',ue, ...
                         'Context',occasion,'Planes',struct('ReceiverID',{},'Observation',{},'Segments',{}));
                 end
@@ -964,7 +966,7 @@ classdef CoupledWaveformStream < handle
             % Bound this drain by already registered data windows. Do not run
             % startSlot, create grants, or extend the scheduled TX-IQ export.
             if nargin<4, onReceived=[]; end
-            completed=struct('Kind',{},'UE',{},'Context',{},'Planes',{});
+            completed=struct('ID',{},'Kind',{},'UE',{},'Context',{},'Planes',{});
             selected=ismember(string({obj.Pending.Kind}),["PDSCH","PUSCH","PUSCHReceiveOnly"]);
             if ~any(selected), return; end
             pending=obj.Pending(selected);
@@ -1048,7 +1050,7 @@ classdef CoupledWaveformStream < handle
             dl=double(partition.DLSymbolAllocation); ul=double(partition.ULSymbolAllocation);
             duplexMode=upper(strtrim(string(sixgr.util.structGet( ...
                 partition,'DuplexMode',''))));
-            completed=struct('Kind',{},'UE',{},'Context',{},'Planes',{});
+            completed=struct('ID',{},'Kind',{},'UE',{},'Context',{},'Planes',{});
             % A slot is committed only after every producer has prepared its
             % contributions. Symbol boundaries preserve TDD guard intervals.
             for symbol=0:symbols-1
@@ -1187,7 +1189,10 @@ classdef CoupledWaveformStream < handle
                                     'One cell-common CSI-RS component may be committed only once.');
                             end
                         end
-                        completed(end+1)=struct('Kind',p.Kind,'UE',p.UE,'Context',p.Context,'Planes',p.Planes); %#ok<AGROW>
+                        % Preserve the registered physical observation ID.
+                        % Exporters and receiver dispositions must not invent
+                        % an identity after completion or borrow a TX ID.
+                        completed(end+1)=struct('ID',p.ID,'Kind',p.Kind,'UE',p.UE,'Context',p.Context,'Planes',p.Planes); %#ok<AGROW>
                         if p.Kind=="PUSCHReceiveOnly"
                             obj.PUSCHReceiveOnlyCompletions{end+1,1}=completed(end);
                         end
@@ -1231,7 +1236,7 @@ classdef CoupledWaveformStream < handle
                                 'CommittedAtSample',obj.Events.NextSampleIndex, ...
                                 'WaveformToElementMatrix',d.Context.WaveformToElementMatrix);
                         end
-                        completed(end+1)=struct('Kind',d.Kind,'UE',d.UE,'Context',d.Context,'Planes',struct([])); %#ok<AGROW>
+                        completed(end+1)=struct('ID',d.ID,'Kind',d.Kind,'UE',d.UE,'Context',d.Context,'Planes',struct([])); %#ok<AGROW>
                     end
                     if ~isempty(onReceived) && numel(completed)>previousCount
                         states=obj.Physical.channelStates();

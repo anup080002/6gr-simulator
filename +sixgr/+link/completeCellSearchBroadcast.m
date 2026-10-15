@@ -82,6 +82,15 @@ if isfinite(candidateIndices(candidateOrdinal))
 end
 rec = sixgr.phy.broadcast.recoverSIB1FromWaveform( ...
     observation, receiverCfg, receiverArgs{:},'PhysicalMeasurementObservation',physicalObservation);
+paired=sixgr.phy.broadcast.pairPBCHReceivedSymbols(rec,tx);
+out.ControlEVMSamplesJSON="";
+if ~isempty(paired), out.ControlEVMSamplesJSON=string(jsonencode(paired)); end
+channelScore=sixgr.truth.scoreSharedPBCHReception(rec, ...
+    sixgr.util.structGet(options,'DesiredReferenceObservation',[]), ...
+    sixgr.util.structGet(options,'DesiredReferenceEvidence',struct()));
+for field=string(fieldnames(channelScore)).'
+    out.(field)=channelScore.(field);
+end
 if logical(options.UseRuntimeChannel) && rec.BCHCrcPass && rec.MIBDecoded && rec.SSBIdentityVerified
     % Publish the received clock for shared and standalone runtime callers.
     % Only implementation filter delay is removed, never injected path delay.
@@ -269,6 +278,9 @@ if logical(options.WriteArtifacts) && strlength(string(options.RunFolder)) > 0
 end
 out.SSBIndex = double(rec.ObservedSSBOccasionIndex);
 out.ObservedSSBOccasionIndex = double(rec.ObservedSSBOccasionIndex);
+for field=string(fieldnames(channelScore)).'
+    out.PBCH.(field)=channelScore.(field);
+end
 out.PBCHHypothesisSSBIndex = double(rec.PBCHHypothesisSSBIndex);
 out.SSBIdentityVerified = logical(rec.SSBIdentityVerified);
 out.SSBIndexSource = string(rec.SSBIndexSource);
@@ -381,6 +393,10 @@ out.SIB1PDSCHReceiverHestSINRSource = string(sixgr.util.structGet(rec, "SIB1PDSC
 out.SIB1PDSCHStrictReceiverEvidenceOk = logical(sixgr.util.structGet(rec, "SIB1PDSCHStrictReceiverEvidenceOk", false));
 out.FreqOffsetEstimate_Hz = double(rec.FrequencyOffsetHz);
 out.EstimatedCFO_PreCorrection_Hz = double(rec.FrequencyOffsetHz);
+for name = ["CFOCorrectionApplied","CFOCorrectionApplied_Hz", ...
+        "CFOCorrectionSampleOrigin","CFOCorrectionSource"]
+    out.(name) = rec.(name);
+end
 out.CFOEstimateSource = "SSB_Rx_pss_cp_synchronization_on_received_samples";
 out.CFOEstimateAvailability = string(sixgr.util.structGet( ...
     rec, "CFOEstimateAvailability", "missing"));
@@ -403,7 +419,12 @@ end
 out.SIB1CFOCorrectionApplied_Hz = double(rec.SIB1CFOCorrectionApplied_Hz);
 out.SIB1CFOCorrectionSource = string(rec.SIB1CFOCorrectionSource);
 out.ResidualCFO_PostCorrection_Hz = NaN;
-out.ResidualCFOMeasurementStatus = "unavailable_no_post_correction_residual_estimator";
+out.ResidualCFOMeasurementStatus = "unavailable_oscillator_only_residual_not_identifiable";
+frequencyFields=sixgr.phy.broadcast.measurePBCHResidualFrequency();
+for name=string(fieldnames(frequencyFields)).'
+    out.(name)=sixgr.util.structGet(rec,name,frequencyFields.(name));
+    out.PBCH.(name)=out.(name);
+end
 out.TimingOffset_samples = double(rec.TimingOffset);
 out.SSBTimingSearchGuardSamples = double(rec.SSBTimingSearchGuardSamples);
 out.SSBTimingSearchGuardSource = string(rec.SSBTimingSearchGuardSource);

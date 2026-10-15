@@ -303,9 +303,16 @@ classdef SharedWaveformPhysicalRuntime < handle
                         bounded.ObservationEndSampleExclusive=request.End;
                         bounded.StartSample=max(first,request.Start);
                         bounded.EndSampleExclusive=min(stop,request.End);
-                        indices=(bounded.StartSample-first+1):(bounded.EndSampleExclusive-first);
-                        bounded.PathGains=reference.PathGains(indices,:,:,:);
-                        bounded.SampleTimes_s=reference.SampleTimes_s(indices);
+                        % Most requests cover this entire processor interval.
+                        % Retain the immutable arrays by MATLAB value sharing;
+                        % an explicit full-range subscript can allocate another
+                        % multi-GiB tensor. Only actual partial windows need a
+                        % slice. Observation bounds remain request-specific.
+                        if bounded.StartSample~=first || bounded.EndSampleExclusive~=stop
+                            indices=(bounded.StartSample-first+1):(bounded.EndSampleExclusive-first);
+                            bounded.PathGains=reference.PathGains(indices,:,:,:);
+                            bounded.SampleTimes_s=reference.SampleTimes_s(indices);
+                        end
                         bounded.ExecutionStartSample=first; bounded.ExecutionEndSampleExclusive=stop;
                         execution.ChannelReferences(end+1)=struct('LinkID',link.ID, ...
                             'TX',obj.Transmitters(link.TX).ID,'RX',obj.Receivers(link.RX).ID, ...

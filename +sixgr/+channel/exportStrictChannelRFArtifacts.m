@@ -31,6 +31,7 @@ artifacts.LargeScaleParametersCSV = fullfile(channelCsvDir, "large_scale_paramet
 artifacts.ChannelRealizationsCSV = fullfile(channelCsvDir, "channel_realizations.csv");
 artifacts.ChannelSnapshotsCSV = fullfile(channelCsvDir, "channel_snapshots.csv");
 artifacts.PathGainsCSV = fullfile(channelCsvDir, "path_gains.csv");
+artifacts.PathMeasurementsCSV = fullfile(channelCsvDir, "measured_path_coefficients.csv");
 artifacts.ConfiguredVsAppliedCSV = fullfile(channelCsvDir, "channel_configured_vs_applied.csv");
 artifacts.ChannelRFConfiguredAppliedReportCSV = fullfile(reportCsvDir, "channel_rf_configured_applied.csv");
 artifacts.ChannelRFCDLCRealizationReportCSV = fullfile(reportCsvDir, "channel_rf_cdlc_realization_table.csv");
@@ -59,6 +60,8 @@ sixgr.util.csvWriteTable(artifacts.LargeScaleParametersCSV, result.LargeScalePar
 sixgr.util.csvWriteTable(artifacts.ChannelRealizationsCSV, result.ChannelRealizations);
 sixgr.util.csvWriteTable(artifacts.ChannelSnapshotsCSV, result.ChannelSnapshots);
 sixgr.util.csvWriteTable(artifacts.PathGainsCSV, result.ChannelPathGains);
+sixgr.util.csvWriteTable(artifacts.PathMeasurementsCSV, ...
+    sixgr.util.structGet(result,'ChannelPathMeasurements',table()));
 configuredVsApplied = localAddExpectedOutcomeMatch(result.ConfiguredVsApplied);
 sixgr.util.csvWriteTable(artifacts.ConfiguredVsAppliedCSV, configuredVsApplied);
 sixgr.util.csvWriteTable(artifacts.ChannelRFConfiguredAppliedReportCSV, localReportConfiguredAppliedTable(result));
@@ -130,6 +133,11 @@ end
 end
 
 function T = localCDLCRealizationReportTable(result)
+if isfield(result,'ChannelPathMeasurements')
+    T=result.ChannelPathMeasurements;
+    if ~isempty(T), T=T(string(T.ChannelModelApplied)=="CDL-C",:); end
+    return;
+end
 template = localCDLCReportRow();
 rows = repmat(template, 0, 1);
 chT = result.ChannelRealizations;
@@ -167,7 +175,7 @@ for ii = 1:numel(delaysSec)
     row.ChannelSnapshotExported = logical(cdl.ChannelSnapshotExported(1));
     row.WaveformChanged = logical(cdl.WaveformChanged(1));
     row.StrictOk = logical(cdl.StrictOk(1));
-    row.TruthStatus = string(cdl.TruthStatus(1));
+    row.TruthStatus = "configured_reference_profile_not_measured_path_power";
     rows(end + 1, 1) = row; %#ok<AGROW>
 end
 T = struct2table(rows, "AsArray", true);
@@ -176,7 +184,7 @@ end
 function [profile, source] = localCDLCPathProfile(cdl)
 profile = struct("PathDelays", [], "AveragePathGains", [], ...
     "AnglesAoD", [], "AnglesAoA", [], "AnglesZoD", [], "AnglesZoA", []);
-source = "nrCDLChannel_info_CDL-C_runtime_profile";
+source = "nrCDLChannel_info_CDL-C_configured_reference_profile_not_executed_coefficients";
 try
     ch = nrCDLChannel;
     ch.DelayProfile = "CDL-C";
@@ -190,28 +198,20 @@ try
     profile.AnglesAoA = double(infoStruct.AnglesAoA(:));
     profile.AnglesZoD = double(infoStruct.AnglesZoD(:));
     profile.AnglesZoA = double(infoStruct.AnglesZoA(:));
-catch
-    profile.PathDelays = [];
-    profile.AveragePathGains = [];
+catch cause
+    error('sixgr:channel:UnavailableCDLPathProfile', ...
+        'Cannot reconstruct the configured reference profile; no substitute path is permitted: %s',cause.message);
 end
 if isempty(profile.PathDelays) || isempty(profile.AveragePathGains)
-    source = "applied_cdl_realization_summary_toolbox_path_profile_hidden";
-    profile.PathDelays = double(cdl.MeasuredRMSDelaySpreadSec(1));
-    profile.AveragePathGains = 0;
-    profile.AnglesAoD = NaN;
-    profile.AnglesAoA = NaN;
-    profile.AnglesZoD = NaN;
-    profile.AnglesZoA = NaN;
+    error('sixgr:channel:UnavailableCDLPathProfile', ...
+        'Missing CDL reference profile: never replace the executed multipath channel with one 0-dB path.');
 end
-n = min([numel(profile.PathDelays), numel(profile.AveragePathGains), ...
+n = numel(profile.PathDelays);
+assert(all([numel(profile.PathDelays), numel(profile.AveragePathGains), ...
     numel(profile.AnglesAoD), numel(profile.AnglesAoA), ...
-    numel(profile.AnglesZoD), numel(profile.AnglesZoA)]);
-profile.PathDelays = profile.PathDelays(1:n);
-profile.AveragePathGains = profile.AveragePathGains(1:n);
-profile.AnglesAoD = profile.AnglesAoD(1:n);
-profile.AnglesAoA = profile.AnglesAoA(1:n);
-profile.AnglesZoD = profile.AnglesZoD(1:n);
-profile.AnglesZoA = profile.AnglesZoA(1:n);
+    numel(profile.AnglesZoD), numel(profile.AnglesZoA)]==n), ...
+    'sixgr:channel:CDLProfileLengthMismatch', ...
+    'Do not truncate an incomplete profile into apparently complete path evidence.');
 end
 
 function T = localPerUERealizationReportTable(result)

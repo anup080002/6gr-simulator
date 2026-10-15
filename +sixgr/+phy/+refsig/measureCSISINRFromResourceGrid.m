@@ -67,14 +67,32 @@ for r=1:nRx
     estimatorNoise(r)=double(n);
 end
 end
-if im.Available, noise=im.PowerPerReceiveAntenna; end
-assert(all(isfinite(power)) && (flat || all(power>=0)), ...
+estimatorPower=power;
+if flat, estimatorPower=rawPower; end
+if im.Available
+    noise=im.PowerPerReceiveAntenna;
+    if ~flat
+        % Smoothed |Hest|^2 contains an unknown, SNR-dependent noise bias.
+        % With independent CSI-IM evidence, use local known CDM projections
+        % whose disturbance-power contribution is explicit and removable.
+        % The native channel estimate remains the CSI/PMI receiver input;
+        % do not overwrite its coefficients or nVar diagnostics here.
+        powerEvidence=sixgr.phy.refsig.measureCSIRSCDMPortPower( ...
+            carrier,reference,receivedGrid,cdm,noise);
+        power=powerEvidence.SignedPort3000PowerPerBranch;
+    end
+end
+signedPower=flat || im.Available;
+assert(all(isfinite(power)) && (signedPower || all(power>=0)), ...
     'sixgr:refsig:CSISINRSignalUnavailable','Every receive branch must retain its finite port-3000 power estimate.');
 source="nrChannelEstimate_port3000_reference_RE_power_per_receive_branch";
 disturbanceSource="nrChannelEstimate_received_reference_residual";
 if flat, disturbanceSource="received_flat_joint_LS_residual_with_degrees_of_freedom"; end
 estimatorDisturbanceSource=disturbanceSource;
-if im.Available, disturbanceSource=string(im.Source); end
+if im.Available
+    disturbanceSource=string(im.Source);
+    if ~flat, source=powerEvidence.Source; end
+end
 if flat
     linear=nan(1,nRx);
     if im.Available
@@ -94,6 +112,11 @@ if flat
     powerEvidence.SignedPort3000SNRLinearPerBranch=linear;
     powerEvidence.RatioInterpretation="signed_unbiased_linear_per_branch_not_unbiased_dB_or_selected_max";
     source="received_flat_LS_noise_debiased_port3000_reference_RE_power";
+elseif im.Available
+    linear=power./noise;
+    ratios=nan(1,nRx); positive=linear>0;
+    ratios(positive)=10*log10(linear(positive));
+    powerEvidence.SignedPort3000SNRLinearPerBranch=linear;
 else
     ratios=10*log10(power./noise);
 end
@@ -101,7 +124,7 @@ end
 status="measured";
 if isnan(reported)
     branch=NaN;
-    if flat
+    if signedPower
         status="unavailable_logarithmic_sinr_retained_signed_linear_estimate";
     else
         status="unavailable_zero_signal_and_disturbance";
@@ -112,6 +135,7 @@ out=struct('Available',~isnan(reported),'Status',status,'CSI_SINR_dB',reported, 
     'CSI_SINRPerReceiveAntenna_dB',ratios,'ReceiveBranch1Based',branch, ...
     'DesiredPowerPerReceiveAntenna',power,'NoiseInterferencePowerPerReceiveAntenna',noise, ...
     'ChannelEstimatorDisturbancePerReceiveAntenna',estimatorNoise, ...
+    'ChannelEstimatorPort3000RawPowerPerReceiveAntenna',estimatorPower, ...
     'DisturbanceSource',disturbanceSource, ...
     'ChannelEstimatorDisturbanceSource',estimatorDisturbanceSource, ...
     'InterferenceMeasurement',im, ...

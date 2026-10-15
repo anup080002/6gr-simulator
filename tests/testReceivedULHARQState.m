@@ -1,6 +1,7 @@
-function ok=testReceivedULHARQState()
+function ok=testReceivedULHARQState(varyBeam)
 % Actual received C-RNTI assignments, UE TB retention, independent gNB RX.
 setup6GRSimToolkit('Verbose',false); rng(90212,'twister');
+if nargin<1, varyBeam=false; end
 s=sixgr.lls6g.config.loadScenarioConfig( ...
     'simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml');
 installed=sixgr.lls6g.buildInternalConfig(s,tempname);
@@ -14,6 +15,11 @@ for k=1:3
     if k==2, mcs=31; nprb=8; rv=2; end
     if k==3, ndi=0; end
     cfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(installed,slot);
+    if varyBeam
+        assert(cfg.phy.pdsch.qclTCI.enabled);
+        cfg.phy.pdsch.qclTCI.state_id=16+k;
+        cfg.phy.pdsch.qclTCI.codepoint=k;
+    end
     context=sixgr.phy.pdcch.DCIContextFactory.fromRuntimeConfig(cfg,'0_1');
     defs=sixgr.phy.pdcch.DCISchemaEngine.resolve(context).Definitions;
     f=struct(); for d=defs(:).', f.(d.Name)=d.ValueMin; end
@@ -37,6 +43,10 @@ for k=1:3
     inputBits=bits; if k==2, inputBits=[]; end
     before=entity;
     [tx,info,entity]=entity.transmit(cfg,a,inputBits,uci);
+    assert(entity.ContextDigest==a.ContextDigest && ...
+        entity.HARQContextDigest==before.HARQContextDigest);
+    % Attempt 1 uses the installed beam; later attempts select new beams.
+    if varyBeam && k>1, assert(entity.ContextDigest~=before.ContextDigest); end
     assert(tx.UEHARQIsRetransmission==(k==2) && info.UEHARQAttempt==1+(k==2));
     assert(isequal(tx.TransportBlock,bits));
     if k==2

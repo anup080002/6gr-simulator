@@ -17,8 +17,14 @@ row.ChannelNMSEReferenceIncludesRFImpairments=NaN;
 row.RawChannelNMSE_dB=NaN;
 row.ChannelNMSEGainFitted=false;
 row.ChannelNMSEPhaseAligned=false;
+row.ChannelNMSEGainOrPhaseFitted=false;
 row.ChannelNMSECommonPhaseRotation_rad=NaN;
 row.ChannelNMSEQualificationMode="unavailable";
+row.ChannelNMSEReceiverTimingIncluded=false;
+row.ChannelNMSERecordedReceiverTimingOffset_samples=NaN;
+row.ChannelNMSEReceiverCFOIncluded=false;
+row.ChannelNMSEExecutedReceiverCFO_Hz=NaN;
+row.PreRXClockChannelNMSE_dB=NaN;
 if isstruct(score) && isscalar(score) && isempty(fieldnames(score))
     assert(isnan(row.NMSE_dB) && isnan(row.TrueChannelNMSE_dB), ...
         'sixgr:truth:MissingSRSNMSEScoring','A finite shared SRS score cannot lack its independent scoring record.');
@@ -56,11 +62,25 @@ row.ChannelNMSEReferencePlane=string(reference.ReferencePlane);
 row.ChannelNMSEReferenceIncludesRFImpairments=double(reference.RFImpairmentsIncluded);
 row.ChannelNMSEGainFitted=gainFitted;
 row.ChannelNMSEPhaseAligned=phaseAligned;
+row.ChannelNMSEGainOrPhaseFitted=logical(score.GainOrPhaseFitted);
 row.ChannelNMSECommonPhaseRotation_rad=double(sixgr.util.structGet( ...
     score,'CommonPhaseRotation_rad',NaN));
 row.ChannelNMSEQualificationMode=string(sixgr.util.structGet( ...
     output,'ChannelNMSEQualificationMode', ...
     localPhaseMode(phaseAligned)));
+row.ChannelNMSEReceiverTimingIncluded=logical(sixgr.util.structGet(reference,'ReceiverTimingIncluded',false));
+row.ChannelNMSEReceiverCFOIncluded=logical(sixgr.util.structGet(reference,'ReceiverCFOIncluded',false));
+if row.ChannelNMSEReceiverTimingIncluded
+    delay=double(reference.RecordedReceiverTimingOffset_samples);
+    validateattributes(delay,{'double'},{'scalar','real','finite','integer','nonnegative'});
+    row.ChannelNMSERecordedReceiverTimingOffset_samples=delay;
+end
+if row.ChannelNMSEReceiverCFOIncluded
+    hz=double(reference.ExecutedReceiverCFO_Hz);
+    validateattributes(hz,{'double'},{'scalar','real','finite'});
+    row.ChannelNMSEExecutedReceiverCFO_Hz=hz;
+end
+row.PreRXClockChannelNMSE_dB=double(sixgr.util.structGet(output,'PreRXClockChannelNMSE_dB',NaN));
 raw=sixgr.util.structGet(output,'RawChannelNMSEScoring',struct());
 if isstruct(raw) && isscalar(raw) && ~isempty(fieldnames(raw))
     assert(all(isfield(raw,{'Available','dB','GainOrPhaseFitted', ...

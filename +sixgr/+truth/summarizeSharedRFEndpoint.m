@@ -3,7 +3,7 @@ function [summary,audit]=summarizeSharedRFEndpoint(plane,endpoint)
 % No YAML/configuration inference, receiver inputs, waveform regeneration or
 % fitted measurements. Applied flags describe the covering stream segments;
 % they do not prove sample mutation at every point of a cropped observation.
-% Converter populations are additive only for complete executed segments.
+% Cropped converter populations require retained sample-indexed statistics.
 arguments
     plane (1,1) struct
     endpoint (1,1) string {mustBeMember(endpoint,["TX","RX"])}
@@ -75,7 +75,11 @@ stationary=["RFImpairmentChainContract","RFEndpoint","RFProcessingMode", ...
     "ADCBits","ADCFullScale","ADCConventionConfigured", ...
     "ADCDitherRMSConfigured","ADCApertureJitterSecondsConfigured", ...
     "ADCINLLSBConfigured","ADCDNLLSBConfigured","ADCSeedConfigured", ...
-    "DACBits","DACFullScale","AGCTargetRMS"];
+    "DACBits","DACFullScale","DACConfiguredFullScale","DACReferenceRMS", ...
+    "DACReferenceHeadroom_dB","DACReferenceREEnergy","DACReferenceNfft", ...
+    "DACReferenceSubcarriers","DACReferenceTxPorts","DACReferenceDomain", ...
+    "DACReferenceSource","DACReferencePayloadDependent","AGCTargetRMS", ...
+    "AGCControlModel"];
 for name=stationary
     [values,available,audit]=localValues(replays,name,audit);
     if ~available, continue; end
@@ -89,7 +93,7 @@ flags=["CFOApplied","TimingOffsetApplied","SampleClockOffsetEnabled", ...
     "SampleClockOffsetApplied","PhaseNoiseConfigured","PhaseNoiseApplied", ...
     "IQImbalanceConfigured","IQImbalanceApplied","PAEnabled","PAApplied", ...
     "ElementRFEnabled","ElementRFApplied","MutualCouplingEnabled", ...
-    "MutualCouplingApplied","AGCEnabled","AGCApplied", ...
+    "MutualCouplingApplied","AGCEnabled","AGCApplied","AGCExecuted","AGCDecisionCausal", ...
     "ADCQuantizationApplied","ADCQuantizationExecuted", ...
     "DACQuantizationApplied","DACQuantizationExecuted","RFStrictOk","RFDisabledIdentity"];
 for name=flags
@@ -98,7 +102,7 @@ for name=flags
     assert(all(cellfun(@localBoolean,values)), ...
         'sixgr:truth:InvalidRFEndpointFlag','Executed %s must be logical or scalar 0/1.',name);
     values=cellfun(@logical,values);
-    if any(name==["RFStrictOk","RFDisabledIdentity"])
+    if any(name==["RFStrictOk","RFDisabledIdentity","AGCDecisionCausal"])
         summary.(name)=all(values);
     else
         summary.(name)=any(values);
@@ -113,7 +117,14 @@ if isfield(summary,'RFStrictOk')
 end
 for prefix=["ADC","DAC"]
     [summary,audit]=localConverter(summary,audit,replays,prefix,whole);
+    [summary,audit]=localConverterError(summary,audit,replays,prefix,whole, ...
+        (bounds(:,2)-bounds(:,1))*plane.Observation.NumReceiveAntennas);
+    if ~whole
+        [summary,audit]=localCroppedConverter(summary,audit,replays,prefix, ...
+            bounds,first,stop,plane.Observation.NumReceiveAntennas);
+    end
 end
+[summary,audit]=localAGC(summary,audit,replays,bounds,first,stop);
 summary.RFMetadataSource=audit.Source;
 summary.RFMetadataAppliedFlagScope=audit.AppliedFlagScope;
 end
@@ -197,4 +208,170 @@ summary.(prefix+"ClippingStatus")="measured";
 summary.(prefix+"ClippingPopulation")=string(replays{1}.(prefix+"ClippingPopulation"));
 summary.(prefix+"ClippingThresholdRule")=string(replays{1}.(prefix+"ClippingThresholdRule"));
 summary.(prefix+"ClippingSource")="sum_of_complete_executed_converter_mask_populations";
+end
+
+function [summary,audit]=localCroppedConverter(summary,audit,replays,prefix,bounds,first,stop,channels)
+% Never use a full segment's average/count for a partial observation.
+% Old captures without the actual per-sample statistics remain unavailable.
+if summary.(prefix+"ClippingStatus")~="unavailable_partial_execution_segment_requires_sample_masks" || ...
+        summary.(prefix+"ErrorMeasurementStatus")~="unavailable_partial_execution_segment_requires_sample_errors"
+    return;
+end
+[traces,present,audit]=localValues(replays,prefix+"SampleEvidence",audit);
+if ~present, return; end
+inputEnergy=0; errorEnergy=0; clipped=0; population=0;
+definition=""; domain=""; clippingPopulation=""; thresholdRule="";
+for k=1:numel(traces)
+    trace=traces{k}; a=bounds(k,1); b=bounds(k,2); r=replays{k};
+    assert(isstruct(trace) && isscalar(trace) && ...
+        all(isfield(trace,{'Contract','StartSample','EndSampleExclusive', ...
+        'NumChannels','InputEnergy','ErrorEnergy','ClippedCount'})) && ...
+        isequal(string(trace.Contract),"executed_converter_sample_statistics/v1") && ...
+        isequal(trace.StartSample,a) && isequal(trace.EndSampleExclusive,b) && ...
+        isequal(trace.NumChannels,channels), ...
+        'sixgr:truth:InvalidRFConverterSampleTrace', ...
+        'Retain converter sample statistics on the actual endpoint clock and channel dimensions.');
+    fields=["InputEnergy","ErrorEnergy","ClippedCount"];
+    for name=fields
+        v=trace.(name);
+        assert(isnumeric(v) && isreal(v) && iscolumn(v) && numel(v)==b-a && ...
+            all(isfinite(v) & v>=0), ...
+            'sixgr:truth:InvalidRFConverterSampleTrace','Sample statistics must cover the full executed segment.');
+    end
+    assert(all(trace.ClippedCount==fix(trace.ClippedCount) & trace.ClippedCount<=channels), ...
+        'sixgr:truth:InvalidRFConverterSampleTrace','Count the executed converter mask, not clipped components twice.');
+    required=prefix+["ErrorSampleCount","InputEnergy","ErrorEnergy","ErrorDefinition", ...
+        "ErrorDomain","ClippedSampleCount","ClippingPopulation","ClippingThresholdRule"];
+    assert(all(isfield(r,cellstr(required))), 'sixgr:truth:InvalidRFConverterSampleTrace', ...
+        'Retain matching segment totals and definitions for sample-trace reconciliation.');
+    total=[sum(trace.InputEnergy) sum(trace.ErrorEnergy)];
+    recorded=[r.(prefix+"InputEnergy") r.(prefix+"ErrorEnergy")];
+    assert(all(isfinite(recorded) & recorded>=0) && ...
+        all(abs(total-recorded)<=64*eps(max(1,recorded))*max(1,b-a)) && ...
+        r.(prefix+"ErrorSampleCount")==(b-a)*channels && ...
+        sum(trace.ClippedCount)==r.(prefix+"ClippedSampleCount"), ...
+        'sixgr:truth:InvalidRFConverterSampleTrace','Per-sample populations must close against the actual complete converter execution.');
+    current=[string(r.(prefix+"ErrorDefinition")),string(r.(prefix+"ErrorDomain")), ...
+        string(r.(prefix+"ClippingPopulation")),string(r.(prefix+"ClippingThresholdRule"))];
+    assert(numel(current)==4 && all(~ismissing(current) & strlength(current)>0), ...
+        'sixgr:truth:InvalidRFConverterSampleTrace','Measurement definitions must be explicit.');
+    if k==1
+        definition=current(1); domain=current(2); clippingPopulation=current(3); thresholdRule=current(4);
+    else
+        assert(isequal(current,[definition domain clippingPopulation thresholdRule]), ...
+            'sixgr:truth:InvalidRFConverterSampleTrace','Do not pool different converter measurement planes.');
+    end
+    range=(max(first,a)-a+1):(min(stop,b)-a);
+    inputEnergy=inputEnergy+sum(trace.InputEnergy(range));
+    errorEnergy=errorEnergy+sum(trace.ErrorEnergy(range));
+    clipped=clipped+sum(trace.ClippedCount(range));
+    population=population+numel(range)*channels;
+end
+assert(population==(stop-first)*channels, 'sixgr:truth:InvalidRFConverterSampleTrace');
+summary.(prefix+"ErrorSampleCount")=population;
+summary.(prefix+"InputEnergy")=inputEnergy;
+summary.(prefix+"ErrorEnergy")=errorEnergy;
+summary.(prefix+"ErrorMeanSquare")=errorEnergy/population;
+summary.(prefix+"ErrorMeasurementStatus")="measured_actual_converter_samples_cropped_to_capture";
+summary.(prefix+"ErrorDefinition")=definition;
+summary.(prefix+"ErrorDomain")=domain;
+summary.(prefix+"ClippedSampleCount")=clipped;
+summary.(prefix+"ClippingSampleCount")=population;
+summary.(prefix+"ClippingRatio")=clipped/population;
+summary.(prefix+"ClippingStatus")="measured";
+summary.(prefix+"ClippingPopulation")=clippingPopulation;
+summary.(prefix+"ClippingThresholdRule")=thresholdRule;
+summary.(prefix+"ClippingSource")="actual_executed_converter_mask_counts_cropped_to_capture";
+end
+
+function [summary,audit]=localAGC(summary,audit,replays,bounds,first,stop)
+for field=["AGCGain_dB","AGCGainMin_dB","AGCGainMax_dB","AGCGainIsTimeVarying","AGCGainSampleCount"]
+    summary.(field)=NaN;
+end
+summary.AGCExecutionStatus="unavailable_incomplete_executed_AGC_evidence";
+summary.AGCGainEvidenceSource="unavailable";
+[executed,available,audit]=localValues(replays,"AGCExecuted",audit);
+if ~available, return; end
+assert(all(cellfun(@localBoolean,executed)),'sixgr:truth:InvalidRFEndpointFlag');
+executed=cellfun(@logical,executed);
+if ~any(executed), summary.AGCExecutionStatus="not_executed"; return; end
+if ~all(executed), summary.AGCExecutionStatus="unavailable_AGC_not_executed_over_entire_observation"; return; end
+[traces,available,audit]=localValues(replays,"AGCStreamTrace",audit);
+if ~available, return; end
+minimum=Inf; maximum=-Inf; count=0;
+for k=1:numel(traces)
+    trace=traces{k}; a=bounds(k,1); b=bounds(k,2);
+    assert(isstruct(trace) && isscalar(trace) && ...
+        all(isfield(trace,{'StartSample','EndSampleExclusive','AppliedGain_dB','ControlModel'})) && ...
+        isequal(trace.StartSample,a) && isequal(trace.EndSampleExclusive,b) && ...
+        isscalar(string(trace.ControlModel)) && ...
+        string(trace.ControlModel)=="causal_windowed_joint_rms_attack_hold_release", ...
+        'sixgr:truth:InvalidRFAGCTrace','Use the actual retained applied-gain trace on the matching receiver sample clock.');
+    gain=trace.AppliedGain_dB;
+    assert(isnumeric(gain) && isreal(gain) && isvector(gain) && ...
+        numel(gain)==b-a && all(isfinite(gain)), ...
+        'sixgr:truth:InvalidRFAGCTrace','Do not replace a sample-varying gain by the final AGC decision.');
+    gain=double(gain(max(first,a)-a+1:min(stop,b)-a));
+    minimum=min(minimum,min(gain)); maximum=max(maximum,max(gain)); count=count+numel(gain);
+end
+assert(count==stop-first,'sixgr:truth:InvalidRFAGCTrace','Applied gain must cover each received time sample once.');
+summary.AGCGainMin_dB=minimum; summary.AGCGainMax_dB=maximum;
+summary.AGCGainIsTimeVarying=minimum~=maximum;
+summary.AGCGainSampleCount=count;
+summary.AGCGainEvidenceSource="actual_applied_gain_trace_cropped_to_receiver_capture_not_next_gain_decision";
+summary.AGCExecutionStatus="executed_time_varying_sample_gain";
+if minimum==maximum
+    summary.AGCGain_dB=minimum;
+    summary.AGCExecutionStatus="executed_stationary_sample_gain";
+end
+end
+
+function [summary,audit]=localConverterError(summary,audit,replays,prefix,whole,expectedCount)
+for field=["ErrorSampleCount","InputEnergy","ErrorEnergy","ErrorMeanSquare"]
+    summary.(prefix+field)=NaN;
+end
+summary.(prefix+"ErrorDefinition")="unavailable";
+summary.(prefix+"ErrorDomain")="unavailable";
+summary.(prefix+"ErrorMeasurementStatus")="unavailable_incomplete_converter_error_evidence";
+[executed,available,audit]=localValues(replays,prefix+"QuantizationExecuted",audit);
+if ~available, return; end
+assert(all(cellfun(@localBoolean,executed)),'sixgr:truth:InvalidRFEndpointFlag');
+executed=cellfun(@logical,executed);
+if ~any(executed), summary.(prefix+"ErrorMeasurementStatus")="not_executed"; return; end
+if ~all(executed), summary.(prefix+"ErrorMeasurementStatus")="unavailable_converter_not_executed_over_entire_observation"; return; end
+if ~whole
+    summary.(prefix+"ErrorMeasurementStatus")="unavailable_partial_execution_segment_requires_sample_errors";
+    return;
+end
+names=prefix+["ErrorSampleCount","InputEnergy","ErrorEnergy","ErrorMeanSquare", ...
+    "ErrorDefinition","ErrorDomain","ErrorMeasurementStatus"];
+for name=names
+    [~,available,audit]=localValues(replays,name,audit);
+    if ~available, return; end
+end
+for name=names(5:end)
+    values=cellfun(@(r)string(r.(name)),replays,'UniformOutput',false);
+    assert(all(cellfun(@(v)isscalar(v) && ~ismissing(v) && v==values{1},values)), ...
+        'sixgr:truth:InvalidRFConverterErrorPopulation','Do not pool different converter error definitions.');
+end
+if string(replays{1}.(prefix+"ErrorMeasurementStatus"))~="measured_actual_converter_samples", return; end
+for name=names(1:4)
+    assert(all(cellfun(@(r)isnumeric(r.(name)) && isscalar(r.(name)) && ...
+        isreal(r.(name)) && isfinite(r.(name)) && r.(name)>=0,replays)), ...
+        'sixgr:truth:InvalidRFConverterErrorPopulation','Converter energies/counts require finite nonnegative measurements.');
+end
+count=cellfun(@(r)double(r.(prefix+"ErrorSampleCount")),replays);
+input=cellfun(@(r)double(r.(prefix+"InputEnergy")),replays);
+energy=cellfun(@(r)double(r.(prefix+"ErrorEnergy")),replays);
+mse=cellfun(@(r)double(r.(prefix+"ErrorMeanSquare")),replays);
+assert(isequal(count,expectedCount) && all(count>0 & count==fix(count)) && sum(count)<=flintmax && ...
+    all(abs(energy./count-mse)<=64*eps(max(1,mse))), ...
+    'sixgr:truth:InvalidRFConverterErrorPopulation','Converter MSE must close on its actual sample population.');
+summary.(prefix+"ErrorSampleCount")=sum(count);
+summary.(prefix+"InputEnergy")=sum(input);
+summary.(prefix+"ErrorEnergy")=sum(energy);
+summary.(prefix+"ErrorMeanSquare")=sum(energy)/sum(count);
+summary.(prefix+"ErrorMeasurementStatus")="measured_complete_executed_converter_sample_population";
+summary.(prefix+"ErrorDefinition")=string(replays{1}.(prefix+"ErrorDefinition"));
+summary.(prefix+"ErrorDomain")=string(replays{1}.(prefix+"ErrorDomain"));
 end

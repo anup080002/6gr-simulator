@@ -1,0 +1,37 @@
+inherits:
+  - simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_gate.yaml
+
+meta:
+  scenario_id: h4_100_cdlc100_connected_impaired_40db_adaptation
+  description: >
+    100-slot (50 ms) H4 4 GHz / 100 MHz TDD adaptive connected-mode check.
+    Retains physical initial access, the original CSI/SRS/TRS calendars,
+    adaptive DL/UL rank up to four, RF impairments and measurement exports.
+    The horizon includes access and feedback delivery, not 100 data slots.
+    Access is event-based; this configuration imposes no attachment deadline.
+    Received CSI confirmations and future grants, not elapsed slots alone,
+    establish adaptation. This is not statistical BLER/HARQ qualification.
+  purpose: Verify post-attach physical CSI delivery, adaptive grants and DL/UL execution.
+
+# Duration aliases share the mu=1 clock. The original 60-slot repair check
+# and 200-slot gate remain unchanged. Two 20-slot-period CSI confirmations
+# are retained; they are not shortened or bypassed to force adaptation.
+run_control:
+  total_slots: 100
+  total_time_ms: 50
+  measurement_slots: 100
+  measurement_time_ms: 50
+
+simulation:
+  n_frames: 5
+  n_slots: 100
+  n_subframes: 50
+  min_duration_s: 0.05
+  random_seed: 20260927
+
+random_access:
+  num_slots: 100
+  num_subframes: 50
+
+output:
+  profile: h4_100_cdlc100_connected_impaired_40db_adaptation

@@ -81,15 +81,19 @@ assert(height(csv)==numel(m.Segments),'sixgr:channel:ChannelArtifactCSVMismatch'
 bounds=zeros(numel(m.Segments),2);
 arrayHash=@sixgr.channel.ChannelFactory.runtimeNumericArraySHA256;
 readEvidence=cell(numel(m.Segments),1);
+pathMeanPower=cell(numel(m.Segments),1);
 for k=1:numel(m.Segments)
     s=m.Segments(k); c=captures{k}; r=c.Reference;
+    expectedDimensions=reshape(jsondecode(s.PathGainDimensions),1,[]);
+    pathEnergy=zeros(expectedDimensions(2:4));
+    pathSamples=zeros(expectedDimensions(2:4));
     if streamed
         assert(~isfield(r,'PathGains') && isfield(r,'PathGainsVariable') && ...
             string(r.PathGainsVariable)==string(sprintf('PathGains_%06d',k)), ...
             'sixgr:channel:ChannelArtifactArrayMismatch','Each segment must bind its own top-level coefficient array.');
         localCheckOperatorMetadata(r);
         [gainHash,gainEvidence]=sixgr.phy.waveform.runtimeArrayMATFileHash( ...
-            archive,string(r.PathGainsVariable),1048576,@(piece,indices)localCheckOperatorBlock(r,piece,indices));
+            archive,string(r.PathGainsVariable),1048576,@measureBlock);
         gainShape=gainEvidence.Dimensions; gainShape(end+1:4)=1;
         gainCount=gainEvidence.ElementCount;
         gainFinite=gainEvidence.AllFinite;
@@ -103,6 +107,13 @@ for k=1:numel(m.Segments)
         gainCount=numel(r.PathGains); gainFinite=all(isfinite(r.PathGains),'all');
         gainFloat=isfloat(r.PathGains); gainHash=string(arrayHash(r.PathGains));
         readEvidence{k}=struct('FullArrayLoaded',true,'ElementCount',gainCount);
+        % Bound the temporary squared-magnitude allocation even for legacy
+        % archives. Accumulate power, never average complex path gains.
+        step=max(1,floor(1048576/prod(gainShape(2:4))));
+        for first=1:step:gainShape(1)
+            indices={first:min(first+step-1,gainShape(1)),1:gainShape(2),1:gainShape(3),1:gainShape(4)};
+            measureBlock(r.PathGains(indices{:}),indices);
+        end
     end
     localInterval(s.StartSample,s.EndSampleExclusive);
     localInterval(s.ExecutionStartSample,s.ExecutionEndSampleExclusive);
@@ -138,6 +149,9 @@ for k=1:numel(m.Segments)
     assert(localHash(s.RuntimeChannelInputWaveformSHA256) && localHash(s.RuntimeChannelOutputWaveformSHA256), ...
         'sixgr:channel:ChannelArtifactExecutionHashMissing','Original full-processor waveform identities must remain present.');
     bounds(k,:)=[s.StartSample s.EndSampleExclusive];
+    assert(all(pathSamples==ns,'all'),'sixgr:channel:ChannelPathPowerCoverage', ...
+        'Every path/antenna coefficient must contribute exactly once to measured power.');
+    pathMeanPower{k}=pathEnergy./pathSamples;
     for name=string(fieldnames(s)).'
         localCSVValue(csv,k,name,s.(name));
     end
@@ -160,7 +174,17 @@ assert(all(isfinite(allBounds),'all') && all(allBounds==fix(allBounds),'all') &&
     'sixgr:channel:ChannelArtifactCoverageMismatch','No missing, duplicated or overlapping active/inactive observation intervals are allowed.');
 verified=struct('Manifest',m,'Segments',csv,'MATPath',string(matPath), ...
     'CSVPath',string(csvPath),'ValidationSource',"persisted_array_and_file_content_validation", ...
-    'PathGainReadEvidence',{readEvidence});
+    'PathGainReadEvidence',{readEvidence},'PathMeanCoefficientPower',{pathMeanPower}, ...
+    'PathPowerDefinition',"mean_abs_squared_applied_coefficients_per_path_TX_RX_no_RF_or_large_scale_loss");
+
+    function measureBlock(piece,indices)
+        localCheckOperatorBlock(r,piece,indices);
+        if numel(indices)<4, indices(end+1:4)={1}; end
+        shape=cellfun(@numel,indices(2:4));
+        energy=reshape(sum(abs(double(piece)).^2,1),shape);
+        pathEnergy(indices{2:4})=pathEnergy(indices{2:4})+energy;
+        pathSamples(indices{2:4})=pathSamples(indices{2:4})+numel(indices{1});
+    end
 end
 
 function localCheckOperatorMetadata(r)

@@ -105,6 +105,73 @@ assert(definition.EvaluationScope == "configuration_definition_only_not_RF_quali
     "A complete RF definition without trials must not qualify RF execution.");
 
 rawRFCfg = cfg;
+iqCfg=cfg;
+iqCfg.rf.rx.iqImbalance=struct('enable',true,'gainImbalance_dB',0.5, ...
+    'phaseImbalance_deg',1,'model','frequency_flat_widely_linear');
+iqTrials=rawTrials;
+for direction=["DL","UL"]
+    n=height(iqTrials.(direction));
+    iqTrials.(direction).IQImbalanceConfigured=true(n,1);
+    iqTrials.(direction).IQImbalanceApplied=true(n,1);
+    iqTrials.(direction).ConfiguredIQGainImbalance_dB=repmat(0.5,n,1);
+    iqTrials.(direction).ConfiguredIQPhaseImbalance_deg=ones(n,1);
+end
+iqAudit=sixgr.analytics.writeRFInterferenceReconciliation(iqCfg, ...
+    fullfile(tmp,'canonical_iq'),iqTrials,mobilityArtifacts,struct());
+assert(all(iqAudit.Tables.IQ.ConfiguredIQEnabled) && ...
+    all(iqAudit.Tables.IQ.IqImbalanceConfiguredAppliedOk), ...
+    'Actual canonical RX IQ execution must not be compared with legacy disabled defaults.');
+iqTrials.DL.ConfiguredIQGainImbalance_dB(:)=0.8;
+iqBad=sixgr.analytics.writeRFInterferenceReconciliation(iqCfg, ...
+    fullfile(tmp,'mismatched_iq'),iqTrials,mobilityArtifacts,struct());
+assert(~iqBad.Tables.IQ.IqImbalanceConfiguredAppliedOk(1));
+iqTrials.DL.ConfiguredIQGainImbalance_dB(:)=NaN;
+iqMissing=sixgr.analytics.writeRFInterferenceReconciliation(iqCfg, ...
+    fullfile(tmp,'missing_iq_measurement'),iqTrials,mobilityArtifacts,struct());
+assert(~iqMissing.Tables.IQ.IqImbalanceConfiguredAppliedOk(1), ...
+    'An enabled IQ stage must not pass when its executed parameters are missing.');
+
+% Canonical PA and RX oscillator metadata must not be replaced with the
+% legacy disabled defaults, a guessed -150 dBc/Hz floor or PA intercepts.
+activeCfg=cfg;
+activeCfg.rf.pa=struct('enable',true,'method','rapp','backoff_dB',6);
+activeCfg.rf.rx.phaseNoise.enable=true;
+activeCfg.rf.phaseNoise.model='mask';
+activeTrials=rawTrials;
+for direction=["DL","UL"]
+    n=height(activeTrials.(direction));
+    activeTrials.(direction).PAEnabled=true(n,1);
+    activeTrials.(direction).PAApplied=true(n,1);
+    activeTrials.(direction).PAModel=repmat("rapp",n,1);
+    activeTrials.(direction).PABackoff_dB=repmat(6,n,1);
+    activeTrials.(direction).PhaseNoiseConfigured=true(n,1);
+    activeTrials.(direction).PhaseNoiseApplied=true(n,1);
+    activeTrials.(direction).PhaseNoiseAvailableBackend=repmat("retained_test_backend",n,1);
+    activeTrials.(direction).PhaseNoiseTruthClassification=repmat("test_metadata_not_physical_qualification",n,1);
+end
+activeAudit=sixgr.analytics.writeRFInterferenceReconciliation(activeCfg, ...
+    fullfile(tmp,'canonical_pa_phase_noise'),activeTrials,mobilityArtifacts,struct());
+assert(activeAudit.Tables.PA.PaConfiguredAppliedOk && ...
+    activeAudit.Tables.PA.ConfiguredModel=="rapp" && ...
+    activeAudit.Tables.PA.ObservedMeanBackoff_dB==6 && ...
+    isnan(activeAudit.Tables.PA.IIP3_dBm) && isnan(activeAudit.Tables.PA.P1dB_dBm));
+assert(activeAudit.Tables.PhaseNoise.PhaseNoiseConfiguredAppliedOk && ...
+    activeAudit.Tables.PhaseNoise.ConfiguredModel=="mask" && ...
+    activeAudit.Tables.PhaseNoise.Endpoint=="RX" && ...
+    isnan(activeAudit.Tables.PhaseNoise.PSD_floor_dBc_Hz), ...
+    'A tabulated oscillator mask must not acquire an invented scalar PSD floor.');
+activeTrials.DL.PAApplied(1)=false;
+activeTrials.DL.PhaseNoiseApplied(1)=false;
+partialAudit=sixgr.analytics.writeRFInterferenceReconciliation(activeCfg, ...
+    fullfile(tmp,'partially_missing_rf_execution'),activeTrials,mobilityArtifacts,struct());
+assert(~partialAudit.Tables.PA.PaConfiguredAppliedOk && ...
+    ~partialAudit.Tables.PhaseNoise.PhaseNoiseConfiguredAppliedOk, ...
+    'One applied RF trial cannot rescue other required rows with no execution.');
+absentAudit=sixgr.analytics.writeRFInterferenceReconciliation(cfg, ...
+    fullfile(tmp,'no_rf_trial_evidence'),struct(),mobilityArtifacts,struct());
+assert(~absentAudit.Tables.PA.PaConfiguredAppliedOk && ...
+    ~absentAudit.Tables.PhaseNoise.PhaseNoiseConfiguredAppliedOk, ...
+    'Even a configured identity cannot fabricate a primary execution observation.');
 rawRFCfg.rf_frontend = frontend;
 rawRFAudit = sixgr.analytics.writeRFInterferenceReconciliation(rawRFCfg, ...
     fullfile(tmp, "scenario_rf_definition"), struct(), mobilityArtifacts, struct());

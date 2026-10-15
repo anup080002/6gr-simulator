@@ -1,5 +1,6 @@
 function det = detectMsg1PRACH(rxWaveform, cfg, raCfg, occasion)
 %DETECTMSG1PRACH Detect MSG1 from received PRACH waveform.
+sixgr.runtime.RuntimeCallLedger.record("sixgr.phy.ra.detectMsg1PRACH","PRACH","UL",struct("Stage","RX"));
 prachCfg = sixgr.phy.ra.buildPRACHConfigFromRACHCommon(cfg, raCfg);
 enableFrequencyEstimate = logical(sixgr.util.structGet( ...
     cfg, "random_access.enable_frequency_estimation_metric", ...

@@ -3,6 +3,7 @@ classdef ReceivedULHARQState
     % Value semantics make a failed preparation leave the caller unchanged.
     properties (SetAccess=private)
         ContextDigest
+        HARQContextDigest = ""
         Processes
     end
     methods
@@ -12,13 +13,18 @@ classdef ReceivedULHARQState
                 'sixgr:link:ReceivedULHARQProcedure', ...
                 'This entity owns connected C-RNTI HARQ, not Msg3 or configured-grant procedures.');
             obj.ContextDigest=c.Digest;
+            obj.HARQContextDigest=sixgr.phy.pdcch.harqContextDigest(c);
             obj.Processes=cell(c.Data.HARQProcessCount,1);
         end
 
         function [tx,info,next]=transmit(obj,installed,a,newBits,uci)
             c=sixgr.phy.pdcch.validateConnectedAssignment(installed,a);
+            sameContext=obj.ContextDigest==c.Digest;
+            if strlength(obj.HARQContextDigest)>0
+                sameContext=obj.HARQContextDigest==sixgr.phy.pdcch.harqContextDigest(c);
+            end
             assert(a.Direction=="UL" && a.ULSCHIndicator==1 && ...
-                obj.ContextDigest==c.Digest, ...
+                sameContext, ...
                 'sixgr:link:ReceivedULHARQContextMismatch', ...
                 'HARQ buffers must belong to this installed connected UL context.');
             index=a.HARQProcess+1;
@@ -85,6 +91,8 @@ classdef ReceivedULHARQState
             entry.LastDataAbsoluteSlot=a.DataAbsoluteSlot;
             entry.LastAssignmentDigest=a.AssignmentDigest;
             next=obj;
+            next.ContextDigest=c.Digest;
+            next.HARQContextDigest=sixgr.phy.pdcch.harqContextDigest(c);
             next.Processes{index}=entry;
             tx.UEHARQIsRetransmission=~fresh;
             tx.UEHARQAttempt=entry.Attempts;

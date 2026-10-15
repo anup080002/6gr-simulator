@@ -57,6 +57,27 @@ def test_data_cfo_preview_separates_receiver_measurement_from_simulation_referen
         assert preview["Reuses acquisition observation"] == 1
 
 
+def test_data_pilot_preview_retains_phase_measurements_without_doppler_claim() -> None:
+    source = {
+        "PilotCommonPhaseRate_Hz": 125,
+        "PilotPhaseFitResidualRMS_deg": .2,
+        "PilotPhasePairCount": 2,
+        "PilotPhaseUnaliasedHalfWidth_Hz": 1500,
+        "PilotPhaseEvolutionSource": "matched_pilot_channel_cross_products_common_phase_not_doppler_spread",
+        "PilotPhaseEvolutionStatus": "measured_common_phase_rate_with_explicit_alias_interval",
+        "DopplerMeasurementStatus": "not_measured_common_phase_rate_is_not_maximum_Doppler_or_spread",
+    }
+    for direction in ("dl_trials", "ul_trials"):
+        labels = dict(dashboard.DATA_TRIAL_PREVIEW_COLUMNS[direction])
+        preview = dashboard.summarize_data_trial_preview_rows(direction, [source])[0]
+        for field, value in source.items():
+            assert preview[labels[field]] == value
+        assert "not Doppler spread" in labels["PilotCommonPhaseRate_Hz"]
+        assert "not tracking accuracy" in labels["PilotPhaseFitResidualRMS_deg"]
+        missing = dashboard.summarize_data_trial_preview_rows(direction, [{"Slot": 43}])[0]
+        assert dashboard.coerce_numeric(missing.get(labels["PilotCommonPhaseRate_Hz"])) is None
+
+
 def test_ul_preview_keeps_codebook_ports_distinct_from_spatial_beams() -> None:
     labels = dict(dashboard.DATA_TRIAL_PREVIEW_COLUMNS["ul_trials"])
     assert labels["AppliedPrecoderPMI"] == "Applied TPMI"
@@ -122,6 +143,38 @@ def test_access_and_beam_previews_retain_exact_runtime_identity() -> None:
     assert beam[0]["Geometry oracle used"] == 0
 
 
+def test_ra_rf_preview_preserves_endpoint_and_unknown_without_decode_claim() -> None:
+    for missing in ("NaN", "nan", "<missing>", "null", float("nan")):
+        assert dashboard.normalize_preview_value(missing) is None
+    assert dashboard.normalize_preview_value(0) == 0
+    assert dashboard.normalize_preview_value("measurement_unavailable_no_independent_reference") is not None
+    rows = [dict(UEId=1, AttemptId=2, StageName="RARMonitoring", Direction="DL",
+                 RuntimeSlot=11, ConfiguredSNR_dB=40, TransmitterID="gnb_1",
+                 ReceiverID="ue_1_rx", ObservationID="rar_11", DACBits=12,
+                 DACFullScale=.007, DACClippingRatio="NaN",
+                 DACClippingStatus="unavailable_cropped_execution_population",
+                 IQImbalanceApplied=1, ADCBits=12,
+                 EvidenceScope="actual_receive_window_RF_execution_not_decode_or_attachment_result"),
+            dict(UEId=1, AttemptId=2, StageName="Msg3", Direction="UL",
+                 RuntimeSlot=15, ConfiguredSNR_dB=40, TransmitterID="ue_1",
+                 ReceiverID="gnb_1_rx", ObservationID="msg3_15", DACBits=12,
+                 DACFullScale=.028, IQImbalanceApplied="NaN", ADCBits=12)]
+    views = dashboard.summarize_procedure_preview_rows("ra_receiver_rf", rows)
+    assert views[0]["RX endpoint"] == "ue_1_rx"
+    assert views[1]["RX endpoint"] == "gnb_1_rx"
+    assert views[0]["TX DAC full scale"] == .007
+    assert views[1]["TX DAC full scale"] == .028
+    assert views[1]["RX IQ imbalance applied"] == "N/A"
+    assert "TX DAC clipping fraction" not in views[0]
+    assert "Status" not in views[0] and "CRC" not in views[0]
+    script = dashboard.product_frontend_script()
+    rendered = next(line for line in script.splitlines() if "id:'ra_receiver_rf'" in line)
+    for label in ("Receive window", "RX endpoint", "TX DAC full scale", "Evidence scope"):
+        assert f"'{label}'" in rendered
+    source = (ROOT / "apps" / "lls_web_dashboard.py").read_text(encoding="utf-8")
+    assert '"ra_receiver_rf": ["control/csv/ra_receiver_rf_observations.csv"]' in source
+
+
 def test_ra_waveform_preview_separates_prepared_ports_and_physical_dimensions() -> None:
     rows = [
         {"StageName": "Msg2", "TxPortCount": 1,
@@ -178,8 +231,15 @@ def test_ssb_sync_preview_separates_injection_estimate_correction_and_residual()
     assert labels["EstimatedCFO_PreCorrection_Hz"] == "Estimated CFO (Hz)"
     assert labels["CFOEstimateAvailability"] == "CFO estimate availability"
     assert labels["SIB1CFOCorrectionApplied_Hz"] == "Applied CFO correction (Hz)"
-    assert labels["ResidualCFO_PostCorrection_Hz"] == "Residual CFO (Hz)"
-    assert labels["ResidualCFOMeasurementStatus"] == "Residual CFO status"
+    assert labels["ResidualCFO_PostCorrection_Hz"] == "Oscillator-only residual CFO (Hz)"
+    assert labels["ResidualCFOMeasurementStatus"] == "Oscillator-only residual status"
+    assert labels["PBCHResidualCommonFrequency_Hz"] == "PBCH post-correction common frequency (Hz)"
+    assert labels["PBCHResidualFrequencyIndependentCapture"] == "Independent residual capture"
+    source = dict(PBCHResidualCommonFrequency_Hz=-24.5, PBCHResidualFrequencyAvailable=1,
+                  PBCHResidualFrequencyIndependentCapture=0, ResidualCFO_PostCorrection_Hz=None)
+    view = dashboard.summarize_control_trial_preview_rows("pbch_trials", [source])[0]
+    assert view[labels["PBCHResidualCommonFrequency_Hz"]] == -24.5
+    assert view[labels["PBCHResidualFrequencyIndependentCapture"]] == 0
     assert labels["AppliedTimingCorrection_samples"] == "Applied timing correction (samples)"
 
 
@@ -194,6 +254,42 @@ def test_waveform_quality_previews_expose_evm_nmse_and_receiver_plane() -> None:
         assert labels["NMSE_dB"] == "NMSE dB"
         assert labels["ChannelEstimateAvailable"] == "Channel estimate available"
         assert labels["EqualizationAvailable"] == "Equalization available"
+
+
+def test_srs_scoring_clock_never_becomes_receiver_timing_or_cfo() -> None:
+    source = dict(Slot=5, NMSE_dB=-26.0, RawChannelNMSE_dB=-25.5,
+                  PreRXClockChannelNMSE_dB=2.0,
+                  ChannelNMSEReferencePlane="executed_RX_clock_before_other_RX_RF",
+                  ChannelNMSEQualificationMode="common_receiver_LO_phase_equivalent_no_gain_fit",
+                  ChannelNMSEReceiverTimingIncluded=1,
+                  ChannelNMSERecordedReceiverTimingOffset_samples=1,
+                  ChannelNMSEReceiverCFOIncluded=1,
+                  ChannelNMSEExecutedReceiverCFO_Hz=400,
+                  EstimatedTimingOffset_samples=1252, AppliedTimingCorrection_samples=1252,
+                  CFOEstimateAvailability="unavailable")
+    view = dashboard.summarize_control_trial_preview_rows("srs_trials", [source])[0]
+    labels = dict(dashboard.CONTROL_TRIAL_PREVIEW_COLUMNS["srs_trials"])
+    keys = ("RawChannelNMSE_dB", "PreRXClockChannelNMSE_dB", "ChannelNMSEReferencePlane",
+            "ChannelNMSEQualificationMode", "ChannelNMSEReceiverTimingIncluded",
+            "ChannelNMSERecordedReceiverTimingOffset_samples", "ChannelNMSEReceiverCFOIncluded",
+            "ChannelNMSEExecutedReceiverCFO_Hz", "EstimatedTimingOffset_samples",
+            "AppliedTimingCorrection_samples", "CFOEstimateAvailability")
+    for key in keys:
+        assert view[labels[key]] == source[key]
+    assert "Estimated CFO (Hz)" not in view  # Recorded CFO is never an estimate.
+    rendered = next(line for line in dashboard.product_frontend_script().splitlines()
+                    if "id:'srs'" in line)
+    for key in keys:
+        assert f"'{labels[key]}'" in rendered
+    no_clock = dashboard.summarize_control_trial_preview_rows(
+        "srs_trials", [dict(Slot=5, NMSE_dB=-26.0)]
+    )[0]
+    assert all(labels[key] not in no_clock for key in keys)
+    zero = dict(source, ChannelNMSERecordedReceiverTimingOffset_samples=0,
+                ChannelNMSEExecutedReceiverCFO_Hz=0)
+    view = dashboard.summarize_control_trial_preview_rows("srs_trials", [zero])[0]
+    assert view["Scoring-only recorded RX delay (samples)"] == 0
+    assert view["Scoring-only recorded RX CFO (Hz)"] == 0
 
 
 def test_trs_preview_separates_scheduler_tracking_and_qualification() -> None:
@@ -438,6 +534,24 @@ def test_ue_status_keeps_serving_ss_and_csi_measurements_distinct() -> None:
     assert ue["pathloss_paths"][1]["raw_pathloss_db"] == 0
     assert ue["pathloss_paths"][1]["beam_index"] is None
     assert ue["pathloss_paths"][1]["beam_gain_db"] is None
+
+
+def test_csi_normalized_physical_power_is_not_legacy_grid_power() -> None:
+    sources = {"csi": [{"UEIndex": 1, "Slot": 6,
+        "MeasurementRelativeRSRP_dB": -18.69,
+        "MeasurementRSRP_dB_re_UnitOccupiedRE_Es": -10.61,
+        "MeasurementRSSI_dB_re_UnitOccupiedRE_Es": 18.225,
+        "MeasurementRSRQ_dB": -4.474,
+        "MeasurementReceiveAntennaIndex1Based": 2,
+        "MeasurementRSRPPerReceiveAntenna_dB_re_UnitOccupiedRE_Es": "[-11.29,-10.61]"}]}
+    ue = dashboard.build_realtime_ue_status({}, {}, sources)[0]
+    assert ue["csi_rsrp_normalized_db"] == -10.61
+    assert ue["csi_rsrp_relative_db"] == -18.69
+    assert ue["csi_rsrp_dbm"] is None
+    assert ue["csi_rsrq_db"] == -4.474
+    assert ue["csi_rsrp_receive_branch"] == 2
+    del sources["csi"][0]["MeasurementRSRP_dB_re_UnitOccupiedRE_Es"]
+    assert dashboard.build_realtime_ue_status({}, {}, sources)[0]["csi_rsrp_normalized_db"] is None
 
 
 def test_post_equalization_csi_row_is_not_relabelled_as_csi_sinr() -> None:

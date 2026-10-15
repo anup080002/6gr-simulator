@@ -681,8 +681,11 @@ end
 cfg.channel.propagationScenario = char(propagationScenario);
 cfg.channel.pathloss.model = char(string(s.channels.pathloss_model));
 cfg.channel.pathlossModel = char(string(s.channels.pathloss_model));
+% Use the resolved run strictness, sourced from logging.strict_validation
+% above. run_control.strict_mode is not the scenario's installed authority;
+% consulting it silently downgraded strict LLS to approximate propagation.
 cfg.channel.complianceMode = char(string(sixgr.util.structGet(s, "channels.compliance_mode", ...
-    localTernary(logical(sixgr.util.structGet(s, "run_control.strict_mode", false)), "strict_38901", "approximate_38901_plus"))));
+    localTernary(cfg.run.strictMode, "strict_38901", "approximate_38901_plus"))));
 cfg.channel.shadowFadingStd_dB = double(s.channels.shadow_fading_std_db);
 cfg.channel.shadowSigma_dB = double(s.channels.shadow_fading_std_db);
 cfg.channel.receiverNoiseFigure_dB = double(cfg.scenario.ue.noiseFigure_dB);

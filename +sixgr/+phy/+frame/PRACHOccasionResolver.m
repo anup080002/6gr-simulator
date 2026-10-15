@@ -7,6 +7,9 @@ classdef PRACHOccasionResolver
 
     methods (Static)
         function result = resolve(varargin)
+            sixgr.runtime.RuntimeCallLedger.record( ...
+                "sixgr.phy.frame.PRACHOccasionResolver.resolve", ...
+                "PRACH","UL",struct("Stage","occasion_resolution"));
             p = inputParser;
             p.FunctionName = "sixgr.phy.frame.PRACHOccasionResolver.resolve";
             addParameter(p, "FrequencyRange", "", @localTextScalar);

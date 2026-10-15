@@ -168,7 +168,7 @@ for item=items
     p=item.Context.Prepared;
     [post,pre,tx,replay,receiver]=sixgr.truth.sharedObservationEvidence(item.Planes,p);
     originalReplay=replay;
-    [~,~,channelReferences]=sixgr.truth.sharedLinkScoringObservation( ...
+    [~,scoringEvidence,channelReferences]=sixgr.truth.sharedLinkScoringObservation( ...
         item.Planes,p,item.Context.DesiredReferencePlane);
     assert(~isempty(channelReferences),'test:MissingDataChannelCapture', ...
         'Each data observation needs its own same-execution channel coefficients.');
@@ -189,6 +189,27 @@ for item=items
         replay.ReceiveStreamExecutionSegments)), ...
         'Same-execution coefficient tensors must never enter practical receiver replay.');
     scoringIndex=find(string({item.Planes.ReceiverID})==item.Context.DesiredReferencePlane);
+    compact=scoringEvidence.ReceiverClockExecution;
+    fields={'InjectedTimingOffset_samples','CFOApplied','InjectedCFO_Hz','RFEndpoint','RFStageOrder'};
+    for segmentIndex=1:numel(compact.ReceiveStreamExecutionSegments)
+        retained=compact.ReceiveStreamExecutionSegments{segmentIndex}.Execution.RX;
+        physical=item.Planes(scoringIndex).Segments{segmentIndex}.Execution.RX;
+        physical=physical(string({physical.ID})==compact.ReceiverID);
+        assert(isscalar(physical) && retained.ID==physical.ID);
+        for field=fields
+            assert(isequaln(retained.Replay.(field{1}),physical.Replay.(field{1})), ...
+                'Compact scoring metadata must preserve the executed RX operator exactly.');
+        end
+        assert(numel(fieldnames(retained.Replay))==numel(fields), ...
+            'Do not reintroduce waveform/channel tensors into compact clock metadata.');
+    end
+    missingClock=item.Planes;
+    endpoints=missingClock(scoringIndex).Segments{1}.Execution.RX;
+    rx=find(string({endpoints.ID})==compact.ReceiverID);
+    endpoints(rx).Replay=rmfield(endpoints(rx).Replay,'CFOApplied');
+    missingClock(scoringIndex).Segments{1}.Execution.RX=endpoints;
+    localReject(@()sixgr.truth.sharedLinkScoringObservation( ...
+        missingClock,p,item.Context.DesiredReferencePlane),'sixgr:truth:MissingReceiverClockExecution');
     changed=item.Planes;
     for segmentIndex=1:numel(changed(scoringIndex).Segments)
         captures=changed(scoringIndex).Segments{segmentIndex}.Execution.ChannelReferences;

@@ -174,6 +174,14 @@ initial_access:
   sib1:
     enabled: false
 
+# Access is outside this RF-only fixture. Keep its inherited PRACH schema
+# legal nevertheless: FR1 paired-spectrum index 87 selects A1 (the TDD
+# baseline's index 87 selects A2).
+random_access:
+  enabled: false
+  duplex_mode: FDD
+  prach_format: A1
+
 mimo:
   n_tx_ant: 2
   n_rx_ant: 2

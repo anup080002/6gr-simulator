@@ -5,7 +5,9 @@ setup6GRSimToolkit('Verbose',false);
 if nargin<1, mode="TDD"; end
 if nargin<2, queueWhileUL=false; end
 if nargin<3, withQCL=false; end
-file='lls_causal_access_to_data_wiring_tdd.yaml';
+% Install the same independently decoded control schema required by the
+% production shared runtime; do not bypass its DCI-context guard.
+file='lls_pdcch_shared_queue_fixture.yaml';
 if string(mode)=="FDD", file='lls_trs_shared_scoring_fdd_fixture.yaml'; end
 if withQCL
     assert(string(mode)=="TDD" && ~queueWhileUL);
@@ -79,12 +81,20 @@ for slot=1:runtimeSlot+1
             'Actual independent NMSE=%g; %s',out.NMSE_dB,out.FailureReason);
         assert(out.ChannelNMSEComparedComplexValues== ...
             sum(p.Tx.SlotTable.NRE)*observation.NumReceiveAntennas);
+        assert(out.ChannelNMSEPilotResourceCount==sum(p.Tx.SlotTable.NRE) && ...
+            out.ChannelNMSEQualificationMode=="independent_complex_pilot_resources_no_gain_or_phase_fit" && ...
+            abs(10*log10(out.ChannelNMSEErrorEnergy/out.ChannelNMSEReferenceEnergy)-out.NMSE_dB)<1e-10);
         assert(isnan(out.QCLAccuracy) && isnan(out.MeasuredTrialSINR_dB));
+        assert(out.IndependentPilotSNDRAvailable && isfinite(out.IndependentPilotSNDR_dB) && ...
+            out.IndependentPilotComparedComplexValues==out.ChannelNMSEComparedComplexValues && ...
+            abs(out.IndependentPilotSNDR_dB-10*log10(out.IndependentPilotSignalEnergy/ ...
+            out.IndependentPilotDisturbanceEnergy))<1e-10);
         assert(out.ChannelNMSEReferenceIncludesRFImpairments==1);
         absent=sixgr.link.completeTRSReception(p,observation,replay,ch);
         assert(~absent.Ok && ~absent.NMSEScoringAvailable && isnan(absent.NMSE_dB));
         assert(absent.DetectionMetric==out.DetectionMetric && absent.EstimatedCFO_Hz==out.EstimatedCFO_Hz);
         assert(absent.TRSRuntimeEvidenceUsable && ~absent.StrictOk);
+        assert(~absent.IndependentPilotSNDRAvailable && isnan(absent.IndependentPilotSNDR_dB));
         assert(out.ChannelNMSEComparedComplexValues>0 && ...
             contains(string(out.NMSEReferenceSource),'same_executed_desired_link_waveform'), ...
             'TRS NMSE must be scored from same-execution IQ, not regenerated channel coefficients.');

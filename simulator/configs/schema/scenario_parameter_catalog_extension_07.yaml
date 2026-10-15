@@ -300,6 +300,11 @@ sections:
       pa: {required: false, type: struct}
       cfr: {required: false, type: struct}
       dpd: {required: false, type: struct}
+      # DAC profile includes bits/full_scale/convention and an optional
+      # reference_domain: waveform_samples (legacy explicit sample units)
+      # or normalized_nr_ofdm_full_carrier. The latter additionally requires
+      # reference_re_energy and reference_headroom_db; the core resolver
+      # validates normalized power authority, sample clock and TX dimensions.
       dac: {required: false, type: struct}
       receiver: {required: false, type: struct}
       blocker: {required: false, type: struct}

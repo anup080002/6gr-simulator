@@ -1,0 +1,23 @@
+inherits:
+  - ../scenarios/lls_causal_access_to_data_wiring_tdd.yaml
+meta:
+  scenario_id: lls_pdcch_known_candidate_queue
+  description: Known-candidate PDCCH shared-stream component boundary.
+  purpose: Verify waveform queuing and receive completion; not blind acquisition or main-scenario acceptance.
+scenario:
+  target_cases: [pdcch]
+control:
+  blind_search_enabled: false
+initial_access:
+  sib1:
+    enabled: false
+# Retain the parent queue test's link operating point. This test checks
+# physical queuing and a known codec payload, not connected blind DCI,
+# initial acquisition, O2I link budget, or a detection probability.
+simulation:
+  snr_db: 60
+  noise_operating_mode: standalone_awgn_snr_argument
+deployment_topology:
+  indoor_ue_fraction: 0.0
+channels:
+  o2i_model: none

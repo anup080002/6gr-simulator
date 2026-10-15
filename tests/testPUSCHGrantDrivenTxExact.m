@@ -68,6 +68,8 @@ for i = 1:numel(vectors)
     assert(dftErr < 1e-12, "DFT-input PUSCH symbols differ for vector %d.", i);
 
     ctx = tx.TxContext.DimensionContract;
+    assert(isequaln(tx.TxContext.QAMSymbolOrder,tx.QAMSymbolOrder), ...
+        'Frozen transmit context must preserve the exact QAM-domain ordering.');
     assert(double(ctx.LayerDataRE) == double(tx.ResourceAccounting.LayerDataRE), ...
         "TxContext LayerDataRE does not match resource accounting.");
     assert(double(ctx.QAMSymbolCount) == numel(tx.PUSCHDFTInputSymbols), ...
@@ -87,6 +89,8 @@ for i = 1:numel(vectors)
     if i == 1
         localAssertNoiselessRoundtrip(tx, tbBits, cfg);
         localAssertDMRSPortMismatchFails(cfg, tx, phyGrant, tbBits, v.RV);
+    elseif v.TransformPrecoding && v.EnablePTRS
+        localAssertNoiselessRoundtrip(tx, tbBits, cfg);
     end
 end
 
@@ -319,8 +323,15 @@ nativeDMRSInd = dmrsInd;
 nativeDMRSSym = dmrsSym;
 ptrsInd = zeros(0, size(portSym, 2));
 if ~isempty(ptrsSym)
-    ptrsInd = sixgr.phy.resource.puschPTRSGridIndices( ...
-        carrier, pusch, "IndexBase", "1based");
+    if pusch.TransformPrecoding
+        % nrPUSCH already includes the spread data/PT-RS sequence. Build
+        % the independent expected grid without a second PT-RS write or
+        % the DUT's index helper: otherwise both paths can share its bug.
+        relative = nrPUSCHPTRSIndices(carrier,pusch);
+        assert(isequal(portSym(double(relative(:,1)),:),ptrsSym));
+    else
+        ptrsInd = nrPUSCHPTRSIndices(carrier,pusch,"IndexBase","1based");
+    end
 end
 [portSym, puschInd] = localApplyFrozenLogicalProjection( ...
     carrier, portSym, puschInd, phyGrant);
@@ -332,7 +343,9 @@ end
 grid = nrResourceGrid(carrier, nPages);
 grid = localMapGrid(grid, puschInd, portSym);
 grid = localMapGrid(grid, dmrsInd, dmrsSym);
-grid = localMapGrid(grid, ptrsInd, ptrsSym);
+if ~pusch.TransformPrecoding
+    grid = localMapGrid(grid, ptrsInd, ptrsSym);
+end
 
 exp = struct();
 exp.Codeword = int8(codeword(:));
@@ -432,12 +445,19 @@ function localAssertNoiselessRoundtrip(tx, tbBits, cfg)
     "NoiseVarDomain", "grid", ...
     "CompactOutput", false, ...
     "SkipTimingEstimate", true);
-metrics = sixgr.link.deriveModulationTrackingMetrics(tx, rx, cfg, "UL");
+[metrics,paired] = sixgr.link.deriveModulationTrackingMetrics(tx, rx, cfg, "UL");
 ber = sum(int8(tbBits(:)) ~= int8(rx.TransportBlock(:))) / numel(tbBits);
 assert(logical(rx.Ok) && ~logical(rx.CRCError), "Noiseless PUSCH roundtrip must pass CRC.");
 assert(ber == 0, "Noiseless PUSCH roundtrip must have BER=0.");
 assert(double(metrics.SymbolErrorRate) == 0 && double(metrics.SymbolErrors) == 0, ...
     "Noiseless PUSCH roundtrip must have SER=0.");
+if tx.PUSCH.TransformPrecoding
+    assert(isequal(tx.QAMSymbolOrder.LinearIndex,rx.QAMSymbolOrder.LinearIndex) && ...
+        numel(tx.QAMSymbolOrder.LinearIndex)==numel(tx.PUSCHDFTInputSymbols));
+    assert(all(paired.SymbolCoordinateDomain=="pre_transform_qam_positions") && ...
+        all(isnan(paired.SubcarrierIndex)) && all(isfinite(paired.OFDMSymbolIndex)), ...
+        'DFT-spread data QAM has an OFDM-symbol identity, not an individual physical subcarrier.');
+end
 end
 
 function localAssertAuditedTwoPortOneLayer()

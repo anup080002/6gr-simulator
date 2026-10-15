@@ -21,6 +21,14 @@ for ii = 1:numel(resources)
         status = "timing_estimate_failed:" + string(ME.identifier);
     end
     err = est - double(rx.InjectedTimingOffset_samples);
+    reference=double(rx.InjectedTimingOffset_samples);
+    referenceSource="injected_offset_nonfading_reference";
+    if logical(sixgr.util.structGet(rx,'ReceivedExecutionEvidence.ChannelFadingApplied',false))
+        % A multipath arrival is not the oscillator/timing impairment alone.
+        % Post-reception scoring binds the same executed link reference.
+        err=NaN; reference=NaN;
+        referenceSource="unavailable_until_executed_link_scoring";
+    end
     available = attempted && isfinite(est);
     rows(ii) = localTimingRow();
     rows(ii).RunId = string(cfg.RunId);
@@ -32,6 +40,9 @@ for ii = 1:numel(resources)
     rows(ii).TimingHypothesisCount = double(hypotheses);
     rows(ii).InjectedTimingOffset_samples = double(rx.InjectedTimingOffset_samples);
     rows(ii).TimingError_samples = double(err);
+    rows(ii).TrueTimingOffset_samples=reference;
+    rows(ii).TimingScoringReferenceSource=referenceSource;
+    rows(ii).TimingTruthReceiverEstimatorInput=false;
     rows(ii).TimingTolerance_samples = double(cfg.TimingToleranceSamples);
     rows(ii).Status = string(status);
     rows(ii).TruthStatus = "real_lls_evidence";
@@ -51,6 +62,8 @@ timing.Attempted = any([rows.TimingTrackingAttempted]);
 timing.EstimateAvailable = any([rows.TRSTimingEstimateAvailable]);
 timing.EstimatedTimingOffset_samples = median([rows.EstimatedTimingOffset_samples], "omitnan");
 timing.TimingError_samples = median([rows.TimingError_samples], "omitnan");
+timing.TrueTimingOffset_samples=median([rows.TrueTimingOffset_samples],"omitnan");
+timing.TimingScoringReferenceSource=referenceSource;
 end
 
 function y = localSlotWaveform(wave, slotT, idx)
@@ -71,5 +84,7 @@ row = struct("RunId", "", "ConfigHash", "", "Slot", NaN, ...
     "EstimatedTimingOffset_samples", NaN, "InjectedTimingOffset_samples", NaN, ...
     "TimingHypothesisCount", NaN, ...
     "TimingError_samples", NaN, "TimingTolerance_samples", NaN, ...
+    "TrueTimingOffset_samples",NaN,"TimingScoringReferenceSource","", ...
+    "TimingTruthReceiverEstimatorInput",false, ...
     "Status", "", "TruthStatus", "");
 end

@@ -947,6 +947,9 @@ rx = localRXMergeStructs(rx, resourceDiagnostics);
 rx.EqualizedSymbolsForEvidence = canonical.LayerSymbols;
 rx.LayerEqualizedSymbolsForEvidence = canonical.LayerSymbols;
 rx.LayerEqualizedSymbols = canonical.LayerSymbols;
+% Retain all actual demapped codewords. The historical PDSCHRxSymbols
+% alias contains CW0 only and cannot describe a two-codeword constellation.
+rx.DemappedCodewordSymbolsForEvidence = canonical.CodewordSymbols;
 rx.EqualizedSymbolDomain = "layer";
 rx.LayerSymbolOrder = ...
     sixgr.phy.resource.buildSymbolOrderingMap( ...

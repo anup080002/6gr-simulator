@@ -28,6 +28,8 @@ rv = double(sixgr.util.structGet(feedback, "RV", ...
 eligible = false;
 reason = "outer_loop_disabled";
 if policy.Enabled
+    sixgr.runtime.RuntimeCallLedger.record("sixgr.link.updateOLLAStateFromHARQFeedback", ...
+        "LINK_ADAPTATION",direction,struct("Stage","outer_loop_feedback"));
     if ~ackKnown
         reason = "no_ack_nack_feedback";
     elseif isRetx

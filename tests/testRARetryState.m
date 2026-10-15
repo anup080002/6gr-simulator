@@ -43,6 +43,20 @@ assert(~delayed.canStart(int64(event.EarliestRetryTicks)-1) && delayed.canStart(
 % Value copies must not consume each other's random stream state.
 [copy,copyEvent]=state.responseExpired(withBI,withBI.Window.ExpiryTicksExclusive);
 assert(isequaln(copyEvent,event) && isequal(copy.BackoffRNGState,delayed.BackoffRNGState));
+% The finite experiment horizon must not fire a live MAC timer. Preserve
+% real timeout/backoff/exhaustion outcomes as distinct from right-censoring.
+snapshot=struct('ControlGating',struct('PBCHRequired',true,'PRACHRequired',true), ...
+    'CellAcquisitionState',repmat("acquired",3,1), ...
+    'AccessState',["pending";"failed";"failed"]);
+snapshot.RARetryByUE={state;delayed;done};
+closed=sixgr.truth.CoupledTruthRuntime.finalizeFiniteHorizonRuntime(snapshot,60,"test_horizon");
+summary=closed.ControlTrials.RAEvidenceTables.initial_access_horizon;
+assert(isequal(summary.Status,["RIGHT_CENSORED";"RIGHT_CENSORED";"FAILED_PROCEDURE"]) && ...
+    summary.PendingTimerExpiryTicks(1)==double(state.ResponseExpiryTicks) && ...
+    summary.EarliestRetryTicks(2)==double(delayed.EarliestNextAttemptTicks) && ...
+    summary.RetryLimitExhausted(3) && ~any(summary.AccessCompleted));
+assert(isequaln(closed.RARetryByUE,snapshot.RARetryByUE) && ...
+    isequal(closed.AccessState,snapshot.AccessState));
 ok=true; disp('RA_RETRY_STATE_PASS: independent counters, reference/LBT/suspension conditions, exact expiry and max-attempt guard.');
 end
 

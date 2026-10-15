@@ -18,9 +18,9 @@ switch token
         lengths = [1 1];
     case "FD-CDM2"
         lengths = [2 1];
-    case "CDM4-FD2-TD2"
+    case {"CDM4","CDM4-FD2-TD2"}
         lengths = [2 2];
-    case "CDM8-FD2-TD4"
+    case {"CDM8","CDM8-FD2-TD4"}
         lengths = [2 4];
     otherwise
         error("sixgr:phy:csirs:UnsupportedCDMType", ...

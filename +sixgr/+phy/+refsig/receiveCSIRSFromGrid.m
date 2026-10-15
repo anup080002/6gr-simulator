@@ -10,6 +10,7 @@ arguments
     received (1,1) struct
     opt (1,1) struct = struct()
 end
+sixgr.runtime.RuntimeCallLedger.record("sixgr.phy.refsig.receiveCSIRSFromGrid","CSI-RS","DL",struct("Stage","RX"));
 assert(isfield(received,'OFDMGrid') && isfield(received,'OFDMInfo'), ...
     'sixgr:refsig:CSIReceivedGridRequired','Retain the synchronized grid and OFDM metadata.');
 validateattributes(received.OFDMGrid,{'single','double'},{'nonempty','finite'});
@@ -354,7 +355,7 @@ for ordinal = 1:numel(configs)
         % receive branch.  Preserve every branch value for audit and use
         % the strongest measured branch for the UE-level report; averaging
         % branches can violate that normative lower bound.
-        resourceAverage(ordinal) = max(branchRSRP);
+        resourceAverage(ordinal) = max(branchRSRP,[],'omitnan');
     catch ME
         measurementErrors(ordinal) = string(ME.identifier);
     end
@@ -416,6 +417,15 @@ if ~(isscalar(ordinal) && isfinite(ordinal) && ordinal >= 1 && ...
         ordinal == round(ordinal) && ordinal <= numel(values))
     return;
 end
+resources=sixgr.util.structGet(obs,"MeasurementPhysicalResources",{});
+if ordinal<=numel(resources) && ~isempty(resources{ordinal}) && isfield(resources{ordinal},'SINR')
+    % Retain signed evidence for the selected resource even when every
+    % branch has a nonpositive estimate and no dB-valued result exists.
+    sinr=resources{ordinal}.SINR;
+    obs.ReferenceSINRMeasurementJSON=string(jsonencode(sixgr.util.jsonSafeValue(sinr)));
+    obs.ReferenceMeasuredSINRSource=string(sixgr.util.structGet(sinr,'Source',""));
+    obs.ReferenceMeasuredSINRStatus=sinr.Status;
+end
 if isfinite(values(ordinal))
     obs.MeasurementSelectedResourceOrdinal = ordinal;
     obs.("MeasurementRSRP"+suffix) = double(values(ordinal));
@@ -423,16 +433,8 @@ if isfinite(values(ordinal))
         obs.("MeasurementRSRPPerReceiveAntenna"+suffix) = ...
             localNumericVectorToken(perAntenna{ordinal});
     end
-    resources=sixgr.util.structGet(obs,"MeasurementPhysicalResources",{});
     if ordinal<=numel(resources) && ~isempty(resources{ordinal})
         measured=resources{ordinal};
-        if isfield(measured,'SINR')
-            % Preserve signed low-SNR evidence even when no positive dB
-            % estimate can be resolved; do not discard the measurement.
-            obs.ReferenceSINRMeasurementJSON=string(jsonencode(sixgr.util.jsonSafeValue(measured.SINR)));
-            obs.ReferenceMeasuredSINRSource=measured.SINR.Source;
-            obs.ReferenceMeasuredSINRStatus=measured.SINR.Status;
-        end
         if isfield(measured,'SINR') && measured.SINR.Available
             obs.ReferenceMeasuredSINR_dB=measured.SINR.CSI_SINR_dB;
             obs.ReferenceMeasuredSINRSource=measured.SINR.Source;

@@ -11140,8 +11140,14 @@ CONTROL_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("CFOError_Hz", "CFO estimation error (Hz)"),
         ("SIB1CFOCorrectionApplied_Hz", "Applied CFO correction (Hz)"),
         ("SIB1CFOCorrectionSource", "CFO correction source"),
-        ("ResidualCFO_PostCorrection_Hz", "Residual CFO (Hz)"),
-        ("ResidualCFOMeasurementStatus", "Residual CFO status"),
+        ("ResidualCFO_PostCorrection_Hz", "Oscillator-only residual CFO (Hz)"),
+        ("ResidualCFOMeasurementStatus", "Oscillator-only residual status"),
+        ("PBCHResidualCommonFrequency_Hz", "PBCH post-correction common frequency (Hz)"),
+        ("PBCHResidualFrequencyAvailable", "PBCH residual measurement available"),
+        ("PBCHResidualFrequencyStatus", "PBCH residual measurement status"),
+        ("PBCHResidualFrequencySource", "PBCH residual source"),
+        ("PBCHResidualFrequencyRole", "PBCH residual evidence role"),
+        ("PBCHResidualFrequencyIndependentCapture", "Independent residual capture"),
         ("InjectedTimingOffset_samples", "Injected timing offset (samples)"),
         ("EstimatedTimingOffset_PreCorrection_samples", "Detected SSB position before correction (samples)"),
         ("AppliedTimingCorrection_samples", "Applied timing correction (samples)"),
@@ -11356,6 +11362,14 @@ CONTROL_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("NMSE_dB", "NMSE dB"),
         ("NMSEScoringAvailable", "NMSE scoring available"),
         ("NMSEReferenceSource", "NMSE reference source"),
+        ("RawChannelNMSE_dB", "Raw complex-plane NMSE dB"),
+        ("PreRXClockChannelNMSE_dB", "Unmatched pre-RX-clock NMSE dB (diagnostic)"),
+        ("ChannelNMSEReferencePlane", "NMSE reference plane"),
+        ("ChannelNMSEQualificationMode", "NMSE qualification mode"),
+        ("ChannelNMSEReceiverTimingIncluded", "Scoring reference includes RX delay"),
+        ("ChannelNMSERecordedReceiverTimingOffset_samples", "Scoring-only recorded RX delay (samples)"),
+        ("ChannelNMSEReceiverCFOIncluded", "Scoring reference includes RX CFO"),
+        ("ChannelNMSEExecutedReceiverCFO_Hz", "Scoring-only recorded RX CFO (Hz)"),
         ("TimingOffset_samples", "Timing off"),
         ("EstimatedTimingOffset_samples", "Timing estimate (samples)"),
         ("AppliedTimingCorrection_samples", "Applied timing correction (samples)"),
@@ -11403,6 +11417,19 @@ CONTROL_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("NMSE_dB", "NMSE dB"),
         ("NMSEScoringAvailable", "NMSE scoring available"),
         ("NMSEReferenceSource", "NMSE reference source"),
+        ("ChannelNMSEReferencePlane", "NMSE reference plane"),
+        ("ChannelNMSEQualificationMode", "NMSE comparison mode"),
+        ("ChannelNMSEPilotResourceCount", "Scored pilot resources"),
+        ("ChannelNMSEComparedComplexValues", "Compared complex values"),
+        ("ChannelNMSEErrorEnergy", "NMSE error energy"),
+        ("ChannelNMSEReferenceEnergy", "NMSE reference energy"),
+        ("IndependentPilotSNDR_dB", "Independent pilot SNDR (dB; includes distortion)"),
+        ("IndependentPilotSNDRAvailable", "Independent pilot score available"),
+        ("IndependentPilotReferencePlane", "Independent pilot reference plane"),
+        ("IndependentPilotComparedComplexValues", "Independent pilot compared values"),
+        ("IndependentPilotSignalEnergy", "Independent pilot signal energy"),
+        ("IndependentPilotDisturbanceEnergy", "Independent pilot disturbance energy"),
+        ("IndependentPilotValueRole", "Independent pilot value role"),
         ("ChannelEstimateAvailable", "Channel estimate available"),
         ("ChannelEstimateSource", "Channel estimate source"),
         ("InjectedCFO_Hz", "Injected CFO (Hz)"),
@@ -11415,6 +11442,13 @@ CONTROL_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("EstimatedTimingOffset_samples", "Timing estimate (samples)"),
         ("TRSTimingEstimate_samples", "TRS timing estimate (samples)"),
         ("TRSTimingEstimateAvailable", "TRS timing available"),
+        ("TimingEstimateUsed", "Timing estimate used"),
+        ("AppliedTimingCorrection_samples", "Applied timing correction (samples)"),
+        ("TimingEstimateStatus", "Timing status"),
+        ("TimingEstimateApplicationPolicy", "Timing correction policy"),
+        ("TRSAppliedTimingResourceCount", "Aligned TRS windows"),
+        ("TRSExpectedTimingResourceCount", "Expected TRS windows"),
+        ("TRSAppliedTimingEvidenceJSON", "Applied timing window evidence"),
         ("ObservationStartSample", "Observation start sample"),
         ("ObservationEndSampleExclusive", "Observation end sample"),
         ("ObservationSampleRateHz", "Observation sample rate (Hz)"),
@@ -11432,6 +11466,27 @@ CONTROL_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("Status", "Status"),
     ],
 }
+
+
+RX_RF_MEASUREMENT_PREVIEW_COLUMNS = [
+    ("AGCExecuted", "RX AGC executed"),
+    ("AGCControlModel", "RX AGC control model"),
+    ("AGCDecisionCausal", "RX AGC causal decision"),
+    ("AGCExecutionStatus", "RX AGC execution status"),
+    ("AGCGainIsTimeVarying", "RX AGC gain varies within capture"),
+    ("AGCGain_dB", "RX AGC stationary gain only (dB)"),
+    ("AGCGainMin_dB", "RX applied gain minimum (dB)"),
+    ("AGCGainMax_dB", "RX applied gain maximum (dB)"),
+    ("AGCGainSampleCount", "RX gain-covered time samples"),
+    ("AGCGainEvidenceSource", "RX gain evidence source"),
+    ("ADCErrorMeanSquare", "ADC mean squared sample error (not EVM)"),
+    ("ADCErrorSampleCount", "ADC error complex samples across channels"),
+    ("ADCInputEnergy", "ADC input squared-sample sum"),
+    ("ADCErrorEnergy", "ADC error squared-sample sum"),
+    ("ADCErrorMeasurementStatus", "ADC error measurement status"),
+    ("ADCErrorDefinition", "ADC error definition"),
+    ("ADCErrorDomain", "ADC error domain"),
+]
 
 
 DATA_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
@@ -11470,6 +11525,13 @@ DATA_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("ResidualCFOEstimateSource", "Residual estimator source"),
         ("ResidualCFOEstimateAvailable", "Residual estimate available"),
         ("CFOEstimateAvailability", "CFO estimate availability"),
+        ("PilotCommonPhaseRate_Hz", "Matched-pilot common phase rate (Hz; not Doppler spread)"),
+        ("PilotPhaseFitResidualRMS_deg", "Pilot phase-fit residual (deg; not tracking accuracy)"),
+        ("PilotPhasePairCount", "Matched pilot pairs"),
+        ("PilotPhaseUnaliasedHalfWidth_Hz", "Pilot-rate alias half-width (Hz)"),
+        ("PilotPhaseEvolutionSource", "Pilot phase measurement source"),
+        ("PilotPhaseEvolutionStatus", "Pilot phase measurement status"),
+        ("DopplerMeasurementStatus", "Doppler measurement status"),
         ("EstimatedTimingOffset_PreCorrection_samples", "Timing estimate (samples)"),
         ("AppliedTimingCorrection_samples", "Applied timing correction (samples)"),
         ("ResidualTimingError_PostCorrection_samples", "Residual timing error (samples)"),
@@ -11549,6 +11611,13 @@ DATA_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("ResidualCFOEstimateSource", "Residual estimator source"),
         ("ResidualCFOEstimateAvailable", "Residual estimate available"),
         ("CFOEstimateAvailability", "CFO estimate availability"),
+        ("PilotCommonPhaseRate_Hz", "Matched-pilot common phase rate (Hz; not Doppler spread)"),
+        ("PilotPhaseFitResidualRMS_deg", "Pilot phase-fit residual (deg; not tracking accuracy)"),
+        ("PilotPhasePairCount", "Matched pilot pairs"),
+        ("PilotPhaseUnaliasedHalfWidth_Hz", "Pilot-rate alias half-width (Hz)"),
+        ("PilotPhaseEvolutionSource", "Pilot phase measurement source"),
+        ("PilotPhaseEvolutionStatus", "Pilot phase measurement status"),
+        ("DopplerMeasurementStatus", "Doppler measurement status"),
         ("EstimatedTimingOffset_PreCorrection_samples", "Timing estimate (samples)"),
         ("AppliedTimingCorrection_samples", "Applied timing correction (samples)"),
         ("ResidualTimingError_PostCorrection_samples", "Residual timing error (samples)"),
@@ -11581,6 +11650,10 @@ DATA_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("Status", "Status"),
     ],
 }
+
+
+for _trial_columns in DATA_TRIAL_PREVIEW_COLUMNS.values():
+    _trial_columns.extend(RX_RF_MEASUREMENT_PREVIEW_COLUMNS)
 
 
 PROCEDURE_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
@@ -11646,6 +11719,26 @@ PROCEDURE_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("RuntimeChannelStateUsed", "Shared channel state"),
         ("RuntimeStageCount", "Runtime stages"),
     ],
+    "ra_receiver_rf": [
+        ("UEId", "UE"), ("AttemptId", "Attempt"), ("StageName", "Receive window"),
+        ("Direction", "Direction"), ("RuntimeSlot", "Runtime slot (1-based)"),
+        ("ConfiguredSNR_dB", "Configured SNR (dB)"),
+        ("TransmitterID", "TX endpoint"), ("ReceiverID", "RX endpoint"),
+        ("ObservationID", "Observation ID"),
+        ("ObservationStartSample", "Capture start sample"),
+        ("ObservationEndSampleExclusive", "Capture end (exclusive)"),
+        ("ResultAvailableAtSample", "Available at sample"),
+        ("DACBits", "TX DAC bits"), ("DACFullScale", "TX DAC full scale"),
+        ("DACClippingRatio", "TX DAC clipping fraction"),
+        ("DACClippingStatus", "TX DAC clipping status"),
+        ("PAApplied", "TX PA applied"),
+        ("CFOApplied", "RX CFO applied"), ("TimingOffsetApplied", "RX timing error applied"),
+        ("IQImbalanceApplied", "RX IQ imbalance applied"),
+        ("PhaseNoiseApplied", "RX phase noise applied"),
+        ("ADCBits", "RX ADC bits"), ("ADCClippingRatio", "RX ADC clipping fraction"),
+        ("RFMetadataAppliedFlagScope", "Applied-flag scope"),
+        ("EvidenceScope", "Evidence scope"),
+    ] + RX_RF_MEASUREMENT_PREVIEW_COLUMNS,
     "ra_stage_waveforms": [
         ("UEId", "UE"), ("StageName", "Stage"),
         ("StageSlot", "Absolute slot (0-based)"),
@@ -11712,7 +11805,7 @@ PROCEDURE_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
 
 def _is_preview_placeholder_string(text: str) -> bool:
     lowered = text.strip().lower()
-    if not lowered:
+    if not lowered or lowered in {"nan", "<missing>", "null"}:
         return True
     return lowered.startswith(
         (
@@ -13955,6 +14048,7 @@ def extract_runtime_context(run_row: dict[str, Any], artifacts: list[dict[str, A
         "msg1_detection": ["control/csv/msg1_prach_detection.csv"],
         "ra_attempt": ["control/csv/ra_attempts.csv"],
         "ra_stage_waveforms": ["control/csv/ra_runtime_stage_waveforms.csv"],
+        "ra_receiver_rf": ["control/csv/ra_receiver_rf_observations.csv"],
         "beam_state": ["beamforming/csv/beam_management_state_trace.csv"],
         "csi_report": [
             "air_interface/csv/received_csi_reports.csv",
@@ -15775,10 +15869,29 @@ def build_realtime_ue_status(
         csi_relative_db = coerce_numeric(first_present_value(csi, ["MeasurementRelativeRSRP_dB", "MeasurementRSRP_dB"], None))
         if csi_relative_db is None:
             csi_relative_db = coerce_numeric(first_present_value(dl, ["CSI_RSRP_dB"], None))
+        csi_normalized_rsrp_db = coerce_numeric(csi.get("MeasurementRSRP_dB_re_UnitOccupiedRE_Es"))
         csi_domain = str(first_present_value(csi, ["SINRMeasurementDomain"], "") or "").lower()
-        csi_sinr_db = coerce_numeric(first_present_value(csi, ["ReferenceMeasuredSINR_dB", "PilotSINR_dB"], None))
+        csi_sinr_db = None
+        csi_sinr_source = ""
+        csi_sinr_domain = ""
+        for value_key, source_key, domain_key in (
+            ("ReferenceMeasuredSINR_dB", "ReferenceMeasuredSINRSource", "ReferenceMeasuredSINRDomain"),
+            ("PilotSINR_dB", "PilotSINRSource", "PilotSINRMeasurementDomain"),
+        ):
+            value = coerce_numeric(csi.get(value_key))
+            if value is not None:
+                csi_sinr_db = value
+                csi_sinr_source = str(csi.get(source_key) or "")
+                csi_sinr_domain = str(csi.get(domain_key) or "")
+                break
         if csi_sinr_db is None and "csi" in csi_domain:
             csi_sinr_db = coerce_numeric(first_present_value(csi, ["SINR_dB"], None))
+            csi_sinr_source = str(csi.get("SINRSource") or "")
+            csi_sinr_domain = csi_domain
+        csi_objective_db = None
+        if (csi_domain == "selected_precoder_layer_receiver_objective"
+                and csi.get("SINRValueRole") == "measured_csi_receiver_objective_scheduling_input"):
+            csi_objective_db = coerce_numeric(csi.get("SINR_dB"))
         ss_rsrp_dbm = coerce_numeric(first_present_value(ssb, ["SS_RSRP_dBm", "SSRSRP_dBm"], None))
         ss_relative_db = coerce_numeric(first_present_value(ssb, ["SSBReceivedPower_dB"], None))
         ss_sinr_db = coerce_numeric(first_present_value(ssb, ["SS_SINR_dB", "SSSINR_dB"], None))
@@ -15827,9 +15940,18 @@ def build_realtime_ue_status(
                 "pbch_dmrs_sinr_db": pbch_dmrs_sinr_db,
                 "csi_rsrp_dbm": csi_rsrp_dbm,
                 "csi_rsrp_relative_db": csi_relative_db,
+                "csi_rsrp_normalized_db": csi_normalized_rsrp_db,
+                "csi_rssi_normalized_db": coerce_numeric(csi.get("MeasurementRSSI_dB_re_UnitOccupiedRE_Es")),
+                "csi_rsrq_db": coerce_numeric(csi.get("MeasurementRSRQ_dB")),
+                "csi_rsrp_receive_branch": coerce_numeric(csi.get("MeasurementReceiveAntennaIndex1Based")),
+                "csi_rsrp_per_antenna_normalized_db": csi.get("MeasurementRSRPPerReceiveAntenna_dB_re_UnitOccupiedRE_Es", ""),
                 "csi_power_unit": first_present_value(csi, ["MeasurementPowerUnit", "PowerUnit"], ""),
                 "csi_power_reference_plane": first_present_value(csi, ["PowerReferencePlane", "MeasurementPowerReferencePlane"], ""),
                 "csi_sinr_db": csi_sinr_db,
+                "csi_sinr_source": csi_sinr_source,
+                "csi_sinr_domain": csi_sinr_domain,
+                "csi_scheduling_objective_db": csi_objective_db,
+                "csi_scheduling_objective_source": str(csi.get("SINRSource") or "") if csi_objective_db is not None else "",
                 "csi_rsrp_per_antenna_dbm": first_present_value(csi, ["MeasurementRSRPPerReceiveAntenna_dBm"], ""),
                 "csi_measurement_status": first_present_value(csi, ["PhysicalMeasurementStatus", "CSIComputationStatus"], "not_published"),
                 "csi_measurement_source": first_present_value(csi, ["MeasurementSource", "SINRSource"], ""),
@@ -20395,11 +20517,12 @@ window.addEventListener('DOMContentLoaded', function () {
       ...recent(controlPreviews.pbch_trials).map(row => ({Procedure:'SSB/PBCH',Frame:row.Frame,Slot:row.Slot,Endpoint:row.Cell,Outcome:row['CRC pass'],Status:row.Status})),
       ...recent(controlPreviews.prach_trials).map(row => ({Procedure:'PRACH/RACH',Frame:row.Frame,Slot:row.Slot,Endpoint:row.UE,Outcome:row.Metric,Status:row.Status})),
     ].slice(0, 8);
-    const csiRows = recent(Array.isArray(dashboard.ue_status) ? dashboard.ue_status : []).map(ue => ({Slot:ue.csi_slot,UE:ue.ue_id,Cell:ue.serving_cell,'CSI-RSRP dBm':ue.csi_rsrp_dbm,'CSI-RSRP (dB re configured power plane)':ue.csi_rsrp_relative_db,'Power unit':ue.csi_power_unit,'Power reference plane':ue.csi_power_reference_plane,'CSI-SINR dB':ue.csi_sinr_db,Status:ue.csi_measurement_status}));
+    const csiRows = recent(Array.isArray(dashboard.ue_status) ? dashboard.ue_status : []).map(ue => ({Slot:ue.csi_slot,UE:ue.ue_id,Cell:ue.serving_cell,'CSI-RSRP dBm':ue.csi_rsrp_dbm,'CSI-RSRP (dB re unit occupied-RE Es)':ue.csi_rsrp_normalized_db,'CSI-RSSI (dB re unit occupied-RE Es)':ue.csi_rssi_normalized_db,'CSI-RSRQ dB':ue.csi_rsrq_db,'RSRP RX branch (1-based)':ue.csi_rsrp_receive_branch,'Power unit':ue.csi_power_unit,'Power reference plane':ue.csi_power_reference_plane,'CSI-SINR dB':ue.csi_sinr_db,'SINR source':ue.csi_sinr_source,'SINR plane':ue.csi_sinr_domain,'Rank/PMI objective dB':ue.csi_scheduling_objective_db,'Objective source':ue.csi_scheduling_objective_source,Status:ue.csi_measurement_status}));
     const rrcRows = recent(procedurePreviews.initial_access_lifecycle || []);
     const msg1Rows = recent(procedurePreviews.msg1_detection || []);
     const raAttemptRows = recent(procedurePreviews.ra_attempt || []);
     const raStageRows = recent(procedurePreviews.ra_stage_waveforms || []);
+    const raRFRows = recent(procedurePreviews.ra_receiver_rf || []);
     const beamStateRows = recent(procedurePreviews.beam_state || []);
     const csiReportRows = recent(procedurePreviews.csi_report || []);
     const channelAngleRows = recent(procedurePreviews.channel_angles || []);
@@ -20470,7 +20593,9 @@ window.addEventListener('DOMContentLoaded', function () {
         'Estimate availability':row['CFO estimate availability'] ?? row['TRS CFO available'],
         'Estimator / source':row['CFO source'],
         'Timing estimate (samples)':row['TRS timing estimate (samples)'] ?? row['Timing estimate (samples)'],
-        'Timing status / policy':row['TRS timing available'], Status:row.Status,
+        'Applied timing correction (samples)':row['Applied timing correction (samples)'],
+        'Timing status / policy':`${row['Timing status'] ?? '—'} / ${row['Timing correction policy'] ?? '—'}`,
+        Status:row.Status,
       })),
       ...recent(dataPreviews.dl_trials).map(row => ({
         Stage:'PDSCH receiver',Slot:row.Slot,UE:row.UE,
@@ -20512,6 +20637,7 @@ window.addEventListener('DOMContentLoaded', function () {
       {id:'prach_identity', title:'PRACH Msg1 identity / beam / timing-frequency evidence', columns:['UE','Frame','Slot in frame (0-based)','Absolute slot (0-based)','Associated SSB beam','Associated SSB measurement dB','SSB/beam authority','Msg1 beam policy','Root sequence index (RSI)','TX preamble','Strongest detected preamble','Received preamble set','Received set available','Target preamble missed','False alarm','False alarm applicability','Detection population','Detection metric','Threshold','Frequency estimate enabled','Detected frequency offset Hz','Frequency estimate valid','Frequency estimator','Raw timing samples','Propagation timing samples','Injected timing samples','Timing error samples','Timing source','RAR TA command','TA role','Timing sample rate Hz','RA-RNTI','Status'], rows:msg1Rows, sourcePath:selectedPath(procedureSelection.msg1_detection)},
       {id:'ra_attempt', title:'Four-step RA received outcomes', columns:['UE','Attempt','TX preamble','Detected preamble','RA-RNTI','Temporary C-RNTI','Final C-RNTI','Msg2 RA-RNTI detected','Msg2 DCI CRC','Msg2 PDSCH CRC','Decoded RAR RAPID','RAR RAPID matches UE','Msg3 PUSCH CRC','Msg4 PDCCH CRC','Msg4 PDSCH CRC','RAR TA command','TA NTA (Tc units)','TA source','RA complete','Physical stage waveforms','Shared channel state','Runtime stages'], rows:raAttemptRows, sourcePath:selectedPath(procedureSelection.ra_attempt)},
       {id:'ra_stage_waveforms', title:'RA / RRC physical stage waveforms', columns:['UE','Stage','Runtime slot (1-based)','Absolute slot (0-based)','Prepared TX ports','Physical TX dimensions','Received RX dimensions','TX port-to-element mapping','TX beam','SSB association','Waveform used','Channel state used','Fading execution','TX RF status','TX RF stages','RX front-end status','RX RF stages'], rows:raStageRows, sourcePath:selectedPath(procedureSelection.ra_stage_waveforms)},
+      {id:'ra_receiver_rf', title:'RA / RRC RF execution by receive window (not decode success)', columns:['UE','Attempt','Receive window','Direction','Runtime slot (1-based)','Configured SNR (dB)','TX endpoint','RX endpoint','Observation ID','Capture start sample','Capture end (exclusive)','Available at sample','TX DAC bits','TX DAC full scale','TX DAC clipping fraction','TX DAC clipping status','TX PA applied','RX CFO applied','RX timing error applied','RX IQ imbalance applied','RX phase noise applied','RX ADC bits','RX ADC clipping fraction','Applied-flag scope','Evidence scope'], rows:raRFRows, sourcePath:selectedPath(procedureSelection.ra_receiver_rf)},
       {id:'rrc_attach', title:'RRC / UE attach lifecycle', columns:['Step','UE','RNTI','Cell','Frame','Runtime slot (1-based)','Stage','Event','State','Status','Start runtime slot (1-based)','End runtime slot (1-based)','Delay ms','Complete','Placeholder','Fallback','Source artifact'], rows:rrcRows, sourcePath:selectedPath(procedureSelection.initial_access_lifecycle)},
       {id:'rrc_parameters', title:'RRC setup parameters decoded for the UE', columns:['UE','RNTI','Temporary C-RNTI','Final C-RNTI','RRC transaction ID','SRB1 LCID','RRC setup request decoded','RRC setup decoded','SRB1 installed','RRC setup-complete CRC','RRC setup-complete decoded','Decoded UE identity','RRC connected','RA complete'], rows:recent(controlPreviews.prach_trials), sourcePath:selectedPath(controlSelection.prach_trials)},
       {id:'initial_access', title:'Acquisition / Initial Access summary', columns:['Procedure','Frame','Slot','Endpoint','Outcome','Status'], rows:initialAccessRows, sourcePath:'canonical PBCH + PRACH trial rows'},
@@ -20522,10 +20648,10 @@ window.addEventListener('DOMContentLoaded', function () {
       {id:'pucch', title:'Connected-mode PUCCH / UCI detection and DTX', columns:['Slot','UE','Configured SNR (dB)','Format','Bits','Detection attempted','Detection outcome','Metric','Threshold','Threshold source','Decode ok','CRC applicable','CRC outcome','DTX','Missed feedback','False ACK','False NACK','Missed SR','False SR','Status'], rows:recent(controlPreviews.pucch_trials), sourcePath:selectedPath(controlSelection.pucch_trials)},
       {id:'pdsch', title:'Connected-mode PDSCH / DL-SCH (RA Msg2/Msg4 are shown above)', columns:['Slot','UE','MCS','Modulation','MCS mode','MCS source','LA applied','Scheduler CQI used','LA MCS','Measured SINR dB','CRC pass'], rows:recent(dataPreviews.dl_trials), sourcePath:selectedPath(linkSelection.dl)},
       {id:'pusch', title:'Connected-mode PUSCH / UL-SCH (RA Msg3 is shown above)', columns:['Slot','UE','MCS','Modulation','MCS mode','MCS source','LA applied','Scheduler CQI used','LA MCS','Measured SINR dB','CRC pass'], rows:recent(dataPreviews.ul_trials), sourcePath:selectedPath(linkSelection.ul)},
-      {id:'csi', title:'CSI / CSI-RS measurements', columns:['Slot','UE','Cell','CSI-RSRP dBm','CSI-RSRP (dB re configured power plane)','Power unit','Power reference plane','CSI-SINR dB','Status'], rows:csiRows, sourcePath:'air_interface/csv/csi_rs_trials.csv'},
+      {id:'csi', title:'CSI / CSI-RS measurements and separate scheduling objective', columns:['Slot','UE','Cell','CSI-RSRP dBm','CSI-RSRP (dB re unit occupied-RE Es)','CSI-RSSI (dB re unit occupied-RE Es)','CSI-RSRQ dB','RSRP RX branch (1-based)','Power unit','Power reference plane','CSI-SINR dB','SINR source','SINR plane','Rank/PMI objective dB','Objective source','Status'], rows:csiRows, sourcePath:'air_interface/csv/csi_rs_trials.csv'},
       {id:'csi_report', title:'Received CSI-UCI / scheduler rank admission', columns:['UE','RNTI','Report source slot','CSI reference-resource slot','Reference-slot authority','Report due slot','Delivered slot','Delivery status','UCI transport','UCI decode','UCI CRC','CRI','RI','PMI','LI','CQI','CSI SINR dB','SINR wire status','Selected MCS','Modulation','Scheduler rank','Spatial decision held','Rank confirmations','Required confirmations','Rank update','MCS authority','Measurement authority','Processed'], rows:csiReportRows, sourcePath:selectedPath(procedureSelection.csi_report)},
       {id:'qcl_tci', title:'PDSCH received QCL / TCI binding', columns:['Slot','UE','QCL status','QCL type','QCL source RS','QCL source resource','QCL source slot','QCL available sample','QCL timing prior used','QCL timing prior samples','QCL DMRS delay residual','QCL measurement status','TCI state ID','TCI codepoint','TCI status','TCI initialization source'], rows:recent(dataPreviews.dl_trials), sourcePath:selectedPath(linkSelection.dl)},
-      {id:'srs', title:'SRS channel / spatial-rank evidence', columns:['Slot','UE','Cell','Metric','NMSE dB','Timing off','SRS rank estimate','SRS PMI','SRS-derived CQI','Spatial signature source','Spatial raw rank','Spatial retained rank','Condition number dB','Worst inter-port leakage dB','Inter-port leakage status','SRS first PRB','SRS last PRB','SRS bandwidth coverage','Applied SRS beam','Applied SRS PMI','Status'], rows:recent(controlPreviews.srs_trials), sourcePath:selectedPath(controlSelection.srs_trials)},
+      {id:'srs', title:'SRS channel / spatial-rank evidence', columns:['Slot','UE','Cell','Metric','NMSE dB','Raw complex-plane NMSE dB','NMSE reference plane','NMSE qualification mode','Scoring reference includes RX delay','Scoring-only recorded RX delay (samples)','Scoring reference includes RX CFO','Scoring-only recorded RX CFO (Hz)','Unmatched pre-RX-clock NMSE dB (diagnostic)','Timing estimate (samples)','Applied timing correction (samples)','Estimated CFO (Hz)','CFO estimate availability','Timing off','SRS rank estimate','SRS PMI','SRS-derived CQI','Spatial signature source','Spatial raw rank','Spatial retained rank','Condition number dB','Worst inter-port leakage dB','Inter-port leakage status','SRS first PRB','SRS last PRB','SRS bandwidth coverage','Applied SRS beam','Applied SRS PMI','Status'], rows:recent(controlPreviews.srs_trials), sourcePath:selectedPath(controlSelection.srs_trials)},
       {id:'channel_angles', title:'Executed CDL channel-profile AoD / ZoD / AoA / ZoA', columns:['Direction','Path/tap','Delay s','Path power dB','AoD azimuth deg','ZoD deg','AoA azimuth deg','ZoA deg','Coordinate frame','Angle status','Source'], rows:channelAngleRows, sourcePath:selectedPath(procedureSelection.channel_angles)},
       {id:'trs', title:'TRS scheduler usability / tracking / qualification', columns:['Slot','UE','Metric','Est Doppler Hz','Scheduler usable','Tracking state','Qualification pass','Status','Update'], rows:recent(controlPreviews.trs_trials), sourcePath:selectedPath(controlSelection.trs_trials)},
       {id:'traffic', title:'Traffic / Goodput', columns:['Slot','UE','Direction','Offered Mbps','Goodput Mbps','MCS','Rank / Layers','PRBs','Symbols'], rows:trafficRows, sourcePath:'executed PDSCH/PUSCH trial rows; rank/layers are transmitted values, not CSI RI or configured capability'},
@@ -20548,7 +20674,7 @@ window.addEventListener('DOMContentLoaded', function () {
       const badgeClass = ue.health === 'blocked' ? 'bad' : (ue.health === 'attention' ? 'warn' : 'good');
       const pathRows = (Array.isArray(ue.pathloss_paths) ? ue.pathloss_paths : []).map(path => `<tr><td>${esc(realtimeValue(path.candidate_rank,'',0))}</td><td>${esc(realtimeValue(path.cell_id,'',0))}</td><td>${esc(realtimeValue(path.pathloss_db,' dB'))}</td><td>${esc(realtimeValue(path.rsrp_dbm,' dBm'))}</td><td>${esc(realtimeValue(path.beam_index,'',0))}</td><td>${esc(String(path.status || 'unavailable').replaceAll('_',' '))}</td></tr>`).join('');
       let ssRelative = ue.ss_rsrp_relative_db === null || ue.ss_rsrp_relative_db === undefined ? '' : ` · normalized SS/PBCH grid power ${realtimeValue(ue.ss_rsrp_relative_db,' dB')}`;
-      const csiRelative = ue.csi_rsrp_relative_db === null || ue.csi_rsrp_relative_db === undefined ? '' : ` · legacy normalized CSI power ${realtimeValue(ue.csi_rsrp_relative_db,' dB')}`;
+      const csiRelative = ue.csi_rsrp_normalized_db === null || ue.csi_rsrp_normalized_db === undefined ? '' : ` · CSI-RSRP ${realtimeValue(ue.csi_rsrp_normalized_db,' dB re unit occupied-RE Es')}`;
       const ssOperatingPoint = ue.configured_snr_db === null || ue.configured_snr_db === undefined ? '' : ` · configured Es/N0 ${realtimeValue(ue.configured_snr_db,' dB')}`;
       const ssDelta = ue.ss_sinr_delta_db === null || ue.ss_sinr_delta_db === undefined ? '' : ` · SS measurement delta ${realtimeValue(ue.ss_sinr_delta_db,' dB')}`;
       const ssChannelGain = ue.ss_channel_gain_db === null || ue.ss_channel_gain_db === undefined ? '' : ` · measured RS channel gain ${realtimeValue(ue.ss_channel_gain_db,' dB')}`;

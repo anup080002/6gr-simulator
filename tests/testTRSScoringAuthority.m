@@ -19,6 +19,8 @@ for source=[e.Source,"applied_channel_gain_truth_shared_NR_path_filter_reference
     assert(scored.NMSEScoringAvailable && scored.NMSEReferenceSource==source);
     assert(abs(scored.MeanNMSE_dB+20)<1e-10 && ...
         scored.Table.NMSEComparedComplexValues==24);
+    assert(scored.Table.ChannelNMSEPilotResourceCount==24 && ...
+        scored.Table.ChannelNMSEQualificationMode=="independent_complex_pilot_resources_no_gain_or_phase_fit");
     % Every accepted representation retains the same anti-oracle guards.
     for field=["ReceiverEstimatorInput","GainOrPhaseFitted","AdditionalChannelExecutions"]
         invalid=valid; invalid.(field)=1;

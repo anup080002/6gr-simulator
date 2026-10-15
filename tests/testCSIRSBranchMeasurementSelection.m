@@ -41,6 +41,21 @@ bad=m; bad.RSSIPerAntenna_dBm(1)=NaN;
 reject(@()sixgr.phy.refsig.selectCSIRSBranchMeasurements(bad),'sixgr:phy:CSIRSBranchMeasurementShape');
 bad=m; bad.Available=false;
 reject(@()sixgr.phy.refsig.selectCSIRSBranchMeasurements(bad),'sixgr:phy:CSIRSBranchMeasurementsUnavailable');
+% A finite, measured signed power can be nonpositive without the receive
+% branch being absent. Retain it, select the valid branch, and reject NaNs
+% without exactly matching producer evidence.
+signed=relative;
+signed.RSRPPerAntenna_dB_re_UnitOccupiedRE_Es(2)=NaN;
+signed.RSRQPerAntenna_dB(2)=NaN;
+signed.SINR=struct('DesiredPowerPerReceiveAntenna',[1 -.02]);
+t=sixgr.phy.refsig.selectCSIRSBranchMeasurements(signed);
+assert(t.RSRPReceiveBranch1Based==1 && t.RSRQReceiveBranch1Based==1 && t.RSRQ_dB==-13);
+bad=signed; bad=rmfield(bad,'SINR');
+reject(@()sixgr.phy.refsig.selectCSIRSBranchMeasurements(bad),'sixgr:phy:CSIRSBranchMeasurementShape');
+bad=signed; bad.SINR.DesiredPowerPerReceiveAntenna(2)=.02;
+reject(@()sixgr.phy.refsig.selectCSIRSBranchMeasurements(bad),'sixgr:phy:CSIRSBranchMeasurementShape');
+bad=signed; bad.SINR.DesiredPowerPerReceiveAntenna(1)=2;
+reject(@()sixgr.phy.refsig.selectCSIRSBranchMeasurements(bad),'sixgr:phy:CSIRSBranchMeasurementShape');
 ok=true;
 end
 function reject(fn,id)

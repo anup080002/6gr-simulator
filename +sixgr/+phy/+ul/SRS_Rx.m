@@ -21,6 +21,7 @@ function [rx, info] = SRS_Rx(rxWaveform, cfg, varargin)
 %     .SRSSymbols  : reference SRS symbols
 
 % ---------------------- Parse inputs ----------------------
+sixgr.runtime.RuntimeCallLedger.record("sixgr.phy.ul.SRS_Rx","SRS","UL",struct("Stage","RX"));
 ip = inputParser;
 ip.addParameter('Carrier', [], @(x) isempty(x) || isobject(x));
 ip.addParameter('SRS', [], @(x) isempty(x) || isobject(x));
@@ -93,7 +94,7 @@ if estimator=="flat_static_awgn_ls"
 else
 try
     [avgWindow, srsSymbols] = localSRSChannelEstimateWindow(carrier, srs, srsInd, srsInfo);
-    cdmLengths = localSRSCDMLengths(srs);
+    cdmLengths = sixgr.phy.srs.resolveCDMLengths(srs);
     if localSRSFrequencyHoppingEnabled(srs) && numel(srsSymbols) > 1
         [Hest, nVarEst, estInfo] = localEstimateSRSHopped( ...
             carrier, rxGrid, srsInd, srsSym, srsSymbols, cdmLengths);
@@ -475,27 +476,6 @@ if isempty(nVals)
 else
     nVarEst = mean(nVals, "omitnan");
 end
-end
-
-function cdmLengths = localSRSCDMLengths(srs)
-% nrSRS multiplexes its antenna ports by cyclic shifts of the same base
-% sequence. The practical channel estimator must jointly despread every
-% configured SRS port; treating those orthogonal ports as independent
-% residuals classifies their signal energy as noise.
-nPorts = double(srs.NumSRSPorts);
-if ~(isscalar(nPorts) && isfinite(nPorts) && any(nPorts == [1 2 4]))
-    error('sixgr:phy:ul:UnsupportedSRSPortCount', ...
-        'SRS receiver requires NumSRSPorts to be one of [1 2 4], got %g.',nPorts);
-end
-comb = double(srs.KTC);
-if ~(isscalar(comb) && isfinite(comb) && any(comb == [2 4]))
-    error('sixgr:phy:ul:UnsupportedSRSComb', ...
-        'SRS receiver requires KTC to be 2 or 4, got %g.',comb);
-end
-% nrChannelEstimate consumes the complete SRS port set jointly. KTC changes
-% the occupied-RE pattern, but all configured SRS ports remain members of
-% the frequency-domain orthogonal cover presented to the estimator.
-cdmLengths = [nPorts 1];
 end
 
 function [avgWindow, srsSymbols] = localSRSChannelEstimateWindow(carrier, srs, srsInd, srsInfo)

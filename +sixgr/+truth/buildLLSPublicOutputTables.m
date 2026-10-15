@@ -467,6 +467,9 @@ rows = repmat(struct("OutputId", "srs_measurement_table", "RunId", iLogicalRunId
     "NMSE_dB", NaN, "RawChannelNMSE_dB", NaN, "NMSEQualificationMode", "", ...
     "ChannelNMSEPhaseAligned", false, "ChannelNMSEGainFitted", false, ...
     "ChannelNMSECommonPhaseRotation_rad", NaN, "NMSEReferenceSource", "", ...
+    "PreRXClockChannelNMSE_dB", NaN, "ChannelNMSEReferencePlane", "", ...
+    "ChannelNMSEReceiverTimingIncluded", NaN, "ChannelNMSERecordedReceiverTimingOffset_samples", NaN, ...
+    "ChannelNMSEReceiverCFOIncluded", NaN, "ChannelNMSEExecutedReceiverCFO_Hz", NaN, ...
     "ResidualTimingOffset_samples", NaN, "CaptureExtractionOffset_samples", NaN, ...
     "ExpectedCaptureOffset_samples", NaN, "ExpectedReceiveCenterSample", NaN, "TimingSource", "", ...
     "RSRP_dB", NaN, "SINR_dB", NaN, "NoiseVar", NaN, "NoiseVarSource", "", "NoiseVarStatus", "", ...
@@ -500,6 +503,14 @@ for i = 1:height(sourceT)
     rows(i).ChannelNMSEGainFitted = iFirstLogical(row, ["ChannelNMSEGainFitted"], false);
     rows(i).ChannelNMSECommonPhaseRotation_rad = iFirstNum(row, ["ChannelNMSECommonPhaseRotation_rad"], NaN);
     rows(i).NMSEReferenceSource = iFirstText(row, ["NMSEReferenceSource"], "");
+    % Preserve the scored plane, not an inferred receiver estimate. These
+    % nullable flags distinguish absent legacy evidence from recorded zero.
+    rows(i).PreRXClockChannelNMSE_dB = iFirstNum(row, ["PreRXClockChannelNMSE_dB"], NaN);
+    rows(i).ChannelNMSEReferencePlane = iFirstText(row, ["ChannelNMSEReferencePlane"], "");
+    rows(i).ChannelNMSEReceiverTimingIncluded = iFirstNum(row, ["ChannelNMSEReceiverTimingIncluded"], NaN);
+    rows(i).ChannelNMSERecordedReceiverTimingOffset_samples = iFirstNum(row, ["ChannelNMSERecordedReceiverTimingOffset_samples"], NaN);
+    rows(i).ChannelNMSEReceiverCFOIncluded = iFirstNum(row, ["ChannelNMSEReceiverCFOIncluded"], NaN);
+    rows(i).ChannelNMSEExecutedReceiverCFO_Hz = iFirstNum(row, ["ChannelNMSEExecutedReceiverCFO_Hz"], NaN);
     rows(i).ResidualTimingOffset_samples = iFirstNum(row, ...
         ["SRSReceiveTimingOffset_samples","TimingOffset_samples"], NaN);
     rows(i).CaptureExtractionOffset_samples = iFirstNum(row, ...
@@ -546,6 +557,18 @@ T = iBuildMinimalTable(sourceT, meta, "csi_rs_runtime_event_table", { ...
     "Scheduled", ["Scheduled"]; "Transmitted", ["Transmitted"]; "Observed", ["Observed"]; "Consumed", ["Consumed"]; "Consumer", ["Consumer"]; ...
     "MeasurementRSRP_dB", ["MeasurementRSRP_dB"]; "MeasurementSource", ["MeasurementSource"]; "UpdateOutcome", ["UpdateOutcome"]; ...
     "RuntimeMaterializationStatus", ["RuntimeMaterializationStatus"]; "RuntimeEvidenceStatus", ["RuntimeEvidenceStatus","runtime_evidence","RuntimeEvidenceSource"]});
+% Preserve the physical power plane and selected-resource/receive-branch
+% identity. The legacy post-front-end grid-power scalar is not a substitute
+% for port-3000 CSI-RSRP, nor is normalized power an absolute dBm value.
+if ~isempty(T)
+    names=string(sourceT.Properties.VariableNames);
+    fields=names(startsWith(names,"Measurement") | startsWith(names,"PhysicalMeasurement") | ...
+        startsWith(names,"ReferenceMeasuredSINR") | names=="PowerReferencePlane" | ...
+        names=="CRI" | names=="RI" | names=="CQI" | names=="PMI");
+    for field=fields
+        T.(field)=sourceT.(field);
+    end
+end
 end
 
 function T = iCSIReportTable(cqiTable, meta)
@@ -679,6 +702,18 @@ for i = 1:height(sourceT)
     rows(i).runtime_evidence = iFirstText(row, ["runtime_evidence"], "");
 end
 T = struct2table(rows);
+% Retain measured SSB power planes and post-decode PBCH scoring operands.
+% Do not replace normalized occupied-RE power with fabricated dBm values.
+scoreFields=string(fieldnames(sixgr.truth.scoreSharedPBCHReception())).';
+powerFields=string(fieldnames(sixgr.link.ssbPowerReferenceEvidence())).';
+frequencyFields=string(fieldnames(sixgr.phy.broadcast.measurePBCHResidualFrequency())).';
+fields=[scoreFields powerFields frequencyFields "SS_RSRP_dBm" "SS_RSRP_dB_re_UnitOccupiedRE_Es" ...
+    "PowerReferencePlane" "EVM_rms" "EVMReferenceSource" "EVMValueStatus"];
+for field=unique(fields,'stable')
+    if ismember(field,string(sourceT.Properties.VariableNames))
+        T.(field)=sourceT.(field);
+    end
+end
 end
 
 function T = iNoiseVarianceTable(publicTables, meta)

@@ -1,0 +1,77 @@
+inherits:
+  - ./h4_100_cdlc100_connected_impaired_40db_short.yaml
+
+meta:
+  scenario_id: h4_100_cdlc100_connected_impaired_pathloss_short
+  description: >
+    4 GHz / 100 MHz TDD H4 physical-link-budget repair check, 60 slots.
+    TR 38.901 UMa NLOS path loss from the seeded runtime node positions,
+    CDL-C 100 ns, absolute transmitter power and receiver thermal noise.
+    Received SNR/SINR are outcomes, not a requested 40 dB operating point.
+    The parent normalized 40 dB experiment remains available separately.
+  purpose: Physical path-loss and absolute measurement integration check; not statistical qualification.
+  research_class: study_item_candidate
+  maturity_tag: experimental
+  tags: [lls, truth, tdd, h4, 4ghz, 100mhz, cdl-c, uma, physical_link_budget, no_proxy]
+
+canonical_control:
+  launch:
+    run_class: ue_placement_geometry_lls
+    scenario_mode: ue_placement_geometry
+    sweep_enabled: false
+    fixed_link_campaign_enabled: false
+    geometry_enabled: true
+  integration:
+    run_mode: GEOMETRY_NETWORK
+    subprofile: connected_network
+    configured_snr_is_link_authority: false
+    power_reference_mode: absolute_calibrated_sqrt_mw
+
+integration:
+  run_mode: GEOMETRY_NETWORK
+  subprofile: connected_network
+  configured_snr_is_link_authority: false
+  power_reference_mode: absolute_calibrated_sqrt_mw
+
+simulation:
+  noise_operating_mode: receiver_noise_figure_thermal_noise
+  # Required legacy field is NOT an SNR/noise target in this execution mode.
+  snr_db: 0
+  snr_sweep_offsets_db: [0]
+  reference_sweep_enabled: false
+  adaptive_sweep_enabled: false
+
+channels:
+  pathloss_enabled: true
+  pathloss_model: nrPathLoss
+  pathloss_scenario: UMa
+  # Inherited logging.strict_validation selects strict_38901 in the builder.
+  # Preserve the parent's NLOS CDL-C realization; do not redraw LOS to
+  # improve decoding. Shadowing/O2I are separate losses and remain off.
+  los_enabled: false
+  shadow_fading_enabled: false
+  o2i_model: none
+
+scenario:
+  bs:
+    height_m: 25
+  ue:
+    height_m: 1.5
+
+power_and_rf_frontend:
+  # Total antenna-array input budgets, not power per element or per layer.
+  # Preserve the parent budgets; no compensation for path loss is injected.
+  bs_tx_power_dbm: 30
+  ue_tx_power_dbm: 23
+  ue_noise_figure_db: 7
+  noise_figure: 5
+
+rf_frontend:
+  dac:
+    # This child uses absolute sqrt(mW) samples, not unit-Es OFDM samples.
+    # Preserve its explicit sample-domain converter range. This is not a
+    # hardware-calibrated DAC voltage claim.
+    reference_domain: waveform_samples
+
+output:
+  profile: h4_100_cdlc100_connected_impaired_pathloss_short

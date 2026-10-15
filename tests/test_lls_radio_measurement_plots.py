@@ -5,6 +5,7 @@ import io
 import json
 import math
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
@@ -45,6 +46,156 @@ def chart(name, sources):
     result = m._specialized_chart_materialization(name, existing, data.__getitem__, 9)
     rows = list(csv.DictReader(io.StringIO(result["csv_bytes"].decode())))
     return result, rows
+
+
+def csv_records(records):
+    out = io.StringIO()
+    writer = csv.DictWriter(out, list(records[0]))
+    writer.writeheader(); writer.writerows(records)
+    return out.getvalue().encode()
+
+
+def normalized_ssb_power_payload(change="", n_rx=2):
+    row = next(csv.DictReader(io.StringIO(ssb_power_payload(n_rx=n_rx).decode())))
+    evidence = json.loads(row.pop("SSBWindowPowerMeasurementJSON"))
+    powers = evidence.pop("SymbolPowerPerAntenna_W")
+    # Values remain relative here, never labelled as watts or dBm.
+    evidence["SymbolPowerPerAntenna_UnitOccupiedRE_Es"] = powers
+    rssi = _test_vector(evidence.pop("RSSIPerAntenna_dBm"))
+    rssi = [v-30 for v in rssi]
+    evidence.update(AmplitudeUnit="sqrt_UnitOccupiedRE_Es",
+                    RSSIPerAntenna_dB_re_UnitOccupiedRE_Es=rssi)
+    row.pop("SSBWindowRSSIPerReceiveAntenna_dBm")
+    row.update(PowerReferencePlane="normalized_fixed_esn0_unit_occupied_re_es",
+        SSPhysicalMeasurementStatus="available_normalized_fixed_esn0_not_absolute_dbm",
+        SSMeasurementSource="noise_debiased_linear_sss_re_power_and_received_reference_disturbance",
+        SSBWindowRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es=json.dumps(rssi))
+    if change == "energy":
+        if n_rx == 1: powers[0] *= 2
+        else: powers[0][0] *= 2
+    if change == "mirror": row["SSBWindowRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es"] = "[123,123]"
+    if change == "units": evidence["AmplitudeUnit"] = "sqrt_W"
+    if change == "scope": evidence["Scope"] = "full_carrier"
+    if change == "bandwidth": evidence["Bandwidth_Hz"] *= 2
+    if change == "branch": evidence["NumReceiveAntennas"] += 1
+    if change == "boolean": evidence["SymbolPowerPerAntenna_UnitOccupiedRE_Es"][0][0] = True
+    if change == "absolute": evidence["RSSIPerAntenna_dBm"] = rssi
+    row["SSBWindowRelativePowerMeasurementJSON"] = json.dumps(evidence) if change != "missing" else ""
+    return csv_records([row])
+
+
+def _test_vector(value):
+    return value if isinstance(value, list) else [value]
+
+
+@pytest.mark.parametrize("name,signal", [("PRACH EVM", "PRACH"), ("CSI-RS EVM", "CSI-RS")])
+def test_transmitter_evm_cannot_be_mislabeled_as_equalized_receiver_evm(name, signal):
+    rows = list(csv.DictReader(io.StringIO(control_pairs(signal).decode())))
+    for row in rows:
+        row.update(MeasurementDomain="transmitter_resource_elements",
+            ReferenceSource="actual_pre_TX_RF_waveform_on_declared_resource_clock",
+            AlignmentSource="frozen_transmitter_OFDM_clock_no_gain_phase_or_timing_fit",
+            PortRole="physical_TX_antenna_not_equalized_RX_stream")
+    result, output = chart(name, {"air_interface/csv/control_evm_samples.csv": csv_records(rows)})
+    assert result["csv_status"] == "specialized_runtime_radio_measurement_dataset"
+    assert output[0]["measurement_domain"] == "transmitter_resource_elements"
+    assert b"TX RF" in result["img_bytes"]
+    rows[0]["ReferenceSource"] = "receiver_pilot_fit"
+    bad, _ = chart(name, {"air_interface/csv/control_evm_samples.csv": csv_records(rows)})
+    assert bad["csv_status"] == "unavailable_exact_reason"
+
+
+@pytest.mark.parametrize("n_rx", [1, 2, 4])
+def test_normalized_ssb_rssi_reconciles_retained_linear_power(n_rx):
+    result, rows = chart(radio.SSB_POWER_CHART, {"air_interface/csv/pbch_trials.csv": normalized_ssb_power_payload(n_rx=n_rx)})
+    assert result["csv_status"] == "specialized_runtime_radio_measurement_dataset"
+    assert len(rows) == n_rx
+    for row in rows:
+        p = json.loads(row["symbol_powers_unit_occupied_re_es"])
+        assert float(row["rssi_db_re_unit_occupied_re_es"]) == pytest.approx(10*math.log10(sum(p)/4))
+
+
+@pytest.mark.parametrize("change", ["energy", "mirror", "units", "scope", "bandwidth", "branch", "boolean", "absolute", "missing"])
+def test_normalized_ssb_rssi_rejects_corrupt_evidence(change):
+    result, _ = chart(radio.SSB_POWER_CHART, {"air_interface/csv/pbch_trials.csv": normalized_ssb_power_payload(change)})
+    assert result["csv_status"] == "unavailable_exact_reason"
+
+
+def test_ssb_absolute_and_normalized_power_cannot_share_a_numeric_axis():
+    absolute = next(csv.DictReader(io.StringIO(ssb_power_payload().decode())))
+    relative = next(csv.DictReader(io.StringIO(normalized_ssb_power_payload().decode())))
+    fields = set(absolute) | set(relative)
+    records = [{key: row.get(key, "") for key in fields} for row in (absolute, relative)]
+    records[0].update(SweepPointIndex=1, ConfiguredSNR_dB=40)
+    records[1].update(SweepPointIndex=2, ConfiguredSNR_dB=30)
+    result, rows = chart(radio.SSB_POWER_CHART, {"air_interface/csv/pbch_trials.csv": csv_records(records)})
+    assert result["csv_status"] == "unavailable_exact_reason"
+    assert "cannot share one numeric measurement axis" in rows[0]["reason"]
+
+
+@pytest.mark.parametrize("family", ["PRACH", "PBCH", "CSI-RS", "SSB_absolute", "SSB_normalized", "DL", "UL"])
+def test_repeated_identities_across_eight_points_remain_joint_and_separate(family, monkeypatch):
+    if family in {"PRACH", "PBCH", "CSI-RS"}:
+        payload = control_pairs(family)
+        path = "air_interface/csv/control_evm_samples.csv"
+        name = {"PRACH": "PRACH EVM", "PBCH": "SSB EVM", "CSI-RS": "CSI-RS EVM"}[family]
+        per_point = 1
+    elif family.startswith("SSB"):
+        payload = ssb_power_payload() if family.endswith("absolute") else normalized_ssb_power_payload()
+        path, name, per_point = "air_interface/csv/pbch_trials.csv", radio.SSB_POWER_CHART, 2
+    else:
+        payload = normalized_data_carrier_payload(direction=family)
+        path = radio.TRIALS[0 if family == "DL" else 1]
+        name, per_point = ("PDSCH" if family == "DL" else "PUSCH") + "-window carrier RSSI timeline", 2
+    base = list(csv.DictReader(io.StringIO(payload.decode())))
+    values = [40,30,20,10,0,-10,-20,-30]
+    joined = [dict(row, SweepPointIndex=p, ConfiguredSNR_dB=snr) for p,snr in enumerate(values,1) for row in base]
+    captured = []
+    original = m._render_multi_series_svg
+    def render(*args, **kwargs):
+        captured.extend(args[2]); return original(*args, **kwargs)
+    monkeypatch.setattr(m, "_render_multi_series_svg", render)
+    result, rows = chart(name, {path: csv_records(joined)})
+    assert result["csv_status"] == "specialized_runtime_radio_measurement_dataset"
+    assert len(rows) == 8*per_point
+    assert {r["sweep_point_index"] for r in rows} == {str(i) for i in range(1,9)}
+    assert {float(r["configured_snr_db"]) for r in rows} == set(values)
+    assert all("point=" in series["name"] for series in captured)
+    assert len(captured) == 16  # RMS/peak or two independent receive branches.
+    duplicate, _ = chart(name, {path: csv_records(joined+[joined[0]])})
+    assert duplicate["csv_status"] == "unavailable_exact_reason"
+
+
+def test_radio_plot_preserves_all_samples_and_full_measurement_labels():
+    # Go beyond the old 180-point preview and eight-series legend defaults.
+    series = {f"DL UE 1 point {i} port 3000 reference RE power ratio independent measurement":
+              [[j, i + j / 1000] for j in range(241)] for i in range(9)}
+    records = [{"point": i, "slot": p[0], "value": p[1]}
+               for i, points in enumerate(series.values()) for p in points]
+    note = ("Measured reference power is distinct from the selected PMI receiver objective. " * 3 +
+            "No calibrated absolute dBm measurement is claimed.")
+    result = radio._finish(m, "CSI SINR timeline", 9, records, series,
+                           "Slot", "SINR (dB)", note, [radio.CSI_TRIALS])
+    rows = list(csv.DictReader(io.StringIO(result["csv_bytes"].decode())))
+    assert len(rows) == 9 * 241
+    root = ET.fromstring(result["img_bytes"])
+    ns = {"svg": "http://www.w3.org/2000/svg"}
+    # Count only data markers; legend markers live outside the plot panel.
+    markers = [e for e in root.findall("svg:circle", ns) if float(e.attrib["cx"]) < 900]
+    markers += [e for e in root.findall("svg:rect", ns)
+                if e.attrib.get("width") == "6" and float(e.attrib["x"]) < 900]
+    assert len(markers) == len(rows)
+    legends = root.findall("svg:g", ns)
+    assert len(legends) == len(series)
+    for group, label in zip(legends, series):
+        assert " ".join(e.text for e in group.findall("svg:text", ns)) == label
+        assert all(float(e.attrib["y"]) < float(root.attrib["height"])
+                   for e in group.findall("svg:text", ns))
+    subtitle = [e for e in root.findall("svg:text", ns)
+                if e.attrib.get("x") == "40" and e.attrib.get("font-size") == "14"]
+    assert " ".join(e.text for e in subtitle) == note
+    plot = next(e for e in root.findall("svg:rect", ns) if e.attrib.get("width") == "820")
+    assert max(float(e.attrib["y"]) for e in subtitle) < float(plot.attrib["y"])
 
 
 def data_carrier_power_payload(change="", direction="UL", n_rx=2, n_symbols=3):
@@ -253,6 +404,80 @@ def test_csi_physical_power_rejects_inconsistent_or_absent_evidence(change):
     assert result["csv_status"] == "unavailable_exact_reason"
 
 
+@pytest.mark.parametrize("normalized", [False, True])
+def test_csi_power_keeps_repeated_slots_from_all_sweep_points(normalized, monkeypatch):
+    base = next(csv.DictReader(io.StringIO(csi_power_payload().decode())))
+    if normalized:
+        base.pop("MeasurementPhysicalResourcesJSON")
+        base.update(PhysicalMeasurementStatus="available_normalized_fixed_esn0_not_absolute_dbm",
+            PowerReferencePlane="normalized_fixed_esn0_unit_occupied_re_es",
+            MeasurementSource="actual_csirs_re_measurement_relative_to_unit_occupied_re_es",
+            MeasurementNumRB=24, MeasurementFirstPRB0Based=6, MeasurementSubcarrierSpacing_kHz=30,
+            MeasurementBandwidth_Hz=8640000, MeasurementSymbolIndices0Based="[6,7]",
+            MeasurementRSRPPerReceiveAntenna_dB_re_UnitOccupiedRE_Es="[-10,-15]",
+            MeasurementRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es="[20,17]",
+            MeasurementRSRQPerReceiveAntenna_dB=json.dumps([10*math.log10(24)-30, 10*math.log10(24)-32]))
+    points = [dict(base, SweepPointIndex=i, ConfiguredSNR_dB=snr)
+              for i, snr in enumerate([40,30,20,10,0,-10,-20,-30], 1)]
+    data = io.StringIO()
+    writer = csv.DictWriter(data, list(points[0])); writer.writeheader(); writer.writerows(points)
+    captured = []
+    original = m._render_multi_series_svg
+    def retain_series(title, subtitle, series, *args, **kwargs):
+        captured.extend(series)
+        return original(title, subtitle, series, *args, **kwargs)
+    monkeypatch.setattr(m, "_render_multi_series_svg", retain_series)
+    result, rows = chart("CSI-RS RSRP timeline", {radio.CSI_TRIALS: data.getvalue().encode()})
+    assert result["csv_status"] == "specialized_runtime_radio_measurement_dataset"
+    assert len(rows) == 16 and len(captured) == 16
+    assert {r["sweep_point_index"] for r in rows} == {str(i) for i in range(1,9)}
+    assert {float(r["metric_value"]) for r in rows} == ({-10,-15} if normalized else {-80,-85})
+    unit = b"RSRP (dB re unit occupied-RE Es)" if normalized else b"RSRP (dBm)"
+    assert unit in result["img_bytes"]
+    if normalized:
+        assert "rsrp_dbm" not in rows[0] and b"RSRP (dBm)" not in result["img_bytes"]
+
+
+@pytest.mark.parametrize("normalized", [False, True])
+def test_csi_power_uses_all_eight_core_resource_records_not_only_selected_vector(normalized):
+    base = next(csv.DictReader(io.StringIO(csi_power_payload().decode())))
+    original = json.loads(base["MeasurementPhysicalResourcesJSON"])[0]
+    resources = []
+    for rid in range(8):
+        resource = dict(original, ResourceID=rid)
+        resource["Source"] = "received_port3000_linear_RSRP_and_nrCSIRSMeasurements_RSSI"
+        if normalized:
+            resource.update(Source="received_port3000_linear_RSRP_and_native_RSSI_normalized_unit_RE_grid",
+                            PowerUnit="relative_to_unit_occupied_RE_Es")
+            resource["RSRPPerAntenna_dB_re_UnitOccupiedRE_Es"] = [-10-rid, -15-rid]
+            resource["RSSIPerAntenna_dB_re_UnitOccupiedRE_Es"] = [20, 17]
+            resource["RSRPPerAntenna_dBm"] = [None, None]
+            resource["RSSIPerAntenna_dBm"] = [None, None]
+        else:
+            resource["RSRPPerAntenna_dBm"] = [-80-rid, -85-rid]
+        resource["RSRQPerAntenna_dB"] = [10*math.log10(24)-30-rid, 10*math.log10(24)-32-rid]
+        resources.append(resource)
+    if normalized:
+        base.update(PhysicalMeasurementStatus="available_normalized_fixed_esn0_not_absolute_dbm",
+            PowerReferencePlane="normalized_fixed_esn0_unit_occupied_re_es",
+            MeasurementSource="actual_csirs_re_measurement_relative_to_unit_occupied_re_es",
+            MeasurementRSRPPerReceiveAntenna_dB_re_UnitOccupiedRE_Es="[99,99]")
+    # Deliberately poisoned selected-vector metadata must not replace the
+    # actual complete per-resource measurements in the core JSON archive.
+    base["MeasurementPhysicalResourcesJSON"] = json.dumps(resources)
+    output = io.StringIO(); writer = csv.DictWriter(output, list(base)); writer.writeheader(); writer.writerow(base)
+    for name in radio.CSI_POWER_FIELDS:
+        result, rows = chart(name, {radio.CSI_TRIALS: output.getvalue().encode()})
+        assert result["csv_status"] == "specialized_runtime_radio_measurement_dataset"
+        assert len(rows) == 16 and {r["resource_id"] for r in rows} == {str(i) for i in range(8)}
+        assert all(r["measurement_scope"] == "all_retained_resource_records" for r in rows)
+        if name == "CSI-RS RSRP timeline":
+            assert float(rows[-1]["metric_value"]) == (-22 if normalized else -92)
+        if name == "CSI-RS RSRP by resource":
+            assert {int(r["plot_x_value"]) for r in rows} == set(range(8))
+            assert all(r["plot_x_semantics"] == "configured_resource_id_not_angle" for r in rows)
+
+
 @pytest.mark.parametrize("name", radio.CONTROL_EVM)
 def test_control_evm_never_uses_sinr_detection_or_nmse_proxy(name):
     result, _ = chart(name, {"air_interface/csv/control_evm_samples.csv":
@@ -310,7 +535,7 @@ def test_censored_csi_is_not_plotted_as_delivered():
     payload = b"Direction,UEIndex,SourceSlot,DeliveredSlot,DeliveryStatus,CQI\nUL,1,15,NaN,right_censored_terminal_horizon,9\n"
     result, rows = chart("CSI CQI timeline", {radio.FEEDBACK: payload})
     assert rows[0]["delivery_status"] == "right_censored_terminal_horizon"
-    assert b"UL U1 CQI delivered" not in result["img_bytes"]
+    assert b"CQI delivered:" not in result["img_bytes"]
 
 
 def test_csi_sinr_retains_selected_pmi_objective_domain():
@@ -404,7 +629,7 @@ def test_applied_csi_basis_pmi_is_not_replaced_by_equivalent_port_basis_index():
 def test_failed_delivery_cannot_pass_a_substring_match(status):
     payload = f"Direction,UEIndex,SourceSlot,DeliveredSlot,DeliveryStatus,CQI,PMI\nDL,1,7,9,{status},10,0\n".encode()
     result, _ = chart("CSI CQI timeline", {radio.FEEDBACK: payload})
-    assert b"DL U1 CQI delivered" not in result["img_bytes"]
+    assert b"CQI delivered:" not in result["img_bytes"]
     trial = b"Slot,UEIndex,LinkAdaptationAppliedFeedbackSourceSlot,RequestedPrecoderPMI,AppliedPrecoderPMI\n11,1,7,0,0\n"
     _, rows = chart("reported versus applied PMI", {radio.FEEDBACK: payload, radio.TRIALS[0]: trial})
     assert rows[0]["reported_pmi_token"] == ""
@@ -430,6 +655,97 @@ def test_requested_pmi_is_not_titled_reported_when_no_feedback_is_bound():
     assert b"reported versus applied pmi" not in image
     assert all(row["reported_pmi_token"] == "" for row in rows)
     assert all(row["chart_name"] == "reported versus applied PMI" for row in rows)
+
+
+def test_physical_csi_plot_uses_received_fields_not_poisoned_ue_report(monkeypatch):
+    captured = []
+    original = m._render_multi_series_svg
+    def retain_series(title, subtitle, series, *args, **kwargs):
+        captured.extend(series)
+        return original(title, subtitle, series, *args, **kwargs)
+    monkeypatch.setattr(m, "_render_multi_series_svg", retain_series)
+    legacy = b"Direction,UEIndex,SourceSlot,DeliveredSlot,DeliveryStatus,RI,CQI\nDL,1,34,39,delivered,4,15\n"
+    received = (b"Direction,UEIndex,SourceSlot,DeliveredSlot,DeliveryStatus,RI,CQI,SourceSignal,CSIUCIDecodeOk,CSIUCITransport,SchedulerAcceptedRank,RankIncreaseConfirmationCount,RankIncreaseRequiredCount,SchedulerSpatialDecisionDeferred\n"
+                b"DL,1,34,39,delivered_to_runtime_scheduler,2,9,received_CSI_UCI,1,pucch_independently_received,1,1,2,true\n")
+    result, rows = chart("CSI RI timeline", {radio.FEEDBACK: legacy, radio.RECEIVED_CSI: received})
+    assert len(rows) == 1 and rows[0]["component_values"] == "[2]"
+    assert rows[0]["scheduler_accepted_rank"] == "1.0"
+    assert rows[0]["rank_confirmation_count"] == "1.0"
+    assert rows[0]["source_table_logical_path"] == radio.RECEIVED_CSI
+    accepted = [s for s in captured if s["name"].startswith("Accepted rank (not TX):")]
+    assert len(accepted) == 1 and accepted[0]["points"] == [[39.0, 1.0]]
+    assert b"Accepted rank (not TX)" in result["img_bytes"]
+    assert b"SNRNone" not in result["img_bytes"]
+    _, rows = chart("CSI CQI timeline", {radio.FEEDBACK: legacy, radio.RECEIVED_CSI: received})
+    assert rows[0]["component_values"] == "[9]"
+
+
+def test_empty_independent_csi_is_not_filled_from_ue_state():
+    legacy = b"Direction,UEIndex,SourceSlot,DeliveredSlot,DeliveryStatus,RI\nDL,1,34,39,delivered,4\n"
+    result, _ = chart("CSI RI timeline", {radio.FEEDBACK: legacy,
+        radio.RECEIVED_CSI: b"Direction,SourceSignal,CSIUCIDecodeOk,RI\n"})
+    assert result["csv_status"] == "unavailable_exact_reason"
+
+
+def test_configured_physical_csi_calendar_does_not_imply_any_received_report():
+    legacy = (b"Direction,UEIndex,SourceSlot,DeliveredSlot,DeliveryStatus,RI,CRI\n"
+              b"DL,1,34,39,delivered,4,7\n")
+    # No independent received CSV is written until the first physical
+    # completion. An obligation must not become evidence of that completion.
+    calendar = b"ObligationID,ReportSlot,CSIReferenceSlot\ncsi-1,39,34\n"
+    for name in ("CSI RI timeline", "CSI CRI timeline"):
+        result, _ = chart(name, {radio.FEEDBACK: legacy, radio.CSI_OBLIGATIONS: calendar})
+        assert result["csv_status"] == "unavailable_exact_reason"
+
+
+def test_cri_plot_requires_decoded_resource_identity_not_pmi_or_tci():
+    received = (b"Direction,UEIndex,SourceSlot,DeliveredSlot,DeliveryStatus,CRI,PMI,ActiveTCIStateID,SourceSignal,CSIUCIDecodeOk\n"
+                b"DL,1,34,39,delivered,3,7,16,received_CSI_UCI,1\n")
+    result, rows = chart("CSI CRI timeline", {radio.RECEIVED_CSI: received})
+    assert rows[0]["component_values"] == "[3]"
+    assert rows[0]["source_table_logical_path"] == radio.RECEIVED_CSI
+    assert "not a measured angle, applied data beam or active TCI state" in result["note"]
+    missing = received.replace(b",3,7,16,", b",NaN,7,16,")
+    result, _ = chart("CSI CRI timeline", {radio.RECEIVED_CSI: missing})
+    assert result["csv_status"] == "unavailable_exact_reason"
+
+
+def test_failed_csi_attempt_is_retained_without_plotting_undecoded_fields():
+    received = (b"Direction,UEIndex,SourceSlot,DeliveredSlot,DeliveryStatus,CRI,PMI,PMI_I2,SourceSignal,CSIUCIDecodeOk\n"
+                b"DL,1,34,39,delivered,3,7,1,received_CSI_UCI,1\n"
+                b"DL,1,54,59,decode_failed,6,5,2,received_CSI_UCI,0\n")
+    for name in ("CSI CRI timeline", "CSI PMI components timeline"):
+        result, rows = chart(name, {radio.RECEIVED_CSI: received})
+        assert result["csv_status"] == "specialized_runtime_radio_measurement_dataset" and len(rows) == 2
+        assert rows[1]["value_status"] == "unavailable_uci_not_decoded"
+        assert rows[1]["component_values"] == "[]" and rows[1]["component_fields"] == "[]"
+        assert rows[1]["delivered_slot"] == "59.0" and rows[1]["delivery_status"] == "decode_failed"
+
+
+def test_physical_csi_failed_decode_cannot_be_published_as_delivered():
+    received = (b"Direction,UEIndex,SourceSlot,DeliveredSlot,DeliveryStatus,RI,SourceSignal,CSIUCIDecodeOk\n"
+                b"DL,1,34,39,delivered,2,received_CSI_UCI,0\n")
+    result, rows = chart("CSI RI timeline", {radio.RECEIVED_CSI: received})
+    assert result["csv_status"] == "unavailable_exact_reason"
+    assert "successful UCI decode" in rows[0]["reason"]
+
+
+def test_precoder_join_and_plot_preserve_all_sweep_points(monkeypatch):
+    reports = (b"Direction,UEIndex,SourceSlot,DeliveredSlot,DeliveryStatus,PMI,RI,SNR_dB,SweepPointIndex,SourceSignal,CSIUCIDecodeOk\n"
+               b"DL,1,34,39,delivered,3,2,40,1,received_CSI_UCI,1\n"
+               b"DL,1,34,39,delivered,1,1,20,2,received_CSI_UCI,1\n")
+    trials = (b"Slot,UEIndex,LinkAdaptationAppliedFeedbackSourceSlot,RequestedPrecoderPMI,AppliedPrecoderPMI,SNR_dB,SweepPointIndex\n"
+              b"42,1,34,3,3,40,1\n42,1,34,1,1,20,2\n")
+    captured = []
+    original = m._render_multi_series_svg
+    def retain_series(title, subtitle, series, *args, **kwargs):
+        captured.extend(series)
+        return original(title, subtitle, series, *args, **kwargs)
+    monkeypatch.setattr(m, "_render_multi_series_svg", retain_series)
+    _, rows = chart("reported versus applied PMI", {radio.TRIALS[0]: trials, radio.RECEIVED_CSI: reports})
+    assert [r["reported_pmi_token"] for r in rows] == ["3", "1"]
+    assert all(r["feedback_source_table"] == radio.RECEIVED_CSI for r in rows)
+    assert len(captured) == 6 and all(len(s["points"]) == 1 for s in captured)
 
 
 @pytest.mark.parametrize("direction,path", [("DL", radio.TRIALS[0]), ("UL", radio.TRIALS[1])])
@@ -494,3 +810,19 @@ def test_pucch_no_crc_does_not_mean_failed_uci_block():
         b"Slot,UEIndex,Format,PostEqSINR_dB,CRCPass,PUCCHDecodeOk\n5,1,0,20,NaN,1\n"})
     assert rows[0]["metric_value"] == "0" and rows[0]["metric_source_field"] == "uci_block_error"
     assert result["csv_status"] != "unavailable_exact_reason"
+
+
+def test_negative_sr_dtx_and_missing_tx_payload_are_not_uci_block_errors():
+    payload = (b"Slot,UEIndex,Format,PostEqSINR_dB,PUCCHDecodeOk,ExpectedBitCount,PUCCHTransmissionPrepared,DTXFlag\n"
+               b"4,1,0,NaN,0,NaN,0,1\n"
+               b"9,1,0,20,0,NaN,0,1\n"
+               b"19,1,2,30,1,15,1,0\n"
+               b"39,1,2,2,0,15,1,1\n")
+    result, rows = chart("PUCCH BLER vs measured SINR", {"air_interface/csv/pucch_trials.csv": payload})
+    assert result["csv_status"] == "specialized_runtime_radio_measurement_dataset"
+    assert len(rows) == 4  # Retain every attempted reception in the CSV.
+    assert all(row["metric_value"] == "" and row["block_error_population_status"] ==
+               "not_a_transmitted_payload_block" for row in rows[:2])
+    assert rows[2]["metric_value"] == "0" and rows[3]["metric_value"] == "1"
+    assert rows[3]["block_error_population_status"] == "observed_payload_decode", (
+        "A missed real transmission must remain an error; DTX alone cannot remove it.")

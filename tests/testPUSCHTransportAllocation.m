@@ -1,6 +1,12 @@
 function ok=testPUSCHTransportAllocation()
 % Native geometry is not authority for experimental modulation or bit count.
 setup6GRSimToolkit('Verbose',false);
+for nativeModulation=["QPSK","16QAM","64QAM","256QAM"]
+    nativeTX=struct('PUSCH',nrPUSCHConfig('Modulation',char(nativeModulation)));
+    [actual,isResearch]=sixgr.link.resolvePUSCHTransportModulation(nativeTX);
+    assert(actual==nativeModulation && ~isResearch, ...
+        'A retained native configuration object is actual transport modulation evidence.');
+end
 s=sixgr.lls6g.config.loadScenarioConfig( ...
     'simulator/configs/scenarios/lls_four_port_connected_research_ul_fixture.yaml');
 cfg=sixgr.lls6g.buildInternalConfig(s,tempname);

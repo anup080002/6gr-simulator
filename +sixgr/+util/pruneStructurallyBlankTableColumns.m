@@ -35,6 +35,13 @@ if normalized == "crcpass" && any(strcmpi(string(allNames),"CRCApplicable"))
     tf = true;
     return;
 end
+% Empty/unavailable PRACH sets are meaningful receiver evidence. Keep the
+% declared pair; do not infer any preamble from a transmitted target.
+if any(normalized==["detectedpreambleset","detectedpreamblesetavailable"]) && ...
+        all(ismember(lower(["DetectedPreambleSet","DetectedPreambleSetAvailable"]),lower(string(allNames))))
+    tf=true;
+    return;
+end
 persistent cachedExactKeep
 if isempty(cachedExactKeep)
 exactKeep = lower([ ...

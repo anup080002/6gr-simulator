@@ -50,6 +50,26 @@ state.CurrentSlot=2; state.CurrentCanonicalSlot=2;
 live=sixgr.truth.CoupledTruthRuntime.consumeReferenceSignalMeasurementRuntime(state,'CSI-RS','UE',1,2,inf);
 frozen=sixgr.truth.CoupledTruthRuntime.consumeReferenceSignalMeasurementRuntime(plan,'CSI-RS','UE',1,5,inf);
 assert(live.Usable && live.KnownAtSample==slotEnd && live.ResultAvailableAtSample==2);
+% Deferred SRS/TRS publication retains the same actual owner clock, rather
+% than degrading to slot_only. These are explicitly declared boundary rows.
+delivered=table(1,0,1,fs,owner.Physical.ConfigurationEpoch, ...
+    'VariableNames',{'Slot','ObservationStartSample','ObservationEndSampleExclusive', ...
+    'ObservationSampleRateHz','MeasurementClockEpoch'});
+delivered=sixgr.truth.bindDeliveredReferenceClock(state,delivered);
+assert(delivered.ResultAvailableAtSample==slotEnd && delivered.ResultCompletedAtSample==1);
+reject(@()sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementRuntime( ...
+    state,'TRS','UE',1,delivered,'ProducerSlot',1,'AvailableSlot',2,'Valid',true), ...
+    'sixgr:truth:MissingTRSMeasurementCell');
+delivered.ServingCell=1;
+for signal=["SRS","TRS"]
+    state=sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementRuntime( ...
+        state,signal,'UE',1,delivered,'ProducerSlot',1,'AvailableSlot',2,'Valid',true);
+    bound=sixgr.truth.CoupledTruthRuntime.consumeReferenceSignalMeasurementRuntime(state,signal,'UE',1,2,inf);
+    assert(bound.Usable && bound.ResultAvailableAtSample==slotEnd);
+end
+tooSoon=delivered; tooSoon.ObservationEndSampleExclusive=slotEnd+1;
+reject(@()sixgr.truth.bindDeliveredReferenceClock(state,tooSoon), ...
+    'sixgr:truth:ReferenceDeliveryClockMismatch');
 assert(~frozen.Usable && frozen.KnownAtSample==0, ...
     'Advancing the shared handle cannot reveal later knowledge to an older planning view.');
 bad=plan; bad.PlanningDecisionSample=slotEnd+1;

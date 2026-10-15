@@ -52,6 +52,26 @@ assert(any(string({inventory.name}) == "Samples"));
 v73Loaded = load(v73Target, "Contract");
 assert(string(v73Loaded.Contract) == v73Payload.Contract);
 
+% The opt-in lossless coefficient serializer must retain the same staged
+% publication contract, including signed/complex values and nested metadata.
+chunkedTarget=fullfile(root,"hdf5","time_chunked_capture.mat");
+chunkedPayload=struct('PathGains_000001', ...
+    complex(reshape(1:420,35,3,2,2),reshape(420:-1:1,35,3,2,2)), ...
+    'Metadata',struct('Source',"explicit_persistence_fixture",'Unavailable',NaN));
+sixgr.util.matSave(chunkedTarget,chunkedPayload,'UseArtifactStore',false, ...
+    'TimeChunkedVariables',"PathGains_000001");
+assert(isequaln(load(chunkedTarget),chunkedPayload));
+chunkedHash=sixgr.util.sha256File(chunkedTarget);
+try
+    sixgr.util.matSave(chunkedTarget,chunkedPayload,'UseArtifactStore',false, ...
+        'TimeChunkedVariables',"MissingVariable");
+    error('test:MissingRejection','Malformed compression selection must fail before publication.');
+catch invalid
+    assert(strcmp(invalid.identifier,'sixgr:util:InvalidTimeChunkedMATRequest'));
+end
+assert(strcmp(sixgr.util.sha256File(chunkedTarget),chunkedHash), ...
+    'A rejected new serialization must not change an existing valid artifact.');
+
 % Reproduce production result trees whose absolute v7.3 MAT pathname is
 % longer than the Windows HDF5 backend's legacy MAX_PATH boundary.  The
 % file remains in the real synchronized workspace; matSave must validate

@@ -1,0 +1,17 @@
+{
+  "source_file": "Chair notes RAN1#126_eom1(1).docx",
+  "source_sha256": "99E44D237970377736D06C42512361A55BE5641A798438012D037538DCA3FF91",
+  "review_date": "2026-10-14",
+  "mapping_file": "ran1_126_100mhz_output_requirements.csv",
+  "mapping_scope": "measurement content and evaluation applicability; not filename compliance or PHY certification",
+  "paragraph_numbering": "zero-based w:p descendants of w:body in word/document.xml; includes table-cell paragraphs and empty paragraphs",
+  "paragraph_count": 5900,
+  "reviewed": ["complete main document text and tables", "OMML equation text", "tracked changes and explicit strike-through corrections", "single embedded DMRS time-position illustration", "footnotes and endnotes (no substantive text)"],
+  "external_templates": "Referenced TDocs and spreadsheets are not embedded. Their exact submission columns are not verified by reading these chair notes.",
+  "interpretation": "Agreements, working assumptions, observations and FFS candidates remain distinct. Meeting study choices are not universally normative 6GR requirements.",
+  "array_caveat": "The around-4-GHz 64-TXRU outdoor combination in the notes uses 192 antenna elements, not the user's existing 64-element array. Preserve the existing run identity and report the difference; do not silently relabel its dimensions.",
+  "current_run_caveat": "The short 60-slot H4 run failed before sustained CSI-driven data execution. Its previously recorded raw results folder was absent during this review; retained D-drive failure/test receipts remain. Previous figures cannot be recreated from receipts alone.",
+  "readiness": "PARTIAL; no complete measurement/export or sustained adaptive-throughput acceptance claimed",
+  "no_new_full_scenario": true,
+  "no_testAll": true
+}

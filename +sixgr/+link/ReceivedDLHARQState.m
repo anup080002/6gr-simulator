@@ -3,6 +3,7 @@ classdef ReceivedDLHARQState
     % HARQ acknowledgement decisions are not evidence of a transmitted PUCCH.
     properties (SetAccess=private)
         ContextDigest
+        HARQContextDigest = ""
         UEId
         Processes
     end
@@ -15,6 +16,7 @@ classdef ReceivedDLHARQState
             assert(c.Data.RNTIType=="C-RNTI",'sixgr:link:ReceivedDLHARQProcedure', ...
                 'This entity owns connected C-RNTI DL HARQ, not random access, SPS or broadcast.');
             obj.ContextDigest=c.Digest; obj.UEId=double(ueId);
+            obj.HARQContextDigest=sixgr.phy.pdcch.harqContextDigest(c);
             obj.Processes=cell(c.Data.HARQProcessCount,1);
         end
 
@@ -55,11 +57,18 @@ classdef ReceivedDLHARQState
             prior.LastControlAbsoluteSlot=a.ControlAbsoluteSlot;
             prior.LastDataAbsoluteSlot=a.DataAbsoluteSlot;
             prior.LastAssignmentDigest=a.AssignmentDigest;
-            next=obj; next.Processes{a.HARQProcess+1}=prior;
+            next=obj; next.ContextDigest=a.ContextDigest;
+            next.Processes{a.HARQProcess+1}=prior;
         end
 
         function [rx,decision,next,protocol,receiverArgs]=receive(obj,installed,a,waveform,varargin)
             [prior,fresh]=obj.validateReception(installed,a);
+            % Preserve the entity/soft buffers across a valid beam change,
+            % but bind this PHY call to its exact received DCI context.
+            executionState=obj;
+            executionState.ContextDigest=a.ContextDigest;
+            executionState.HARQContextDigest=sixgr.phy.pdcch.harqContextDigest( ...
+                sixgr.phy.pdcch.DCIContextFactory.fromRuntimeConfig(installed,'1_1'));
             protocol=struct();
             % Optional replay evidence is the exact call below, including
             % this value-semantic PRE-reception entity. A retained ACK does
@@ -107,7 +116,7 @@ classdef ReceivedDLHARQState
                 'ResourcePlan',bundle.ResourcePlan,'Carrier',bundle.Carrier, ...
                 'ReferenceSignalConfig',bundle.ReferenceConfig,'ReceiverConfig',bundle.ReceiverConfig, ...
                 'CodingPlan',bundle.CodingPlans,'IntegrationContext',bundle.IntegrationContext, ...
-                'ReceiverHARQState',obj,'ReceivedAssignment',a,tracking{:}};
+                'ReceiverHARQState',executionState,'ReceivedAssignment',a,tracking{:}};
             rx=sixgr.phy.dl.PDSCH_Rx(waveform,installed,receiverArgs{:});
             if ~fresh
                 assert(~rx.Decode.HARQCombineInfo.ResetPrior && rx.Decode.HARQCombineInfo.Applied, ...
@@ -124,12 +133,16 @@ classdef ReceivedDLHARQState
             entry.LastControlAbsoluteSlot=a.ControlAbsoluteSlot;
             entry.LastDataAbsoluteSlot=a.DataAbsoluteSlot;
             entry.LastAssignmentDigest=a.AssignmentDigest;
-            next=obj; next.Processes{index}=entry;
+            next=executionState; next.Processes{index}=entry;
         end
 
         function [prior,fresh]=validateReception(obj,installed,a)
             c=sixgr.phy.pdcch.validateConnectedAssignment(installed,a);
-            assert(a.Direction=="DL" && obj.ContextDigest==c.Digest && installed.phy.harq.enable, ...
+            sameContext=obj.ContextDigest==c.Digest;
+            if strlength(obj.HARQContextDigest)>0
+                sameContext=obj.HARQContextDigest==sixgr.phy.pdcch.harqContextDigest(c);
+            end
+            assert(a.Direction=="DL" && sameContext && installed.phy.harq.enable, ...
                 'sixgr:link:ReceivedDLHARQContextMismatch','Received control must belong to this DL entity.');
             index=a.HARQProcess+1;
             validateattributes(index,{'double'},{'scalar','integer','positive','<=',numel(obj.Processes)});

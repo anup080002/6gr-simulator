@@ -1079,6 +1079,8 @@ failures = strings(0, 1);
 [stats.ULFinalizedRows, stats.ULPartialRows, stats.ULPrimaryOKRows, stats.ULPrimaryOKNotFinalizedRows, ulFailures] = ...
     localDirectionLifecycleStats(ulTrials, "UL", requiredUL);
 failures = [dlFailures(:); ulFailures(:)];
+stats.DLRawLifecycleOk = isempty(dlFailures);
+stats.ULRawLifecycleOk = isempty(ulFailures);
 stats.RawLifecycleOk = isempty(failures);
 end
 

@@ -39,6 +39,8 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
         end
 
         function [grants, info] = schedule(obj, slot, ueStates, budget)
+            sixgr.runtime.RuntimeCallLedger.record("sixgr.l2.mac.SchedulerPF.schedule", ...
+                "SCHEDULER",obj.Direction,struct("Stage","schedule","Slot",slot));
             if nargin < 4
                 budget = struct();
             end

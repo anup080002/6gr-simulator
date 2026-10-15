@@ -1,21 +1,48 @@
 # SixGR Foundation v2
 
-## Current LLS commands and acceptance status (14 October 2026)
+## Current LLS commands and acceptance status (15 October 2026)
 
 These commands are for **Windows Command Prompt (`cmd.exe`)**, not PowerShell.
 They document the executable entry points; they are **not a claim that every
 scenario is accepted on this revision**. Run one job at a time. Use a new run
 tag and log filename for each scenario execution; never delete active results.
 
-The latest complete-scenario attempt for 4 GHz / 100 MHz TDD stopped at slot
-43/200 with a channel-diagnostic memory failure. The bounded channel-export
-repair, receiver timing/noise/scoring repairs, H4 TRS receiver and causal-audit
-checks have focused passing evidence. Full connected DL/UL, two-report physical
-CSI-to-scheduler confirmation, actual beam-refinement execution and final
-CSV/PNG publication still require closure. The 5 MHz scenarios and
-historical 400 MHz benchmarks are not substitutes for that acceptance.
+The latest 4 GHz / 100 MHz TDD attempt, `h4_100mhz_4ghz_short_20261015_v4`,
+failed at slot **30/60** because the shared waveform completion dropped its
+registered random-access observation `ID`. Its recovery/export process was
+subsequently stopped at the operator's request; all written evidence is retained.
+The earlier `h4_100mhz_4ghz_short_20261014_v3` failed at slot 49/60 on stale
+QCL/TRS timing. Neither run is accepted. The dropped-ID and causal-timing
+repairs are now in the main codebase, not in a separate execution checkout.
+Full connected DL/UL, physical CSI/UCI-driven adaptation, beam refinement and
+complete CSV/PNG publication still require integrated acceptance. The 5 MHz
+scenarios and historical 400 MHz benchmarks are not substitutes for that gate.
 No full `testAll` is launched by the commands below. Current repair verification
 is limited to affected tests at the operator's request. SLS remains on hold.
+
+The 15 October consolidation includes the **43 previously staged repair files**
+in the single `main` worktree, together with the preceding core PHY, RF,
+configuration, WebGUI and publication edits. No source on `D:\SixGR\repairs`
+is needed to use this checkout. Future work and the commands below use the
+repository itself; retained external logs are historical evidence, not another
+code branch. The latest focused candidate evidence comprises 40 unique MATLAB
+tests; their final-source rerun remains pending. The **39 affected Python
+checks passed again on the consolidated main-folder code**. No MATLAB tests,
+scenario or calibration were restarted during consolidation.
+
+| Integrated repair | What remains to be verified on the consolidated revision |
+| --- | --- |
+| Registered RA observation/timer identity survives physical completion | Full initial access beyond the slot-30 failure |
+| TRS applied timing, CSI/reference SINR planes and SSB beam/branch power identity | Same-execution receiver-to-CSV/WebGUI reconciliation |
+| Actual AGC gain range and exact cropped ADC/DAC error/clipping populations | Full H4 RF operating point; converter MSE is not demodulated EVM |
+| Attempt goodput, HARQ terminal/censored populations, committed IQ scope and exact RE-map preservation | Complete DL/UL and terminal artifact acceptance |
+| Separate 100-slot adaptation YAML with unchanged physical feedback calendars | Two received CSI confirmations followed by future adaptive grants |
+
+The next verification configuration is **100 total slots / 50 ms**, including
+initial access, not 100 data slots. It is prepared but has not been run. Do not
+interpret this source-consolidation commit or the commands below as a passing
+100 MHz scenario. The following paragraphs retain earlier, explicitly scoped
+component evidence; they do not supersede this current status.
 
 The latest follow-up has **13 affected tests passing**: standalone SR acquires
 its current receiver-known sequence even when an optional retained UL clock
@@ -28,11 +55,170 @@ The retained H4 DL row matches its transmitted sample clock without modifying
 that failed run. Data-beam selection is exported separately from actual P2
 refinement events. These are focused receiver/reporting checks, **not full
 scenario, beam-refinement, detector-statistics or calibration acceptance**.
-The latest completed two-report H4 component decoded its first CSI/SR PUCCH
-at slot 19 (15/15 bits), then stopped at slot 26 because the test supplied
-frame 1 instead of frame 2. The test now binds the canonical carrier clock;
-the production frame-mismatch rejection remains tested and unchanged. The
-two-report physical rerun remains required.
+The two-report H4 physical component now **passes all 40 slots**. Both slot-19
+and slot-39 CSI/SR PUCCH occasions independently decode 15/15 bits. The first
+received RI=2 leaves the scheduler at rank 1; the second confirming RI=2
+accepts rank 2. The canonical frame/slot binding fixes the earlier slot-26
+fixture error without weakening the production clock guard. This test uses
+explicit preconnected access/TAG inputs: it does not qualify initial access,
+subsequent data grants, activated TCI or the complete 200-slot scenario.
+
+The H4 received-TCI admission guard had two additional core defects: states
+before DATA_ACTIVE could admit an unrelated codepoint, and staging a new CSI
+candidate revoked the still-active previous beam. `CoupledTruthRuntime` now
+rejects missing/mismatched active bindings and acquisition/failure/recovery
+states under the required-TCI policy. A previously activated beam remains
+usable while refinement is pending, without activating the new candidate.
+Five affected tests pass, including two actual logical-port PDCCH decodes,
+29 admission checks, pending-beam preservation and frozen TCI/grant binding.
+The adjacent beam fixture now resolves its TRS start from the installed
+calendar rather than the obsolete slot-8 constant; the timing guard remains.
+See `logs/h4_tci_admission_20261014_v3/receipt.json`. Declared beam-state inputs
+remain component fixtures, not full physical beam-refinement acceptance.
+
+Large shared-channel archives now use exact time-contiguous, shuffled HDF5
+compression through the existing staged MAT publisher. Native MAT metadata,
+numeric precision, coefficient hashes and mandatory destination readbacks
+are retained. The serializer's 16 numeric round-trip cases and four affected
+publication/archive tests pass, including a physically executed H4 64-TXRU /
+four-RX capture with 12,582,912 coefficients and bounded verification reads.
+This preserves the v2 archive contract; it is not decimation or reconstructed
+channel evidence. The subsequent full-slot preflight also passes: 61,440
+samples, 377,487,360 complex-double coefficients, complete coefficient hashes
+and an exact frozen-time readback. It took 1,207 seconds and produced a
+2,363,299,222-byte MAT archive; see
+`logs/h4_full_slot_archive_20261014_v1/receipt.json`. That test is channel/archive
+execution, not scheduled data decoding or full-scenario acceptance.
+
+`SharedWaveformPhysicalRuntime` now preserves value-shared coefficient arrays
+when a capture spans the complete processor interval, instead of creating a
+second full-range slice. Partial-window slicing and request-specific clocks
+remain unchanged. Four affected runtime/archive tests pass, including exact
+overlap comparisons, observer/RNG invariance and H4 capture/export. A separate
+128-MiB MATLAB allocation probe measured 134,221,824 additional private bytes
+for the old slice and zero for value sharing; this is not a measured full-run
+peak-memory reduction. Evidence is under
+`logs/shared_channel_capture_allocation_20261014_v1`. The full-slot preflight
+above preceded this additional allocation repair; the post-repair H4 archive
+regression uses 2,048 samples. Whole-run disk capacity and the 200-slot memory
+gate remain unverified, and no measurement precision or coverage was reduced.
+
+The compact shared-data scoring observation now preserves the executed RX
+endpoint's timing, CFO and RF-stage metadata instead of dropping it before
+NMSE reference alignment. Missing metadata still fails; no injected value is
+used as a receiver estimate. Three affected tests pass, including actual shared
+DL/UL channel-estimation CSV/MAT round-trips. The receipt is
+`logs/shared_rx_clock_metadata_20261014_v2/receipt.json`. This component evidence
+does not establish sustained impaired H4 data execution.
+
+Seven final-worktree shared-HARQ protocol checks also pass: Type-2 gaps/wraps,
+installed resource planning, scheduled DAI, producer-row identity, commit
+receipts, stale/duplicate feedback and grant disposition. They include 256 DAI
+sequences and preserve failed physical trials as failures rather than missing
+trials. The receipt is
+`logs/shared_harq_protocol_closure_20261014_v1/receipt.json`.
+These declared protocol inputs are not a physical missed-DCI or detector-rate
+qualification; the physical negative-path and combined-UCI gates are separate.
+The subsequent six-check batch also passes: two mapping checks, actual absent
+PUCCH/PUSCH observations, rejected UL control with due HARQ, and two rejected
+UL commands with receiver-owned soft combining. The absent PUCCH returns DTX;
+the absent PUSCH fails CRC; no UE TB transmission or successful delivery is
+invented. Known-candidate control and declared connected timing inputs limit
+these cases to physical components, not acquired blind-control or statistical
+qualification. See `logs/shared_harq_physical_negative_20261014_v1/receipt.json`.
+The absent-PUCCH files are additionally preserved under that folder's
+`pucch_receive_only_evidence` subfolder; their byte hashes match the original
+temporary files. Embedded source paths were not rewritten.
+
+Independent combined PUCCH and PUSCH CSI reception also pass after removing
+UE producer bookkeeping and poisoning optional TX references; received fields
+remain unchanged. Late PUSCH delivery passes. The late format-2 PUCCH test
+initially stopped before PHY execution because its 20-slot CSI-report calendar
+inherited a five-slot recovery gap. Its dedicated YAML now declares a 20-slot
+gap, retaining two-report confirmation and the production cadence validator.
+The cadence negative guard and the unchanged physical late-PUCCH assertions
+both pass. Original failures remain in
+`logs/shared_combined_uci_closure_20261014_v1/receipt.json`; the repaired rerun is
+`logs/shared_late_pucch_cadence_repair_20261014_v1/receipt.json`. These component
+tests do not qualify detector probabilities or the full impaired H4 scenario.
+
+The generic CSI-SINR discrepancy remains open. A separate 64-episode paired
+diagnostic found native disturbance estimation bias on noise-only grids and
+additional estimator self-noise on a frequency-selective reference. Its raw
+audit inputs are not supplied to the production estimator. No fitted noise
+correction, injected-noise substitution or relaxed acceptance assertion has
+been introduced; the H4 configured CSI-IM measurement path is distinct.
+
+The CSI-IM path had a separate signal-power bias: squared smoothed channel
+estimates counted estimation noise as desired CSI-RS power. It now measures
+port 3000 with local CDM projections and subtracts their analytically derived
+disturbance contribution using the configured, actually observed CSI-IM REs.
+Signed powers are retained; no signal level is forced positive. The estimator
+records its locally uncorrelated-disturbance assumption and does not claim an
+unbiased dB value or diversity-selected maximum. The native channel estimate
+used for CSI/PMI is unchanged and its power remains a separate diagnostic.
+Native `CDM4`/`CDM8` names now map to their actual frequency/time CDM lengths.
+Five affected tests pass, including 4,096 measurement trials across 16 paired
+CDM/SNR populations, eight-resource H4 grid reception, signed per-branch
+publication, and exact unit conversion. A negative branch no longer hides
+another branch's valid measurement; unexplained missing values still fail.
+See `logs/csi_im_power_repair_20261014_v3/receipt.json`. This does not close the
+generic no-CSI-IM estimator discrepancy or establish full RF/scenario acceptance.
+The subsequent physical batch passes all three tests, including the six-slot
+64-by-4 H4 CDL-C/RF CSI-IM receive occasion and its exact receiver-JSON CSV
+round-trip (`logs/csi_im_power_physical_20261014_v1/receipt.json`). Another
+focused check passes all 18 native CSI-RS rows in 38 density/partial-band
+mapping cases (`logs/csi_cdm_geometry_20261014_v1/receipt.json`). Neither
+receipt represents the complete 200-slot connected scenario.
+
+The shared SRS scoring reference now uses the configured complete SRS port
+set for CDM despreading, matching the practical receiver's existing geometry.
+The old generic first-two-sequence inference selected two-port despreading for
+a four-port reference. The repair changes independent scoring, not the
+receiver's noise, RI/TPMI, waveform power or acceptance threshold. Actual
+prepared/received four-port tests cover combs 2 and 4 and poison the scoring
+reference without changing receiver decisions.
+
+The H4 SRS YAML also now explicitly selects `C_SRS=61, B_SRS=0`: its actual
+native allocation is **272 of 273 carrier PRBs**, within the existing one-edge-RB
+coverage policy. The inherited `C_SRS=6` previously generated only 24 PRBs;
+changing `num_rb` alone did not override that native table index. The production
+SRS runner now rejects an invalid installed configuration before waveform
+preparation instead of ignoring the strict validator. The coverage guard,
+scoring-geometry and unchanged short-gate configuration checks pass in
+`logs/srs_runtime_coverage_20261014_v1/receipt.json`. This is not yet full H4
+receiver or complete-scenario acceptance; those physical gates remain separate.
+The six adjacent regressions also pass in
+`logs/srs_adjacent_runtime_20261014_v1/receipt.json`: full-carrier tolerance,
+causal scheduling, configured-band reception and negatives, standalone scoring
+timing, measured SRS-to-UL adaptation, and canonical wideband runtime reception.
+
+The next exact H4 SRS capture exposed a separate scoring-clock mismatch:
+the noiseless desired-link reference excluded the executed RX delay/CFO,
+while the practical receiver operated on the post-RX-RF samples. The core
+completion path now retains that execution metadata and aligns only the
+post-reception scoring reference. The practical channel estimate, noise,
+RI/TPMI and scheduling inputs are unchanged. The full-band four-port SRS /
+64-RX CDL-C/RF component passes in
+`logs/h4_shared_srs_scoring_20261014_v8/receipt.json`: **-26.05 dB NMSE**, with
+the old unmatched-clock **+2.02 dB** comparison preserved separately. The
+original -8 dB gate is unchanged. This is one SRS occasion with declared
+access/TAG boundary inputs, not a full access/data scenario or statistical
+qualification.
+
+`testSRSReceivedScoringClock` also passes its three delay/CFO cases and
+scoring-only metadata poisoning checks. The WebGUI exposes the raw and
+phase-equivalent scores, reference plane, and scoring-only recorded RX
+delay/CFO separately from receiver estimates. **60 affected Python tests
+pass**, and the actual H4 CSV retains those values through the preview path.
+Neither this scoring correction nor that display is oscillator qualification.
+The subsequent eight affected MATLAB checks pass in
+`D:/SixGR/logs/h4_srs_final_source_20261014_v1/receipt.json` (shared receive-only
+feedback, SRS timing/configuration, short-run configuration, config and DL/UL
+reference regressions). The derived public SRS measurement table also retains
+the same scoring clock fields without substituting injected RF values for
+missing evidence; its integrity and public-claim checks pass in
+`D:/SixGR/logs/srs_public_scoring_clock_20261014_v1/receipt.json`.
 
 The beam-publication follow-up passes **264 affected Python tests**, including
 the CSV/plot semantic checks. The WebGUI materializer no longer truncates the
@@ -106,7 +292,76 @@ special slot. The configured RF profiles are research assumptions, not hardware
 qualification. Beam-failure recovery is not enabled; normalized received power
 must not be labelled absolute dBm. **Full scenario acceptance is still pending.**
 
-Dedicated 40 dB diagnostic gate (200 slots; not a short unit test):
+The next verification uses
+`simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_adaptation.yaml`:
+**100 total slots / 50 ms**, including initial access. The number of actual data
+grants is determined by the receiver/scheduler, not promised by the duration.
+CSI report occasions retain one-based slots 19, 39, 59, 79 and 99; an occasion
+is usable only when its causal reference/control obligations are satisfied.
+Bandwidth, antennas, reference-signal cadences, RF impairments, acceptance
+thresholds and enabled exports are unchanged. Pending feedback beyond the
+horizon remains right-censored, not silently counted as successful. This is
+not statistical BLER qualification. Run this command only after the affected
+final-source repair checks are accepted and scenario execution is resumed:
+
+```bat
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -wait -logfile "logs\h4_100mhz_40db_adaptation_manual_01.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_adaptation.yaml','results','h4_100mhz_40db_adaptation_manual_01'); disp(out); fprintf('RUN_FOLDER=%s\n',char(out.RunFolder)); assert(out.Ok,'H4 adaptation acceptance failed; preserve results and log.');"
+```
+
+Expected result root:
+`results/lls/h4_100_cdlc100_connected_impaired_40db_adaptation/h4_100mhz_40db_adaptation_manual_01/`.
+Use the actual printed `RUN_FOLDER` as authority and a new tag/log name for
+every attempt. MATLAB execution remains stopped at this revision's handoff.
+
+The retained diagnostic attached at slot 40; this is an observation, **not an
+attachment deadline**. Access progresses using the configured SSB/Type-0 SI
+calendar, PRACH occasions, `random_access.ra_response_window_slots`,
+`random_access.timing.*` processing delays, contention timer and
+`random_access.preamble_trans_max` retry limit. The finite run horizon does
+not fire these timers or force attachment. `control/csv/initial_access_horizon.csv`
+records completed, terminally failed, or right-censored access separately,
+without creating unexecuted physical trial rows.
+The older **60-slot / 30-ms** YAML remains available as a short repair check.
+With the unchanged two-report rank-confirmation policy, it may finish before
+a confirmed rank change can be used by a later data grant. It is not proof
+of completed rank adaptation. This is the optional short-check command, not
+the next adaptation-verification command:
+
+```bat
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -wait -logfile "logs\h4_100mhz_40db_short_manual_01.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_short.yaml','results','h4_100mhz_40db_short_manual_01'); disp(out); fprintf('RUN_FOLDER=%s\n',char(out.RunFolder)); assert(out.Ok,'H4 short-gate acceptance failed; preserve results and log.');"
+```
+
+`results` remains the repository results root. An external root such as
+`D:/SixGR/results` may replace that argument when sufficient space is available;
+this does not move or delete previous results. Verify the chosen disk budget
+before launching. Logs in the commands remain under the repository `logs`.
+One lossless full-slot channel archive measured 2.20 GiB; this is not a bound
+on total storage per simulated slot. Check current free space rather than
+reusing an earlier disk snapshot. The current commands deliberately keep
+both logs and results in the main repository's folders. No historical files
+were moved or deleted during consolidation.
+
+The separate physical-budget child is
+`simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_pathloss_short.yaml`.
+It retains the 60-slot H4 PHY but enables TR 38.901 UMa NLOS path loss,
+absolute array-input powers (30 dBm gNB / 23 dBm UE), and receiver thermal
+noise. Its required legacy `snr_db: 0` is **not a requested SNR**:
+`configured_snr_is_link_authority` is false. Received SNR/SINR and absolute
+RS powers must come from the executed link; no extra gain compensates the
+path loss. Shadow fading and O2I remain separately disabled. This child is
+not an accepted full run and must not be mixed into the normalized SNR curve.
+Its focused check is `testH4100AllocationAndPathloss` (allocation/loss-operator
+scope only, not receiver qualification).
+
+The retained slots 41/42 used 126 PRBs each: configured SSB reservations
+covered PRBs 126–146, leaving two contiguous 126-PRB intervals. This was not
+a 126-PRB BWP cap. Their MCS 1 / rank 1 grants were bootstrap decisions,
+not CSI-driven throughput results. The first post-attach periodic CSI report
+was due at slot 59, after the retained run had already aborted. Neither
+full-band allocation through reserved SSB/DM-RS nor artificial early CSI is
+a valid repair.
+
+Original dedicated 40 dB diagnostic gate (200 slots; retained unchanged):
 
 ```bat
 "C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -wait -logfile "logs\h4_100mhz_40db_manual_01.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_gate.yaml','results','h4_100mhz_40db_manual_01'); disp(out); fprintf('RUN_FOLDER=%s\n',char(out.RunFolder)); assert(out.Ok,'H4 acceptance failed; preserve results and log.');"
@@ -988,6 +1243,9 @@ It requires its version-matched calibration files; use the complete calibrated
 command block in [Exact command: measured 400 MHz four-layer adaptive run](#exact-command-measured-400-mhz-four-layer-adaptive-run), not an uncalibrated direct launch.
 
 #### testAll command
+
+This is a reference command for a separately authorized full-suite run.
+**Do not run it during the current affected-tests-only repair workflow.**
 
 The supported server launcher requires a clean Git checkout, creates a unique
 `logs/testall_*` folder, writes terminal JSON/CSV/MATLAB logs and creates a ZIP

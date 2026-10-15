@@ -20,6 +20,10 @@ if nargin < 3 || isempty(metrics)
 end
 
 mode = lower(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.mode", "fixed")));
+if logical(sixgr.util.structGet(cfg,"phy.linkAdaptation.innerLoopFlag",false))
+    sixgr.runtime.RuntimeCallLedger.record("sixgr.link.computeLinkAdaptationDecision", ...
+        "LINK_ADAPTATION",direction,struct("Stage","inner_loop_decision"));
+end
 policyPath = localPolicyPath(direction);
 policy = lower(string(sixgr.util.structGet(cfg, policyPath, "fixed")));
 rankControl = sixgr.mimo.resolveRankPolicy(cfg);

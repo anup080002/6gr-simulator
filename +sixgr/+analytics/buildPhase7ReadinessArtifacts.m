@@ -2552,10 +2552,17 @@ for direction = localRequiredLinkDirections(cfg, ...
         expectedTx = ueElements;
         expectedRx = bsElements;
     end
-    observedTx = localFirstFinite(localFirstAvailableTableColumn(slice, ["ObservedPhysicalTxAntennas","ObservedTxWaveformColumns"]));
-    observedRx = localFirstFinite(localFirstAvailableTableColumn(slice, ["ObservedPhysicalRxAntennas","ObservedRxWaveformBranches"]));
+    population=localColumnDouble(slice,"ObservedRows",NaN);
+    populationPresent=~isempty(population) && all(isfinite(population) & population>0 & population==fix(population));
+    txCounts=localFirstAvailableTableColumn(slice,["ObservedPhysicalTxAntennas","ObservedTxWaveformColumns"]);
+    rxCounts=localFirstAvailableTableColumn(slice,["ObservedPhysicalRxAntennas","ObservedRxWaveformBranches"]);
+    observedTx=localFirstFinite(txCounts);
+    observedRx=localFirstFinite(rxCounts);
+    countsAvailable=~isempty(txCounts) && ~isempty(rxCounts) && ...
+        all(isfinite(txCounts) & txCounts>0) && all(isfinite(rxCounts) & rxCounts>0);
     physicalOk = localAllTableFlag(slice, "PhysicalArrayConsistencyOk") && ...
-        isfinite(expectedTx) && isfinite(expectedRx) && observedTx == expectedTx && observedRx == expectedRx;
+        populationPresent && countsAvailable && isfinite(expectedTx) && isfinite(expectedRx) && ...
+        all(txCounts == expectedTx) && all(rxCounts == expectedRx);
     countOnly = any(localTrialLogicalColumn(slice, "ChannelUsesCountOnlyAntennaModel", false));
     configuredChannel = localConfiguredConcreteChannel(cfg);
     if startsWith(configuredChannel, "CDL-")
@@ -2566,12 +2573,17 @@ for direction = localRequiredLinkDirections(cfg, ...
     else
         geometryOk = configuredChannel == "AWGN";
     end
+    geometryOk=populationPresent && geometryOk;
     ok = physicalOk && geometryOk && ~countOnly;
     if configuredChannel == "AWGN"
         ok = physicalOk;
     end
     reason = "";
-    if ~ok
+    if ~populationPresent
+        reason="required_active_runtime_trials_missing_or_population_invalid";
+    elseif ~countsAvailable
+        reason="runtime_physical_array_counts_unavailable";
+    elseif ~ok
         reason = localJoinFailureReasons([ ...
             localConditionalReason(~physicalOk, "physical_array_count_mismatch"), ...
             localConditionalReason(~geometryOk, "runtime_array_geometry_not_coupled"), ...

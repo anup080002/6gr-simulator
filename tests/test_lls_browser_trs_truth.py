@@ -43,6 +43,18 @@ def test_trs_runtime_truth_preview() -> None:
     ]
 
     orig_load_small = dash.load_small_csv_rows
+    trs_rows[0].update(ChannelNMSEReferencePlane="recorded_receiver_clock",
+                       ChannelNMSEQualificationMode="independent_complex_pilot_resources_no_gain_or_phase_fit",
+                       ChannelNMSEPilotResourceCount="3276", ChannelNMSEComparedComplexValues="13104",
+                       ChannelNMSEErrorEnergy="1", ChannelNMSEReferenceEnergy="32")
+    trs_rows[0].update(IndependentPilotSNDR_dB="20", IndependentPilotSNDRAvailable="1",
+                       IndependentPilotReferencePlane="recorded_receiver_clock",
+                       IndependentPilotValueRole="post_reception_scoring_only_not_receiver_or_scheduler_input")
+    trs_rows[0].update(TimingEstimateUsed="1", AppliedTimingCorrection_samples="16",
+                      TimingEstimateStatus="available_applied_at_received_window_origins",
+                      TimingEstimateApplicationPolicy="per_resource_received_window_origin_shift_no_second_correction",
+                      TRSAppliedTimingResourceCount="2", TRSExpectedTimingResourceCount="2",
+                      TRSAppliedTimingEvidenceJSON='[{"Slot":7,"EstimatedTimingOffset_samples":16}]')
     try:
         def fake_load_small(artifacts_arg, logical_path, *, max_rows=64):
             if logical_path == "reports/csv/runtime_operating_mode.csv":
@@ -67,6 +79,18 @@ def test_trs_runtime_truth_preview() -> None:
         assert str(preview["Scheduler usable"]) == "1"
         assert str(preview["Qualification pass"]) == "0"
         assert preview["Status"] == "FAIL", "Scheduler usability must not turn failed qualification into PASS."
+        assert preview["NMSE reference plane"] == "recorded_receiver_clock"
+        assert preview["Scored pilot resources"] == "3276"
+        assert preview["Compared complex values"] == "13104"
+        assert preview["NMSE comparison mode"] == "independent_complex_pilot_resources_no_gain_or_phase_fit"
+        assert preview["Independent pilot SNDR (dB; includes distortion)"] == "20"
+        assert preview["Independent pilot value role"] == "post_reception_scoring_only_not_receiver_or_scheduler_input"
+        assert preview["Timing estimate used"] == "1"
+        assert preview["Applied timing correction (samples)"] == "16"
+        assert preview["Timing status"] == "available_applied_at_received_window_origins"
+        assert preview["Timing correction policy"] == "per_resource_received_window_origin_shift_no_second_correction"
+        assert preview["Aligned TRS windows"] == "2" and preview["Expected TRS windows"] == "2"
+        assert preview["Applied timing window evidence"] == trs_rows[0]["TRSAppliedTimingEvidenceJSON"]
         assert any("TRS runtime consumer: shared_receiver_tracking_state." in note for note in runtime_context["notes"]), (
             "browser notes must disclose the real TRS runtime consumer"
         )

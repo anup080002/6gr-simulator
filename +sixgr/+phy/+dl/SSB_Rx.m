@@ -264,6 +264,10 @@ sync.Lmax = Lmax;
 sync.NID2 = NID2;
 sync.NID1 = double(NID1);
 sync.FreqOffset_Hz = fOffHz;
+for name = ["CFOCorrectionApplied","CFOCorrectionApplied_Hz", ...
+        "CFOCorrectionSampleOrigin","CFOCorrectionSource"]
+    sync.(name) = finfo.(name);
+end
 sync.TimingOffset = double(timingResolution.RawEstimate_samples);
 sync.RawTimingEstimate_samples = double(timingResolution.RawEstimate_samples);
 sync.AppliedTimingCorrection_samples = double(timingResolution.AppliedCorrection_samples);
@@ -302,6 +306,7 @@ sync.SymbolPhaseCompensationCarrierFrequencyHz = double(timing.CarrierFrequencyH
 sync.SymbolPhaseCompensationSource = 'configured_carrier_nr_ofdm_demodulation';
 sync.SSBSymbolColumnsOneBased = double(ssbSymbolColumns);
 sync.SSBDemodulationSampleCount = double(size(rxSync,1));
+sync.SSBDemodulationStartSampleZeroBased = double(demodStartIdx-1);
 sync.SSBDemodulationSymbolCount = double(ssbSymbolColumns(end));
 sync.SSBDemodulationScope = 'acquired_slot_prefix_through_selected_ssb_only';
 sync.SSBCenterFrequencyOffsetHz = double(sixgr.util.structGet( ...
