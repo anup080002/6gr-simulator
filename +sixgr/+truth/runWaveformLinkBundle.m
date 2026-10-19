@@ -2197,6 +2197,8 @@ statusOut = struct( ...
     "TotalUsers", NaN, ...
     "CurrentSlot", NaN, ...
     "TotalSlots", NaN, ...
+    "CurrentFrame", NaN, ...
+    "CompletedSlots", NaN, ...
     "DLCompletedFrames", NaN, ...
     "ULCompletedFrames", NaN, ...
     "CompletedFrames", NaN, ...
@@ -2272,7 +2274,11 @@ try
     payload.stage = localStatusTextValue(sixgr.util.structGet(status, "Stage", ""));
     payload.current_slot = localStatusScalarValue(sixgr.util.structGet(status, "CurrentSlot", NaN));
     payload.total_slots = localStatusScalarValue(sixgr.util.structGet(status, "TotalSlots", NaN));
-    payload.current_frame = localStatusScalarValue(sixgr.util.structGet(status, "CompletedFrames", NaN));
+    payload.current_frame = localStatusScalarValue(sixgr.util.structGet(status, "CurrentFrame", NaN));
+    payload.completed_frames = localStatusScalarValue(sixgr.util.structGet(status, "CompletedFrames", NaN));
+    payload.completed_slots = localStatusScalarValue(sixgr.util.structGet(status, "CompletedSlots", NaN));
+    payload.progress_source = localStatusTextValue(sixgr.util.structGet(status, "ProgressSource", ""));
+    payload.progress_meaning = localStatusTextValue(sixgr.util.structGet(status, "ProgressMeaning", ""));
     payload.total_frames = localStatusScalarValue(sixgr.util.structGet(status, "TotalFrames", NaN));
     payload.completed_symbols = localStatusScalarValue(sixgr.util.structGet(status, "CompletedSymbols", NaN));
     payload.total_symbols = localStatusScalarValue(sixgr.util.structGet(status, "TotalSymbols", NaN));
@@ -3631,6 +3637,9 @@ if strlength(resumeCheckpoint)>0
     [restored,checkpointLineage]=sixgr.runtime.SlotCheckpoint.read(resumeCheckpoint, ...
         cfg.run.runtimeCheckpointScenario,cfg.run.runtimeCheckpointRepairReason);
     runtimeState=restored.RuntimeState;
+    % SlotCheckpoint.read has verified this completed boundary. Older saved
+    % states predate the separate radio-progress counter; do not use data rows.
+    runtimeState.CompletedCanonicalSlots=double(restored.CompletedSlot);
     runtimeState.CheckpointContinuation=checkpointLineage;
     runtimeState.PrimaryStudyEligible=false;
     dlTrials=restored.DLTrials; ulTrials=restored.ULTrials;
@@ -3868,12 +3877,19 @@ for sweepIdx = firstSweep:numel(snrGrid)
             [runtimeState,dlTrials,ulTrials,dlConstT,ulConstT,dlStates,ulStates] = ...
                 localDrainSharedDataPlans(runtimeState,dlTrials,ulTrials,dlConstT,ulConstT,dlStates,ulStates);
             pendingULGrants=sixgr.util.structGet(runtimeState,'SharedPendingULGrants',repmat(struct(),0,1));
+            runtimeState.CompletedCanonicalSlots=double(absoluteFrame);
             liveRawTrials=localBuildCoupledTruthRawTrialsAggregate(dlTrials,ulTrials,multiUser,runtimeState.ControlTrials,cfg);
             localPublishCoupledTruthRuntimeState(cfg,runFolder,liveRawTrials,multiUser,runtimeState, ...
                 dlTablePath,ulTablePath,dlConstellationPath,ulConstellationPath,dlConstT,ulConstT, ...
                 publishDirection,snrVal,sweepIdx,numel(snrGrid),0,numel(userCfg),frameLocal,nFramesPerPoint, ...
                 sixgr.util.structGet(runtimeState,'SharedWaveformPreviewTable',table()), ...
                 'SlotComplete',true,'PublishReason','shared_physical_receive_completions');
+        else
+            % No-grant/control-only slots advance the radio clock too. A
+            % directional chunk above is not completion of the whole slot.
+            runtimeState.CompletedCanonicalSlots=double(absoluteFrame);
+            radioProgress=sixgr.truth.resolveRuntimeClockProgress(runtimeState);
+            localPublishWaveformBundleStageStatus(runFolder,radioProgress);
         end
         if checkpointEnabled && mod(absoluteFrame,double(cfg.run.checkpointEverySlots))==0
             checkpointPayload=struct('RuntimeState',runtimeState, ...
@@ -9145,10 +9161,11 @@ function localPublishCoupledControlGatingStatus(runFolder, state, meta)
 if nargin < 3 || ~isstruct(meta)
     meta = struct();
 end
-slotIdx = double(sixgr.util.structGet(state, "CurrentSlot", NaN));
-totalSlots = double(sixgr.util.structGet(state, "CanonicalSlotsPerSweepPoint", NaN));
-completedFrames = double(sixgr.util.structGet(state, "CurrentFrameLocal", sixgr.util.structGet(state, "CurrentFrame", NaN)));
-totalFrames = double(sixgr.util.structGet(state, "FramesPerSweepPoint", NaN));
+clock = sixgr.truth.resolveRuntimeClockProgress(state);
+slotIdx = clock.CurrentSlot;
+totalSlots = clock.TotalSlots;
+completedFrames = clock.CompletedFrames;
+totalFrames = clock.TotalFrames;
 symbolsPerSlot = double(sixgr.util.structGet(state, "SymbolsPerSlot", []));
 if ~(isscalar(symbolsPerSlot) && isfinite(symbolsPerSlot) && ...
         symbolsPerSlot >= 1 && symbolsPerSlot == round(symbolsPerSlot))
@@ -9157,20 +9174,9 @@ if ~(isscalar(symbolsPerSlot) && isfinite(symbolsPerSlot) && ...
          "frame runtime; a local slot-size fallback is not permitted."]);
 end
 
-completedSymbols = NaN;
-totalSymbols = NaN;
-if isfinite(slotIdx)
-    completedSymbols = max(0, (double(slotIdx) - 1) * symbolsPerSlot);
-end
-if isfinite(totalSlots)
-    totalSymbols = max(0, double(totalSlots) * symbolsPerSlot);
-end
-runCompletion = NaN;
-if isfinite(totalSlots) && totalSlots > 0 && isfinite(slotIdx)
-    runCompletion = min(max(double(slotIdx) / double(totalSlots), 0), 1);
-elseif isfinite(totalFrames) && totalFrames > 0 && isfinite(completedFrames)
-    runCompletion = min(max(double(completedFrames) / double(totalFrames), 0), 1);
-end
+completedSymbols = clock.CompletedSymbols;
+totalSymbols = clock.TotalSymbols;
+runCompletion = clock.RunCompletion;
 currentUE = double(sixgr.util.structGet(meta, "CurrentUEIndex", NaN));
 totalUsers = double(sixgr.util.structGet(meta, "TotalUsers", sixgr.util.structGet(state, "NumUsers", NaN)));
 notes = string(sixgr.util.structGet(meta, "Notes", ""));
@@ -9193,6 +9199,13 @@ localPublishWaveformBundleStageStatus(runFolder, struct( ...
     "TotalUsers", totalUsers, ...
     "CurrentSlot", slotIdx, ...
     "TotalSlots", totalSlots, ...
+    "CurrentFrame", clock.CurrentFrame, ...
+    "CompletedSlots", clock.CompletedSlots, ...
+    "SlotsPerFrame", clock.SlotsPerFrame, ...
+    "SymbolsPerSlot", clock.SymbolsPerSlot, ...
+    "ClockScope", clock.ClockScope, ...
+    "ProgressSource", clock.ProgressSource, ...
+    "ProgressMeaning", clock.ProgressMeaning, ...
     "CompletedSymbols", completedSymbols, ...
     "TotalSymbols", totalSymbols, ...
     "CurrentSlotDLSymbols", double(sixgr.util.structGet(state, "CurrentSlotDLNumSymbols", NaN)), ...
@@ -18702,13 +18715,8 @@ controlAttemptCounts = [pbchAttemptCount, prachAttemptCount, ...
 resolvedLiveStage = sixgr.truth.resolveWaveformLiveStage( ...
     dlTrialRows, ulTrialRows, controlAttemptCounts);
 controlReady = any(controlAttemptCounts > 0);
-if isfinite(dlCompletedFrames) && isfinite(ulCompletedFrames)
-    completedFrames = min(dlCompletedFrames, ulCompletedFrames);
-elseif isfinite(dlCompletedFrames)
-    completedFrames = dlCompletedFrames;
-elseif isfinite(ulCompletedFrames)
-    completedFrames = ulCompletedFrames;
-end
+% Directional counters record frames containing data outcomes. Neither their
+% minimum nor maximum is elapsed radio time (UL may legitimately have no row).
 notes = string(sixgr.util.structGet(meta, "Notes", ""));
 dlUserProgress = NaN;
 ulUserProgress = NaN;
@@ -18717,18 +18725,14 @@ if isfinite(totalUsers) && totalUsers > 0
     ulUserProgress = min(double(ulUsers) / double(totalUsers), 1);
 end
 if strlength(notes) == 0
-    notes = sprintf("Streaming %s at %.3f dB: UE %s/%s, completed frames DL=%s/%s UL=%s/%s, bidirectional=%s/%s, DL users=%d/%s, UL users=%d/%s.", ...
+    notes = sprintf("Streaming %s at %.3f dB: UE %s/%s, published data trials DL=%d UL=%d, DL users=%d/%s, UL users=%d/%s. Trial coverage is separate from radio-clock progress.", ...
         char(direction), currentSNR, localDisplayProgressValue(currentUE), localDisplayProgressValue(totalUsers), ...
-        localDisplayProgressValue(dlCompletedFrames), localDisplayProgressValue(totalFrames), ...
-        localDisplayProgressValue(ulCompletedFrames), localDisplayProgressValue(totalFrames), ...
-        localDisplayProgressValue(completedFrames), localDisplayProgressValue(totalFrames), ...
+        dlTrialRows, ulTrialRows, ...
         dlUsers, localDisplayProgressValue(totalUsers), ulUsers, localDisplayProgressValue(totalUsers));
 end
 currentSlot = double(sixgr.util.structGet(runtimeState, "CurrentSlot", NaN));
 runCompletion = NaN;
-if isfinite(totalSlots) && totalSlots > 0 && isfinite(currentSlot)
-    runCompletion = min(max(currentSlot / totalSlots, 0), 1);
-elseif isfinite(completedFrames) && isfinite(totalFrames) && totalFrames > 0
+if isfinite(completedFrames) && isfinite(totalFrames) && totalFrames > 0
     runCompletion = min(max(completedFrames / totalFrames, 0), 1);
 end
 status = struct( ...
@@ -18777,6 +18781,13 @@ status = struct( ...
     "SweepReady", false, ...
     "FinalBundleReady", false, ...
     "Notes", char(notes));
+if isstruct(runtimeState) && ~isempty(fieldnames(runtimeState))
+    clock = sixgr.truth.resolveRuntimeClockProgress(runtimeState);
+    clockFields = fieldnames(clock);
+    for fieldIndex = 1:numel(clockFields)
+        status.(clockFields{fieldIndex}) = clock.(clockFields{fieldIndex});
+    end
+end
 end
 
 function [pbchCount, prachCount, srsCount, trsCount] = localResolveLiveControlAttemptCounts(rawTrials, runtimeState, meta)

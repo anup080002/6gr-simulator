@@ -21875,6 +21875,20 @@ window.addEventListener('DOMContentLoaded', function () {
         <div class="table-wrap"><table><thead><tr><th>Run</th><th>Status</th><th></th></tr></thead><tbody>${recentRows || '<tr><td colspan="3">No previous runs.</td></tr>'}</tbody></table></div>
       </section>`;
   }
+  function runtimeClockProgress(stage) {
+    const count = (name) => {
+      const raw = stage[name];
+      if (raw === null || raw === undefined || raw === '' || typeof raw === 'boolean' || typeof raw === 'object') return null;
+      const value = Number(raw);
+      return Number.isFinite(value) && Number.isInteger(value) && value >= 0 ? value : null;
+    };
+    const current = count('CurrentSlot');
+    const total = count('TotalSlots');
+    const completed = count('CompletedSlots');
+    const valid = total !== null && total > 0 && completed !== null
+      && completed <= total && (current === null || (completed <= current && current <= total));
+    return {current, total, completed, percent: valid ? 100 * completed / total : null};
+  }
   function liveWorkspace() {
     title('Live', 'Run status and current measurements.');
     const live = state.live;
@@ -21904,23 +21918,29 @@ window.addEventListener('DOMContentLoaded', function () {
       }
       return null;
     };
-    const currentSlot = Number(stageValue('CurrentSlot','SlotIndex','CompletedFrames'));
-    const totalSlots = Number(stageValue('TotalSlots','RequestedFrames'));
-    const progressKnown = Number.isFinite(currentSlot) && Number.isFinite(totalSlots) && totalSlots > 0;
-    const progressPercent = progressKnown ? Math.max(0, Math.min(100, 100 * currentSlot / totalSlots)) : null;
+    const clock = runtimeClockProgress(stage);
+    const currentSlot = clock.current;
+    const totalSlots = clock.total;
+    const progressKnown = currentSlot !== null && totalSlots !== null && totalSlots > 0;
+    const progressPercent = clock.percent;
     const compactStage = {
       Stage: stageValue('Stage','CurrentStage') || run.status_text || 'unavailable',
-      'Slot progress': progressKnown ? `${currentSlot} / ${totalSlots}` : 'unavailable',
-      'OFDM symbols completed': stageValue('CompletedSymbols','CurrentSymbol') ?? 'unavailable',
+      'Current radio slot (1-based)': progressKnown ? `${currentSlot} / ${totalSlots}` : 'unavailable',
+      'Radio slots processed': clock.completed ?? 'unavailable',
+      'Current radio frame (1-based)': stageValue('CurrentFrame') ?? 'unavailable',
+      'Whole radio frames processed': clock.completed !== null ? (stageValue('CompletedFrames') ?? 'unavailable') : 'unavailable',
+      'OFDM symbols processed': stageValue('CompletedSymbols') ?? 'unavailable',
+      'Clock scope': stageValue('ClockScope') ?? 'unavailable',
+      'Progress evidence': stageValue('ProgressSource') ?? 'unavailable',
       Direction: stageValue('CurrentDirection','Direction') ?? 'unavailable',
       'Operating SNR dB': stageValue('CurrentSNR_dB','SNR_dB') ?? 'unavailable',
-      'DL / UL trial rows': `${stageValue('DLTrialRows','DLPDSCHTrialRows') ?? 0} / ${stageValue('ULTrialRows','ULPUSCHTrialRows') ?? 0}`,
+      'DL / UL trial rows': `${stageValue('DLTrialRows','DLPDSCHTrialRows') ?? 'unavailable'} / ${stageValue('ULTrialRows','ULPUSCHTrialRows') ?? 'unavailable'}`,
       'Control ready': stageValue('ControlReady') ?? 'unavailable',
       'Data ready': stageValue('DataReady') ?? 'unavailable',
     };
     const progressBar = progressPercent === null
-      ? '<div class="live-progress-track"><span style="width:0%"></span></div><p class="mini-note">Waiting for a persisted total-slot denominator.</p>'
-      : `<div class="live-progress-track" title="${esc(progressPercent.toFixed(1))}%"><span style="width:${esc(progressPercent.toFixed(2))}%"></span></div><p class="mini-note">${esc(progressPercent.toFixed(1))}% of scheduled slots reached.</p>`;
+      ? '<div class="live-progress-track"><span style="width:0%"></span></div><p class="mini-note">Completed radio-slot progress is not available in this snapshot; data-trial counts are not a substitute.</p>'
+      : `<div class="live-progress-track" title="${esc(progressPercent.toFixed(1))}%"><span style="width:${esc(progressPercent.toFixed(2))}%"></span></div><p class="mini-note">${esc(progressPercent.toFixed(1))}% of scheduled radio slots processed. This is not CRC success, a saved restart checkpoint, drained receive tails or final scenario acceptance.</p>`;
     const canStop = /queued|launching|running|finalizing|retry/i.test(String(run.status_text || '')) && String(run.run_tag || '');
     const stopForm = canStop ? `<form method="post" action="/run/stop" class="inline-form" onsubmit="return confirm('Stop this MATLAB run?')"><input type="hidden" name="run_tag" value="${esc(run.run_tag)}"><input type="hidden" name="next" value="/realtime"><button type="submit">Stop</button></form>` : '';
     const publishedArtifactCount = Number((live.counts || {}).artifacts_total || 0);
@@ -21942,7 +21962,7 @@ window.addEventListener('DOMContentLoaded', function () {
       <section class="panel"><div class="toolbar" style="justify-content:space-between">${pageRunSelector('realtimeRunSelect', 'Run', {runningOnly:false})}${stopForm}</div></section>
       <div class="grid four">
         <div class="tile metric"><h4>Status</h4><div class="value">${esc((live.run || {}).status_text || '—')}</div></div>
-        <div class="tile metric"><h4>Slot progress</h4><div class="value">${esc(progressKnown ? `${currentSlot}/${totalSlots}` : '—')}</div></div>
+        <div class="tile metric"><h4>Current radio slot (1-based)</h4><div class="value">${esc(progressKnown ? `${currentSlot}/${totalSlots}` : '—')}</div></div>
         <div class="tile metric"><h4>UEs</h4><div class="value">${esc(text(summary.configured_users ?? '—'))}</div></div>
         <div class="tile metric"><h4>Persisted events</h4><div class="value">${esc(persistedLogCount)}</div><p>${esc(logs.length)} newest shown below</p></div>
       </div>

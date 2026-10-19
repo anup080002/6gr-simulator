@@ -12,7 +12,8 @@ is retained for traceability; it does not supersede the following status.
 | Latest H4 run | Operator interrupted MATLAB after slot-46 exports. No final completion/failure receipt was written. **Not an accepted 100-slot result.** |
 | Restart boundary | Last verified completed checkpoint: **45**, next slot **46**. A slot-46 CSV is not proof that slot 46 or the scenario finished. |
 | Large paired-CSI export | Bounded MATLAB writer retained all 1,677,312 sample pairs; the live CSV matched its independently replayed SHA256. No sample decimation. |
-| Occupancy plot memory | Python renderer now reduces CSV records as a stream, instead of retaining the entire approximately 498 MB input as dictionaries. **217 affected Python tests pass**, including late invalid-row and identity checks. Full retained-run republishing remains pending. This does not establish why the manually interrupted process exited. |
+| Occupancy plot memory | Python renderer now reduces CSV records as a stream, instead of retaining the entire approximately 498 MB input as dictionaries. **217 affected Python tests pass**. The full retained-data replay completed: **23 PNGs**, all **87 source/output hashes matched**, all 1,677,312 CSI sample pairs and 810,338 executed-RE rows accounted for. This remains a partial diagnostic replay, not terminal qualification or proof of the earlier exit cause. |
+| Live radio-clock progress | Core runtime and WebGUI now separate the active one-based radio slot/frame, processed slots/symbols and DL/UL trial rows. Five distinct affected MATLAB checks and 78 Python checks pass. A processed slot is not a durable checkpoint or scenario acceptance. |
 | Server handoff utilities | **18 orchestration/packaging tests pass**, with MATLAB mocked. These verify command construction, failure handling, evidence hashes and exclusions—not a physical server run. |
 | Integrated acceptance | Connected UL, delivered CSI/UCI-driven adaptation, all 100 slots, complete terminal CSV/PNG publication and statistical qualification remain **unaccepted**. A larger server does not by itself fix or qualify these. |
 | Verification policy | Affected tests only at the operator's request. **No full `testAll` and no new scenario were launched for this handoff.** |
@@ -33,6 +34,26 @@ checks pass (`logs/lls_repairs/h4_failure_notice_20261019_v1/receipt.json` and
 recovery is incomplete; it cannot be confused with a completed-slot save point.
 The lost exception from the earlier manually closed MATLAB process cannot be
 reconstructed by this change.
+
+Radio-clock repair verification is retained in
+`logs/lls_repairs/h4_radio_clock_20261019_v1/receipt.json` and
+`logs/lls_repairs/h4_radio_clock_20261019_v2/receipt.json`, plus
+`logs/h4_radio_clock_python_20261019_v2.xml`. The first batch passed four checks;
+the new clock test passed its numerical/CSV checks but failed a line-ending-sensitive
+source-wiring assertion. Only that test was rerun after correcting the assertion.
+No failed receipt was overwritten. The completed-radio-slot counter is advanced
+by the main slot loop after processing, independently of data scheduling; a
+validated checkpoint supplies the counter when resuming older saved states.
+
+Retained publication audit:
+`results/diagnostics/h4_slot46_publication_audit_20261019.json`, with the 23
+paired CSV/PNG outputs under
+`results/diagnostics/h4_slot46_publication_20261019_v1/reports/live_measurements/`.
+Eight of the 31 chart definitions lack an actual population in that interrupted
+run: received CSI CQI/RI/CRI/PMI, reported-versus-applied PMI, and connected-PUSCH
+RSSI/BLER/EVM. UE recommendations and access Msg3 do not replace those populations.
+All original run files remain unchanged. The replay took 683.51 seconds **with
+cProfile enabled**; that is not a clean runtime benchmark or a measured RAM peak.
 
 The exact launcher prints and saves the source commit for each execution.
 Original local evidence stays under `logs/` and `results/`; these are ignored by

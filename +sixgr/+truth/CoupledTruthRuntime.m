@@ -248,6 +248,7 @@ methods(Static)
         state.CurrentSlotULSymbolStart = 0;
         state.CurrentSlotULNumSymbols = double(symbolsPerSlot);
         state.SymbolsPerSlot = double(symbolsPerSlot);
+        state.CompletedCanonicalSlots = 0;
         state.DLCompletedFrames = 0;
         state.ULCompletedFrames = 0;
         state.DLCompletedSlots = 0;
@@ -14314,6 +14315,7 @@ methods(Static, Access=private)
             runState.ValueDefinition = "no valid runtime feedback SINR is available yet for the active slot, so CurrentSNR_dB reflects explicit configured operating-point quality and is not a measured SINR; ConfiguredSNR_dB preserves that metadata separately";
         end
         runState.CanonicalSlotsPerSweepPoint = double(sixgr.util.structGet(state, "CanonicalSlotsPerSweepPoint", NaN));
+        runState.CompletedCanonicalSlots = double(sixgr.util.structGet(state, "CompletedCanonicalSlots", NaN));
         runState.DLCompletedFrames = double(sixgr.util.structGet(state, "DLCompletedFrames", 0));
         runState.ULCompletedFrames = double(sixgr.util.structGet(state, "ULCompletedFrames", 0));
         runState.DLCompletedSlots = double(sixgr.util.structGet(state, "DLCompletedSlots", 0));
