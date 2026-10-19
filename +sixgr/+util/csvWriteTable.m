@@ -2,6 +2,8 @@ function csvWriteTable(filePath, T, varargin)
 %CSVWRITETABLE Unified CSV export for simulator KPIs and logs.
 %
 %   sixgr.util.csvWriteTable("results/run1/csv/kpis.csv", T)
+%   MirrorPaths publishes additional destinations from the same serialized
+%   bytes, with per-destination artifact registration and verified copies.
 
 if ~(ischar(filePath) || (isstring(filePath) && isscalar(filePath)))
     error("sixgr:util:csvWriteTable:BadType", ...
@@ -15,6 +17,8 @@ p.addParameter("PreserveSchema", false, ...
     @(x) islogical(x) && isscalar(x));
 p.addParameter("RoundTripNumericText", false, ...
     @(x) islogical(x) && isscalar(x));
+p.addParameter("MirrorPaths", strings(0,1), ...
+    @(x) isstring(x) || ischar(x) || iscellstr(x));
 p.parse(varargin{:});
 
 filePath = char(filePath);
@@ -35,5 +39,5 @@ end
 writer=sixgr.util.CSVTableStream(filePath,p.Results.RoundTripNumericText);
 cleanup=onCleanup(@()delete(writer)); %#ok<NASGU>
 writer.append(T);
-writer.finish();
+writer.finish(p.Results.MirrorPaths);
 end

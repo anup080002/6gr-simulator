@@ -66,27 +66,32 @@ classdef CSVTableStream < handle
                 obj.MaxSerializedRows=max(obj.MaxSerializedRows,height(wire));
             end
         end
-        function finish(obj)
+        function finish(obj,mirrorPaths)
             assert(obj.Started && ~obj.Published, ...
                 'sixgr:util:CSVTableStream:Incomplete','Publish a complete table exactly once.');
+            if nargin<2, mirrorPaths=strings(0,1); end
+            assert(isstring(mirrorPaths)||ischar(mirrorPaths)||iscellstr(mirrorPaths), ...
+                'sixgr:util:CSVTableStream:BadMirrorPaths','Mirror destinations must be text paths.');
+            mirrorPaths=reshape(string(mirrorPaths),[],1);
+            paths=[string(obj.Target);mirrorPaths];
+            canonical=strings(size(paths));
+            for k=1:numel(paths)
+                canonical(k)=sixgr.util.canonicalPath(paths(k));
+                assert(~ismissing(paths(k)) && strlength(strtrim(paths(k)))>0 && ~isfolder(paths(k)), ...
+                    'sixgr:util:CSVTableStream:BadMirrorPaths','Each CSV destination must name a file.');
+            end
+            if ispc, canonical=lower(canonical); end
+            assert(numel(unique(canonical))==numel(canonical), ...
+                'sixgr:util:CSVTableStream:DuplicateDestination','CSV destinations must be distinct.');
             localPublishWithRetry(obj.Temporary,obj.Target);
             obj.Published=true;
-            if sixgr.db.isArtifactStoreActive()
-                try
-                    metadata=struct('row_count',obj.RowsWritten, ...
-                        'column_names',{obj.Names},'variable_count',numel(obj.Names), ...
-                        'source_path',obj.Target);
-                    % Mirror the SAME CSV bytes with bounded file reads. Do
-                    % not reconstruct a giant typed table or uint8 vector.
-                    handled=sixgr.db.artifactStore('store_file',obj.Target,obj.Target, ...
-                        'table_csv','text/csv; charset=UTF-8',metadata);
-                    assert(handled,'sixgr:util:CSVTableStream:MirrorNotStored', ...
-                        'Active artifact store did not persist the CSV.');
-                catch cause
-                    warning('sixgr:util:csvWriteTable:ArtifactStoreMirrorFailed', ...
-                        'Local CSV ''%s'' was written, but DB artifact mirroring failed: %s', ...
-                        obj.Target,cause.message);
+            sourceHash="";
+            if ~isempty(mirrorPaths), sourceHash=string(sixgr.util.sha256File(obj.Target)); end
+            for destination=reshape(paths,1,[])
+                if destination~=string(obj.Target)
+                    sixgr.util.copyFileVerified(string(obj.Target),destination,sourceHash);
                 end
+                obj.registerArtifact(destination);
             end
         end
         function delete(obj)
@@ -94,6 +99,27 @@ classdef CSVTableStream < handle
             % a validation/write failure partway through the next version.
             if ~isempty(obj.Temporary) && isfile(obj.Temporary)
                 delete(obj.Temporary);
+            end
+        end
+    end
+    methods (Access=private)
+        function registerArtifact(obj,destination)
+            if sixgr.db.isArtifactStoreActive()
+                try
+                    metadata=struct('row_count',obj.RowsWritten, ...
+                        'column_names',{obj.Names},'variable_count',numel(obj.Names), ...
+                        'source_path',char(destination));
+                    % Mirror the SAME CSV bytes with bounded file reads. Do
+                    % not reconstruct a giant typed table or uint8 vector.
+                    handled=sixgr.db.artifactStore('store_file',char(destination),char(destination), ...
+                        'table_csv','text/csv; charset=UTF-8',metadata);
+                    assert(handled,'sixgr:util:CSVTableStream:MirrorNotStored', ...
+                        'Active artifact store did not persist the CSV.');
+                catch cause
+                    warning('sixgr:util:csvWriteTable:ArtifactStoreMirrorFailed', ...
+                        'Local CSV ''%s'' was written, but DB artifact mirroring failed: %s', ...
+                        destination,cause.message);
+                end
             end
         end
     end

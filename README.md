@@ -14,6 +14,7 @@ is retained for traceability; it does not supersede the following status.
 | Large paired-CSI export | Bounded MATLAB writer retained all 1,677,312 sample pairs; the live CSV matched its independently replayed SHA256. No sample decimation. |
 | Occupancy plot memory | Python renderer now reduces CSV records as a stream, instead of retaining the entire approximately 498 MB input as dictionaries. **217 affected Python tests pass**. The full retained-data replay completed: **23 PNGs**, all **87 source/output hashes matched**, all 1,677,312 CSI sample pairs and 810,338 executed-RE rows accounted for. This remains a partial diagnostic replay, not terminal qualification or proof of the earlier exit cause. |
 | Live radio-clock progress | Core runtime and WebGUI now separate the active one-based radio slot/frame, processed slots/symbols and DL/UL trial rows. Five distinct affected MATLAB checks and 78 Python checks pass. A processed slot is not a durable checkpoint or scenario acceptance. |
+| Duplicate RE serialization | Core exporter now serializes each carrier/native RE table once and publishes verified byte copies to the component/live destinations. **Four affected MATLAB checks and 69 Python consumer checks pass**; the retained 497,999,464-byte CSV also copied with matching SHA256. Full-run timing and live MySQL qualification remain pending. |
 | Server handoff utilities | **18 orchestration/packaging tests pass**, with MATLAB mocked. These verify command construction, failure handling, evidence hashes and exclusions—not a physical server run. |
 | Integrated acceptance | Connected UL, delivered CSI/UCI-driven adaptation, all 100 slots, complete terminal CSV/PNG publication and statistical qualification remain **unaccepted**. A larger server does not by itself fix or qualify these. |
 | Verification policy | Affected tests only at the operator's request. **No full `testAll` and no new scenario were launched for this handoff.** |
@@ -54,6 +55,22 @@ run: received CSI CQI/RI/CRI/PMI, reported-versus-applied PMI, and connected-PUS
 RSSI/BLER/EVM. UE recommendations and access Msg3 do not replace those populations.
 All original run files remain unchanged. The replay took 683.51 seconds **with
 cProfile enabled**; that is not a clean runtime benchmark or a measured RAM peak.
+
+The RE replica repair uses `csvWriteTable(...,'MirrorPaths',...)` and
+`copyFileVerified`: copies are checked before replacing the old destination;
+each file is published atomically, but the set of destinations is **not** a
+cross-file transaction. A secondary-copy failure remains an execution error,
+not a successful synchronized publication. Each destination keeps its own
+artifact-store path and row/schema metadata; a live MySQL transaction was not
+exercised in this filesystem verification. Existing empty-domain cleanup and
+persistence-disabled behavior are unchanged.
+
+Evidence: `logs/lls_repairs/h4_csv_replica_20261019_v1/receipt.json`,
+`logs/h4_replica_consumers_20261019.xml`, and
+`results/diagnostics/h4_retained_re_copy_20261019_v1/receipt.json`.
+The isolated retained-file copy took **17.51 seconds including its initial
+source hash**. This is not an end-to-end export speedup measurement. Original
+run files were not rewritten; no rows were sampled or regenerated.
 
 The exact launcher prints and saves the source commit for each execution.
 Original local evidence stays under `logs/` and `results/`; these are ignored by
@@ -150,7 +167,7 @@ Optional focused checks on the server (no scenario or full-suite launch):
 
 ```bat
 "%PYTHON_EXE%" -m pytest tests/test_server_handoff.py tests/test_executed_symbol_occupancy.py tests/test_live_csv_plot_publication.py tests/test_lls_radio_measurement_plots.py tests/test_data_nmse_plot_reconciliation.py -q --junitxml=logs/server_publication_checks.xml
-"%SIXGR_MATLAB_EXE%" -wait -logfile "logs\server_focused_01.log" -batch "setup6GRSimToolkit('Verbose',false); addpath(fullfile(pwd,'scripts')); runLLSRepairChecks('server_focused_01',{'testCSVBoundedRoundTrip','testControlEVMDetailStorage','testSlotCheckpoint','testH4100AdaptationHorizon'});"
+"%SIXGR_MATLAB_EXE%" -wait -logfile "logs\server_focused_01.log" -batch "setup6GRSimToolkit('Verbose',false); addpath(fullfile(pwd,'scripts')); runLLSRepairChecks('server_focused_01',{'testCSVBoundedRoundTrip','testCSVReplicaPublication','testControlEVMDetailStorage','testRuntimeClockProgress','testRuntimeFailureNotice','testSlotCheckpoint','testH4100AdaptationHorizon'});"
 ```
 
 Choose a new label if a receipt already exists. These checks do not establish

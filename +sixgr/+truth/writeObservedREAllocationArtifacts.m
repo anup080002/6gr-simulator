@@ -41,12 +41,16 @@ T.([name 'ContextSource'])=repmat(source,height(T),1);
 end
 
 function localWrite(T,paths)
-for path=paths
-    if ~isempty(T)
-        sixgr.util.csvWriteTable(path,T,'PreserveSchema',true);
-    elseif isfile(path)
+if ~isempty(T)
+    % Both destinations represent the identical executed population. Write
+    % the table once; publish verified byte copies, not another serialization.
+    sixgr.util.csvWriteTable(paths(1),T,'PreserveSchema',true,'MirrorPaths',paths(2:end));
+else
+    for path=paths
+        if isfile(path)
         % Exact checkpoint artifact only; never recursively clear a run.
-        delete(path);
+            delete(path);
+        end
     end
 end
 end

@@ -24,6 +24,8 @@ for k=1:2
             isequal(string(restored.resolver),string(expected{k}.resolver)));
         before{p}=fileread(paths(p));
     end
+    assert(sixgr.util.sha256File(paths(1))==sixgr.util.sha256File(paths(2)), ...
+        'Carrier/native and live destinations must contain exactly the same CSV bytes.');
     for name=["ScenarioID","ConfigHash"]
         bad=T; bad.(name)=repmat("conflicting_component_identity",height(T),1);
         localReject(@()sixgr.truth.writeObservedREAllocationArtifacts(bad,cfg,layout), ...
