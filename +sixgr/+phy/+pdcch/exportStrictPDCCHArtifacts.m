@@ -33,6 +33,7 @@ csvMap = struct( ...
     "pdcch_no_signal_trials", fullfile(layout.ControlCSVDir, "pdcch_no_signal_trials.csv"), ...
     "pdcch_corruption_trials", fullfile(layout.ControlCSVDir, "pdcch_corruption_trials.csv"), ...
     "pdcch_false_alarm_sweep", fullfile(layout.ControlCSVDir, "pdcch_false_alarm_sweep.csv"), ...
+    "pdcch_missed_detection_sweep", fullfile(layout.ControlCSVDir, "pdcch_missed_detection_sweep.csv"), ...
     "pdcch_low_snr_sweep", fullfile(layout.ControlCSVDir, "pdcch_low_snr_sweep.csv"), ...
     "pdcch_oracle_guard", fullfile(layout.ControlCSVDir, "pdcch_oracle_guard.csv"));
 names = string(fieldnames(csvMap));
@@ -78,17 +79,23 @@ textRows = localWriteTextArtifacts(textDir, result);
 binaryRows = localWriteBinaryArtifacts(binaryDir, result);
 [figureRows, figurePaths] = localWriteFigures(figDir, result, csvMap);
 plotLineagePath = fullfile(layout.ControlCSVDir, "pdcch_plot_lineage.csv");
-sixgr.visual.writeComponentPlotLineage(runFolder, plotLineagePath, ...
-    ["pdcch_coreset_resource_grid"; "pdcch_candidate_metrics"; ...
+plotNames=["pdcch_coreset_resource_grid"; "pdcch_candidate_metrics"; ...
     "pdcch_wrong_rnti_rejections"; "pdcch_false_alarm_probability"; ...
     "pdcch_low_snr_detection_probability"; "pdcch_decode_flow"; ...
-    "pdcch_dci_to_grant_flow"], figurePaths, [ ...
+    "pdcch_dci_to_grant_flow"];
+plotSources=[ ...
     string(csvMap.pdcch_config_strict); string(csvMap.pdcch_candidates); ...
     string(csvMap.pdcch_wrong_rnti_trials); string(csvMap.pdcch_false_alarm_sweep); ...
     string(csvMap.pdcch_low_snr_sweep); string(csvMap.pdcch_trials); ...
-    string(csvMap.pdcch_dci_fields) + "|" + string(csvMap.pdcch_grant_validation)], ...
+    string(csvMap.pdcch_dci_fields) + "|" + string(csvMap.pdcch_grant_validation)];
+if ~isempty(tables.pdcch_missed_detection_sweep)
+    plotNames(end+1)="pdcch_missed_grant_probability";
+    plotSources(end+1)=string(csvMap.pdcch_missed_detection_sweep);
+end
+sixgr.visual.writeComponentPlotLineage(runFolder, plotLineagePath, ...
+    plotNames,figurePaths,plotSources, ...
     "sixgr.phy.pdcch.exportStrictPDCCHArtifacts");
-plotLineageRow = localManifestRow(plotLineagePath, "text/csv", "plot_lineage", 7, ...
+plotLineageRow = localManifestRow(plotLineagePath, "text/csv", "plot_lineage", numel(plotNames), ...
     "sixgr.phy.pdcch.exportStrictPDCCHArtifacts");
 manifestRows = [rows(:); jsonRows(:); textRows(:); binaryRows(:); figureRows(:); plotLineageRow];
 manifestPath = fullfile(layout.ControlCSVDir, "pdcch_strict_artifact_manifest.csv");
@@ -114,11 +121,16 @@ base = localEnvelope(result, "strict_pdcch_waveform_blind_decode_validation", cs
 payloads = struct();
 payloads.pdcch_config_binding = base;
 payloads.pdcch_config_binding.ConfigHash = string(result.ConfigHash);
+payloads.pdcch_config_binding.ResolvedComponentConfig = result.Config.ConfigExport;
 payloads.pdcch_config_binding.BindingSource = string(result.Config.BindingSource);
 payloads.pdcch_config_binding.SourceCSVHash = localFileSHA256(csvMap.pdcch_config_strict);
 payloads.pdcch_detection_summary = result.DetectionSummary;
 payloads.pdcch_detection_summary.source_csv = string(csvMap.pdcch_trials);
 payloads.pdcch_detection_summary.source_csv_sha256 = localFileSHA256(csvMap.pdcch_trials);
+payloads.pdcch_detection_summary.h0_source_csv=string(csvMap.pdcch_false_alarm_sweep);
+payloads.pdcch_detection_summary.h0_source_csv_sha256=localFileSHA256(csvMap.pdcch_false_alarm_sweep);
+payloads.pdcch_detection_summary.h1_source_csv=string(csvMap.pdcch_missed_detection_sweep);
+payloads.pdcch_detection_summary.h1_source_csv_sha256=localFileSHA256(csvMap.pdcch_missed_detection_sweep);
 payloads.pdcch_negative_summary = base;
 payloads.pdcch_negative_summary.WrongRNTIRows = height(result.ArtifactTables.pdcch_wrong_rnti_trials);
 payloads.pdcch_negative_summary.NoSignalRows = height(result.ArtifactTables.pdcch_no_signal_trials);
@@ -201,12 +213,16 @@ paths = [
     string(fullfile(figDir, "pdcch_low_snr_detection_probability.png"))
     string(fullfile(figDir, "pdcch_decode_flow.png"))
     string(fullfile(figDir, "pdcch_dci_to_grant_flow.png"))];
+missed=result.ArtifactTables.pdcch_missed_detection_sweep;
+if ~isempty(missed)
+    paths(end+1)=string(fullfile(figDir,"pdcch_missed_grant_probability.png"));
+end
 rows = repmat(localManifestRow(), numel(paths), 1);
 
 % Figure publication is a single evidence transaction.  A renderer error
 % must not leave a prefix of apparently valid but unmanifested PNGs in the
 % run folder.  Remove stale targets before starting and delete every target
-% again unless the complete seven-figure set was produced successfully.
+% again unless the complete configured figure set was produced successfully.
 for ii = 1:numel(paths)
     if exist(char(paths(ii)), "file") == 2
         delete(char(paths(ii)));
@@ -240,6 +256,11 @@ rows(6) = localManifestRow(paths(6), "image/png", "figure", NaN, "sixgr.phy.pdcc
 sixgr.visual.writeFlowDiagramPNG(paths(7), "PDCCH DCI to grant flow", ["Decoded DCI bits","Field parser","Grant validator","PDSCH/PUSCH reference ID"], result.StrictOk);
 rows(7) = localManifestRow(paths(7), "image/png", "figure", NaN, "sixgr.phy.pdcch.exportStrictPDCCHArtifacts", ...
     string(csvMap.pdcch_dci_fields) + "|" + string(csvMap.pdcch_grant_validation));
+if ~isempty(missed)
+    localExportMissedGrantSweep(paths(8),missed);
+    rows(8)=localManifestRow(paths(8),"image/png","figure",NaN, ...
+        "sixgr.phy.pdcch.exportStrictPDCCHArtifacts",csvMap.pdcch_missed_detection_sweep);
+end
 committed = true;
 clear cleanupPartial;
 
@@ -252,6 +273,27 @@ clear cleanupPartial;
                 delete(char(paths(jj)));
             end
         end
+    end
+end
+
+function localExportMissedGrantSweep(path,T)
+% One plotted CSV/PNG contains every declared SNR and DCI-format series.
+values=[T.SNRdB,T.MissedGrantProbability,T.CILower,T.CIUpper,T.TargetMissedGrantProbability];
+assert(all(isfinite(values),'all'),'sixgr:phy:pdcch:MissingPlotEvidence', ...
+    'H1 plot requires complete measured probabilities and confidence bounds.');
+localExportMeasuredFigure(path,@render);
+    function render()
+        hold on;
+        for format=reshape(unique(string(T.DCIFormat),'stable'),1,[])
+            rows=T(string(T.DCIFormat)==format,:); rows=sortrows(rows,'SNRdB');
+            y=rows.MissedGrantProbability;
+            errorbar(rows.SNRdB,y,y-rows.CILower,rows.CIUpper-y,'-o', ...
+                'DisplayName',"DCI "+format+" measured (exact bounds)");
+        end
+        yline(T.TargetMissedGrantProbability(1),'--','DisplayName','engineering target');
+        title('PDCCH missed grants: AWGN component, not NR conformance');
+        xlabel('Occupied-RE reference SNR (dB)'); ylabel('Missed intended grant probability');
+        ylim([0 1]); grid on; legend('Location','best');
     end
 end
 

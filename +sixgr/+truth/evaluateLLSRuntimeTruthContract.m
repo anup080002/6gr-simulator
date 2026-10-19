@@ -1902,10 +1902,13 @@ wrongRntiPath = fullfile(layout.ControlCSVDir, "pdcch_wrong_rnti_trials.csv");
 noSignalPath = fullfile(layout.ControlCSVDir, "pdcch_no_signal_trials.csv");
 corruptionPath = fullfile(layout.ControlCSVDir, "pdcch_corruption_trials.csv");
 falsePath = fullfile(layout.ControlCSVDir, "pdcch_false_alarm_sweep.csv");
+missedPath = fullfile(layout.ControlCSVDir, "pdcch_missed_detection_sweep.csv");
 campaignFalsePath = fullfile(layout.Root, "statistical_campaigns", ...
     "pdcch", "control", "csv", "pdcch_false_alarm_sweep.csv");
 if exist(campaignFalsePath, "file") == 2
     falsePath = campaignFalsePath;
+    missedPath = fullfile(layout.Root,"statistical_campaigns","pdcch", ...
+        "control","csv","pdcch_missed_detection_sweep.csv");
 end
 lowSNRPath = fullfile(layout.ControlCSVDir, "pdcch_low_snr_sweep.csv");
 oraclePath = fullfile(layout.ControlCSVDir, "pdcch_oracle_guard.csv");
@@ -1925,6 +1928,7 @@ stats = struct( ...
     "PDCCHNoSignalRows", 0, ...
     "PDCCHCorruptionRows", 0, ...
     "PDCCHFalseAlarmRows", 0, ...
+    "PDCCHMissedDetectionRows", 0, ...
     "PDCCHLowSNRRows", 0, ...
     "PDCCHOracleGuardRows", 0, ...
     "PDCCHOracleGuardViolationCount", NaN);
@@ -1949,6 +1953,7 @@ wrongT = localReadTable(wrongRntiPath);
 noSignalT = localReadTable(noSignalPath);
 corruptionT = localReadTable(corruptionPath);
 falseT = localReadTable(falsePath);
+missedT = localReadTable(missedPath);
 lowT = localReadTable(lowSNRPath);
 oracleT = localReadTable(oraclePath);
 
@@ -1961,6 +1966,7 @@ stats.PDCCHWrongRNTIRows = height(wrongT);
 stats.PDCCHNoSignalRows = height(noSignalT);
 stats.PDCCHCorruptionRows = height(corruptionT);
 stats.PDCCHFalseAlarmRows = height(falseT);
+stats.PDCCHMissedDetectionRows = height(missedT);
 stats.PDCCHLowSNRRows = height(lowT);
 stats.PDCCHOracleGuardRows = height(oracleT);
 
@@ -1971,7 +1977,7 @@ if integratedOk && ~standaloneStrictRequired
     if stats.PDCCHStatisticalRequired
         [stats.PDCCHStatisticallyQualified, ...
             stats.PDCCHStatisticalStatus] = ...
-            localPDCCHStatisticalCampaignOk(falseT, scfg, cfg);
+            localPDCCHStatisticalCampaignOk(falseT, missedT, scfg, cfg);
     else
         stats.PDCCHStatisticalStatus = "NOT_APPLICABLE";
     end
@@ -2050,24 +2056,15 @@ if stats.PDCCHStrictOk
 else
     stats.PDCCHStatus = "strict_pdcch_waveform_blind_decode_evidence_incomplete;" + integratedStatus;
 end
-stats.PDCCHStatisticallyQualified = localHasColumn(falseT,"StatisticallyQualified") && ...
-    localHasColumn(falseT,"StatisticalQualification") && height(falseT) > 0 && ...
-    all(localColumnBool(falseT,"StatisticallyQualified")) && ...
-    all(upper(strtrim(string(falseT.StatisticalQualification))) == "PASS");
-if stats.PDCCHStatisticallyQualified
-    stats.PDCCHStatisticalStatus = "PASS";
-elseif localHasColumn(falseT,"StatisticalQualification") && ...
-        any(upper(strtrim(string(falseT.StatisticalQualification))) == "FAIL")
-    stats.PDCCHStatisticalStatus = "FAIL";
-else
-    stats.PDCCHStatisticalStatus = "NOT_EVALUATED";
-end
+[stats.PDCCHStatisticallyQualified,stats.PDCCHStatisticalStatus] = ...
+    sixgr.phy.pdcch.summarizeDetectorQualification(falseT,missedT);
 end
 
-function [qualified, status] = localPDCCHStatisticalCampaignOk(falseT, scfg, cfg)
+function [qualified, status] = localPDCCHStatisticalCampaignOk(falseT, missedT, scfg, cfg)
 qualified = false;
 status = "NOT_EVALUATED";
-if ~(istable(falseT) && height(falseT) > 0)
+if isempty(falseT) || isempty(missedT)
+    [~,status]=sixgr.phy.pdcch.summarizeDetectorQualification(falseT,missedT,"installed_runtime");
     return;
 end
 
@@ -2087,6 +2084,8 @@ try
     sixgr.artifact.validateEvidenceIdentity(falseT, expected, ...
         "pdcch_false_alarm_sweep", ...
         "RequireRadioIdentityColumns", false);
+    sixgr.artifact.validateEvidenceIdentity(missedT, expected, ...
+        "pdcch_missed_detection_sweep", "RequireRadioIdentityColumns", false);
 catch cause
     status = "FAIL:identity:" + string(cause.identifier);
     return;
@@ -2094,22 +2093,13 @@ end
 
 for field = ["ProxyUsed","FallbackFlag","PlaceholderFlag", ...
         "Skipped","ToolboxMissing"]
-    if any(localFirstBoolColumn(falseT, field, false))
+    if any(localFirstBoolColumn(falseT, field, false)) || any(localFirstBoolColumn(missedT, field, false))
         status = "FAIL:non_truth_campaign_rows";
         return;
     end
 end
 
-qualified = localHasColumn(falseT, "StatisticallyQualified") && ...
-    localHasColumn(falseT, "StatisticalQualification") && ...
-    all(localColumnBool(falseT, "StatisticallyQualified")) && ...
-    all(upper(strtrim(string(falseT.StatisticalQualification))) == "PASS");
-if qualified
-    status = "PASS";
-elseif localHasColumn(falseT, "StatisticalQualification") && ...
-        any(upper(strtrim(string(falseT.StatisticalQualification))) == "FAIL")
-    status = "FAIL";
-end
+[qualified,status] = sixgr.phy.pdcch.summarizeDetectorQualification(falseT,missedT,"installed_runtime");
 end
 
 function tf = localPDCCHStandaloneStrictRequired(scfg, cfg)

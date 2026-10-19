@@ -158,6 +158,21 @@ control:
       ci_width_target: 0.01
       planned_looks: 3
       deterministic_seeds: [240617, 240629, 240643, 240647]
+    # Explicitly bounded producer regression, not an NR reference test.
+    # Confidence and noise-seed families come from statistical_qualification.
+    missed_detection_qualification:
+      enabled: true
+      scope: awgn_component_not_nr_conformance
+      channel_model: AWGN
+      snr_db: [-8, 35]
+      dci_formats: ["1_0", "0_0"]
+      target_missed_grant_probability: 0.01
+      minimum_waveform_trials: 3
+      maximum_waveform_trials: 3
+      batch_size_waveform_trials: 1
+      minimum_missed_grant_events: 0
+      ci_width_target: 0.01
+      planned_looks: 3
     low_snr_sweep_db: [-8, 0, 10, 35]
     low_snr_trials: 1
     validation_campaign:

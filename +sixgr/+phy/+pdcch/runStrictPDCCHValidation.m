@@ -90,6 +90,10 @@ oracleT = struct2table(oracleRows, "AsArray", true);
 [falseAlarmT, faTrials, faCand, faOracle] = localFalseAlarmSweep(cfg, dci10, trialId);
 trialId = trialId + height(faTrials);
 trialT = [trialT; faTrials]; candidateT = [candidateT; faCand]; oracleT = [oracleT; faOracle];
+[missT, missTrials, missCand, missFields, missGrant, missOracle] = localMissedDetectionSweep(cfg, dci10, dci00, trialId);
+trialId = trialId + height(missTrials);
+trialT = [trialT; missTrials]; candidateT = [candidateT; missCand]; oracleT = [oracleT; missOracle];
+dciFieldT = [dciFieldT; missFields]; grantT = [grantT; missGrant];
 [lowSNRT, lowTrials, lowCand, lowFields, lowGrant, lowOracle] = localLowSNRSweep(cfg, dci10, trialId);
 trialT = [trialT; lowTrials]; candidateT = [candidateT; lowCand];
 dciFieldT = [dciFieldT; lowFields]; grantT = [grantT; lowGrant]; oracleT = [oracleT; lowOracle];
@@ -108,7 +112,7 @@ oracleOk = ~any(logical(oracleT.Violation));
 configOk = logical(cfg.StrictValidation.StrictValid);
 noProxySkip = ~any(logical(trialT.ProxyUsed) | logical(trialT.Skipped) | logical(trialT.ToolboxMissing));
 strictOk = strictPositiveOk && negativeOk && artifactRowsOk && oracleOk && configOk && noProxySkip;
-summary = localSummaryStruct(runId, scenarioName, strictOk, cfg, trialT, falseAlarmT, lowSNRT, oracleT);
+summary = localSummaryStruct(runId, scenarioName, strictOk, cfg, trialT, falseAlarmT, missT, lowSNRT, oracleT);
 
 result = struct();
 result.RunId = runId;
@@ -141,6 +145,7 @@ result.ArtifactTables = struct( ...
     "pdcch_no_signal_trials", noSignalT, ...
     "pdcch_corruption_trials", corruptionT, ...
     "pdcch_false_alarm_sweep", falseAlarmT, ...
+    "pdcch_missed_detection_sweep", missT, ...
     "pdcch_low_snr_sweep", lowSNRT, ...
     "pdcch_oracle_guard", oracleT);
 
@@ -295,11 +300,12 @@ row.FailureReason = string(score.FailureReason);
 end
 
 function [falseAlarmT, trialT, candT, oracleT] = localFalseAlarmSweep(cfg, dci, trialId)
-snrs = double(sixgr.util.structGet(cfg.BaseConfig, "lls6g.control.pdcch_strict.false_alarm_snr_db", [-6 0 6]));
+snrs = cfg.StatisticalQualification.FalseAlarmSNRdB;
 design = cfg.StatisticalQualification;
 maximumWaveformTrials = round(double(design.MaximumWaveformTrials));
 batchSize = round(double(design.BatchSizeWaveformTrials));
 seedSet = double(design.DeterministicSeeds(:).');
+plan=localStatisticalPlan(cfg);
 rows = repmat(localFalseAlarmRow(), numel(snrs), 1);
 trialRows = repmat(localTrialRow(), 0, 1);
 candRows = repmat(localCandidateRow(), 0, 1);
@@ -311,7 +317,7 @@ for si = 1:numel(snrs)
     waveformTrialCount = 0;
     for tt = 1:maximumWaveformTrials
         cfgTrial = cfg;
-        identity=sixgr.phy.pdcch.noiseTrialIdentity(seedSet,si,tt,maximumWaveformTrials);
+        identity=sixgr.phy.pdcch.noiseTrialIdentity(seedSet,si,tt,plan.EpisodeBlockSize);
         cfgTrial.NoiseSeedOverride = identity.Seed;
         cfgTrial.NoiseSubstreamOverride = identity.Substream;
         [trialId, tr, cand, ~, ~, oracle] = localRunOneTrial(trialId, "false_alarm_sweep", cfgTrial, dci, "1_0", cfg.RNTIValue, snrs(si), "no_signal", true);
@@ -327,7 +333,7 @@ for si = 1:numel(snrs)
             lookIndex = lookIndex + 1;
             qualification = sixgr.stats.evaluateBinomialStopping( ...
                 falseWaveforms,tt,double(design.TargetProbability), ...
-                "ConfidenceLevel",double(design.ConfidenceLevel), ...
+                "ConfidenceLevel",plan.PerPointConfidenceLevel, ...
                 "MinimumTrials",round(double(design.MinimumWaveformTrials)), ...
                 "MaximumTrials",maximumWaveformTrials, ...
                 "MinimumEvents",round(double(design.MinimumFalseAlarmEvents)), ...
@@ -343,6 +349,9 @@ for si = 1:numel(snrs)
     row = localFalseAlarmRow();
     row.RunId = string(cfg.RunId); row.SweepId = "false_alarm_" + string(si);
     row.ConfigHash = string(cfg.ConfigHash); row.NoiseModel = "AWGN";
+    row.QualificationContextHash=string(cfg.ConfigHash);
+    row.QualificationScope="awgn_component_not_nr_conformance";
+    row.PlannedOperatingPointCount=numel(snrs);
     row.SNRdB = snrs(si); row.NumTrials = waveformTrialCount;
     row.WaveformTrialCount = waveformTrialCount;
     row.NumCandidatesPerTrial = candCount / max(waveformTrialCount,1);
@@ -355,6 +364,8 @@ for si = 1:numel(snrs)
     row.CILower = qualification.CILower; row.CIUpper = qualification.CIUpper;
     row.CIWidth = qualification.CIWidth; row.CIWidthTarget = double(design.CIWidthTarget);
     row.ConfidenceLevel = double(design.ConfidenceLevel);
+    row.PerPointConfidenceLevel=plan.PerPointConfidenceLevel;
+    row.JointOperatingPointCount=plan.JointOperatingPointCount;
     row.EffectiveDirectionalConfidenceLevel = qualification.EffectiveDirectionalConfidenceLevel;
     row.AlphaSpentThisLook = qualification.AlphaSpentThisLook;
     row.IntervalMethod = qualification.IntervalMethod;
@@ -378,6 +389,92 @@ falseAlarmT = struct2table(rows, "AsArray", true);
 trialT = struct2table(trialRows, "AsArray", true);
 candT = struct2table(candRows, "AsArray", true);
 oracleT = struct2table(oracleRows, "AsArray", true);
+end
+
+function plan=localStatisticalPlan(cfg)
+snrs=cfg.StatisticalQualification.FalseAlarmSNRdB;
+h1=cfg.MissedDetectionQualification;
+count=numel(snrs); block=double(cfg.StatisticalQualification.MaximumWaveformTrials);
+if h1.Enabled
+    count=count+numel(h1.SNRdB)*numel(h1.DCIFormats);
+    block=max(block,h1.MaximumWaveformTrials);
+end
+% One family-wise confidence budget across all declared H0/H1 points;
+% evaluateBinomialStopping additionally divides it across looks/directions.
+confidence=1-(1-double(cfg.StatisticalQualification.ConfidenceLevel))/count;
+assert(confidence<1,'sixgr:phy:pdcch:InvalidStatisticalQualification', ...
+    'Joint population count makes confidence rounding invalid.');
+plan=struct('PerPointConfidenceLevel',confidence,'JointOperatingPointCount',count, ...
+    'EpisodeBlockSize',block,'FalseAlarmPointCount',numel(snrs));
+end
+
+function [sweepT,trialT,candT,fieldT,grantT,oracleT]=localMissedDetectionSweep(cfg,dci10,dci00,trialId)
+design=cfg.MissedDetectionQualification;
+rows=repmat(localMissedDetectionRow(),0,1);
+trials=repmat(localTrialRow(),0,1); candidates=repmat(localCandidateRow(),0,1);
+fields=repmat(localDCIFieldRow(),0,1); grants=repmat(localGrantRow(),0,1);
+oracles=repmat(localOracleRow(),0,1);
+if design.Enabled
+    plan=localStatisticalPlan(cfg); seeds=double(cfg.StatisticalQualification.DeterministicSeeds(:).');
+    point=0; total=numel(design.SNRdB)*numel(design.DCIFormats);
+    for format=design.DCIFormats
+        dci=dci10; if format=="0_0", dci=dci00; end
+        for snr=design.SNRdB
+            point=point+1; missed=0; crcFailures=0; falseCandidates=0; look=0;
+            for episode=1:design.MaximumWaveformTrials
+                current=cfg;
+                id=sixgr.phy.pdcch.noiseTrialIdentity(seeds, ...
+                    plan.FalseAlarmPointCount+point,episode,plan.EpisodeBlockSize);
+                current.NoiseSeedOverride=id.Seed; current.NoiseSubstreamOverride=id.Substream;
+                [trialId,tr,cand,f,g,o,tx]=localRunOneTrial(trialId,"missed_detection_sweep", ...
+                    current,dci,format,cfg.RNTIValue,snr,"normal",false);
+                % Count the intended grant once per received waveform. Extra
+                % blind hypotheses are not independent Bernoulli trials, and
+                % a CRC pass for the wrong payload/resource is not delivery.
+                delivered=tr.DCICrcPass && tr.DCIPayloadMatch && tr.GrantValid && ...
+                    tr.ControlResourceValidity && tr.SelectedAggregationLevel==tr.TxAggregationLevel && ...
+                    tr.SelectedCandidateIndex==tr.TxCandidateIndex && tr.SelectedCCEIndex==tr.TxCCEIndex;
+                missed=missed+double(~delivered); crcFailures=crcFailures+double(~tr.DCICrcPass);
+                falseCandidates=falseCandidates+tr.FalseCandidateCount;
+                trials(end+1,1)=tr; %#ok<AGROW>
+                candidates=[candidates;table2struct(cand)]; fields=[fields;table2struct(f)]; %#ok<AGROW>
+                grants=[grants;table2struct(g)]; oracles=[oracles;table2struct(o)]; %#ok<AGROW>
+                if mod(episode,design.BatchSizeWaveformTrials)==0 || episode==design.MaximumWaveformTrials
+                    look=look+1;
+                    q=sixgr.stats.evaluateBinomialStopping(missed,episode,design.TargetProbability, ...
+                        'ConfidenceLevel',plan.PerPointConfidenceLevel, ...
+                        'MinimumTrials',design.MinimumWaveformTrials,'MaximumTrials',design.MaximumWaveformTrials, ...
+                        'MinimumEvents',design.MinimumEvents,'CIWidthTarget',design.CIWidthTarget, ...
+                        'LookIndex',look,'PlannedLooks',design.PlannedLooks, ...
+                        'FinalLook',episode==design.MaximumWaveformTrials,'MetricName',"pdcch_missed_grant_probability");
+                    if ~q.ContinueSampling, break; end
+                end
+            end
+            row=localMissedDetectionRow();
+            row.RunId=string(cfg.RunId); row.SweepId="missed_detection_"+string(point);
+            row.ConfigHash=string(cfg.ConfigHash); row.QualificationContextHash=string(cfg.ConfigHash);
+            row.PlannedOperatingPointCount=total; row.JointOperatingPointCount=plan.JointOperatingPointCount;
+            row.SNRdB=snr; row.DCIFormat=format; row.AggregationLevel=double(cfg.AggregationLevel);
+            row.TxDimensions=size(tx.Waveform,2); row.RxDimensions=size(tx.Waveform,2);
+            row.WaveformTrialCount=episode; row.MissedGrantCount=missed; row.DeliveredGrantCount=episode-missed;
+            row.CRCFailureCount=crcFailures; row.FalseCandidateCount=falseCandidates;
+            row.MissedGrantProbability=missed/episode; row.TargetMissedGrantProbability=design.TargetProbability;
+            row.ConfidenceLevel=double(cfg.StatisticalQualification.ConfidenceLevel);
+            row.PerPointConfidenceLevel=plan.PerPointConfidenceLevel;
+            for name=["CILower","CIUpper","CIWidth","CIWidthTarget","EffectiveDirectionalConfidenceLevel", ...
+                    "AlphaSpentThisLook","IntervalMethod","SequentialDesign","LookIndex","PlannedLooks", ...
+                    "MinimumTrials","MaximumTrials","MinimumEvents","PointEstimatePass","StatisticallyQualified","StoppingReason"]
+                row.(name)=q.(name);
+            end
+            row.StatisticalQualification=q.Qualification; row.Status=q.Qualification;
+            row.DeterministicSeedSet=strjoin(string(seeds),'|');
+            rows(end+1,1)=row; %#ok<AGROW>
+        end
+    end
+end
+sweepT=struct2table(rows,'AsArray',true); trialT=struct2table(trials,'AsArray',true);
+candT=struct2table(candidates,'AsArray',true); fieldT=struct2table(fields,'AsArray',true);
+grantT=struct2table(grants,'AsArray',true); oracleT=struct2table(oracles,'AsArray',true);
 end
 
 function [sweepT, trialT, candT, fieldT, grantT, oracleT] = localLowSNRSweep(cfg, dci, trialId)
@@ -547,7 +644,7 @@ T.CRCPolynomial=string(cfg.CRCPolynomial);
 T.RNTIMaskLength=double(cfg.RNTIMaskLength);
 end
 
-function summary = localSummaryStruct(runId, scenarioName, strictOk, cfg, trialT, falseAlarmT, lowSNRT, oracleT)
+function summary = localSummaryStruct(runId, scenarioName, strictOk, cfg, trialT, falseAlarmT, missT, lowSNRT, oracleT)
 summary = struct();
 summary.RunId = string(runId);
 summary.scenario = string(scenarioName);
@@ -562,8 +659,11 @@ summary.WrongRNTIRows = sum(string(trialT.TrialType) == "wrong_rnti");
 summary.NoSignalRows = sum(string(trialT.TrialType) == "no_signal_coreset");
 summary.CorruptionRows = sum(startsWith(string(trialT.TrialType), "corrupted"));
 summary.FalseAlarmSweepRows = height(falseAlarmT);
-[summary.StatisticallyQualified,summary.StatisticalQualification] = ...
-    sixgr.stats.summarizeBinomialQualifications(falseAlarmT);
+[summary.StatisticallyQualified,summary.StatisticalQualification,summary.PopulationQualification] = ...
+    sixgr.phy.pdcch.summarizeDetectorQualification(falseAlarmT,missT);
+summary.MissedDetectionSweepRows=height(missT);
+summary.QualificationScope="awgn_component_not_nr_conformance";
+summary.NRConformanceQualified=false;
 summary.LowSNRSweepRows = height(lowSNRT);
 summary.OracleGuardViolationCount = sum(logical(oracleT.Violation));
 summary.ProxyUsed = any(logical(trialT.ProxyUsed));
@@ -667,6 +767,8 @@ end
 
 function row = localFalseAlarmRow()
 row = struct("RunId", "", "SweepId", "", "ConfigHash", "", "NoiseModel", "", "SNRdB", NaN, ...
+    "QualificationContextHash","","QualificationScope","", ...
+    "PlannedOperatingPointCount",NaN,"JointOperatingPointCount",NaN,"PerPointConfidenceLevel",NaN, ...
     "NumTrials", NaN, "WaveformTrialCount", NaN, "NumCandidatesPerTrial", NaN, ...
     "CandidateDecisionCount", NaN, "NumFalseCandidates", NaN, ...
     "FalseAlarmWaveformCount",NaN,"CandidateFalseAlarmFraction",NaN, ...
@@ -680,6 +782,22 @@ row = struct("RunId", "", "SweepId", "", "ConfigHash", "", "NoiseModel", "", "SN
     "StatisticallyQualified", false, "StoppingReason", "", ...
     "DeterministicSeedCount", NaN, "DeterministicSeedSet", "", "SeedDerivation", "", ...
     "EvidenceUnit", "independent_noise_only_waveform", "Status", "NOT_EVALUATED");
+end
+
+function row=localMissedDetectionRow()
+row=struct('RunId',"",'SweepId',"",'ConfigHash',"",'QualificationContextHash',"", ...
+    'QualificationScope',"awgn_component_not_nr_conformance",'ChannelModel',"AWGN", ...
+    'PlannedOperatingPointCount',NaN,'JointOperatingPointCount',NaN, ...
+    'SNRdB',NaN,'DCIFormat',"",'AggregationLevel',NaN,'TxDimensions',NaN,'RxDimensions',NaN, ...
+    'WaveformTrialCount',0,'MissedGrantCount',0,'DeliveredGrantCount',0,'CRCFailureCount',0, ...
+    'FalseCandidateCount',0,'MissedGrantProbability',NaN,'TargetMissedGrantProbability',NaN, ...
+    'ConfidenceLevel',NaN,'PerPointConfidenceLevel',NaN,'CILower',NaN,'CIUpper',NaN, ...
+    'CIWidth',NaN,'CIWidthTarget',NaN,'EffectiveDirectionalConfidenceLevel',NaN, ...
+    'AlphaSpentThisLook',NaN,'IntervalMethod',"",'SequentialDesign',"", ...
+    'LookIndex',NaN,'PlannedLooks',NaN,'MinimumTrials',NaN,'MaximumTrials',NaN,'MinimumEvents',NaN, ...
+    'PointEstimatePass',false,'StatisticallyQualified',false,'StatisticalQualification',"NOT_EVALUATED", ...
+    'StoppingReason',"",'Status',"NOT_EVALUATED",'DeterministicSeedSet',"", ...
+    'EvidenceUnit',"independent_signal_present_waveform");
 end
 
 function q = localUnevaluatedQualification(reason)

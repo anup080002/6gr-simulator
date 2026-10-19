@@ -242,6 +242,16 @@ strictCfg.OracleCandidateTimingAllowed = logical(sixgr.util.structGet( ...
     operatorStrict, "oracle_candidate_timing", false));
 strictCfg.ValidationCampaign = localValidationCampaign(operatorStrict);
 strictCfg.StatisticalQualification = localStatisticalQualification(operatorStrict);
+% Preserve the existing resolved H0 grid, but freeze it in the component
+% context hash rather than reading un-hashed BaseConfig during sampling.
+falseAlarmSNR=double(sixgr.util.structGet(cfg, ...
+    "lls6g.control.pdcch_strict.false_alarm_snr_db",[-6 0 6]));
+validateattributes(falseAlarmSNR,{'numeric'},{'real','finite','vector','nonempty'});
+assert(numel(unique(falseAlarmSNR))==numel(falseAlarmSNR), ...
+    'sixgr:phy:pdcch:InvalidStatisticalQualification','H0 SNR operating points must be distinct.');
+strictCfg.StatisticalQualification.FalseAlarmSNRdB=reshape(falseAlarmSNR,1,[]);
+strictCfg.MissedDetectionQualification = ...
+    sixgr.phy.pdcch.resolveMissedDetectionQualification(operatorStrict);
 strictCfg.Seed = double(sixgr.util.structGet(cfg, "run.seed", 5489));
 
 try

@@ -15,6 +15,7 @@ is retained for traceability; it does not supersede the following status.
 | Occupancy plot memory | Python renderer now reduces CSV records as a stream, instead of retaining the entire approximately 498 MB input as dictionaries. **217 affected Python tests pass**. The full retained-data replay completed: **23 PNGs**, all **87 source/output hashes matched**, all 1,677,312 CSI sample pairs and 810,338 executed-RE rows accounted for. This remains a partial diagnostic replay, not terminal qualification or proof of the earlier exit cause. |
 | Live radio-clock progress | Core runtime and WebGUI now separate the active one-based radio slot/frame, processed slots/symbols and DL/UL trial rows. Five distinct affected MATLAB checks and 78 Python checks pass. A processed slot is not a durable checkpoint or scenario acceptance. |
 | Duplicate RE serialization | Core exporter now serializes each carrier/native RE table once and publishes verified byte copies to the component/live destinations. **Four affected MATLAB checks and 69 Python consumer checks pass**; the retained 497,999,464-byte CSV also copied with matching SHA256. Full-run timing and live MySQL qualification remain pending. |
+| PDCCH H0/H1 qualification | Noise-only results alone can no longer qualify the detector. A YAML-driven signal-present producer, joint confidence budget and paired acceptance gate pass **nine affected MATLAB checks**, followed by **four passing hash-binding regressions**. This is AWGN component verification, **not H4 installed-channel or NR conformance qualification**. |
 | Server handoff utilities | **18 orchestration/packaging tests pass**, with MATLAB mocked. These verify command construction, failure handling, evidence hashes and exclusions—not a physical server run. |
 | Integrated acceptance | Connected UL, delivered CSI/UCI-driven adaptation, all 100 slots, complete terminal CSV/PNG publication and statistical qualification remain **unaccepted**. A larger server does not by itself fix or qualify these. |
 | Verification policy | Affected tests only at the operator's request. **No full `testAll` and no new scenario were launched for this handoff.** |
@@ -35,6 +36,55 @@ checks pass (`logs/lls_repairs/h4_failure_notice_20261019_v1/receipt.json` and
 recovery is incomplete; it cannot be confused with a completed-slot save point.
 The lost exception from the earlier manually closed MATLAB process cannot be
 reconstructed by this change.
+
+PDCCH qualification repair (H4-47):
+
+- `runStrictPDCCHValidation` now executes explicitly configured H1 SNR/DCI
+  points and counts missed intended grants per independent received waveform.
+  Candidate hypotheses are not counted as independent trials. Wrong payload,
+  wrong selected resource or invalid grant is not successful delivery.
+- H0 and H1 use disjoint Threefry substreams; the confidence budget is divided
+  across declared operating points and then the planned looks/directions.
+  Both H0 and H1 SNR grids participate in the component configuration hash.
+- `control.pdcch_strict.missed_detection_qualification` declares enablement,
+  scope, channel, SNRs, DCI formats, target probability and trial/stopping
+  budgets. The bounded example is in
+  [`configs/lls/lls_pdcch_strict_mini_anchor.yaml`](configs/lls/lls_pdcch_strict_mini_anchor.yaml).
+  It inherits confidence and seed families from `statistical_qualification`.
+  Missing/disabled H1 remains unqualified; no target is inferred from a result.
+- All H1 points share `control/csv/pdcch_missed_detection_sweep.csv` and
+  `reports/figures/pdcch_missed_grant_probability.png`. Raw decisions remain in
+  `pdcch_trials.csv`; JSON summaries and plot lineage bind the source files.
+  `pdcch_config_binding.json` retains the resolved component design, including
+  both grids, budgets and seed families, not only its hash.
+- The current component producer directly applies AWGN. Its accepted scope is
+  `awgn_component_not_nr_conformance`; claiming fading/RF qualification through
+  that path is rejected. Both the integrated runner and acceptance contract
+  reject promotion of a component PASS to installed-runtime qualification.
+  Matching H4 channel, RF, spatial and control contexts still require a separate
+  production campaign implementation and sufficient populations.
+
+The physical regression produced **12 H1 trials**: for each of DCI 1_0 and 0_0,
+three missed grants at -8 dB and three delivered grants at 35 dB. Those are
+bounded regression observations, not qualified error-rate curves. All four
+points remain statistically unresolved under the frozen confidence-width
+criteria. Receipts: `logs/lls_repairs/h4_pdcch_joint_qualification_20261019_v1/`
+and `logs/lls_repairs/h4_pdcch_joint_qualification_20261019_v2/`.
+The final saved-design exporter check also passed:
+`logs/lls_repairs/h4_pdcch_qualification_export_20261019_v3/receipt.json`.
+Repeated regression executions reuse the frozen realizations and are **not**
+pooled as additional independent statistical samples.
+The retained CSV/PNG triage packages are under
+`results/diagnostics/h4_pdcch_joint_20261019_v1/` and
+`results/diagnostics/h4_pdcch_joint_20261019_v2/`; their manifests explicitly list
+excluded binary grids. The final JSON-binding export is preserved in
+`results/diagnostics/h4_pdcch_joint_20261019_v3/`. No full scenario or testAll
+was started.
+
+NR missed-grant requirements depend on the specified reference channel,
+antenna configuration and operating point; the AWGN engineering target is not
+a substituted conformance test. See
+[TS 38.101-4 v18.8.0, section 5.3.3.2 and Annex C.3.1](https://www.etsi.org/deliver/etsi_ts/138100_138199/13810104/18.08.00_60/ts_13810104v180800p.pdf).
 
 Radio-clock repair verification is retained in
 `logs/lls_repairs/h4_radio_clock_20261019_v1/receipt.json` and

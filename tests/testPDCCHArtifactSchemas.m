@@ -12,6 +12,7 @@ requiredCsv = [
     "control/csv/pdcch_no_signal_trials.csv"
     "control/csv/pdcch_corruption_trials.csv"
     "control/csv/pdcch_false_alarm_sweep.csv"
+    "control/csv/pdcch_missed_detection_sweep.csv"
     "control/csv/pdcch_low_snr_sweep.csv"
     "control/csv/pdcch_oracle_guard.csv"
     "air_interface/csv/pdcch_trials.csv"];
@@ -29,6 +30,7 @@ requiredFigures = [
     "pdcch_wrong_rnti_rejections.png"
     "pdcch_false_alarm_probability.png"
     "pdcch_low_snr_detection_probability.png"
+    "pdcch_missed_grant_probability.png"
     "pdcch_decode_flow.png"
     "pdcch_dci_to_grant_flow.png"];
 for ii = 1:numel(requiredFigures)
@@ -48,5 +50,14 @@ manifestPath = fullfile(runFolder, "control", "csv", "pdcch_strict_artifact_mani
 manifestT = readtable(manifestPath, "FileType", "text", "Delimiter", ",", ...
     "ReadVariableNames", true, "VariableNamingRule", "preserve");
 assert(height(manifestT) >= numel(requiredCsv), "Strict PDCCH manifest must enumerate required artifacts.");
+binding=jsondecode(fileread(fullfile(runFolder,'reports','json','pdcch_config_binding.json')));
+assert(string(binding.ConfigHash)==b.Config.ConfigHash && ...
+    isequal(binding.ResolvedComponentConfig.StatisticalQualification.FalseAlarmSNRdB(:), ...
+        b.Config.StatisticalQualification.FalseAlarmSNRdB(:)) && ...
+    isequal(binding.ResolvedComponentConfig.MissedDetectionQualification.SNRdB(:), ...
+        b.Config.MissedDetectionQualification.SNRdB(:)) && ...
+    binding.ResolvedComponentConfig.MissedDetectionQualification.MaximumWaveformTrials==3, ...
+    'Frozen H0/H1 qualification inputs must be inspectable, not only represented by a hash.');
+fprintf('PDCCH_ARTIFACT_SCHEMA_PASS frozen_design_json=1 artifact_root=%s\n',runFolder);
 ok = true;
 end
