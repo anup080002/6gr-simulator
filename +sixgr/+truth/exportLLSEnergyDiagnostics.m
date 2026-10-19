@@ -9,6 +9,20 @@ rootRunFolder = fileparts(char(string(airInterfaceRunFolder)));
 layout = sixgr.report.resultLayout(rootRunFolder);
 sixgr.util.ensureFolder(layout.RFCSVDir);
 
+% Shared observations carry the real RF sample clock independently of the
+% modeled energy rows below. Export their union without equating an observed
+% operator interval with a hardware TX/RX/idle/sleep transition.
+[rfObservations,rfIntervals,rfCoverage]=sixgr.truth.collectRFEndpointObservationIntervals(rawTrials);
+artifacts.RFObservationCSV=fullfile(layout.RFCSVDir,"rf_endpoint_observation_intervals.csv");
+artifacts.RFIntervalUnionCSV=fullfile(layout.RFCSVDir,"rf_endpoint_interval_union.csv");
+artifacts.RFIntervalCoverageCSV=fullfile(layout.RFCSVDir,"rf_endpoint_interval_coverage.csv");
+sixgr.util.csvWriteTable(artifacts.RFObservationCSV,rfObservations);
+sixgr.util.csvWriteTable(artifacts.RFIntervalUnionCSV,rfIntervals);
+sixgr.util.csvWriteTable(artifacts.RFIntervalCoverageCSV,rfCoverage);
+artifacts.RFObservationTable=rfObservations;
+artifacts.RFIntervalUnionTable=rfIntervals;
+artifacts.RFIntervalCoverageTable=rfCoverage;
+
 model = sixgr.truth.resolveLLSEnergyModelConfig(cfg);
 modelTermsPath = fullfile(layout.RFCSVDir, "energy_model_terms.csv");
 sixgr.util.csvWriteTable(modelTermsPath, model.TermTable);
@@ -72,6 +86,19 @@ rows = repmat(localEmptyEnergyRow(), 0, 1);
 if ~(istable(T) && ~isempty(T))
     return;
 end
+isData=any(string(domain)==["DL_data","UL_data"]);
+if isData
+    if ismember('Direction',T.Properties.VariableNames)
+        assert(all(upper(string(T.Direction))==direction), ...
+            'sixgr:truth:EnergyDirectionMismatch','Raw-table direction must match its owning DL/UL population.');
+    else
+        T.Direction=repmat(string(direction),height(T),1);
+    end
+    if ~ismember('UniqueDeliveredTBBits',T.Properties.VariableNames)
+        T=sixgr.kpi.creditTransportGoodput(T);
+    end
+    delivered=sixgr.kpi.transportGoodputBits(T);
+end
 
 for i = 1:height(T)
     load = 1;
@@ -81,14 +108,23 @@ for i = 1:height(T)
     end
     status = string(localTableValue(T, i, "Status", "NA"));
     successBits = 0;
-    tbBits = localNumericField(T, i, ["TBSize_bits","TBSBits","BitsCompared"], NaN);
-    if status == "PASS" && isfinite(tbBits)
-        successBits = double(tbBits);
-    end
+    if isData, successBits=delivered(i); end
     frameVal = double(localTableValue(T, i, "Frame", i));
-    slotVal = double(localTableValue(T, i, "Slot", i));
+    slotVal = double(localTableValue(T, i, "Slot", NaN));
+    % The link-trial producer contract uses one-based ABSOLUTE Slot. Frame
+    % is a separate label, not another elapsed-time offset. Explicit legacy
+    % zero-based input must declare its base rather than relying on min(Slot).
+    slotBase = localNumericField(T,i,"SlotIndexBase",1);
+    assert(ismember(slotBase,[0 1]) && isfinite(slotVal) && ...
+        slotVal==fix(slotVal) && slotVal>=slotBase, ...
+        'sixgr:truth:EnergyTrialClockMismatch', ...
+        'Energy observation requires a valid absolute trial slot and index base.');
+    executedSlot0=localNumericField(T,i,"RuntimeAbsoluteSlotIndex0",NaN);
+    assert(~isfinite(executedSlot0) || executedSlot0==slotVal-slotBase, ...
+        'sixgr:truth:EnergyTrialClockMismatch', ...
+        'Exported Slot must agree with its executed absolute-slot clock.');
     symbolVal = localNumericField(T, i, ["SymbolStart"], NaN);
-    ueId = localNumericField(T, i, ["UEID","UEIndex"], NaN);
+    ueId = localNumericField(T, i, ["UEIndex","UEID"], NaN);
     cellId = localNumericField(T, i, ["CellID","BaseStationID"], NaN);
     baseStationId = localNumericField(T, i, ["BaseStationID","CellID"], NaN);
     rnti = localNumericField(T, i, ["RNTI","UEID","UEIndex"], NaN);
@@ -110,7 +146,9 @@ for i = 1:height(T)
         if ~isfinite(txPower_dBm)
             txPower_dBm = localWToDbm(bsTxPowerW);
         end
-        rxPower_dBm = localNumericField(T, i, ["ServingRSRP_dBm","CSI_RSRP_dB","RSRP_dBm"], NaN);
+        % Normalized CSI_RSRP_dB has no watt reference, and per-RS-RE RSRP
+        % is not total received power. Do not alias either into this plane.
+        rxPower_dBm = localNumericField(T, i, ["ReceivedPower_dBm"], NaN);
     else
         txPower_dBm = localOptionalScalar(T, i, "TxPower_dBm", NaN);
         if ~isfinite(txPower_dBm)
@@ -119,28 +157,36 @@ for i = 1:height(T)
         if ~isfinite(txPower_dBm)
             txPower_dBm = localWToDbm(ueTxPowerW);
         end
-        rxPower_dBm = localNumericField(T, i, ["ReceivedPower_dBm","RxPower_dBm","ServingRSRP_dBm"], NaN);
+        rxPower_dBm = localNumericField(T, i, ["ReceivedPower_dBm"], NaN);
     end
     switch upper(string(direction))
         case "DL"
             bs = bsModel.power('active', bsRfChains, load, bsTxPowerW);
             ue = ueModel.power('rx', 0);
             rows(end+1, 1) = localMakeEnergyRow("gNB", domain, direction, frameVal, slotVal, symbolVal, slotDur_s, bs.totalW, successBits, bsRfChains, bs.trxW * slotDur_s, sourceArtifact, status, ... %#ok<AGROW>
-                ueId, cellId, baseStationId, rnti, tbId, harqProcessId, ndi, rv, prbCount, load, layers, bsRfChains, 1, txPower_dBm, NaN, "active_tx");
+                ueId, cellId, baseStationId, rnti, tbId, harqProcessId, ndi, rv, prbCount, load, layers, bsRfChains, 1, txPower_dBm, NaN, "active_tx", slotBase);
             rows(end+1, 1) = localMakeEnergyRow("UE", domain, direction, frameVal, slotVal, symbolVal, slotDur_s, ue.totalW, successBits, ueRfChains, 0, sourceArtifact, status, ... %#ok<AGROW>
-                ueId, cellId, baseStationId, rnti, tbId, harqProcessId, ndi, rv, prbCount, load, layers, 0, localControlMonitoringLoad(domain), NaN, rxPower_dBm, localUEEnergyState(domain, direction, "UE"));
+                ueId, cellId, baseStationId, rnti, tbId, harqProcessId, ndi, rv, prbCount, load, layers, 0, localControlMonitoringLoad(domain), NaN, rxPower_dBm, localUEEnergyState(domain, direction, "UE"), slotBase);
         otherwise
             ue = ueModel.power('tx', ueTxPowerW);
             bs = bsModel.power('active', bsRfChains, load, 0);
             rows(end+1, 1) = localMakeEnergyRow("UE", domain, direction, frameVal, slotVal, symbolVal, slotDur_s, ue.totalW, successBits, ueRfChains, 0, sourceArtifact, status, ... %#ok<AGROW>
-                ueId, cellId, baseStationId, rnti, tbId, harqProcessId, ndi, rv, prbCount, load, layers, ueRfChains, localControlMonitoringLoad(domain), txPower_dBm, NaN, localUEEnergyState(domain, direction, "UE"));
+                ueId, cellId, baseStationId, rnti, tbId, harqProcessId, ndi, rv, prbCount, load, layers, ueRfChains, localControlMonitoringLoad(domain), txPower_dBm, NaN, localUEEnergyState(domain, direction, "UE"), slotBase);
             rows(end+1, 1) = localMakeEnergyRow("gNB", domain, direction, frameVal, slotVal, symbolVal, slotDur_s, bs.totalW, successBits, bsRfChains, bs.trxW * slotDur_s, sourceArtifact, status, ... %#ok<AGROW>
-                ueId, cellId, baseStationId, rnti, tbId, harqProcessId, ndi, rv, prbCount, load, layers, 0, 0, NaN, rxPower_dBm, "active_rx");
+                ueId, cellId, baseStationId, rnti, tbId, harqProcessId, ndi, rv, prbCount, load, layers, 0, 0, NaN, rxPower_dBm, "active_rx", slotBase);
+    end
+    % Keep receiver-owned credit on both endpoints for traceability, but
+    % only the transmitter-side row enters the denominator once below.
+    if isData
+        for rowIndex=numel(rows)-1:numel(rows)
+            rows(rowIndex).TransportGoodputKey=string(T.TransportGoodputKey(i));
+            rows(rowIndex).TransportGoodputStatus=string(T.TransportGoodputStatus(i));
+        end
     end
 end
 end
 
-function row = localMakeEnergyRow(entity, domain, direction, frameVal, slotVal, symbolVal, duration_s, powerW, successBits, rfChains, bbEnergyJ, sourceArtifact, status, ueId, cellId, baseStationId, rnti, tbId, harqProcessId, ndi, rv, prbCount, activeBWFrac, activeRank, activeTxruCount, controlMonitoringLoad, txPower_dBm, rxPower_dBm, state)
+function row = localMakeEnergyRow(entity, domain, direction, frameVal, slotVal, symbolVal, duration_s, powerW, successBits, rfChains, bbEnergyJ, sourceArtifact, status, ueId, cellId, baseStationId, rnti, tbId, harqProcessId, ndi, rv, prbCount, activeBWFrac, activeRank, activeTxruCount, controlMonitoringLoad, txPower_dBm, rxPower_dBm, state, slotIndexBase)
 row = struct( ...
     "Entity", string(entity), ...
     "EntityType", localEntityTypeToken(entity), ...
@@ -150,7 +196,10 @@ row = struct( ...
     "Frame", double(frameVal), ...
     "Slot", double(slotVal), ...
     "Symbol", double(symbolVal), ...
-    "TimestampSim_ms", double(((max(frameVal, 1) - 1) * 1e1) + ((max(slotVal, 1) - 1) * duration_s * 1e3)), ...
+    "TimestampSim_ms", double((slotVal-slotIndexBase)*duration_s*1e3), ...
+    "SlotIndexBase", double(slotIndexBase), ...
+    "TimestampReference", "absolute_trial_slot_nominal_grid_not_RF_event_time", ...
+    "EnergyIntervalBasis", "whole_slot_engineering_model_not_measured_RF_active_interval", ...
     "UEID", double(ueId), ...
     "CellID", double(cellId), ...
     "BaseStationID", double(baseStationId), ...
@@ -171,6 +220,7 @@ row = struct( ...
     "Power_W", double(powerW), ...
     "Energy_J", double(powerW * duration_s), ...
     "SuccessfulBits", double(successBits), ...
+    "TransportGoodputKey", "", "TransportGoodputStatus", "not_data_payload", ...
     "RFChainCount", double(rfChains), ...
     "BBProcessingEnergy_J", double(bbEnergyJ), ...
     "SourceArtifact", string(sourceArtifact), ...
@@ -181,11 +231,13 @@ function row = localEmptyEnergyRow()
 row = struct( ...
     "Entity", "", "EntityType", "", "EntityID", NaN, "Domain", "", "Direction", "", ...
     "Frame", NaN, "Slot", NaN, "Symbol", NaN, "TimestampSim_ms", NaN, ...
+    "SlotIndexBase", NaN, "TimestampReference", "", "EnergyIntervalBasis", "", ...
     "UEID", NaN, "CellID", NaN, "BaseStationID", NaN, "RNTI", NaN, ...
     "TransportBlockId", "", "HARQProcessId", NaN, "NDI", NaN, "RV", NaN, ...
     "PRBCount", NaN, "ActiveBWFraction", NaN, "ActiveRank", NaN, "ActiveTxRUCount", NaN, ...
     "ControlMonitoringLoad", NaN, "TxPower_dBm", NaN, "RxPowerEst_dBm", NaN, "State", "", ...
     "Duration_s", NaN, "Power_W", NaN, "Energy_J", NaN, "SuccessfulBits", NaN, ...
+    "TransportGoodputKey", "", "TransportGoodputStatus", "not_data_payload", ...
     "RFChainCount", NaN, "BBProcessingEnergy_J", NaN, "SourceArtifact", "", "Status", "");
 end
 
@@ -256,7 +308,11 @@ else
     gnbEnergyPerBit = NaN;
     throughputPerWatt = NaN;
     energyAvailability = "NOT_EVALUATED";
-    energyNotes = "No successful transport-block delivery exists; energy per bit is undefined.";
+    if isfinite(successBitsRaw)
+        energyNotes = "No successful transport-block delivery exists; energy per bit is undefined.";
+    else
+        energyNotes = "Incomplete receiver CRC/TB identity evidence; delivered-bit denominator is unknown, not zero.";
+    end
 end
 
 summaryT = [summaryT; ... %#ok<AGROW>
@@ -416,7 +472,11 @@ if ~(istable(timelineT) && ~isempty(timelineT))
 end
 txMask = (upper(string(timelineT.Direction)) == "DL" & string(timelineT.Entity) == "gNB") | ...
     (upper(string(timelineT.Direction)) == "UL" & string(timelineT.Entity) == "UE");
-success = double(timelineT.SuccessfulBits) > 0 & txMask;
+dataMask=ismember(string(timelineT.Domain),["DL_data","UL_data"]);
+if any(isnan(double(timelineT.SuccessfulBits(txMask & dataMask))))
+    bits=NaN; count=NaN; return;
+end
+success = double(timelineT.SuccessfulBits) > 0 & txMask & dataMask;
 if ~any(success)
     return;
 end
@@ -424,7 +484,9 @@ seen = strings(0, 1);
 idx = find(success(:).');
 for k = 1:numel(idx)
     i = idx(k);
-    key = localEnergyDeliveryKey(timelineT, i);
+    key = string(timelineT.TransportGoodputKey(i));
+    assert(~ismissing(key)&&strlength(key)>0, ...
+        'sixgr:truth:MissingEnergyDeliveryIdentity','Positive delivery needs receiver-owned TB credit.');
     if any(seen == key)
         continue;
     end
@@ -498,7 +560,8 @@ function tbId = localTransportBlockId(T, rowIdx, direction)
 % campaign hierarchy before consulting connected-runtime TB/grant IDs.
 fixedPoint = localNumericField(T, rowIdx, ["FixedLinkPointIndex"], NaN);
 fixedTrial = localNumericField(T, rowIdx, ["FixedLinkTrialIndex"], NaN);
-if isfinite(fixedPoint) && isfinite(fixedTrial)
+if localNumericField(T,rowIdx,"FixedLinkCampaign",0)==1 && ...
+        isfinite(fixedPoint) && isfinite(fixedTrial)
     fixedDrop = localNumericField(T, rowIdx, ["FixedLinkDropIndex"], 1);
     fixedSeedIndex = localNumericField(T, rowIdx, ["FixedLinkSeedIndex"], 1);
     fixedSeedValue = localNumericField(T, rowIdx, ["FixedLinkSeedValue","PointSeed"], NaN);
@@ -514,27 +577,20 @@ if isfinite(fixedPoint) && isfinite(fixedTrial)
         "|rnti=" + localIdentityNumericToken(rnti);
     return;
 end
-for name = ["TransportBlockId","TBId","MACPDUId","MACSDUId","GrantContextId"]
+tbId="";
+for name = ["LogicalTBID","TransportBlockId","TBId"]
     if istable(T) && ismember(name, string(T.Properties.VariableNames))
-        raw = strtrim(string(T.(char(name))(rowIdx)));
+        value=T.(char(name))(rowIdx,:);
+        if iscell(value), value=value{1}; end
+        if ~(isstring(value)||ischar(value)), continue; end
+        raw = strtrim(string(value));
         if ~ismissing(raw) && strlength(raw) > 0 && lower(raw) ~= "nan"
             tbId = raw;
             return;
         end
     end
 end
-ueId = localNumericField(T, rowIdx, ["UEID","UEIndex"], NaN);
-rnti = localNumericField(T, rowIdx, ["RNTI","UEID","UEIndex"], NaN);
-harqProcessId = localNumericField(T, rowIdx, ["HARQProcessId","HARQProcess"], NaN);
-ndi = localNumericField(T, rowIdx, ["NDI","HARQNDI"], NaN);
-frameVal = double(localTableValue(T, rowIdx, "Frame", rowIdx));
-slotVal = double(localTableValue(T, rowIdx, "Slot", rowIdx));
-tbId = upper(string(direction)) + "_ue" + localIdentityNumericToken(ueId) + ...
-    "_rnti" + localIdentityNumericToken(rnti) + ...
-    "_harq" + localIdentityNumericToken(harqProcessId) + ...
-    "_ndi" + localIdentityNumericToken(ndi) + ...
-    "_f" + localIdentityNumericToken(frameVal) + ...
-    "_s" + localIdentityNumericToken(slotVal);
+
 end
 
 function token = localIdentityNumericToken(value)

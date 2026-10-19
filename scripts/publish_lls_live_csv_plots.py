@@ -34,6 +34,107 @@ def digest(payload):
     return hashlib.sha256(payload).hexdigest()
 
 
+def file_digest(path):
+    value = hashlib.sha256()
+    with io_path(path).open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024*1024), b""):
+            value.update(chunk)
+    return value.hexdigest()
+
+
+def csv_data_row_count(path, logical):
+    """Validate every record without retaining the input population."""
+    with io_path(path).open("r", encoding="utf-8-sig", newline="") as stream:
+        records = csv.reader(stream, strict=True)
+        header = next(records, [])
+        count = 0
+        for row in records:
+            if not row:
+                continue
+            if len(row) != len(header):
+                raise ValueError(f"Malformed CSV record width: {logical}")
+            count += 1
+    return count
+
+
+def _stat_identity(stat):
+    # Windows path.stat()/descriptor fstat() can expose different ctime
+    # meanings. Use file identity, size and modification time; the final
+    # SHA256 comparison independently verifies the actual source bytes.
+    return (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns)
+
+
+def snapshot_source(source, target, logical):
+    """Copy/hash one source once; reject replacement or writes during copy."""
+    source, target = io_path(source), io_path(target)
+    before = _stat_identity(source.stat())
+    target.parent.mkdir(parents=True, exist_ok=True)
+    value, size = hashlib.sha256(), 0
+    with source.open("rb") as reader, target.open("xb") as writer:
+        if _stat_identity(os.fstat(reader.fileno())) != before:
+            raise ValueError("Source changed before live snapshot: " + logical)
+        for chunk in iter(lambda: reader.read(1024*1024), b""):
+            writer.write(chunk)
+            value.update(chunk)
+            size += len(chunk)
+        after = _stat_identity(os.fstat(reader.fileno()))
+    if before != after or before != _stat_identity(source.stat()) or size != before[2]:
+        raise ValueError("Source changed during live snapshot: " + logical)
+    csv_data_row_count(target, logical)
+    return value.hexdigest()
+
+
+def source_path(root, logical):
+    path = (root / logical).resolve()
+    if not path.is_relative_to(root):
+        raise ValueError(f"Source escapes active run: {logical}")
+    return path
+
+
+def available_sources(root):
+    """Include exact scoring dependencies declared by the primary trials.
+
+    The NMSE chart independently checks complex-channel operands and their
+    hash; copying only its summary would make valid measurements invisible.
+    Do not glob unrelated runs/resources or synthesize a missing dependency.
+    """
+    sources = {logical: source_path(root, logical) for logical in SOURCES
+               if io_path(source_path(root, logical)).is_file()}
+    references = set()
+    for logical in radio.TRIALS + ("air_interface/csv/srs_trials.csv", radio.CSI_TRIALS):
+        if logical not in sources:
+            continue
+        with io_path(sources[logical]).open(encoding="utf-8-sig", newline="") as stream:
+            rows = csv.DictReader(stream, strict=True)
+            if "ChannelEstimateResourcesCSV" not in (rows.fieldnames or []):
+                continue
+            for row in rows:
+                reference = (row.get("ChannelEstimateResourcesCSV") or "").strip().replace("\\", "/")
+                if not reference:
+                    continue
+                if (not reference.startswith("channel_estimation/csv/")
+                        or not reference.endswith(".csv") or ":" in reference
+                        or any(part in ("", ".", "..") for part in reference.split("/"))):
+                    raise ValueError("Invalid channel NMSE resource path: " + reference)
+                references.add(reference)
+    for logical in sorted(references):
+        path = source_path(root, logical)
+        if io_path(path).is_file():
+            sources[logical] = path
+    return sources
+
+
+def verify_sources(source_root, expected):
+    # Also detect newly appearing inputs; a mixed checkpoint must not advance
+    # latest.json merely because the files present at start stayed unchanged.
+    sources = available_sources(source_root)
+    if set(sources) != set(expected):
+        raise ValueError("Source changed during live publication: input or scoring-resource inventory")
+    for logical, path in sources.items():
+        if file_digest(path) != expected[logical]:
+            raise ValueError("Source changed during live publication: " + logical)
+
+
 def atomic_write(path, payload):
     path = io_path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -51,23 +152,160 @@ def publish(run_folder, *, source_run_folder=None):
     root = Path(run_folder).resolve(strict=True)
     source_root = Path(source_run_folder).resolve(strict=True) if source_run_folder else root
     preview = source_root != root
-    payloads, source_hashes = {}, {}
-    for logical in SOURCES:
-        path = (source_root / logical).resolve()
-        if not path.is_relative_to(source_root):
-            raise ValueError(f"Source escapes active run: {logical}")
-        if io_path(path).is_file():
-            data = io_path(path).read_bytes()
-            # Do not let a torn or malformed CSV become a runtime chart.
-            records = list(csv.reader(io.StringIO(data.decode("utf-8-sig")), strict=True))
-            if records and any(len(row) != len(records[0]) for row in records[1:] if row):
-                raise ValueError(f"Malformed CSV record width: {logical}")
-            payloads[logical] = data
-            source_hashes[logical] = digest(data)
-    producers = {str(p.relative_to(REPO)).replace("\\", "/"): digest(p.read_bytes()) for p in (
+    parent = root / "reports/live_measurements"
+    io_path(parent).mkdir(parents=True, exist_ok=True)
+    # A slot-complete poll often has no new radio measurement. Hash the
+    # current bytes before staging: unchanged inputs must not be copied and
+    # parsed again (a full-band paired-sample CSV can exceed 600 MB).
+    latest = parent / "latest.json"
+    if io_path(latest).is_file():
+        prior = json.loads(io_path(latest).read_text(encoding="utf-8"))
+        current = {logical: file_digest(path) for logical, path in available_sources(source_root).items()}
+        if (prior.get("source_sha256") == current and prior.get("producer_sha256") == producer_hashes()
+                and prior.get("run_folder") == str(root) and prior.get("source_run_folder") == str(source_root)):
+            snapshot = prior.get("snapshot", "")
+            if not re.fullmatch(r"[0-9a-f]{64}", snapshot):
+                raise ValueError("Live snapshot receipt mismatch: snapshot identity")
+            folder = parent / snapshot
+            manifest_path = folder / "manifest.json"
+            if (io_path(manifest_path).read_bytes() != io_path(latest).read_bytes()
+                    or prior.get("terminal_qualification") is not False):
+                raise ValueError("Live snapshot receipt mismatch: latest manifest")
+            for logical, expected in prior["artifact_sha256"].items():
+                target = (folder / logical).resolve()
+                if not target.is_relative_to(folder.resolve()) or file_digest(target) != expected:
+                    raise ValueError("Live snapshot receipt mismatch: " + logical)
+            verify_sources(source_root, current)
+            return {"Status": "unchanged_verified_snapshot", "Manifest": str(manifest_path),
+                    "CreatedCount": prior["png_count"]}
+    # Staging is private and on the destination volume. Only a fully verified
+    # directory becomes an immutable checkpoint; failed input never replaces
+    # latest.json or leaves a partial checkpoint pretending to be complete.
+    with tempfile.TemporaryDirectory(prefix=".live-stage-", dir=io_path(parent)) as work:
+        stage = Path(work) / "snapshot"
+        stage.mkdir()
+        return publish_snapshot(root, source_root, preview, stage)
+
+
+def producer_hashes():
+    return {str(p.relative_to(REPO)).replace("\\", "/"): file_digest(p) for p in (
         Path(__file__).resolve(), REPO / "apps/lls_contract_materializer.py",
         REPO / "apps/lls_radio_measurement_plots.py", REPO / "apps/lls_resource_occupancy_plots.py",
         REPO / "scripts/regenerate_lls_rasters_from_csv.py")}
+
+
+def reuse_control_evm(root, source_root, preview, sources, producers, stage):
+    """Reuse exact plotted bytes only when every EVM input/producer is unchanged.
+
+    A new occupancy row must not reparse a million unchanged CSI-RS pairs.
+    No sample thinning, estimator change, or reuse across a source edit.
+    """
+    latest = root / "reports/live_measurements/latest.json"
+    if not io_path(latest).is_file():
+        return {}, {}
+    data = io_path(latest).read_bytes()
+    prior = json.loads(data)
+    if (prior.get("producer_sha256") != producers or prior.get("run_folder") != str(root)
+            or prior.get("source_run_folder") != str(source_root)
+            or prior.get("status") != ("post_run_diagnostic_preview" if preview else
+                                       "partial_runtime_measurement_snapshot")):
+        return {}, {}
+    key = digest(json.dumps({"sources": prior["source_sha256"], "producers": producers,
+                             "source_root": str(source_root), "preview": preview}, sort_keys=True).encode())
+    folder = latest.parent / key
+    if (prior.get("snapshot") != key or prior.get("terminal_qualification") is not False
+            or io_path(folder / "manifest.json").read_bytes() != data):
+        raise ValueError("Live snapshot receipt mismatch: EVM reuse identity")
+    rows, hashes = {}, {}
+    for row in prior["charts"]:
+        name = row["name"]
+        if name not in radio.CONTROL_EVM or row.get("status") != "measured_checkpoint":
+            continue
+        dependencies = radio.CHART_SOURCES[name]
+        if any(sources.get(p) != prior["source_sha256"].get(p) for p in dependencies):
+            continue
+        for field, extension in (("csv", ".csv"), ("png", ".png")):
+            logical = row[field]
+            target = (folder / logical).resolve()
+            if not target.is_relative_to(folder.resolve()) or target.suffix != extension:
+                raise ValueError("Live snapshot receipt mismatch: EVM reuse path")
+            payload = io_path(target).read_bytes()
+            expected = prior["artifact_sha256"][logical]
+            if digest(payload) != expected:
+                raise ValueError("Live snapshot receipt mismatch: " + logical)
+            atomic_write(stage / logical, payload)
+            hashes[logical] = expected
+        rows[name] = dict(row)
+    return rows, hashes
+
+
+def verified_prior_inputs(root, source_root, preview):
+    """Validate the sealed previous snapshot before sharing immutable bytes.
+
+    Only prior snapshot files may be linked, never mutable run measurements.
+    Changed producers may reuse exact input bytes, but not old plotted output.
+    """
+    latest = root / "reports/live_measurements/latest.json"
+    if not io_path(latest).is_file():
+        return {}
+    encoded = io_path(latest).read_bytes()
+    prior = json.loads(encoded)
+    if prior.get("run_folder") != str(root) or prior.get("source_run_folder") != str(source_root):
+        return {}
+    key = digest(json.dumps({"sources": prior["source_sha256"], "producers": prior["producer_sha256"],
+                            "source_root": str(source_root), "preview": preview}, sort_keys=True).encode())
+    folder = latest.parent / key
+    if (prior.get("snapshot") != key or prior.get("terminal_qualification") is not False
+            or io_path(folder / "manifest.json").read_bytes() != encoded):
+        raise ValueError("Live snapshot receipt mismatch: immutable input identity")
+    for logical, expected in prior["artifact_sha256"].items():
+        target = (folder / logical).resolve()
+        if not target.is_relative_to(folder.resolve()) or file_digest(target) != expected:
+            raise ValueError("Live snapshot receipt mismatch: " + logical)
+    inputs = {}
+    for logical, expected in prior["source_sha256"].items():
+        if prior["artifact_sha256"].get("sources/" + logical) != expected:
+            raise ValueError("Live snapshot receipt mismatch: source hash " + logical)
+        target = (folder / "sources" / logical).resolve()
+        if not target.is_relative_to((folder / "sources").resolve()):
+            raise ValueError("Live snapshot receipt mismatch: source path " + logical)
+        primary = source_path(source_root, logical)
+        if io_path(primary).exists() and os.path.samefile(io_path(primary), io_path(target)):
+            raise ValueError("Live snapshot receipt mismatch: mutable primary linked as immutable input")
+        inputs[logical] = (target, expected)
+    return inputs
+
+
+def retain_immutable_input(retained, target, expected, logical):
+    """Share verified immutable data, with an exact copy on unsupported filesystems."""
+    target = io_path(target)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.link(io_path(retained), target)
+    except OSError:
+        # Do not overwrite an existing/unverified target on a link failure.
+        if target.exists():
+            raise
+        actual = snapshot_source(retained, target, logical)
+    else:
+        actual = file_digest(target)
+    if actual != expected:
+        raise ValueError("Live snapshot receipt mismatch: retained input " + logical)
+    return actual
+
+
+def publish_snapshot(root, source_root, preview, stage):
+    prior_inputs = verified_prior_inputs(root, source_root, preview)
+    source_hashes, snapshots = {}, {}
+    for logical, path in available_sources(source_root).items():
+        snapshot = stage / "sources" / logical
+        retained = prior_inputs.get(logical)
+        if retained and file_digest(path) == retained[1]:
+            source_hashes[logical] = retain_immutable_input(retained[0], snapshot, retained[1], logical)
+        else:
+            source_hashes[logical] = snapshot_source(path, snapshot, logical)
+        snapshots[logical] = snapshot
+    producers = producer_hashes()
     key = digest(json.dumps({"sources": source_hashes, "producers": producers,
                             "source_root": str(source_root), "preview": preview}, sort_keys=True).encode())
     folder = root / "reports/live_measurements" / key
@@ -77,19 +315,37 @@ def publish(run_folder, *, source_run_folder=None):
     latest = root / "reports/live_measurements/latest.json"
     if io_path(manifest_path).is_file():
         manifest = json.loads(io_path(manifest_path).read_text(encoding="utf-8"))
+        if (manifest.get("source_sha256") != source_hashes or
+                manifest.get("producer_sha256") != producers or manifest.get("snapshot") != key or
+                manifest.get("terminal_qualification") is not False or
+                any(manifest.get("artifact_sha256", {}).get("sources/" + logical) != expected
+                    for logical, expected in source_hashes.items())):
+            raise ValueError("Live snapshot receipt mismatch: manifest source identity")
         # Check receipts, not just existence, before reusing a snapshot.
         for logical, expected in manifest["artifact_sha256"].items():
             target = (folder / logical).resolve()
-            if not target.is_relative_to(folder.resolve()) or digest(io_path(target).read_bytes()) != expected:
+            if not target.is_relative_to(folder.resolve()) or file_digest(target) != expected:
                 raise ValueError("Live snapshot receipt mismatch: " + logical)
+        verify_sources(source_root, source_hashes)
         atomic_write(latest, io_path(manifest_path).read_bytes())
         return {"Status": "unchanged_verified_snapshot", "Manifest": str(manifest_path),
                 "CreatedCount": manifest["png_count"]}
-    existing = {path: {"artifact_id": n} for n, path in enumerate(payloads)}
-    buffers = list(payloads.values())
-    hashes, charts = {}, []
+    existing = {path: {"artifact_id": n} for n, path in enumerate(snapshots)}
+    snapshot_paths = tuple(snapshots.values())
+    def fetch(artifact_id):
+        # Legacy small-table consumers may still request bytes; never cache
+        # all sources together. Sample-volume EVM uses the opener below.
+        return io_path(snapshot_paths[artifact_id]).read_bytes()
+    def open_artifact_binary(artifact_id):
+        return io_path(snapshot_paths[artifact_id]).open("rb")
+    fetch.open_artifact_binary = open_artifact_binary
+    reused, hashes = reuse_control_evm(root, source_root, preview, source_hashes, producers, stage)
+    charts = []
     for name in CHARTS:
-        result = materializer._specialized_chart_materialization(name, existing, buffers.__getitem__, root.name)
+        if name in reused:
+            charts.append(reused[name])
+            continue
+        result = materializer._specialized_chart_materialization(name, existing, fetch, root.name)
         if result is None:
             raise ValueError("No source-bound builder for " + name)
         row = {"name": name, "source_paths": result.get("source_table_path", ""),
@@ -108,16 +364,14 @@ def publish(run_folder, *, source_run_folder=None):
         png = materializer._rasterize_contract_png(svg.encode(), source_mime_type="image/svg+xml")
         stem = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
         for logical, data in ((f"csv/{stem}.csv", result["csv_bytes"]), (f"image/{stem}.png", png)):
-            atomic_write(folder / logical, data)
+            atomic_write(stage / logical, data)
             hashes[logical] = digest(data)
         row.update(status="measured_checkpoint", csv=f"csv/{stem}.csv", png=f"image/{stem}.png")
         charts.append(row)
     # Preserve the exact input bytes. Later source updates cannot invalidate
     # the scientific meaning of an earlier checkpoint or its reconciliation.
-    for path, data in payloads.items():
-        logical = "sources/" + path
-        atomic_write(folder / logical, data)
-        hashes[logical] = digest(data)
+    for path, expected in source_hashes.items():
+        hashes["sources/" + path] = expected
     # The terminal auditor recursively consumes component plot ledgers.
     # Register each immutable checkpoint against its OWN plotted CSV bytes,
     # never the mutable latest run CSV or another snapshot's raster.
@@ -129,22 +383,22 @@ def publish(run_folder, *, source_run_folder=None):
     for chart in charts:
         if chart["status"] != "measured_checkpoint":
             continue
-        plotted = list(csv.reader(io.StringIO(io_path(folder / chart["csv"]).read_text(encoding="utf-8-sig"))))
+        plotted_count = csv_data_row_count(stage / chart["csv"], chart["csv"])
         writer.writerow({"PlotId": f"live_{key}_{Path(chart['png']).stem}",
                          "ImagePath": chart["png"], "SourceCSV": chart["csv"],
                          "SourceCSV_SHA256": hashes[chart["csv"]], "ImageSHA256": hashes[chart["png"]],
                          "Status": "rendered_component_plot", "Producer": "publish_lls_live_csv_plots",
-                         "SourceRows": max(0, len(plotted) - 1), "EvidenceScope": "partial_measured_checkpoint",
+                         "SourceRows": plotted_count, "EvidenceScope": "partial_measured_checkpoint",
                          "TerminalQualification": "false"})
     if any(chart["status"] == "measured_checkpoint" for chart in charts):
         logical = "checkpoint_plot_lineage.csv"
         data = lineage.getvalue().encode("utf-8")
-        atomic_write(folder / logical, data)
+        atomic_write(stage / logical, data)
         hashes[logical] = digest(data)
     # Single MATLAB owner is synchronous; detect any concurrent source edit.
-    for path, expected in source_hashes.items():
-        if digest(io_path(source_root / path).read_bytes()) != expected:
-            raise ValueError("Source changed during live publication: " + path)
+    verify_sources(source_root, source_hashes)
+    if producer_hashes() != producers:
+        raise ValueError("Producer changed during live publication")
     manifest = {"status": "post_run_diagnostic_preview" if preview else "partial_runtime_measurement_snapshot",
                 "run_folder": str(root), "source_run_folder": str(source_root),
                 "snapshot": key, "created_utc": datetime.now(timezone.utc).isoformat(),
@@ -153,7 +407,10 @@ def publish(run_folder, *, source_run_folder=None):
                 "png_count": sum(c["status"] == "measured_checkpoint" for c in charts),
                 "terminal_qualification": False}
     encoded = json.dumps(manifest, indent=2, allow_nan=False).encode()
-    atomic_write(manifest_path, encoded)
+    atomic_write(stage / "manifest.json", encoded)
+    if io_path(folder).exists():
+        raise ValueError("Unverified live snapshot already exists; preserve it: " + str(folder))
+    os.rename(io_path(stage), io_path(folder))
     atomic_write(latest, encoded)
     return {"Status": manifest["status"], "Manifest": str(manifest_path), "CreatedCount": manifest["png_count"]}
 

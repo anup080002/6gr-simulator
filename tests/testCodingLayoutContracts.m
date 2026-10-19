@@ -96,6 +96,9 @@ end
 function localAssertPositionMap(cfg, rv, layout)
 labels = reshape((1:(double(layout.MotherCodeLength) * double(layout.NumCodeBlocks))).', ...
     double(layout.MotherCodeLength), double(layout.NumCodeBlocks));
+tbCrc=nrCRCEncode(zeros(cfg.A,1,'int8'),layout.TBCRCType);
+encoded=nrLDPCEncode(nrCodeBlockSegmentLDPC(tbCrc,double(layout.BaseGraph)),double(layout.BaseGraph));
+labels(encoded<0)=-1;
 direct = nrRateMatchLDPC(labels, double(layout.RateMatchedBitCount), rv, cfg.Modulation, cfg.NumLayers);
 assert(isequal(uint32(direct(:)), uint32(layout.RateMatchPositionMap.MotherCodeLinearIndex(:))), ...
     "CodingLayout position map must equal Toolbox label-rate-match locations.");

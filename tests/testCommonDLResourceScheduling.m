@@ -7,7 +7,14 @@ for suffix = ["_tdd", ""]
     ra = sixgr.mac.ra.RAConfig(cfg);
     before = rng;
     plan = sixgr.phy.frame.CommonDLResourcePlan(cfg);
-    plan.validateSIB1TRS();
+    plan.validateSIB1References();
+    localVerifyReferenceCalendar(cfg,plan);
+    if suffix==""
+        % Retain the original production FDD collision as a negative case.
+        badCSI=cfg; badCSI.phy.csirs.offset_slots=2;
+        localReject(@()sixgr.mac.ra.RAConfig(badCSI), ...
+            'sixgr:phy:frame:SIB1CSIRSCollision');
+    end
     [free,conflict] = plan.checkPDSCH(ra.Msg4PDSCH,22);
     assert(~free && any(conflict.ConflictingOwners=="SIB1_PDSCH_and_Type0_PDCCH"));
     assert(all(conflict.OverlapRECounts>0) && ~conflict.ProxyUsed && ~conflict.FallbackUsed);
@@ -37,6 +44,44 @@ anchorRA = sixgr.mac.ra.RAConfig(anchor);
 assert(~anchorPlan.checkPDSCH(anchorRA.Msg4PDSCH,anchorPlan.SIB1Slot0));
 ok = true;
 fprintf('PASS testCommonDLResourceScheduling: configured SI/TRS ownership, both duplex profiles, RNG preservation.\n');
+end
+
+function localVerifyReferenceCalendar(cfg,plan)
+% Exact configured RE geometry, not a claim that CSI was received.
+% Subtract only CSI from a second planning view to compare with all other
+% common reservations; the scenario under test keeps every signal enabled.
+assert(cfg.phy.csirs.enable && cfg.phy.ssb.enable && cfg.phy.sib1.enable && cfg.phy.trs.enable);
+other=cfg; other.phy.csirs.enable=false;
+otherPlan=sixgr.phy.frame.CommonDLResourcePlan(other);
+cycle=lcm(double(cfg.phy.csirs.period_slots),double(plan.BroadcastPeriodSlots));
+cycle=lcm(cycle,double(plan.Carrier.SlotsPerFrame)); % Explicit TRS slots recur per frame.
+configuredSources=zeros(0,1);
+for slot0=0:2*cycle-1
+    if ~sixgr.phy.refsig.csirsOccasion(cfg,slot0), continue; end
+    current=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,slot0+1);
+    carrier=sixgr.phy.grid.makeCarrier(current);
+    [indices,symbols]=sixgr.phy.refsig.csirs(carrier,current);
+    assert(~isempty(indices) && ~isempty(symbols));
+    k=12*carrier.NSizeGrid;
+    re=unique(mod(double(indices(:))-1,k*carrier.SymbolsPerSlot));
+    coordinates=[mod(re,k)+12*carrier.NStartGrid,floor(re/k)];
+    assert(isempty(intersect(coordinates,otherPlan.controlReservations(slot0),'rows')), ...
+        'testCommonDLResourceScheduling:ReferenceCollision', ...
+        'CSI-RS overlaps SSB/SI/TRS in absolute slot0 %d.',slot0);
+    configuredSources(end+1,1)=slot0+1; %#ok<AGROW> not received measurements
+end
+reportSlots=(1:2*cycle).';
+reportSlots=reportSlots(sixgr.truth.periodicCSIReportSlotMask(reportSlots, ...
+    cfg.phy.csi.reportPeriodicitySlots,cfg.phy.csi.reportOffsetSlots));
+eligibleReports=0;
+for report=reportSlots.'
+    reference=sixgr.truth.periodicCSIReferenceSlot(cfg,report);
+    if ~isfinite(reference), continue; end % No pre-start reference is manufactured.
+    source=configuredSources(find(configuredSources<=reference,1,'last'));
+    assert(~isempty(source) && source<report);
+    eligibleReports=eligibleReports+1;
+end
+assert(eligibleReports>0,'Configured periodic feedback needs an earlier reference opportunity.');
 end
 
 function localReject(fn,id)

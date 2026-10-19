@@ -28,7 +28,7 @@
   },
   "pdcch": {
     "enabled": true, "coreset_definitions": [{"id": 0, "duration": 2}], "search_space_definitions": [{"type": "ue"}], "css_uss_policy": "baseline",
-    "candidate_locations": [{"slot_offset": 0}], "dci_families": ["1_0"], "dci_size_policy": "baseline", "crc_length": 16, "virtual_crc_flag": false,
+    "candidate_locations": [{"slot_offset": 0}], "dci_families": ["1_0"], "dci_size_policy": "baseline", "crc_length": 24, "virtual_crc_flag": false,
     "modulation": "QPSK", "aggregation_levels": [4], "cce_to_reg_mapping": "interleaved", "reg_bundle_size": 6, "dmrs_policy": "baseline",
     "blind_decode_policy": "baseline", "max_blind_decodes": 16, "max_non_overlapped_cces": 16, "slot_monitoring_policy": "baseline",
     "span_monitoring_policy": "disabled", "monitoring_adaptation_policy": "none", "pdcch_repetition_policy": "none",

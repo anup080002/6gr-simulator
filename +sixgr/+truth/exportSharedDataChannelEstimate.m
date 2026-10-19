@@ -76,6 +76,14 @@ if isfield(payload,'FrequencyUnmatchedScore')
         'Preserve the frequency-unmatched diagnostic values separately from matched channel-estimation scoring.');
 end
 T.NMSE_dB=score.dB;
+T.ChannelNMSEErrorEnergy=score.ErrorEnergy;
+T.ChannelNMSEReferenceEnergy=score.ReferenceEnergy;
+T.ChannelNMSEComparedComplexValues=score.ComparedComplexValueCount;
+T.ChannelNMSEPilotResourceCount=numel(snapshot.PilotIndices);
+T.ChannelNMSEReferencePlane=evidence.ReferencePlane;
+T.ChannelNMSEGainOrPhaseFitted=false;
+T.ChannelNMSEReferenceUsedByReceiver=false;
+T.NMSEScoringAvailable=true;
 T.ChannelEstimateObservationID=string(T.ChannelObservationID);
 T.NMSESource=evidence.Source;
 T.ChannelEstimateCaptureStatus="measured_and_independently_scored_after_reception";

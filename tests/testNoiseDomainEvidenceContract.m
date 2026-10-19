@@ -51,6 +51,18 @@ T = table(direction, legacy, sampleN, gridN, receiverN, preEqN, postEqN, ...
 report = sixgr.phy.rx.validateNoiseDomainEvidence(T, "ThrowOnFailure", true);
 assert(all(report.Status == "PASS"), "The valid explicit-domain fixture must pass.");
 
+metadata=T;
+metadata.NoiseVarianceSource=[metadata.PostEqualizationNoiseVarianceSource(1); ...
+    metadata.PreEqualizationNoiseVarianceSource(2)];
+metadata.NoiseVarianceDomain=[metadata.PostEqualizationNoiseVarianceDomain(1); ...
+    metadata.PreEqualizationNoiseVarianceDomain(2)];
+sixgr.phy.rx.validateNoiseDomainEvidence(metadata,"ThrowOnFailure",true);
+for field=["NoiseVarianceSource","NoiseVarianceDomain"]
+    badMetadata=metadata; badMetadata.(field)(1)="injected_sample_awgn";
+    localAssertError(@()sixgr.phy.rx.validateNoiseDomainEvidence( ...
+        badMetadata,"ThrowOnFailure",true),"sixgr:phy:rx:NoiseDomainEvidenceInvalid");
+end
+
 preDecoder=T;
 preDecoder.LLRNoiseVariance(2)=preDecoder.PreEqualizationNoiseVariance(2);
 preDecoder.LLRNoiseVarianceSource(2)="configured_pre_equalization_noise_variance";

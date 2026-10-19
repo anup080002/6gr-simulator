@@ -35,6 +35,7 @@ assert(isstruct(cfgUL.lls6g.userContext.RuntimeServingBSAntenna) && ...
 
 dl = sixgr.link.runDLPDSCHThroughput(cfgDL, ...
     "NumFrames", 1, ...
+    "StartSlotIndex", localNonSSBSlot(cfgDL), ...
     "SNR_dB", cfg.channel.snr_dB, ...
     "InterferenceBundle", struct([]));
 ul = sixgr.link.runULPUSCHThroughput(cfgUL, ...
@@ -44,6 +45,8 @@ ul = sixgr.link.runULPUSCHThroughput(cfgUL, ...
 
 localAssertRawAntennaEvidence(dl.TrialTable, "DL", cfg);
 localAssertRawAntennaEvidence(ul.TrialTable, "UL", cfg);
+localAssertPanelEvidence(dl.TrialTable,cfgDL);
+localAssertPanelEvidence(ul.TrialTable,cfgUL);
 
 rawTrials = struct("DL", dl.TrialTable, "UL", ul.TrialTable);
 mobilityArtifacts = sixgr.truth.CoupledTruthRuntime.mobilityArtifacts(state);
@@ -57,6 +60,11 @@ assert(height(antennaConfigT) >= 2, ...
     "Resolved antenna config export must preserve runtime BS/UE rows.");
 assert(height(antennaRuntimeT) == 2, ...
     "Antenna runtime evidence export must preserve the active DL and UL trial rows.");
+localAssertPanelEvidence(antennaRuntimeT,cfgDL);
+chain=sixgr.truth.exportLLSLiveSignalChainTables(fullfile(tmp,"chain"), ...
+    dl.TrialTable,table(),struct());
+localAssertPanelEvidence(chain.ChannelStateTrace,cfgDL);
+localAssertPanelEvidence(chain.StageTrace,cfgDL);
 assert(all(logical(antennaRuntimeT.AntennaRuntimeObjectCreated)), ...
     "Antenna runtime evidence export must disclose successful runtime object creation.");
 assert(all(strlength(string(antennaRuntimeT.AntennaConfigSource)) > 0) && ...
@@ -104,9 +112,11 @@ fixedCfg.run.pdschExecutionProfile = "phy_calibration";
 fixedCfg = sixgr.truth.attachFixedLinkRuntimeAntennaContext(fixedCfg, 1, 1);
 fixedDL = sixgr.link.runDLPDSCHThroughput(fixedCfg, ...
     "NumFrames", 1, ...
+    "StartSlotIndex", localNonSSBSlot(fixedCfg), ...
     "SNR_dB", 24, ...
     "InterferenceBundle", struct([]));
 fixedT = fixedDL.TrialTable;
+localAssertPanelEvidence(fixedT,fixedCfg);
 if ismember("Crash", string(fixedT.Properties.VariableNames)) && any(logical(fixedT.Crash))
     error("sixgr:test:FixedLinkRuntimeAntennaWaveformCrash", ...
         "Fixed-link antenna waveform crashed: %s", ...
@@ -129,11 +139,65 @@ fixedResolvedT = readtable(char(fixedArtifacts.AntennaConfigResolvedPath), ...
 assert(height(fixedResolvedT) == 2 && ...
     all(ismember(["BS","UE"], upper(string(fixedResolvedT.NodeType)))), ...
     "Fixed-link resolved antenna export must be rebuilt from same-flow BS/UE trial metadata.");
+for k=1:height(fixedResolvedT)
+    if string(fixedResolvedT.NodeType(k))=="BS"
+        a=fixedCfg.lls6g.userContext.RuntimeServingBSAntenna;
+    else
+        a=fixedCfg.lls6g.userContext.RuntimeUEAntenna;
+    end
+    assert(fixedResolvedT.PanelCount(k)==a.PanelCount && ...
+        fixedResolvedT.PanelRows(k)==a.PanelRows && fixedResolvedT.PanelCols(k)==a.PanelCols);
+    assert(string(fixedResolvedT.PolarizationAngles_deg(k))==string(mat2str(a.PolarizationAngles_deg)));
+end
 assert(all(contains(string(fixedResolvedT.RuntimeObjectSource), ...
     "attachFixedLinkRuntimeAntennaContext")), ...
     "Fixed-link resolved antenna rows must identify the actual runtime object factory path.");
 
 ok = true;
+end
+
+function localAssertPanelEvidence(T,cfg)
+objects={cfg.lls6g.userContext.RuntimeServingBSAntenna, ...
+    cfg.lls6g.userContext.RuntimeUEAntenna};
+prefixes=["BSAntenna","UEAntenna"];
+for k=1:2
+    p=prefixes(k); a=objects{k};
+    assert(all(T.(p+"PanelRows")==a.PanelRows) && ...
+        all(T.(p+"PanelCols")==a.PanelCols) && ...
+        all(T.(p+"PanelCount")==a.PanelCount));
+    assert(all(string(T.(p+"PolarizationAngles_deg"))==string(mat2str(a.PolarizationAngles_deg))));
+end
+end
+
+function cfg=localBindCSIResource(cfg)
+% This isolated antenna test uses one one-port reservation. Bind the full
+% resource-set authority, not only the legacy scalar aliases: inherited
+% rowNumbers=3 otherwise still requests two ports and must be rejected.
+cfg.phy.csirs.numResources=1;
+cfg.phy.csirs.resourceIDs=0;
+cfg.phy.csirs.rowNumbers=cfg.phy.csirs.rowNumber;
+cfg.phy.csirs.symbolLocationsByResource=cfg.phy.csirs.symbolLocations;
+cfg.phy.csirs.subcarrierLocationsByResource=cfg.phy.csirs.subcarrierLocations;
+cfg.phy.csirs.rbOffsetsByResource=cfg.phy.csirs.rbOffset;
+cfg.phy.csirs.numRBsByResource=cfg.phy.csirs.numRB;
+% Retain TRS, but explicitly bind a legal two-symbol resource for this
+% isolated full-slot fixture. The inherited access scenario predates the
+% strict TRS reservation contract and has no symbol-pair authority.
+cfg.phy.trs.symbolLocations=[4 8];
+cfg.phy.trs.slotNumbers=[0 1];
+cfg.phy.trs.burstLengthSlots=2;
+end
+
+function slot=localNonSSBSlot(cfg)
+% A full-band/full-slot calibration allocation cannot overlap broadcast
+% DM-RS. Choose an actual non-SSB occasion; do not disable SSB or its guard.
+carrier=sixgr.phy.grid.makeCarrier(cfg);
+for slot0=0:double(carrier.SlotsPerFrame)-1
+    carrier.NSlot=slot0;
+    reservation=sixgr.phy.frame.ssbPRBSymbolReservation(cfg,carrier,slot0);
+    if isempty(reservation.ReservedCarrierRE0), slot=slot0+1; return; end
+end
+error('sixgr:test:NoNonSSBSlot','No non-SSB slot for full-slot antenna fixture.');
 end
 
 function localAssertRawAntennaEvidence(T, direction, cfg)
@@ -237,6 +301,7 @@ cfg.phy.csirs.symbolLocations = 5;
 cfg.phy.csirs.subcarrierLocations = 0;
 cfg.phy.csirs.rbOffset = 0;
 cfg.phy.csirs.numRB = max(1, min(double(cfg.phy.carrier.NSizeGrid), 24));
+cfg=localBindCSIResource(cfg);
 end
 function [cfg, state, grant] = localPrepareRuntime(tmp)
 scfg = sixgr.lls6g.config.loadScenarioConfig( ...
@@ -261,6 +326,7 @@ cfg.phy.csirs.symbolLocations = 5;
 cfg.phy.csirs.subcarrierLocations = 0;
 cfg.phy.csirs.rbOffset = 0;
 cfg.phy.csirs.numRB = max(1, min(double(cfg.phy.carrier.NSizeGrid), 24));
+cfg=localBindCSIResource(cfg);
 
 multiUser = struct("Enabled", true, "NumUsers", 1, "RNTIStart", 320, "ExecutionModel", "slot_coupled_truth");
 state = sixgr.truth.CoupledTruthRuntime.initialize(cfg, fullfile(tmp, "runtime"), multiUser, struct(), 1);

@@ -57,6 +57,21 @@ for n=0:3
         isempty(noRows.TransmittedBitIndices));
 end
 assert(isequaln(before,{g,pending,trace,timeline,mapping}));
+% Normal no-HARQ PUSCH grants need no fabricated empty producer columns.
+plain=rmfield(g,{'UCIOnPUSCHFeedbackGrantIds','UCIOnPUSCHFeedbackSourceSlots', ...
+    'UCIOnPUSCHFeedbackHARQIds','UCIOnPUSCHFeedbackBitIndices','ExpectedUCIBits'});
+for hypothesis={struct([]),mapping}
+    none=sixgr.truth.bindSharedPUSCHProducerRows(plain,table(),trace,timeline,hypothesis{1},9,10);
+    assert(isempty(none.Rows) && isempty(none.TransmittedBitIndices) && isempty(none.ScheduledBitIndices));
+end
+bad=plain; bad.ExpectedUCIBits=int8(1);
+localReject(@()sixgr.truth.bindSharedPUSCHProducerRows(bad,table(),trace,timeline,mapping,9,10), ...
+    'sixgr:truth:MissingSharedPUSCHProducerBinding');
+bad=plain; bad.UCIOnPUSCHFeedbackBitIndices=[];
+localReject(@()sixgr.truth.bindSharedPUSCHProducerRows(bad,table(),trace,timeline,mapping,9,10), ...
+    'sixgr:truth:MissingSharedPUSCHProducerBinding');
+localReject(@()sixgr.truth.bindSharedPUSCHProducerRows(plain,pending,trace,timeline,mapping,9,10), ...
+    'sixgr:truth:MissingSharedPUSCHProducerBinding');
 fprintf('SHARED_PUSCH_PRODUCER_MAPPING_PASS independent_TX_and_gNB_positions no_RF_claim\n');
 ok=true;
 end

@@ -52,6 +52,7 @@ assert(string(msg2Tx.PDSCHControlEvent.Id) == ...
     "Msg2 TX schedule and RX decode must bind to the same DCI event identity.");
 localAssertDataIndices(msg2Tx.Carrier,msg2Schedule.PDSCH, ...
     msg2Tx.PDSCHResourcePlan);
+localAssertMeasuredAcquisition(cfg,ra,msg2Tx,msg2Schedule,"msg2");
 
 msg3 = sixgr.mac.ra.buildMsg3Payload("UEId",1);
 msg4 = sixgr.mac.ra.buildMsg4ContentionResolution( ...
@@ -74,6 +75,7 @@ assert(string(msg4Decoded.ContentionIdentity) ...
     == string(msg3.ContentionIdentity));
 localAssertCommonReference(msg4Tx.PDSCH.IntegrationBinding,0,"msg4_contention_resolution");
 localAssertCommonReference(msg4Rx.IntegrationBinding,0,"msg4_contention_resolution");
+localAssertMeasuredAcquisition(cfg,ra,msg4Tx,msg4Schedule,"msg4");
 assert(string(msg4Tx.PDSCHControlEvent.Id) == ...
     string(msg4Rx.PDCCHControlEvent.Id), ...
     "Msg4 TX schedule and RX decode must bind to the same DCI event identity.");
@@ -110,6 +112,58 @@ assert(string(sibTx.PDSCHControlEvent.FieldProvenance.DMRSConfiguration) ...
 localAssertSIBSpatialMapping(sibCfg);
 
 ok = true;
+end
+
+function localAssertMeasuredAcquisition(cfg,ra,tx,sched,stage)
+% Received samples, not injection labels, determine the common data front end.
+cfg.phy.rx.cfoCorrectionEnabled=true;
+cfg.phy.rx.useIdealTimingSync=false;
+cfg.phy.impairments.cfoEstimationMethod='cyclic_prefix';
+cfg.lls6g.receiverSync.RuntimeWaveformSampleAligned=false;
+info=nrOFDMInfo(tx.Carrier);
+cfo=400; delay=5;
+wave=[zeros(delay,size(tx.Waveform,2));tx.Waveform;zeros(32,size(tx.Waveform,2))];
+wave=wave.*exp(1i*2*pi*cfo*(0:size(wave,1)-1)'/info.SampleRate);
+baseline=[];
+for audit=[0 -4321]
+    cfg.phy.impairments.cfoHz=audit;
+    cfg.phy.impairments.timingOffsetSamples=abs(audit);
+    if stage=="msg2"
+        [rx,~]=sixgr.phy.ra.recoverMsg2RAR(wave,cfg,ra,sched,struct());
+    else
+        [control,rx,~]=sixgr.phy.ra.recoverMsg4Waveform(wave,cfg,ra,sched,struct());
+        assert(control.CausalGrantDecodeOk);
+    end
+    assert(rx.Ok && rx.TimingEstimateUsed && rx.AppliedTimingCorrection_samples==delay);
+    assert(rx.CFOCorrectionApplied && abs(rx.EstimatedCFO_Hz-cfo)<15);
+    assert(isfield(rx,'CFOEstimateAvailable') && rx.CFOEstimateAvailable && ...
+        rx.CFOEstimateAvailable==rx.ReceiverTrackingCorrection.CFOEstimateAvailable, ...
+        'sixgr:test:CommonPDSCHCFOAvailabilityLost', ...
+        'Strict RAR/Msg4 facade must export the actual receiver availability flag.');
+    diagnostics=sixgr.phy.ra.receiverDiagnostics(rx);
+    assert(diagnostics.CFOEstimateAvailable==1 && ...
+        diagnostics.EstimatedCFO_Hz==rx.EstimatedCFO_Hz);
+    assert(~rx.ReceiveTiming.OracleTimingUsed && ~rx.ReceiveTiming.ReceiverZeroPaddingUsed);
+    actual={rx.TransportBlock,rx.OFDMGrid,rx.AppliedTimingCorrection_samples,rx.EstimatedCFO_Hz};
+    if isempty(baseline), baseline=actual; else, assert(isequaln(actual,baseline)); end
+end
+% CRC success and nonzero injected/configured labels cannot create an
+% estimate when this receiver acquisition is explicitly disabled.
+cfg.phy.rx.cfoCorrectionEnabled=false;
+cfg.phy.impairments.cfoHz=9999;
+if stage=="msg2"
+    [rx,~]=sixgr.phy.ra.recoverMsg2RAR(tx.Waveform,cfg,ra,sched,struct());
+else
+    [control,rx,~]=sixgr.phy.ra.recoverMsg4Waveform(tx.Waveform,cfg,ra,sched,struct());
+    assert(control.CausalGrantDecodeOk);
+end
+assert(rx.Ok && isfield(rx,'CFOEstimateAvailable') && ...
+    ~rx.CFOEstimateAvailable && ~rx.CFOCorrectionApplied && ...
+    ~rx.ReceiverTrackingCorrection.CFOEstimateAvailable, ...
+    'sixgr:test:CommonPDSCHCFOAvailabilityInvented', ...
+    'Successful decoding must not fabricate an unexecuted CFO estimate.');
+diagnostics=sixgr.phy.ra.receiverDiagnostics(rx);
+assert(diagnostics.CFOEstimateAvailable==0 && isnan(diagnostics.EstimatedCFO_Hz));
 end
 
 function localAssertReceiveDiversity(rx)

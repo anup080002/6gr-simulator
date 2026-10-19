@@ -95,4 +95,19 @@ else
     det.PropagationTimingEstimateSource = "unavailable_without_msg1_detection";
 end
 det.FrequencyEstimationEnabled = enableFrequencyEstimate;
+if isfield(det,'CorrelationTrace') && isstruct(det.CorrelationTrace) && ...
+        ~isempty(fieldnames(det.CorrelationTrace))
+    det.CorrelationTrace.DetectorBackend=string(det.DetectorBackend);
+    % Native decision timing and the auxiliary cyclic-delay diagnostic use
+    % different origins. Preserve both instead of relabelling the latter.
+    if string(sixgr.util.structGet(det.CorrelationTrace,'TraceStatus',""))~= ...
+            "native_useful_repetition_auxiliary_correlation"
+        det.CorrelationTrace.LagReference=det.DetectorTimingReference;
+    end
+    det.CorrelationTrace.DecisionTimingReference=det.DetectorTimingReference;
+    for field=["DetectorInputStartOffsetSamples","RawTimingOffsetSamples", ...
+            "PropagationTimingOffsetSamples","ImplementationFilterDelay_samples"]
+        det.CorrelationTrace.(field)=det.(field);
+    end
+end
 end

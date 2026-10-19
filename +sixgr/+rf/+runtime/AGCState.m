@@ -9,6 +9,9 @@ classdef AGCState < handle
         Release (1,1) double
         HoldSamples (1,1) double
         UpdatePeriodSamples (1,1) double
+        OverloadGuardEnabled (1,1) logical=false
+        OverloadGuardStep_dB (1,1) double=0
+        OverloadGuardHoldSamples (1,1) double=0
         SamplesProcessed (1,1) double=0
         DetectorSamples (1,1) double=0
         DetectorEnergy (1,1) double=0
@@ -48,6 +51,12 @@ classdef AGCState < handle
             obj.Release=profile.Release;
             obj.HoldSamples=profile.HoldSamples;
             obj.UpdatePeriodSamples=profile.UpdatePeriodSamples;
+            if isfield(profile,'OverloadGuard')
+                guard=sixgr.rf.runtime.AGCState.validateOverloadGuard(profile.OverloadGuard);
+                obj.OverloadGuardEnabled=logical(guard.enabled);
+                obj.OverloadGuardStep_dB=double(guard.gain_step_db);
+                obj.OverloadGuardHoldSamples=double(guard.hold_samples);
+            end
             obj.Gain_dB=min(max(0,obj.MinGain_dB),obj.MaxGain_dB);
             if nargin<2, stateEpoch=1; end
             obj.StateEpoch=stateEpoch;
@@ -72,14 +81,16 @@ classdef AGCState < handle
             step=obj.Step; state=obj.State;
             y=zeros(size(x),'like',x);
             appliedGain=zeros(size(x,1),1);
+            overloadTriggered=false(size(x,1),1);
             for k=1:size(x,1)
                 % The current sample uses gain determined by PAST samples.
                 % The fixed detector period is independent of API calls.
                 appliedGain(k)=gainDb;
                 y(k,:)=x(k,:).*cast(10^(gainDb/20),'like',x);
                 energy=energy+mean(abs(double(x(k,:))).^2);
-                clippedCount=clippedCount+sum(abs(real(double(y(k,:))))>=fullScale | ...
-                    abs(imag(double(y(k,:))))>=fullScale);
+                clippedNow=abs(real(double(y(k,:))))>=fullScale | ...
+                    abs(imag(double(y(k,:))))>=fullScale;
+                clippedCount=clippedCount+sum(clippedNow);
                 atFloor=atFloor && gainDb<=obj.MinGain_dB+eps;
                 count=count+1;
                 holdRemaining=max(0,holdRemaining-1);
@@ -105,6 +116,17 @@ classdef AGCState < handle
                     step=step+1;
                     count=0; energy=0; clippedCount=0; atFloor=true;
                 end
+                if obj.OverloadGuardEnabled && any(clippedNow)
+                    % One-bit pre-ADC rail-comparator feedback, not an oracle
+                    % for unclipped amplitude or the transmitted waveform.
+                    % The current emitted sample and its clipping evidence
+                    % are unchanged. This command applies next sample only.
+                    gainDb=min(gainDb,max(obj.MinGain_dB, ...
+                        appliedGain(k)-obj.OverloadGuardStep_dB));
+                    holdRemaining=max(holdRemaining,obj.OverloadGuardHoldSamples);
+                    state="OVERLOAD_ATTACK";
+                    overloadTriggered(k)=true;
+                end
             end
             obj.InputColumns=size(x,2);
             obj.Gain_dB=gainDb; obj.Step=step; obj.State=state;
@@ -128,7 +150,34 @@ classdef AGCState < handle
                 "UpdatePeriodSamples",obj.UpdatePeriodSamples, ...
                 "HoldRemainingSamples",holdRemaining, ...
                 "CoefficientReference","per_completed_detector_window", ...
+                "OverloadGuardEnabled",obj.OverloadGuardEnabled, ...
+                "OverloadGuardGainStep_dB",obj.OverloadGuardStep_dB, ...
+                "OverloadGuardHoldSamples",obj.OverloadGuardHoldSamples, ...
+                "OverloadGuardFeedbackLatencySamples",1, ...
+                "OverloadGuardObservationPlane","pre_ADC_I_Q_rail_comparator_before_dither_or_jitter", ...
+                "OverloadGuardTriggered",overloadTriggered, ...
+                "OverloadGuardTriggerCount",nnz(overloadTriggered), ...
                 "ControlModel","causal_windowed_joint_rms_attack_hold_release");
+        end
+    end
+    methods(Static)
+        function guard=validateOverloadGuard(guard)
+            required={'model','enabled','gain_step_db','hold_samples'};
+            if ~isstruct(guard)||~isscalar(guard)||~all(isfield(guard,required))|| ...
+                    ~isscalar(string(guard.model))|| ...
+                    string(guard.model)~="pre_adc_rail_flag_next_sample_gain_step"|| ...
+                    ~(islogical(guard.enabled)||isnumeric(guard.enabled))|| ...
+                    ~isscalar(guard.enabled)||~ismember(double(guard.enabled),[0 1])|| ...
+                    ~isnumeric(guard.gain_step_db)||~isscalar(guard.gain_step_db)|| ...
+                    ~isreal(guard.gain_step_db)||~isfinite(guard.gain_step_db)||guard.gain_step_db<=0|| ...
+                    ~isnumeric(guard.hold_samples)||~isscalar(guard.hold_samples)|| ...
+                    ~isreal(guard.hold_samples)||~isfinite(guard.hold_samples)|| ...
+                    guard.hold_samples<0||guard.hold_samples~=fix(guard.hold_samples)
+                error('RF:InvalidAGCOverloadGuard', ...
+                    ['rf_frontend.receiver.agc.stream_profile.overload_guard requires ' ...
+                     'model=pre_adc_rail_flag_next_sample_gain_step, logical enabled, ' ...
+                     'positive finite gain_step_db and nonnegative integer hold_samples.']);
+            end
         end
     end
 end

@@ -9,12 +9,14 @@ import csv
 import hashlib
 import io
 import json
+import os
 import re
 from typing import Any, Callable
 
 
 def verified_runtime_visualizations(
-    artifacts: list[dict[str, Any]], read_bytes: Callable[[dict[str, Any]], bytes]
+    artifacts: list[dict[str, Any]], read_bytes: Callable[[dict[str, Any]], bytes],
+    *, run_folder: str = "",
 ) -> list[dict[str, Any]]:
     by_path: dict[str, dict[str, Any]] = {}
     for artifact in artifacts:
@@ -24,6 +26,11 @@ def verified_runtime_visualizations(
         if path in by_path:
             return []  # Ambiguous membership is not publication authority.
         by_path[path] = artifact
+    return (_verified_terminal_visualizations(by_path, read_bytes)
+            + _verified_live_visualizations(by_path, read_bytes, run_folder))
+
+
+def _verified_terminal_visualizations(by_path, read_bytes):
     receipt_path = "published/browser_publication_receipt.json"
     lineage_path = "reports/csv/contract_plot_lineage.csv"
     if receipt_path not in by_path or lineage_path not in by_path:
@@ -75,3 +82,89 @@ def verified_runtime_visualizations(
                                   source_csv=source, image_path=image,
                                   publication_run_id=receipt["RunID"], hash_verified=True)
     return list(selected.values())
+
+
+def _verified_live_visualizations(by_path, read_bytes, run_folder):
+    """Publish immutable measured checkpoints, never a terminal PHY verdict.
+
+    The selected run's folder is mandatory. A post-run preview sourced from
+    another run is not authority for the selected run, even if its hashes fit.
+    Verify the plotted pair and its lineage, not the growing raw input CSVs.
+    """
+    latest = "reports/live_measurements/latest.json"
+    if not run_folder or latest not in by_path:
+        return []
+    try:
+        payload = read_bytes(by_path[latest])
+        manifest = json.loads(payload)
+        identity = lambda path: os.path.normcase(os.path.abspath(path))
+        if (manifest.get("status") != "partial_runtime_measurement_snapshot"
+                or manifest.get("terminal_qualification") is not False
+                or not os.path.isabs(manifest.get("run_folder", ""))
+                or identity(manifest["run_folder"]) != identity(run_folder)
+                or identity(manifest.get("source_run_folder", "")) != identity(run_folder)):
+            return []
+        snapshot = manifest.get("snapshot", "")
+        if not re.fullmatch(r"[0-9a-f]{64}", snapshot):
+            return []
+        key = hashlib.sha256(json.dumps({"sources": manifest["source_sha256"],
+            "producers": manifest["producer_sha256"],
+            "source_root": manifest["source_run_folder"], "preview": False},
+            sort_keys=True).encode()).hexdigest()
+        if key != snapshot:
+            return []
+        prefix = f"reports/live_measurements/{snapshot}/"
+        if read_bytes(by_path[prefix + "manifest.json"]) != payload:
+            return []
+        hashes = manifest["artifact_sha256"]
+        def verified_bytes(relative):
+            if (not relative or relative.startswith(("/", "\\")) or ":" in relative
+                    or "\\" in relative or any(p in ("..", ".", "") for p in relative.split("/"))):
+                raise ValueError("Unsafe live artifact path")
+            expected = hashes[relative]
+            if not re.fullmatch(r"[0-9a-f]{64}", expected):
+                raise ValueError("Missing live artifact digest")
+            data = read_bytes(by_path[prefix + relative])
+            if hashlib.sha256(data).hexdigest() != expected:
+                raise ValueError("Changed live artifact")
+            return data
+        lineage = list(csv.DictReader(io.StringIO(
+            verified_bytes("checkpoint_plot_lineage.csv").decode("utf-8-sig"))))
+        pairs = {}
+        for row in lineage:
+            pair = (row.get("SourceCSV"), row.get("ImagePath"))
+            if pair in pairs:
+                return []
+            pairs[pair] = row
+        selected = {}
+        for chart in manifest["charts"]:
+            if chart.get("status") != "measured_checkpoint":
+                continue
+            source, image = chart["csv"], chart["png"]
+            row = pairs.get((source, image), {})
+            if (not source.startswith("csv/") or not source.endswith(".csv")
+                    or not image.startswith("image/") or not image.endswith(".png")
+                    or row.get("Status") != "rendered_component_plot"
+                    or row.get("Producer") != "publish_lls_live_csv_plots"
+                    or row.get("EvidenceScope") != "partial_measured_checkpoint"
+                    or row.get("TerminalQualification") != "false"
+                    or int(row.get("SourceRows", "0")) < 1
+                    or row.get("SourceCSV_SHA256") != hashes.get(source)
+                    or row.get("ImageSHA256") != hashes.get(image)):
+                continue
+            try:
+                plotted = list(csv.DictReader(io.StringIO(verified_bytes(source).decode("utf-8-sig"))))
+                verified_bytes(image)
+                if len(plotted) != int(row["SourceRows"]):
+                    continue
+            except (OSError, ValueError, KeyError, UnicodeError, csv.Error):
+                continue
+            for relative in (source, image):
+                path = prefix + relative
+                selected[path] = dict(by_path[path], evidence_scope="verified_runtime_visualization",
+                    source_csv=prefix + source, image_path=prefix + image, hash_verified=True,
+                    publication_kind="partial_measured_checkpoint", terminal_qualification=False,
+                    publication_snapshot=snapshot, measurement_name=chart["name"])
+        return list(selected.values())
+    except (OSError, ValueError, KeyError, TypeError, UnicodeError, csv.Error):
+        return []

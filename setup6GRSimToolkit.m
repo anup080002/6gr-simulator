@@ -19,6 +19,7 @@ opt = p.Results;
 rootDir = fileparts(mfilename("fullpath"));
 resultsDir = fullfile(rootDir, "results");
 logsDir = fullfile(rootDir, "logs");
+repairEvidenceDir = fullfile(rootDir, "repair_outputs");
 doChecks = opt.Verbose;
 if ~isempty(opt.RunToolboxChecks)
     doChecks = logical(opt.RunToolboxChecks);
@@ -39,6 +40,7 @@ pathChanged = localPruneGeneratedTrees(resultsDir) || pathChanged;
 % Logs can contain preserved source/patch evidence. Never execute those
 % snapshots as current tests or packages, including on cached setup calls.
 pathChanged = localPruneGeneratedTrees(logsDir) || pathChanged;
+pathChanged = localPruneGeneratedTrees(repairEvidenceDir) || pathChanged;
 
 % Add root
 if ~contains(path, rootDir)
@@ -56,7 +58,8 @@ if opt.AddSubfolders
             if strlength(d)==0
                 continue;
             end
-            if localPathIsUnder(d, resultsDir) || localPathIsUnder(d, logsDir)
+            if localPathIsUnder(d, resultsDir) || localPathIsUnder(d, logsDir) || ...
+                    localPathIsUnder(d, repairEvidenceDir)
                 continue;
             end
             if contains(d, filesep + "+") || contains(d, filesep + "@")

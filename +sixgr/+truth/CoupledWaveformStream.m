@@ -512,6 +512,11 @@ classdef CoupledWaveformStream < handle
             for plane=[rx+":pre_rf",rx+":post_rf"]
                 obj.Events.observe(plane,id,receiveFirst,stop);
             end
+            % Independent scoring only: retain the actually executed serving
+            % contribution, including prehistory before the shifted RX clock.
+            % Do not run the channel twice or feed this plane to the decoder.
+            context.DesiredReferencePlane=obj.Physical.registerLinkScoringPlane(obj.Events,link.ID,rx);
+            obj.Events.observe(context.DesiredReferencePlane,id,min(first,receiveFirst),stop);
             obj.PDCCHResourceLedger=ledger;
             context.Prepared=prepared;
             obj.Pending(end+1)=struct('ID',id,'Kind',"PDCCH",'UE',ue, ...
@@ -935,10 +940,14 @@ classdef CoupledWaveformStream < handle
             for plane=planes
                 obj.Events.observe(plane,id,first,first+prepared.NumSamples);
             end
-            if any(kind==["TRS","PBCH"])
+            if any(kind==["TRS","PBCH","CSIRS"])
                 rx="ue_"+ue+"_rx";
                 context.DesiredReferencePlane=obj.Physical.registerLinkScoringPlane(obj.Events,link.ID,rx);
                 obj.Events.observe(context.DesiredReferencePlane,id,first,first+prepared.NumSamples);
+                if kind=="CSIRS"
+                    obj.Physical.requestLinkChannelReference(obj.Events,link.ID,rx, ...
+                        first,first+prepared.NumSamples);
+                end
             end
             obj.Pending(end+1)=struct('ID',id,'Kind',string(kind),'UE',ue, ...
                 'Context',context,'Planes',struct('ReceiverID',{},'Observation',{},'Segments',{}));

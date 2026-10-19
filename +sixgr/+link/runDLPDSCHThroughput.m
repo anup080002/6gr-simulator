@@ -585,6 +585,7 @@ trialNumCB = NaN(numFrames,1);
 trialCBLen = NaN(numFrames,1);
 trialSegOccurred = NaN(numFrames,1);
 trialSegPadding = NaN(numFrames,1);
+trialCodingAccounting = repmat(sixgr.link.codingAccountingExport(),numFrames,1);
 trialTBCRC = NaN(numFrames,1);
 trialTBWithCRC = NaN(numFrames,1);
 trialBaseGraph = NaN(numFrames,1);
@@ -600,6 +601,7 @@ trialCBGCount = NaN(numFrames,1);
 trialCBGBLER = NaN(numFrames,1);
 trialPAPR = NaN(numFrames,1);
 trialPAPRMeasurementJSON = strings(numFrames,1);
+trialModulationDiagnostics=repmat(sixgr.link.modulationDiagnosticsExport(),numFrames,1);
 trialClipEvents = NaN(numFrames,1);
 trialSymErr = NaN(numFrames,1);
 trialSymTot = NaN(numFrames,1);
@@ -1819,6 +1821,7 @@ for n = 1:numFrames
         trialTopBeamGainSet(n) = string(metrics.TopBeamGainSet_dB);
         trialBeamScoreSource(n) = string(metrics.BeamScoreSource);
         coding = sixgr.link.deriveCodingTrialMetrics(tx, txInfo, rx, cfgFrame);
+        trialCodingAccounting(n) = sixgr.link.codingAccountingExport(coding);
         trialDecIt(n) = double(sixgr.util.structGet(coding, "DecoderIterations", NaN));
         trialOfferedBits(n) = double(sixgr.util.structGet(coding, "OfferedBits", NaN));
         if logical(trialHARQIsRetransmission(n))
@@ -1906,6 +1909,7 @@ for n = 1:numFrames
         end
         trialPAPR(n) = double(sixgr.util.structGet(modTrack, "PAPR_dB", NaN));
         trialPAPRMeasurementJSON(n) = modTrack.PAPRMeasurementJSON;
+        trialModulationDiagnostics(n)=sixgr.link.modulationDiagnosticsExport(modTrack);
         trialClipEvents(n) = double(sixgr.util.structGet(modTrack, "PeakClippingEvents", NaN));
         trialSymErr(n) = double(sixgr.util.structGet(modTrack, "SymbolErrors", NaN));
         trialSymTot(n) = double(sixgr.util.structGet(modTrack, "SymbolsCompared", NaN));
@@ -1977,7 +1981,10 @@ for n = 1:numFrames
             constT.AppliedAWGNSNR_dB = repmat(double(trialAppliedAWGNSNR(n)), nConst, 1);
             constT.AppliedNoiseSNR_dB = repmat(double(trialAppliedNoiseSNR(n)), nConst, 1);
             constT.SNR_dB = constT.ConfiguredSNR_dB;
-            constT.TBId = repmat(double(n), nConst, 1);
+            constT.TrialOrdinal = repmat(double(n),nConst,1);
+            constT.Seed = repmat(double(trialSeed(n)),nConst,1);
+            constT = sixgr.link.bindTransportExportIdentity(constT,trialHARQTBId(n), ...
+                trialGrantContextId(n),trialHARQProcess(n),trialHARQNDIEpoch(n));
             constT.MCSIndex = repmat(double(trialMCS(n)), nConst, 1);
             constT.MCS = repmat(double(trialMCS(n)), nConst, 1);
             constT.Layers = repmat(double(trialLayers(n)), nConst, 1);
@@ -1991,7 +1998,7 @@ for n = 1:numFrames
             constT.direction = string(constT.Direction);
             constT.ue_id = constT.UEIndex;
             constT.slot = double(constT.Slot);
-            constT.tb_id = double(constT.TBId);
+            constT.tb_id = string(constT.TBId);
             constT.layer = double(constT.LayerIndex);
             constT.modulation = string(constT.Modulation);
             constT.mcs_index = double(constT.MCSIndex);
@@ -2536,6 +2543,10 @@ end
         T.EVMComputationDomain=trialEVMDomain(idx);
         T.EVMEnergyUnit=repmat("sum_squared_complex_symbol_amplitude_not_joules",height(T),1);
         T.PAPRMeasurementJSON=trialPAPRMeasurementJSON(idx);
+        diagnosticTable=struct2table(trialModulationDiagnostics(idx),'AsArray',true);
+        for name=string(diagnosticTable.Properties.VariableNames), T.(name)=diagnosticTable.(name); end
+        codingTable=struct2table(trialCodingAccounting(idx),'AsArray',true);
+        for name=string(codingTable.Properties.VariableNames), T.(name)=codingTable.(name); end
         T.PilotReconstructionResidualRatio_dB=T.NMSE_dB;
         T.PilotCommonPhaseRate_Hz=trialPilotCommonPhaseRate(idx);
         T.PilotPhaseFitResidualRMS_deg=trialPilotPhaseFitResidual(idx);
@@ -2625,6 +2636,10 @@ end
         T.PreEqualizationNoiseVarianceSource = trialPreEqualizationNoiseVarianceSource(idx);
         T.PostEqualizationNoiseVarianceSource = trialPostEqualizationNoiseVarianceSource(idx);
         T.LLRNoiseVarianceSource = trialLLRNoiseVarianceSource(idx);
+        % The compatibility value is post-EQ receiver noise, not injected
+        % sample-domain AWGN. Keep its domain and source on that same plane.
+        T.NoiseVarianceDomain = T.PostEqualizationNoiseVarianceDomain;
+        T.NoiseVarianceSource = T.PostEqualizationNoiseVarianceSource;
         T.ModulationOrderQm = trialModulationOrderQm(idx);
         T.ComputedE_TS38212 = trialComputedE_TS38212(idx);
         T.RateMatchedBitsDelta_TS38212 = trialRateMatchedBits(idx) - trialComputedE_TS38212(idx);
@@ -2712,6 +2727,8 @@ end
         T.HARQLLRCombiningGain_dB = trialHARQLLRCombiningGain(idx);
         T.NDIEpoch = trialHARQNDIEpoch(idx);
         T.TBId = trialHARQTBId(idx);
+        T=sixgr.link.bindTransportExportIdentity(T,trialHARQTBId(idx), ...
+            trialGrantContextId(idx),trialHARQProcess(idx),trialHARQNDIEpoch(idx));
         T.OriginalTBSBits = trialOriginalTBSBits(idx);
         T.CurrentTBSBits = trialCurrentTBSBits(idx);
         T.OriginalRateMatchedBits = trialOriginalRateMatchedBits(idx);
@@ -4067,6 +4084,10 @@ row.BSAntennaElementClass = string(sixgr.util.structGet(bsMeta, "ElementClass", 
 row.BSAntennaArrayType = string(sixgr.util.structGet(bsMeta, "ArrayType", ""));
 row.BSAntennaRows = double(sixgr.util.structGet(bsMeta, "NumRows", NaN));
 row.BSAntennaCols = double(sixgr.util.structGet(bsMeta, "NumCols", NaN));
+row.BSAntennaPanelRows = double(sixgr.util.structGet(bsMeta, "PanelRows", NaN));
+row.BSAntennaPanelCols = double(sixgr.util.structGet(bsMeta, "PanelCols", NaN));
+row.BSAntennaPanelCount = double(sixgr.util.structGet(bsMeta, "PanelCount", NaN));
+row.BSAntennaPolarizationAngles_deg = string(sixgr.util.structGet(bsMeta, "PolarizationAngles_deg", ""));
 row.BSAntennaElements = double(sixgr.util.structGet(bsMeta, "NumElements", NaN));
 row.BSAntennaSpacingH_lambda = double(sixgr.util.structGet(bsMeta, "SpacingH_lambda", NaN));
 row.BSAntennaSpacingV_lambda = double(sixgr.util.structGet(bsMeta, "SpacingV_lambda", NaN));
@@ -4079,6 +4100,10 @@ row.UEAntennaElementClass = string(sixgr.util.structGet(ueMeta, "ElementClass", 
 row.UEAntennaArrayType = string(sixgr.util.structGet(ueMeta, "ArrayType", ""));
 row.UEAntennaRows = double(sixgr.util.structGet(ueMeta, "NumRows", NaN));
 row.UEAntennaCols = double(sixgr.util.structGet(ueMeta, "NumCols", NaN));
+row.UEAntennaPanelRows = double(sixgr.util.structGet(ueMeta, "PanelRows", NaN));
+row.UEAntennaPanelCols = double(sixgr.util.structGet(ueMeta, "PanelCols", NaN));
+row.UEAntennaPanelCount = double(sixgr.util.structGet(ueMeta, "PanelCount", NaN));
+row.UEAntennaPolarizationAngles_deg = string(sixgr.util.structGet(ueMeta, "PolarizationAngles_deg", ""));
 row.UEAntennaElements = double(sixgr.util.structGet(ueMeta, "NumElements", NaN));
 row.UEAntennaSpacingH_lambda = double(sixgr.util.structGet(ueMeta, "SpacingH_lambda", NaN));
 row.UEAntennaSpacingV_lambda = double(sixgr.util.structGet(ueMeta, "SpacingV_lambda", NaN));
@@ -4494,6 +4519,10 @@ row = struct( ...
     "BSAntennaArrayType", "", ...
     "BSAntennaRows", NaN, ...
     "BSAntennaCols", NaN, ...
+    "BSAntennaPanelRows", NaN, ...
+    "BSAntennaPanelCols", NaN, ...
+    "BSAntennaPanelCount", NaN, ...
+    "BSAntennaPolarizationAngles_deg", "", ...
     "BSAntennaElements", NaN, ...
     "BSAntennaSpacingH_lambda", NaN, ...
     "BSAntennaSpacingV_lambda", NaN, ...
@@ -4506,6 +4535,10 @@ row = struct( ...
     "UEAntennaArrayType", "", ...
     "UEAntennaRows", NaN, ...
     "UEAntennaCols", NaN, ...
+    "UEAntennaPanelRows", NaN, ...
+    "UEAntennaPanelCols", NaN, ...
+    "UEAntennaPanelCount", NaN, ...
+    "UEAntennaPolarizationAngles_deg", "", ...
     "UEAntennaElements", NaN, ...
     "UEAntennaSpacingH_lambda", NaN, ...
     "UEAntennaSpacingV_lambda", NaN, ...
@@ -5675,6 +5708,7 @@ T.LLRNoiseVarianceDomain = strings(0,1);
 T.NoiseVarianceUnit = strings(0,1);
 T.NoiseVarianceNormalization = strings(0,1);
 T.NoiseVarianceAliasOf = strings(0,1);
+T.NoiseVarianceDomain = strings(0,1);
 T.ReplaySampleNoiseVarianceSource = strings(0,1);
 T.ReplayGridNoiseVarianceSource = strings(0,1);
 T.ReceiverInputSampleNoiseVarianceSource = strings(0,1);

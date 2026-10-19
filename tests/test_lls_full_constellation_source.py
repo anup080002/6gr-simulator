@@ -3,6 +3,8 @@ from pathlib import Path
 import sys
 import unittest
 import xml.etree.ElementTree as ET
+import io
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "apps"))
@@ -28,6 +30,19 @@ class FullConstellationSource(unittest.TestCase):
         for actual, source in zip(rows, self.rows):
             self.assertEqual(float(actual["x_value"]), float(source["RawEqualizedReal"]))
             self.assertEqual(float(actual["y_value"]), float(source["RawEqualizedImag"]))
+
+    def test_error_histogram_preserves_actual_retained_receiver_pairs(self):
+        result = m._specialized_chart_materialization("symbol decision error histogram",
+            {self.path: {"artifact_id": 1}}, lambda _: self.payload, 1)
+        _, rows = m._decode_csv_dicts(result["csv_bytes"])
+        self.assertEqual(len(rows), len(self.rows))
+        bins = {}
+        for actual, source in zip(rows, self.rows):
+            expected = abs(complex(float(source["RawEqualizedReal"]), float(source["RawEqualizedImag"])) -
+                           complex(float(source["ReferenceSymbolReal"]), float(source["ReferenceSymbolImag"])))
+            self.assertAlmostEqual(float(actual["decision_error_magnitude"]), expected, places=14)
+            bins[int(actual["bin_index"])] = int(actual["bin_count"])
+        self.assertEqual(sum(bins.values()), len(self.rows))
 
     def test_posteq_cannot_be_labeled_preeq(self):
         with self.assertRaisesRegex(ValueError, "different receiver plane"):
@@ -122,3 +137,64 @@ class FullConstellationSource(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@pytest.mark.parametrize("chart", ["post-equalization constellation", "pre-equalization constellation",
+                                  "constellation per layer", "constellation per codeword",
+                                  "constellation per modulation order"])
+def test_joint_constellation_csv_and_panels_keep_every_sweep_point(chart):
+    # Declared rendering data; no extra PHY executions or qualification rows.
+    rows = [{"Direction": direction, "UEIndex": 1, "Frame": 1, "Slot": 41,
+             "TBId": "retained-tb", "SampleIndex": 1, "LayerIndex": 1, "CodewordIndex": 0,
+             "Modulation": "1024QAM", "SweepPointIndex": point, "SNR_dB": snr,
+             "RawEqualizedReal": point/10, "RawEqualizedImag": -.2,
+             "EqualizedReal": 1, "EqualizedImag": 1,
+             "ReceivedReal": 2+point/10, "ReceivedImag": -.3,
+             "ReferenceSymbolReal": 1, "ReferenceSymbolImag": 0}
+            for point, snr in enumerate([40, 30, 20, 10, 0, -10, -20, -30], 1)
+            for direction in ("DL", "UL")]
+    payload = m._encode_dict_rows(list(rows[0]), rows)
+    path = "reports/csv/equalized_constellations.csv"
+    result = m._specialized_chart_materialization(chart, {path: {"artifact_id": 1}}, lambda _: payload, 17)
+    assert result is not None and result["csv_status"] == "specialized_runtime_constellation_dataset"
+    plotted = list(csv.DictReader(io.StringIO(result["csv_bytes"].decode())))
+    assert len(plotted) == 16
+    assert {int(r["sweep_point_index"]) for r in plotted} == set(range(1, 9))
+    for row in plotted:
+        point = int(row["sweep_point_index"])
+        actual = float(row.get("x_value", row.get("EqualizedReal")))
+        assert actual == pytest.approx(point/10+(2 if chart.startswith("pre-") else 0))
+        assert row["ue_index"] == "1" and row["tb_id"] == "retained-tb"
+        assert row["sample_index"] == "1" and row["modulation"] == "1024QAM"
+        assert f"point={point}".encode() in result["img_bytes"]
+    root = ET.fromstring(result["img_bytes"])
+    panels = [r for r in root.findall("{http://www.w3.org/2000/svg}rect") if r.attrib.get("width") == "320"]
+    assert len(panels) == 16
+    assert all(float(r.attrib["y"])+float(r.attrib["height"]) <= float(root.attrib["height"]) for r in panels)
+
+
+def test_modulation_chart_uses_full_capture_once_and_keeps_1024qam():
+    path = "air_interface/csv/ul_constellation_samples.csv"
+    aliases = ["air_interface/csv/ul_constellation_preview.csv", "reports/csv/equalized_constellations.csv"]
+    rows = [{"Direction": "UL", "Modulation": modulation, "RawEqualizedReal": .2,
+             "RawEqualizedImag": .3, "EqualizedReal": 1, "EqualizedImag": 1}
+            for modulation in ("QPSK", "16QAM", "64QAM", "256QAM", "1024QAM")]
+    payload = m._encode_dict_rows(list(rows[0]), rows)
+    result = m._specialized_chart_materialization("constellation per modulation order",
+        {p: {"artifact_id": i} for i, p in enumerate([path, *aliases], 1)}, lambda _: payload, 17)
+    _, plotted = m._decode_csv_dicts(result["csv_bytes"])
+    assert len(plotted) == 5
+    assert {r["modulation"] for r in plotted} == {r["Modulation"] for r in rows}
+    assert all(float(r["EqualizedReal"]) == .2 and r["source_table_logical_path"] == path for r in plotted)
+
+
+@pytest.mark.parametrize("bad", [{"Source": "fast_proxy"},
+                                 {"RawEqualizedReal": "NaN"}])
+def test_modulation_chart_cannot_promote_proxy_or_replace_invalid_raw_samples(bad):
+    row = {"Direction": "UL", "Modulation": "256QAM", "RawEqualizedReal": .2,
+           "RawEqualizedImag": .3, "EqualizedReal": 1, "EqualizedImag": 1, **bad}
+    payload = m._encode_dict_rows(list(row), [row])
+    path = "reports/csv/equalized_constellations.csv"
+    with pytest.raises(ValueError):
+        m._specialized_chart_materialization("constellation per modulation order",
+            {path: {"artifact_id": 1}}, lambda _: payload, 17)

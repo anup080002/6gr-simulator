@@ -27,6 +27,12 @@ metrics = struct( ...
     "SymbolOrdering", "", ...
     "SymbolOrderingStatus", "", ...
     "ResidualInterferencePower_dB", NaN, ...
+    "DecisionResidualSymbolPower_dB", NaN, ...
+    "DecisionResidualEnergy", NaN, ...
+    "DecisionReferenceEnergy", NaN, ...
+    "DecisionResidualSampleCount", NaN, ...
+    "DecisionResidualRatio_dB", NaN, ...
+    "ResidualMetricDefinition", "equalized_symbol_minus_receiver_hard_decision_not_external_interference", ...
     "PAPR_dB", NaN, ...
     "PAPRMeasurementJSON", "", ...
     "PeakClippingEvents", NaN, ...
@@ -154,7 +160,13 @@ if ~isempty(refSym) && ~isempty(hardSym) && all(decisionStatuses == "measured_nr
         metrics.SymbolDecisionBitErrorRate = double(bitErr) / double(bitsCompared);
     end
     resid = eqSymAligned - hardSym;
-    metrics.ResidualInterferencePower_dB = 10 * log10(max(mean(abs(resid).^2, "omitnan"), eps));
+    metrics.DecisionResidualEnergy = sum(abs(resid).^2);
+    metrics.DecisionReferenceEnergy = sum(abs(hardSym).^2);
+    metrics.DecisionResidualSampleCount = numel(resid);
+    metrics.DecisionResidualSymbolPower_dB = 10*log10(mean(abs(resid).^2));
+    metrics.DecisionResidualRatio_dB = 10*log10(metrics.DecisionResidualEnergy/metrics.DecisionReferenceEnergy);
+    % Deprecated compatibility alias; definition and operands are exported.
+    metrics.ResidualInterferencePower_dB = metrics.DecisionResidualSymbolPower_dB;
 end
 
 wf = sixgr.util.structGet(tx, "Waveform", []);
@@ -163,7 +175,9 @@ if ~isempty(wf)
         sixgr.util.structGet(tx, "OFDM", struct()));
     [metrics.PAPR_dB,metrics.PAPRMeasurementJSON] = localPAPRdB(wf, ofdmInfo, ...
         string(sixgr.util.structGet(tx,'PAPRMeasurementPoint','unspecified_supplied_tx_waveform')));
-    metrics.PeakClippingEvents = localPeakClippingEvents(wf, cfg);
+    % An output waveform or CFR-enable flag cannot establish how many
+    % samples an RF operator clipped. Actual converter counts are bound by
+    % the execution owner, separately for TX DAC and RX ADC.
 end
 
 llrForMetrics = sixgr.util.structGet(rx, "RecLLR", []);
@@ -192,6 +206,11 @@ metrics.ModulationOrderQm = localQm(summaryModulation);
 [metrics.DataRECount, metrics.DMRSRECount, metrics.PTRSRECount, metrics.RSOverheadFraction, ...
     metrics.DataRECountPerLayer, metrics.TotalDataRECount, metrics.ComputedE_TS38212] = ...
     localResourceOverheadMetrics(tx, direction, metrics.ModulationOrderQm);
+resourceSummary = sixgr.phy.resource.summarizeResourceSets( ...
+    sixgr.util.structGet(tx, "ResourceAccounting", struct()));
+for resourceField = string(fieldnames(resourceSummary)).'
+    metrics.(resourceField) = resourceSummary.(resourceField);
+end
 [metrics.LayerDataRE, metrics.PortIndexCellCount, metrics.QAMSymbolCount, ...
     metrics.RateMatchedBitCount, metrics.DemapperLLRCount] = localDomainCountMetrics(tx, rx);
 
@@ -488,26 +507,6 @@ end
 idx = idx(:);
 end
 
-function count = localPeakClippingEvents(waveform, cfg)
-count = NaN;
-if isempty(waveform)
-    return;
-end
-cfrEnabled = logical(sixgr.util.structGet(cfg, "power_and_rf_frontend.cfr_enabled", ...
-    sixgr.util.structGet(cfg, "waveform.cfr_enabled", false)));
-if ~cfrEnabled
-    count = 0;
-    return;
-end
-targetPAPR = double(sixgr.util.structGet(cfg, "waveform.cfr_target_papr_db", ...
-    sixgr.util.structGet(cfg, "power_and_rf_frontend.cfr_target_papr_db", 8)));
-x = localWaveformPortMatrix(waveform);
-p = abs(x).^2;
-portMean = mean(p, 1, "omitnan");
-th = portMean .* 10^(targetPAPR / 10);
-count = sum(p > th, "all");
-end
-
 function x = localWaveformPortMatrix(waveform)
 x = waveform;
 if isempty(x)
@@ -739,7 +738,15 @@ metrics = struct( ...
     "EstimatedChannelReferenceCorrelationMagnitude", NaN, ...
     "ChannelAgingLoss_dB", NaN, ...
     "InterpolationLoss_dB", NaN, ...
-    "MismatchSensitivity_dB", NaN);
+    "MismatchSensitivity_dB", NaN, ...
+    "HestCoarseReconstructionErrorRatio_dB", NaN, ...
+    "HestCoarseReconstructionErrorEnergy", NaN, ...
+    "HestCoarseReconstructionReferenceEnergy", NaN, ...
+    "HestMagnitudeStd_dB", NaN, ...
+    "HestDiagnosticSampleCount", NaN, ...
+    "HestDiagnosticDefinition", "coherent_spatial_mean_Hest_resampled_stride6_subcarrier_stride2_symbol_linear_not_independent_channel_truth", ...
+    "HestMagnitudeDefinition", "sample_std_20log10_max_abs_Hest_eps_not_perturbation_sensitivity", ...
+    "ChannelAgingDiagnosticDefinition", "nonnegative_first_to_last_estimated_symbol_gain_ratio_not_matched_performance_loss");
 
 H2 = localCollapseHest(Hest);
 if isempty(H2)
@@ -787,12 +794,18 @@ if K >= 4 && L >= 2
     Hhat = complex(realHat, imagHat);
     nmse = mean(abs(H2(:) - Hhat(:)).^2, "omitnan") / max(mean(abs(H2(:)).^2, "omitnan"), eps);
     metrics.InterpolationLoss_dB = 10 * log10(max(nmse, eps));
+    metrics.HestCoarseReconstructionErrorEnergy=sum(abs(H2(:)-Hhat(:)).^2,'omitnan');
+    metrics.HestCoarseReconstructionReferenceEnergy=sum(abs(H2(:)).^2,'omitnan');
+    metrics.HestCoarseReconstructionErrorRatio_dB=10*log10( ...
+        metrics.HestCoarseReconstructionErrorEnergy/metrics.HestCoarseReconstructionReferenceEnergy);
 end
 
 magdB = 20 * log10(max(abs(H2(:)), eps));
 magdB = magdB(isfinite(magdB));
 if ~isempty(magdB)
     metrics.MismatchSensitivity_dB = std(magdB, "omitnan");
+    metrics.HestMagnitudeStd_dB = metrics.MismatchSensitivity_dB;
+    metrics.HestDiagnosticSampleCount = numel(magdB);
 end
 end
 

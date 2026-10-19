@@ -108,6 +108,10 @@ if isfield(grant,'Direction') && ~isequal(upper(string(grant.Direction)),directi
     error('sixgr:truth:ExecutedHARQGrantDirectionMismatch', ...
         '%s belongs to a different link direction.',label);
 end
+% Contradictory retained TB aliases are rejected before HARQ handle mutation.
+% This generic size/payload validator also serves unbound component inputs;
+% production reservation/delivery separately require a nonempty binding.
+sixgr.truth.resolveGrantTransportBlockIdentity(grant,true);
 hasSize = false;
 for field = ["TBSBits","TransportBlockSize","TBSBytes"]
     if isfield(grant,field)

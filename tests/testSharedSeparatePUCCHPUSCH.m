@@ -1,0 +1,9 @@
+function ok=testSharedSeparatePUCCHPUSCH()
+% Actual received DL event, independent UL DCI, separate PUCCH/PUSCH IQ/RX.
+% Small-grid wiring regression for the H4 slot-50 failure, not H4 acceptance.
+root=fullfile(pwd,'results','lls','shared_separate_pucch_pusch', ...
+    char(datetime('now','Format','yyyyMMdd_HHmmss_SSS')));
+ok=testSharedPUSCHChannelArtifacts("TDD",false,false,false,true,true,false,root, ...
+    'simulator/configs/scenarios/lls_received_ul_separate_pucch_fixture.yaml', ...
+    false,true,false,false,false,2,true);
+end

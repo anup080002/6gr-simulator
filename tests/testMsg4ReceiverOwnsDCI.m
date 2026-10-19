@@ -7,13 +7,8 @@ for mode = reshape(string(modes),1,[])
     sc=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs','scenarios', ...
         "lls_causal_access_to_data_wiring"+suffix+".yaml"));
     cfg=sixgr.config.normalizeConfig(sixgr.lls6g.buildInternalConfig(sc,tempname));
-    % Component common-PDSCH allocations are authored from carrier RB 0.
-    % On the 25-RB FDD fixture, centred SSB starts at RB 2 and CORESET0
-    % [2,26) is illegal. Explicitly place this fixture's SSB at Point A;
-    % do not relax the production CORESET/BWP bounds validator.
-    if mode=="FDD"
-        cfg.phy.ssb.NCRBSSB=0; cfg.phy.ssb.KSSB=0;
-    end
+    % Keep the authored SSB/Point-A geometry. CORESET0 starts at the
+    % SSB common RB MINUS the normative table offset, not plus it.
     cfg.random_access.associated_ssb_index=cfg.phy.ssb.runtimeSSBIndex;
     cfg.random_access.associated_ssb_selection_source="configured_Msg4_component_reference_not_measured_selection";
     ra = sixgr.mac.ra.RAConfig(cfg);

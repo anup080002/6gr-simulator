@@ -1,10 +1,14 @@
-function ok=testPDCCHSharedPhysicalQueue()
+function ok=testPDCCHSharedPhysicalQueue(rxDelay,rxCFO)
 % One actual coded PDCCH through the scheduler's physical owner. This is a
 % component fixture, not a connected-data or main-campaign qualification.
 setup6GRSimToolkit('Verbose',false);
+if nargin<1, rxDelay=0; end
+if nargin<2, rxCFO=0; end
 s=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs', ...
     'validation','lls_pdcch_known_candidate_queue.yaml'));
 cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
+cfg.rf.rx.timingOffsetSamples=rxDelay;
+cfg.rf.rx.cfo_Hz=rxCFO;
 % Known-candidate timing is explicit in this fixture. The separately tested
 % blind receiver must obtain a causal SS/PBCH clock before being enqueued.
 assert(~cfg.phy.pdcch.blindSearch && ~s.get('control.blind_search_enabled'));
@@ -39,6 +43,8 @@ assert(numel(owner.Pending)==1 && owner.Events.NextSampleIndex==before);
 [state,completed]=owner.advanceSlot(state,cfg,@localReceive);
 assert(numel(completed)==1 && completed.Kind=="PDCCH" && isempty(owner.Pending));
 assert(state.TestPDCCHReceive.Ok && isequal(state.TestPDCCHReceive.DCIBits,bits));
+assert(state.TestPDCCHScore.PDCCHScoringRecordedRXDelay_samples==rxDelay && ...
+    state.TestPDCCHScore.PDCCHScoringExecutedRXCFO_Hz==rxCFO);
 rx=state.TestPDCCHReceive;
 evidence=struct('ReceiverHestSINR_dB',rx.ReceiverHestSINR_dB, ...
     'ReceiverHestSINRValueStatus',rx.ReceiverHestSINRValueStatus, ...
@@ -55,6 +61,9 @@ localReject(@()owner.queuePDCCH(1,p,struct()),'sixgr:truth:LatePDCCHPreparation'
 fprintf('PDCCH_SHARED_PHYSICAL_QUEUE_PASS: decision_sample=%d slot_end=%d CRC=%d SINR=%g\n', ...
     state.TestPDCCHInfo.ObservationEndSampleExclusive,owner.Events.NextSampleIndex, ...
     state.TestPDCCHReceive.Ok,state.TestPDCCHReceive.ReceiverHestSINR_dB);
+fprintf('PDCCH_INDEPENDENT_SCORING_PASS delay=%g CFO=%g NMSE=%g pilots=%d complex_values=%d\n', ...
+    rxDelay,rxCFO,state.TestPDCCHScore.NMSE_dB, ...
+    state.TestPDCCHScore.ChannelNMSEPilotResourceCount,state.TestPDCCHScore.ChannelNMSEComparedComplexValues);
 ok=true;
 end
 
@@ -67,6 +76,25 @@ assert(tx.StartSample==item.Context.Prepared.RuntimeStartSample && ...
 assert(receiver.EndSampleExclusive==state.SharedWaveformStream.Events.NextSampleIndex, ...
     'A received DCI decision must occur before any later physical samples.');
 [rx,info]=sixgr.link.completePDCCHReception(item.Context.Prepared,receiver);
+[reference,source]=sixgr.truth.sharedLinkScoringObservation( ...
+    item.Planes,item.Context.Prepared,item.Context.DesiredReferencePlane);
+[score,paired]=sixgr.truth.scoreSharedPDCCHChannel( ...
+    item.Context.Prepared,rx,info,reference,source,replay);
+assert(score.NMSEScoringAvailable && score.ChannelNMSEComparedComplexValues>0 && ...
+    score.ChannelNMSEComparedComplexValues==score.ChannelNMSEPilotResourceCount*size(rx.RxGrid,3));
+assert(~score.ChannelNMSEGainOrPhaseFitted && ~score.ChannelNMSEReferenceUsedByReceiver);
+assert(abs(score.NMSE_dB-10*log10(sum(paired.ChannelErrorEnergy)/sum(paired.ChannelReferenceEnergy)))<1e-12);
+captured=sixgr.link.bindPDCCHChannelReference(sixgr.link.buildPDCCHChannelEstimateTable(rx),paired);
+assert(sum(captured.NMSECompared)==height(paired) && all(captured.IsDMRS(captured.NMSECompared)));
+assert(abs(sum(captured.ChannelErrorEnergy(captured.NMSECompared))-score.ChannelNMSEErrorEnergy)<1e-12);
+% A deliberately corrupted estimate must affect independent scoring;
+% neither gain-fitting nor reuse of Hest as its own reference is allowed.
+bad=rx; bad.ChannelEstimate=10*rx.ChannelEstimate;
+damaged=sixgr.truth.scoreSharedPDCCHChannel(item.Context.Prepared,bad,info,reference,source,replay);
+assert(damaged.NMSE_dB>score.NMSE_dB+10);
+[repeat,~]=sixgr.link.completePDCCHReception(item.Context.Prepared,receiver);
+assert(isequal(repeat.DCIBits,rx.DCIBits) && isequal(repeat.ChannelEstimate,rx.ChannelEstimate));
+state.TestPDCCHScore=score;
 candidate=sixgr.phy.pdcch.resolveCandidateContext(item.Context.Prepared.Tx.Carrier, ...
     item.Context.Prepared.Tx.PDCCH,rx.CandidateAggregationLevel,rx.CandidateIndexWithinAggregation);
 received=table(candidate.FirstCCE,candidate.NumCCE,candidate.AggregationLevel, ...

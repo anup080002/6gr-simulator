@@ -5,6 +5,7 @@ cfg.integration.run_mode='FIXED_SNR_SWEEP';
 cfg.integration.configured_snr_is_link_authority=true;
 ncell=17; sss=nrSSSIndices;
 stream=RandStream('mt19937ar','Seed',1987);
+published=table();
 for nfft=[512 1024]
     carrier=nrCarrierConfig('NSizeGrid',20,'SubcarrierSpacing',15,'NCellID',ncell);
     for amplitude=[0.25 1]
@@ -28,6 +29,8 @@ for nfft=[512 1024]
         [window,windowEvidence]=sixgr.phy.refsig.measureSSBWindowPower(received/scale,ncell,0,15);
         assert(measured.Available && unitMeasured.Available);
         raw=struct('SSPhysicalMeasurementStatus',"available_rsrp_and_sinr", ...
+            'SSMeasurementSource',"noise_debiased_linear_sss_re_power_and_received_reference_disturbance", ...
+            'SSSINRMeasurementMethod',string(measured.MeasurementMethod), ...
             'SSMeasurementFFTSize',nfft,'SSMeasurementGridScaleToSqrtW',scale, ...
             'SS_RSRP_dBm',measured.NoiseDebiasedSS_RSRP_dBm, ...
             'SS_RSRPRawObserved_dBm',measured.RawObservedSS_RSRP_dBm, ...
@@ -55,6 +58,24 @@ for nfft=[512 1024]
         assert(out.SSBWindowPowerMeasurementJSON=="" && ...
             string(relativeWindow.Scope)==string(windowEvidence.Scope) && ...
             string(relativeWindow.AmplitudeUnit)=="sqrt_UnitOccupiedRE_Es");
+        publication=out;
+        for field=string(fieldnames(publication)).'
+            if ischar(publication.(field)), publication.(field)=string(publication.(field)); end
+        end
+        annotated=sixgr.truth.fillBlankCategoricalColumns(struct2table(publication),'pbch');
+        assert(annotated.SSBWindowPowerMeasurementJSON=="" && ...
+            annotated.SSBWindowRelativePowerMeasurementJSON==out.SSBWindowRelativePowerMeasurementJSON, ...
+            'Production annotation must preserve the normalized evidence and absent absolute JSON.');
+        annotated.Slot=height(published)+1;
+        annotated.SweepPointIndex=height(published)+1;
+        annotated.Direction="DL"; annotated.UEIndex=1; annotated.ServingCell=1;
+        annotated.SSBIndex=0; annotated.ObservationStartSample=0;
+        annotated.ObservationEndSampleExclusive=size(wave,1);
+        annotated.ObservationSampleRateHz=double(info.SampleRate);
+        assert(annotated.SSMeasurementSource==raw.SSMeasurementSource && ...
+            annotated.SSSINRMeasurementMethod==string(measured.MeasurementMethod));
+        annotated.ExecutionScope="generated_SSB_grid_component_not_scenario_execution";
+        if isempty(published), published=annotated; else, published=[published;annotated]; end %#ok<AGROW>
         assert(~isfield(relativeWindow,'RSSIPerAntenna_dBm') && ...
             ~isfield(relativeWindow,'SymbolPowerPerAntenna_W'));
         assert(max(abs(relativeWindow.ReferenceRSRQPerAntenna_dB(:)-window.RSRQPerAntenna(:)))<1e-12);
@@ -91,6 +112,11 @@ rejected=false;
 try, sixgr.link.normalizeReceivedSSBPowerReference(broken,cfg);
 catch cause, rejected=string(cause.identifier)=="sixgr:link:SSBWindowRSRQClosure"; end
 assert(rejected,'Mismatched RSRQ operands must fail instead of being copied as valid evidence.');
+parent=fullfile(pwd,'results','lls','ssb_power_publication');
+if ~isfolder(parent), mkdir(parent); end
+folder=tempname(parent); mkdir(folder);
+sixgr.util.csvWriteTable(fullfile(folder,'pbch_trials.csv'),published,'PreserveSchema',true);
+fprintf('SSB_GRID_PUBLICATION_ROOT=%s\n',folder);
 ok=true; disp('NORMALIZED_SSB_POWER_MATH_PASS RSRP_RSSI_linear_disturbance_and_SINR=1');
 end
 function out=token(input)

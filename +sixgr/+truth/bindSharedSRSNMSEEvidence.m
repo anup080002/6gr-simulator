@@ -14,7 +14,11 @@ row.ChannelNMSEComparedComplexValues=0;
 row.ChannelNMSEPilotResourceCount=0;
 row.ChannelNMSEReferencePlane="unavailable";
 row.ChannelNMSEReferenceIncludesRFImpairments=NaN;
+row.ChannelNMSEErrorEnergy=NaN;
+row.ChannelNMSEReferenceEnergy=NaN;
 row.RawChannelNMSE_dB=NaN;
+row.RawChannelNMSEErrorEnergy=NaN;
+row.RawChannelNMSEReferenceEnergy=NaN;
 row.ChannelNMSEGainFitted=false;
 row.ChannelNMSEPhaseAligned=false;
 row.ChannelNMSEGainOrPhaseFitted=false;
@@ -56,6 +60,7 @@ validateattributes(score.NumReceiveAntennas,{'numeric'},{'scalar','integer','pos
 assert(score.ComparedComplexValueCount==score.PilotResourceCount*score.NumReceiveAntennas, ...
     'sixgr:truth:IncompleteSRSNMSEScoring','Every scored pilot and receive branch must be counted.');
 row.NMSEScoringAvailable=score.Available;
+[row.ChannelNMSEErrorEnergy,row.ChannelNMSEReferenceEnergy]=localScoringEnergies(score);
 row.ChannelNMSEComparedComplexValues=double(score.ComparedComplexValueCount);
 row.ChannelNMSEPilotResourceCount=double(score.PilotResourceCount);
 row.ChannelNMSEReferencePlane=string(reference.ReferencePlane);
@@ -91,7 +96,20 @@ if isstruct(raw) && isscalar(raw) && ~isempty(fieldnames(raw))
         'sixgr:truth:InvalidRawSRSNMSEScoring', ...
         'The retained raw SRS NMSE must be complete and must not fit gain or phase.');
     row.RawChannelNMSE_dB=double(raw.dB);
+    [row.RawChannelNMSEErrorEnergy,row.RawChannelNMSEReferenceEnergy]=localScoringEnergies(raw);
 end
+end
+
+function [numerator,denominator]=localScoringEnergies(score)
+assert(all(isfield(score,{'ErrorEnergy','ReferenceEnergy'})), ...
+    'sixgr:truth:MissingSRSNMSEEnergy','Retain the actual scoring operands; do not reconstruct them from NMSE.');
+numerator=double(score.ErrorEnergy); denominator=double(score.ReferenceEnergy);
+validateattributes(numerator,{'double'},{'scalar','real','finite','nonnegative'});
+validateattributes(denominator,{'double'},{'scalar','real','finite','positive'});
+expected=10*log10(numerator/denominator);
+assert(isequaln(expected,double(score.dB)) || ...
+    (isfinite(expected) && isfinite(score.dB) && abs(expected-score.dB)<1e-10), ...
+    'sixgr:truth:InconsistentSRSNMSEEnergy','Exported NMSE must equal its own measured error/reference energy ratio.');
 end
 
 function mode=localPhaseMode(phaseAligned)

@@ -32,8 +32,13 @@ channelEstT = localBuildChannelEstimationTable(trialT);
 channelStateT = localBuildChannelStateTable(trialT);
 stageTraceT = localBuildTxRxStageTraceTable(trialT);
 
-sixgr.util.csvWriteTable(artifacts.WaveformPreviewPath, waveformT, ...
-    'PreserveSchema',true,'RoundTripNumericText',true);
+% Compact receiver tables follow raw-trial publication, independently of
+% expensive waveform/figure refreshes. Do not erase the previous waveform
+% preview when this call is only updating the measured receiver tables.
+if logical(sixgr.util.structGet(meta,"WriteWaveformPreview",true))
+    sixgr.util.csvWriteTable(artifacts.WaveformPreviewPath, waveformT, ...
+        'PreserveSchema',true,'RoundTripNumericText',true);
+end
 sixgr.util.csvWriteTable(artifacts.ModulationTracePath, moddemT);
 sixgr.util.csvWriteTable(artifacts.ChannelEstimationTracePath, channelEstT, ...
     'PreserveSchema',true,'RoundTripNumericText',true);
@@ -64,27 +69,89 @@ fields = [ ...
     "LLRStdAbs","LLRImbalance","Status"];
 T = localProjectTable(trialT, fields);
 if ~isempty(T)
-    T.ConstellationSamples = zeros(height(T), 1);
-    if istable(constellationT) && ~isempty(constellationT) && ...
-            all(ismember(["Direction","SNR_dB","Frame","Slot"], string(constellationT.Properties.VariableNames)))
-        groups = unique(localKeyTable(constellationT(:, {'Direction','SNR_dB','Frame','Slot'})), 'rows', 'stable');
-        for i = 1:height(T)
-            mask = strcmp(string(groups.Direction), string(T.Direction(i))) & ...
-                abs(double(groups.SNR_dB) - double(T.SNR_dB(i))) < 1e-9 & ...
-                abs(double(groups.Frame) - double(T.Frame(i))) < 1e-9 & ...
-                abs(double(groups.Slot) - double(T.Slot(i))) < 1e-9;
-            if any(mask)
-                gMask = strcmp(string(constellationT.Direction), string(T.Direction(i))) & ...
-                    abs(double(constellationT.SNR_dB) - double(T.SNR_dB(i))) < 1e-9 & ...
-                    abs(double(constellationT.Frame) - double(T.Frame(i))) < 1e-9 & ...
-                    abs(double(constellationT.Slot) - double(T.Slot(i))) < 1e-9;
-                T.ConstellationSamples(i) = sum(gMask);
+    [T.ConstellationSamples,T.ConstellationSampleCountStatus] = ...
+        localConstellationCounts(trialT,constellationT);
+    T.ConstellationSampleCountScope = repmat( ...
+        "retained_input_rows_not_full_capture_coverage",height(T),1);
+end
+T = localEnsureNonEmpty(T, [fields "ConstellationSamples"]);
+if isempty(T)
+    T.ConstellationSampleCountStatus = strings(0,1);
+    T.ConstellationSampleCountScope = strings(0,1);
+end
+T = sixgr.truth.canonicalizeLLSLiveSignalChainTable("modulation_demodulation", T);
+end
+
+function [counts,status] = localConstellationCounts(trials,samples)
+% Count the supplied rows, never infer the complete archive population from
+% a bounded live preview. The original producer tables own join identities;
+% projected NaN/default columns must not manufacture a match.
+counts=nan(height(trials),1);
+status=repmat("unavailable_constellation_identity",height(trials),1);
+if isempty(samples)
+    counts(:)=0; status(:)="no_retained_constellation_input_rows"; return;
+end
+tn=string(trials.Properties.VariableNames); sn=string(samples.Properties.VariableNames);
+common=intersect(tn,sn);
+ue=["UEIndex","UEID","RNTI"]; ue=ue(ismember(ue,common));
+snr=["ConfiguredSNR_dB","SNR_dB"]; snr=snr(ismember(snr,common));
+if isempty(ue) || isempty(snr) || ~all(ismember(["Direction","Frame","Slot"],common))
+    return;
+end
+required=["Direction","Frame","Slot",ue(1),snr(1)];
+optional=["SweepPointIndex","SourceRunID","RealizationIndex","Seed", ...
+    "TransmissionAttemptID","LogicalTBID","SessionEpoch","ConfigurationEpoch"];
+for i=1:height(trials)
+    keys=required; valid=true;
+    for key=required
+        valid=valid && sixgr.truth.measurementValuePresent(trials.(key)(i,:));
+    end
+    if ~valid, continue; end
+    for key=optional
+        if ismember(key,tn) && sixgr.truth.measurementValuePresent(trials.(key)(i,:))
+            if ~ismember(key,sn), valid=false; break; end
+            keys(end+1)=key; %#ok<AGROW>
+        end
+    end
+    if ~valid, continue; end
+    mask=true(height(samples),1); owners=true(height(trials),1);
+    for key=keys
+        value=trials.(key)(i,:);
+        if ~ismember(key,required) && any(mask & ~sixgr.truth.measurementValuePresent(samples.(key)))
+            valid=false; break;
+        end
+        mask=mask & localIdentityMatch(samples.(key),value);
+        owners=owners & localIdentityMatch(trials.(key),value);
+    end
+    if ~valid, continue; end
+    if sum(owners)~=1
+        status(i)="ambiguous_trial_identity"; continue;
+    end
+    % A source-only key spanning multiple values cannot be collapsed into a
+    % trial with no such identity, even if there is just one trial row.
+    for key=optional(~ismember(optional,keys))
+        if ismember(key,sn) && any(mask)
+            values=samples.(key)(mask,:);
+            present=sixgr.truth.measurementValuePresent(values);
+            if any(present) && (~all(present) || size(unique(values(present,:),'rows'),1)>1)
+                valid=false; break;
             end
         end
     end
+    if ~valid
+        status(i)="ambiguous_constellation_identity"; continue;
+    end
+    counts(i)=sum(mask); status(i)="counted_retained_rows_for_unique_trial";
 end
-T = localEnsureNonEmpty(T, [fields "ConstellationSamples"]);
-T = sixgr.truth.canonicalizeLLSLiveSignalChainTable("modulation_demodulation", T);
+end
+
+function mask = localIdentityMatch(column,value)
+if isnumeric(column) && isnumeric(value)
+    mask=all(double(column)==double(value),2);
+else
+    mask=all(string(column)==string(value),2);
+end
+mask=mask & sixgr.truth.measurementValuePresent(column);
 end
 
 function T = localBuildChannelEstimationTable(trialT)
@@ -186,6 +253,8 @@ fields = [ ...
     "IQImbalanceEstimatedAlphaAbs","IQImbalanceEstimatedBetaAbs","IQImbalanceMeasurementSource","IQImbalanceMeasurementStatus", ...
     "ChannelModel","TBSize_bits","TBCRCLength_bits","TBLengthWithCRC_bits","NumCodeBlocks","CodeBlockLength_bits", ...
     "SegmentationOccurred","SegmentationPaddingBits","BaseGraph","EncodedBits","RateMatchedBits","RateMatchPunctureBits","RateMatchRepetitionBits", ...
+    "CBCRCBits","CodeBlockInputBits","SegmentationOverheadBits","InherentLDPCPuncturedBits", ...
+    "RateMatchEligibleBits","RateMatchUniqueSelectedBits","CodingAccountingVersion","RateMatchAccountingJSON", ...
     "BitErrors","BitsCompared","SymbolErrors","SymbolsCompared","EVM_rms","DataRECount","DMRSRECount","PTRSRECount", ...
     "Layers","PMI","CRI","BeamformingApplied","TimingEstimateUsed","UseIdealTimingSync","NMSE_dB","ConditionNumber_dB", ...
     "ConfiguredBeamSelectionStrategy","BeamSelectionStrategy","BeamSelectionAuthority","BeamSelectionPolicyType","BeamSelectionPolicyFixed","SelectedBeamValueRole","SelectedBeamValueStatus","SelectedBeamNAReason","RequestedBeamIndexSet","RequestedBeamValueRole","RequestedBeamValueStatus","RequestedBeamNAReason","PrecoderSource","RequestedPrecoderSource","AppliedPrecoderSource","RequestedPrecoderPMI","PrecodingMode","PrecodingApplicationStage","PrecodingActive","ExplicitBeamWeightsApplied","TransformPrecodingApplied","AppliedBeamIndexSet","AppliedBeamValueRole","AppliedBeamValueStatus","AppliedBeamNAReason","AppliedPrecoderPMI","AppliedPrecoderValueRole","AppliedPrecoderValueStatus","AppliedPrecoderNAReason","ExplicitPrecoderReplayStatus","ExplicitPrecoderReplayBlocker","AppliedPrecoderPMIType","AppliedPrecoderCodebookMode","RequestedVsAppliedPrecoderPMIMatchStatus","PrecodingNumPorts","PrecodingNumLayers","PrecodingMatrixRows","PrecodingMatrixCols", ...
@@ -230,6 +299,20 @@ end
 
 function T = localProjectTable(sourceT, fields)
 fields = string(fields(:)).';
+% Versioned compact diagnostics are propagated only when the producer emitted
+% them; no legacy value is converted into newly claimed measured evidence.
+extra=[string(fieldnames(sixgr.link.codingAccountingExport())); ...
+    string(fieldnames(sixgr.link.modulationDiagnosticsExport())); ...
+    "SweepPointIndex";"SourceRunID";"RealizationIndex";"Seed"; ...
+    "BSAntennaPanelRows";"BSAntennaPanelCols";"BSAntennaPanelCount"; ...
+    "BSAntennaPolarizationAngles_deg"; ...
+    "UEAntennaPanelRows";"UEAntennaPanelCols";"UEAntennaPanelCount"; ...
+    "UEAntennaPolarizationAngles_deg"; ...
+    "TransmissionAttemptID";"LogicalTBID";"SessionEpoch";"ConfigurationEpoch"];
+if istable(sourceT)
+    extra=extra(ismember(extra,string(sourceT.Properties.VariableNames)));
+    fields=unique([fields extra.'],'stable');
+end
 if ~(istable(sourceT) && ~isempty(sourceT))
     T = table();
     return;
@@ -370,6 +453,9 @@ end
 
 function col = localDefaultColumn(nRows, fieldName)
 name = lower(char(string(fieldName)));
+if any(strcmp(name,["codingaccountingversion","ratematchaccountingjson"]))
+    col=strings(nRows,1); return;
+end
 if any(strcmp(name,["nmsesource","channelestimatecapturestatus", ...
         "channelestimatereferenceplane","channelestimateresourcescsv", ...
         "channelestimateresourcescsvsha256","channelestimatematfile", ...
@@ -395,11 +481,5 @@ end
 maxRows = max(1, round(double(maxRows)));
 if height(T) > maxRows
     T = T(end-maxRows+1:end, :);
-end
-end
-
-function T = localKeyTable(T)
-if ~ismember("Direction", string(T.Properties.VariableNames))
-    T.Direction = strings(height(T), 1);
 end
 end

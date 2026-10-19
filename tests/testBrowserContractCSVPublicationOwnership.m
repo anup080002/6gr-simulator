@@ -24,9 +24,33 @@ sixgr.visual.writeComponentPlotLineage(root,lineage, ...
 originalSource = sixgr.phy.waveform.WaveformHash.file(source);
 originalLineage = sixgr.phy.waveform.WaveformHash.file(lineage);
 originalImage = sixgr.phy.waveform.WaveformHash.file(png);
+% The live producer also owns content-addressed CSV/PNG snapshots, including
+% retained source operands. Final annotation must not rewrite these bytes or
+% bless different source hashes into their already sealed lineage.
+liveRoot=fullfile(root,'reports','live_measurements',repmat('a',1,64));
+mkdir(fullfile(liveRoot,'csv')); mkdir(fullfile(liveRoot,'image'));
+mkdir(fullfile(liveRoot,'sources','air_interface','csv'));
+liveCSV=fullfile(liveRoot,'csv','measured.csv');
+liveSource=fullfile(liveRoot,'sources','air_interface','csv','paired.csv');
+livePNG=fullfile(liveRoot,'image','measured.png');
+liveLineage=fullfile(liveRoot,'checkpoint_plot_lineage.csv');
+sixgr.util.csvWriteTable(liveCSV,T,'PreserveSchema',true,'RoundTripNumericText',true);
+copyfile(liveCSV,liveSource); copyfile(png,livePNG);
+sixgr.visual.writeComponentPlotLineage(liveRoot,liveLineage, ...
+    'live_fixture',char(livePNG),char(liveCSV),'live_publication_fixture','SourcesAlreadyFinalized',true);
+charLineageHash=sixgr.phy.waveform.WaveformHash.file(liveLineage);
+sixgr.visual.writeComponentPlotLineage(liveRoot,liveLineage, ...
+    "live_fixture",string(livePNG),string(liveCSV),"live_publication_fixture",'SourcesAlreadyFinalized',true);
+assert(sixgr.phy.waveform.WaveformHash.file(liveLineage)==charLineageHash, ...
+    'Char and string scalar input must describe the same plot and byte-exact lineage.');
+livePaths=[liveCSV;liveSource;livePNG;liveLineage];
+liveHashes=arrayfun(@sixgr.phy.waveform.WaveformHash.file,livePaths);
 for pass = 1:2
     sixgr.truth.sanitizeLLSArtifactCSVs(root);
     sixgr.truth.sanitizeLLSArtifactCSVs(root,'OnlyPaths',[source;lineage]);
+    sixgr.truth.sanitizeLLSArtifactCSVs(root,'OnlyPaths',[liveCSV;liveSource;liveLineage]);
+    assert(isequal(arrayfun(@sixgr.phy.waveform.WaveformHash.file,livePaths),liveHashes), ...
+        'sixgr:test:LiveSnapshotSanitizerMutation','Live snapshot bytes are immutable.');
     assert(sixgr.phy.waveform.WaveformHash.file(source)==originalSource, ...
         'sixgr:test:BrowserChartSourceMutated', ...
         'Finalization changed the exact dataset already used to render the browser chart.');
@@ -34,6 +58,9 @@ for pass = 1:2
         'sixgr:test:BrowserChartLineageMutated', ...
         'A generic sanitizer must not rewrite browser-owned plot lineage.');
     sixgr.report.annotateScenarioCSVArtifacts(root,'scenario','config','waveform_bundle');
+    assert(isequal(arrayfun(@sixgr.phy.waveform.WaveformHash.file,livePaths),liveHashes), ...
+        'sixgr:test:LiveSnapshotAnnotationMutation', ...
+        'Final annotation must not invalidate live input, plotted-CSV or lineage hashes.');
     assert(sixgr.phy.waveform.WaveformHash.file(source)==originalSource && ...
         sixgr.phy.waveform.WaveformHash.file(lineage)==originalLineage, ...
         'sixgr:test:BrowserChartAnnotationMutation', ...

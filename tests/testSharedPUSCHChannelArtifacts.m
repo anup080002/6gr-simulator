@@ -1,4 +1,4 @@
-function [ok,state]=testSharedPUSCHChannelArtifacts(mode,withCoincidentSRS,deferUCIDelivery,withCSI,twoPortUL,receivedAuthority,withHARQ,outputRoot,configPath,independentEmptyUCI,independentSharedHARQ,forgetCSIProducer,unconsumedULCommand,pucchOnlyCompletion,expectedULPorts)
+function [ok,state]=testSharedPUSCHChannelArtifacts(mode,withCoincidentSRS,deferUCIDelivery,withCSI,twoPortUL,receivedAuthority,withHARQ,outputRoot,configPath,independentEmptyUCI,independentSharedHARQ,forgetCSIProducer,unconsumedULCommand,pucchOnlyCompletion,expectedULPorts,separatePUCCH,withPacketAccounting)
 % Actual shared SRS -> received UL DCI -> coded PUSCH with HARQ-ACK UCI.
 % Initial TAG remains an explicit component input. In a configured-Es/N0
 % fixture, geometry/pathloss are deliberately not applicable. The two UCI bits
@@ -19,6 +19,11 @@ if nargin<12, forgetCSIProducer=false; end
 if nargin<13, unconsumedULCommand=false; end
 if nargin<14, pucchOnlyCompletion=false; end
 if nargin<15, expectedULPorts=2; end
+if nargin<16, separatePUCCH=false; end
+if nargin<17, withPacketAccounting=false; end
+assert(~withPacketAccounting || (independentSharedHARQ && ~withHARQ && ~unconsumedULCommand));
+assert(~separatePUCCH || (independentSharedHARQ && ~withCSI && ...
+    ~pucchOnlyCompletion && ~unconsumedULCommand && ~forgetCSIProducer));
 assert(isscalar(expectedULPorts) && any(expectedULPorts==[2 4]));
 assert(~pucchOnlyCompletion || (independentSharedHARQ && withCSI && ...
     ~unconsumedULCommand && ~forgetCSIProducer));
@@ -95,6 +100,13 @@ lastSlot=11+10*logical(withHARQ);
 state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,root,multi,struct(),lastSlot);
 state.CurrentSlot=1; state.CurrentFrame=1; state.CurrentCanonicalSlot=1;
 state.CurrentServingIdx(:)=1; state.TestRoot=root;
+state.TestPacketAccounting=logical(withPacketAccounting);
+if withPacketAccounting
+    assert(~state.ProtocolWaveformEnabled, ...
+        'This fixture verifies CRC-backed metadata mapping, not protocol-byte reassembly.');
+    state.Traffic.OfferedBitsDL=zeros(lastSlot,1);
+    state.Traffic.OfferedBitsUL=zeros(lastSlot,1);
+end
 state.TestDeferUCIDelivery=logical(deferUCIDelivery);
 state.TestWithCSI=logical(withCSI);
 state.TestWithHARQ=logical(withHARQ);
@@ -103,6 +115,11 @@ state.TestIndependentSharedHARQ=logical(independentSharedHARQ);
 state.TestForgetCSIProducer=logical(forgetCSIProducer);
 state.TestUnconsumedULCommand=logical(unconsumedULCommand);
 state.TestPUCCHOnlyCompletion=logical(pucchOnlyCompletion);
+state.TestSeparatePUCCH=logical(separatePUCCH);
+if separatePUCCH
+    assert(isequal(double(cfg.phy.pusch.symbolAllocation),[0 11]), ...
+        'The separate-transport fixture must use the retained H4 11-symbol allocation.');
+end
 state.TestScheduledDLDAILedger=struct();
 if independentCompletion, assert(logical(cfg.phy.csi.reportCSI)==logical(withCSI)); end
 if independentCompletion && withCSI
@@ -167,7 +184,7 @@ for slot=1:lastSlot
             isequaln(state.ConnectedULTimingByUE{1}.DLReference,state.TestReceivedDLClock));
         localQueueSRS(state,cfg,5);
     end
-    if independentCompletion && withCSI
+    if independentCompletion && (withCSI || separatePUCCH)
         if unconsumedULCommand && slot==11
             held=state.PUCCHGrantTraceTable;
             completed=state.SharedUnselectedPUCCHObservations;
@@ -266,7 +283,13 @@ for slot=1:lastSlot
         allocation=state.ULHarq.allocate(grant.RNTI,slot,grant.TBSBytes,'NewData',true);
         assert(isequaln(allocation.HARQ.HarqID,grant.HARQ.HarqID) && ...
             allocation.HARQ.NDI==grant.HARQ.NDI && allocation.HARQ.RV==grant.HARQ.RV);
-        if slot==9, state.ULQueueBits(1)=grant.TBSBits; end % No new bytes for a retransmission.
+        if slot==9
+            if state.TestPacketAccounting
+                state=localOfferPacket(state,'UL',grant.TBSBits);
+            else
+                state.ULQueueBits(1)=grant.TBSBits;
+            end
+        end % No new bytes for a retransmission.
         [dl,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'DL');
         dl=sixgr.phy.grid.applyRuntimeCarrierTimeline(dl,slot);
         dl.lls6g.userContext.RuntimeSlotStartTime_s=(slot-1)*sixgr.time.slotDurationSec(cfg);
@@ -279,7 +302,16 @@ for slot=1:lastSlot
         end
         owner.queuePDCCH(1,p,controlContext);
     end
-    [state,~]=owner.advanceSlot(state,cfg,@localEvents);
+    if independentCompletion
+        % Match the production lifetime: consuming the due scheduling queue
+        % must not hide an encoded PUSCH from a later PUCCH callback.
+        pending=sixgr.util.structGet(state,'SharedPendingULGrants',repmat(struct(),0,1));
+        slots=arrayfun(@sixgr.truth.runtimeULGrantSlot,pending);
+        [state,~]=sixgr.truth.advanceSharedSlotWithULGrants( ...
+            state,cfg,pending(slots>slot),pending(slots==slot),@localEvents);
+    else
+        [state,~]=owner.advanceSlot(state,cfg,@localEvents);
+    end
 end
 if pucchOnlyCompletion
     assert(state.TestSharedHARQReceived && state.TestSharedCSIReceived && ...
@@ -358,7 +390,7 @@ if independentEmptyUCI
         isempty(sixgr.util.structGet(state,'SharedGNBUCIHARQTable',table())));
     fprintf('TDD_INDEPENDENT_PUSCH_EMPTY_UCI_PASS actual_UL_TX=1 DL_TX=0 HARQ_updates=0 common_commit_receipts=1\n');
 end
-if independentSharedHARQ
+if independentSharedHARQ && ~separatePUCCH
     decisions=state.SharedPUSCHHARQDecisionAuditTable;
     assert(height(decisions)==1 && decisions.ReceiverUsable && ~decisions.ReceiverErasure && ...
         decisions.ShortConfidenceAttempted && decisions.ConfidenceAccepted==1 && ...
@@ -374,6 +406,21 @@ if independentSharedHARQ
         numel(unique(state.SharedDataRXCommittedIDs))==2);
     fprintf('TDD_INDEPENDENT_SHARED_HARQ_PASS actual_DL_TX=1 actual_UL_TX=1 common_commit_receipts=1 ACK=%d\n', ...
         state.TestExpectedSharedACK);
+end
+if separatePUCCH
+    assert(isempty(state.SharedPUSCHHARQDecisionAuditTable) && ...
+        numel(state.SharedPUSCHHARQFeedbackReceipts)==1 && ...
+        state.TestSharedHARQReceived && state.DLHarq.Stats.Tx==1 && ...
+        state.DLHarq.Stats.Ack==double(state.TestExpectedSharedACK) && ...
+        state.DLHarq.Stats.Nack==double(~state.TestExpectedSharedACK));
+    rows=state.PUCCHGrantTraceTable;
+    rows=rows(contains(lower(string(rows.UCIType)),"harq"),:);
+    assert(height(rows)==1 && rows.GrantExecutedFlag && ...
+        ~rows.MultiplexedOnPUSCH && rows.Status=="PASS" && ...
+        rows.PUCCHSymbolStart==12 && rows.PUCCHNumSymbols==2);
+    assert(height(state.TestPUSCHRows)==1 && state.TestPUSCHRows.CRCPass==1);
+    sixgr.util.csvWriteTable(fullfile(root,'separate_pucch_grants.csv'),rows,'PreserveSchema',true);
+    fprintf('SHARED_SEPARATE_PUCCH_PUSCH_PASS actual_DL_RX=1 PUSCH_symbols=0:10 PUCCH_symbols=12:13 independent_RX=1 DL_HARQ_updates=1\n');
 end
 fprintf('SHARED_PUSCH_CHANNEL_ARTIFACTS_PASS: %s actual SRS/DCI/PUSCH/UCI, seed=%g root=%s\n',mode,cfg.run.seed,root);
 ok=true;
@@ -431,6 +478,7 @@ end
 
 function state=localEvents(state,items)
 owner=state.SharedWaveformStream;
+items=sixgr.truth.orderSharedReceiverCompletions(items);
 for item=items
     if item.Kind=="PUSCHReceiveOnly"
         assert(state.TestUnconsumedULCommand);
@@ -504,6 +552,10 @@ for item=items
         continue;
     end
     if item.Kind=="PUCCH"
+        if state.TestSeparatePUCCH
+            fprintf('SEPARATE_PUCCH_COMPLETION boundary=%d kinds=%s\n', ...
+                owner.Events.NextSampleIndex,strjoin(string({items.Kind}),','));
+        end
         if state.TestPUCCHOnlyCompletion
             % Same actual IQ with UE bookkeeping removed and optional TX
             % references poisoned. No new RF/channel execution or forced DTX.
@@ -523,7 +575,30 @@ for item=items
             replay=sixgr.link.receivePUCCHObservation(c.Config,independent.Assignment, ...
                 independent.Context,capture,state.ReceivedULTimingReferences{item.UE});
         end
+        previousOccasions=strings(0,1);
+        if ~isempty(state.ControlTrials.PUCCH)
+            previousOccasions=string(state.ControlTrials.PUCCH.PhysicalPUCCHOccasionId);
+        end
         state=sixgr.truth.CoupledTruthRuntime.completeSharedPUCCHFeedbackRuntime(state,item);
+        completed=state.ControlTrials.PUCCH;
+        % Registration keys and physical-occasion identities are different
+        % contracts. Select the newly completed physical trial, then verify
+        % its actual observation clock; do not equate the two strings.
+        selected=find(~ismember(string(completed.PhysicalPUCCHOccasionId),previousOccasions));
+        assert(isscalar(selected),'One completion must add exactly one physical PUCCH trial.');
+        postPlane=item.Planes(endsWith(string({item.Planes.ReceiverID}),':post_rf'));
+        assert(isscalar(postPlane) && completed.Slot(selected)==item.Context.Slot && ...
+            completed.ObservationStartSample(selected)==postPlane.Observation.StartSample && ...
+            completed.ObservationEndSampleExclusive(selected)==postPlane.Observation.EndSampleExclusive, ...
+            'The RF export assertion must use the exact newly received PUCCH capture.');
+        rfFields=["ADCClippedSampleCount","ADCClippingSampleCount","ADCErrorEnergy", ...
+            "DACClippedSampleCount","DACClippingSampleCount","DACErrorEnergy", ...
+            "TxRFEndpointMetadataJSON","RxRFEndpointMetadataJSON"];
+        assert(all(ismember(rfFields,string(completed.Properties.VariableNames))), ...
+            'Measured PUCCH RF columns must survive compatible row replacement.');
+        rf=sixgr.truth.bindSharedRFExecutionEvidence(completed(selected,:),item.Planes,true);
+        assert(isequaln(completed(selected,cellstr(rfFields)),rf(:,cellstr(rfFields))), ...
+            'PUCCH must retain its own executed RF capture, not preparation defaults.');
         if state.TestPUCCHOnlyCompletion
             actual=state.SharedGNBUCIReceptions{end}.Receiver;
             % Preserve failed captures too: distinguish an observer mismatch
@@ -572,6 +647,10 @@ for item=items
             'TransmitterObservation',tx,'Replay',replay,'ScoringChannelReferences',{refs}, ...
             'ChannelState',owner.directionalChannelState(1,'UL'));
         out=sixgr.link.runSRSChannelEstimation(c.Config,c.Arguments{:},'ReceivedContext',input);
+        assert(out.RuntimeNoiseVarianceMean==out.NoiseVariance && ...
+            out.RuntimeNoiseVarianceDomain==out.NoiseVarianceDomain && ...
+            string(out.RuntimeNoiseVarianceSource)==string(out.NoiseVarianceSource), ...
+            'SRS receiver variance aliases must retain the same measured domain and source.');
         if ~out.Ok
             save(fullfile(state.TestRoot,'srs_receiver_failure.mat'),'out','input','c','-v7.3');
         end
@@ -676,7 +755,7 @@ for item=items
         end
         [cfg,~]=sixgr.truth.bindSharedDataOccasion(c.ULConfig,slot,frame,owner.SampleRateHz);
         hasDueACK=any(~state.PendingFeedbackTable.Processed);
-        if hasDueACK
+        if hasDueACK && ~state.TestSeparatePUCCH
         future=state;
         lateTiming=jsondecode(future.PendingFeedbackTable.DataReceiveTimingEvidenceJSON(1));
         lateTiming.ResultAvailableAtSample=owner.Events.NextSampleIndex+1;
@@ -693,12 +772,19 @@ for item=items
         assert(isempty(blocked) && numel(grant)==1, ...
             'Canonical queued PUSCH must retain its actual due slot during late UCI reconciliation.');
         uci=sixgr.util.structGet(grant,'ExpectedUCIPayload',sixgr.phy.ul.pusch.PUSCHUCIPayload());
-        if hasDueACK
+        if hasDueACK && ~state.TestSeparatePUCCH
         expectedACK=int8([1;0]);
         if state.TestIndependentSharedHARQ, expectedACK=int8(state.TestExpectedSharedACK); end
         assert(isequal(int8(uci.HARQACK(:)),expectedACK) && ...
             all(string(state.PendingFeedbackTable.DeliveryMechanism)=="pusch_uci") && ...
             all(state.PUCCHGrantTraceTable.MultiplexedOnPUSCH));
+        elseif state.TestSeparatePUCCH
+            assert(~uci.hasPayload() && ...
+                ~any(state.PUCCHGrantTraceTable.MultiplexedOnPUSCH), ...
+                'A received DL event in the same slot must stay on its disjoint PUCCH.');
+            missing=state; missing.PUCCHGrantTraceTable=table();
+            localReject(@()sixgr.truth.receivedPUSCHCodebookForGrant(missing,grant,false), ...
+                'sixgr:truth:ReceivedPUCCHProducerMismatch');
         else
             assert(~uci.hasPayload(),'Already delivered ACKs must not be remultiplexed on the retransmission.');
         end
@@ -741,6 +827,32 @@ for item=items
             state.TestUEHARQState=result.Result.UEHARQState;
         end
         owner.queueData(1,result.Result.PreparedTransmission,struct('Job',job));
+        if state.TestIndependentCompletion
+            % Actual encoded PUSCH and its exact pending producer ledgers.
+            state.SharedPendingULGrants=grant;
+            beforeFeedback=state.PendingFeedbackTable;
+            beforeCSI=state.PendingCSITable;
+            beforeTrace=state.PUCCHGrantTraceTable;
+            [state,repeated,blocked]=sixgr.truth.CoupledTruthRuntime. ...
+                reconcileQueuedPUSCHAfterDLFeedbackRuntime(state,grant,true);
+            assert(isempty(blocked) && isequaln(repeated,grant) && ...
+                isequaln(state.PendingFeedbackTable,beforeFeedback) && ...
+                isequaln(state.PendingCSITable,beforeCSI) && ...
+                isequaln(state.PUCCHGrantTraceTable,beforeTrace), ...
+                'An encoded physical PUSCH must preserve both UCI and its exact producer reservations.');
+            if state.TestIndependentSharedHARQ && ~state.TestSeparatePUCCH && ~state.TestWithCSI
+                late=state;
+                late.PendingFeedbackTable.DeliveryMechanism(:)="pucch";
+                late.PUCCHGrantTraceTable.MultiplexedOnPUSCH(:)=false;
+                localReject(@()sixgr.truth.CoupledTruthRuntime. ...
+                    reconcileQueuedPUSCHAfterDLFeedbackRuntime(late,grant,true), ...
+                    'sixgr:truth:LateSharedPUSCHUCIChange');
+                assert(isequaln(state.PendingFeedbackTable,beforeFeedback) && ...
+                    isequaln(state.PUCCHGrantTraceTable,beforeTrace));
+            end
+            fprintf('SHARED_ENCODED_PUSCH_RECONCILIATION_PASS actual_coded_TX=1 immutable_binding=1 separate_PUCCH=%d\n', ...
+                state.TestSeparatePUCCH);
+        end
     elseif item.Kind=="PDSCH"
         if state.TestIndependentSharedHARQ
             state=localCompleteSharedHARQSource(state,item,p,pre,tx,replay,receiver);
@@ -799,8 +911,12 @@ for item=items
             'TransmitterObservation',tx,'Replay',replay,'ChannelState',owner.directionalChannelState(1,'UL'));
         if state.TestIndependentCompletion
             job=sixgr.truth.bindSharedPUSCHReceiverContext(state,job);
-            assert(job.ReceivedContext.UCIReceiveContext.Data.HARQACKBitCount==double(state.TestIndependentSharedHARQ) && ...
+            assert(job.ReceivedContext.UCIReceiveContext.Data.HARQACKBitCount==double(state.TestIndependentSharedHARQ && ~state.TestSeparatePUCCH) && ...
                 isempty(job.ReceivedContext.UCIReportConfiguration)==~state.TestWithCSI);
+            binding=sixgr.truth.puschUCIObservationBinding(job.GrantSnapshot,receiver);
+            assert(job.ReceivedContext.UCIReceiveContext.Data.AssignmentDigest==binding.AssignmentDigest && ...
+                job.ReceivedContext.UCIReceiveContext.Data.ObservationID==binding.ObservationID, ...
+                'Changing UCI transport must preserve the exact scheduled UL grant and receive-window identity.');
             poisoned=state; poisoned.PendingFeedbackTable=table(true,'VariableNames',{'Ack'});
             poison=job; poison.ExpectedUCIBits=ones(99,1,'int8');
             poison.PreviousCombinedLLR=ones(99,1);
@@ -819,6 +935,12 @@ for item=items
         end
         result=sixgr.truth.executeGrantPHYJob(job); out=result.Result;
         assert(result.ReadyForReceiverCommit && height(out.TrialTable)==1);
+        if out.TrialTable.CRCPass(end)==1
+            % Same production rule as localCompleteSharedDataPlan: only an
+            % actual received PUSCH timing result can refresh the gNB clock.
+            state=sixgr.truth.storeReceivedULTimingReference(state,item.UE, ...
+                sixgr.phy.sync.ReceivedULTimingReference(p,receiver,out.ReceiveTiming));
+        end
         localAssertReceiverCFOEvidence(out.TrialTable);
         assert(ismember('AppliedAWGNSNRSource',out.TrialTable.Properties.VariableNames) && ...
             out.TrialTable.AppliedAWGNSNRSource==string(sixgr.util.structGet(replay,'AppliedAWGNSNRSource',"")), ...
@@ -836,10 +958,19 @@ for item=items
                 'Receiver completion must retain the identity assigned before actual encoding.');
             for field=["DCI","ULTotalDAIAuthority","UCIOnPUSCHFeedbackBitIndices", ...
                     "UCIOnPUSCHFeedbackGrantIds","ExpectedUCIBits"]
-                assert(isfield(out.HARQ.GrantSnapshot,field) && ...
-                    isequaln(out.HARQ.GrantSnapshot.(field),job.GrantSnapshot.(field)), ...
+                present=isfield(job.GrantSnapshot,field);
+                assert(isfield(out.HARQ.GrantSnapshot,field)==present, ...
                     'test:PUSCHReceiveGrantAuthorityLost', ...
-                    'PUSCH completion must preserve scheduled/producer authority exactly: %s.',field);
+                    'PUSCH completion must preserve presence/absence of scheduled authority: %s.',field);
+                if present
+                    assert(isequaln(out.HARQ.GrantSnapshot.(field),job.GrantSnapshot.(field)), ...
+                        'test:PUSCHReceiveGrantAuthorityLost', ...
+                        'PUSCH completion must preserve scheduled/producer authority exactly: %s.',field);
+                else
+                    assert(state.TestSeparatePUCCH && ~any(field==["DCI","ULTotalDAIAuthority"]), ...
+                        'test:PUSCHReceiveGrantAuthorityLost', ...
+                        'Only the disjoint no-UCI case may lack producer-specific fields.');
+                end
             end
         end
         assert(out.TrialTable.TrueTimingOffset_samples==expectedTiming && ...
@@ -866,6 +997,7 @@ for item=items
             p,receiver,out.ReceiveTiming,owner.Events.NextSampleIndex);
         if state.TestIndependentCompletion
             priorTimeline=state.HARQTimelineTable;
+            priorPending=state.PendingFeedbackTable;
             if state.TestWithCSI
                 beforeCSI=state.DLHarq.Stats;
                 bad=out.HARQ; bad.DecodedCSIPart1Bits=NaN;
@@ -915,7 +1047,11 @@ for item=items
                     assert(strlength(reports.UEReferenceRecordJSON)>0);
                 end
             end
-            if state.TestIndependentSharedHARQ
+            if state.TestSeparatePUCCH
+                assert(isequaln(state.HARQTimelineTable,priorTimeline) && ...
+                    isequaln(state.PendingFeedbackTable,priorPending), ...
+                    'Data-only PUSCH must leave separate PUCCH HARQ obligations untouched.');
+            elseif state.TestIndependentSharedHARQ
                 timeline=state.HARQTimelineTable;
                 assert(height(timeline)==height(priorTimeline) && ...
                     isequaln(timeline(:,{'Direction','RNTI','HarqID','Slot'}), ...
@@ -1064,6 +1200,7 @@ for item=items
             all(verified.Segments.NumReceiveAntennas==receiver.NumReceiveAntennas));
         state.TestPUSCHReceived=true;
         state.TestPUSCHObservationID=row.ChannelObservationID;
+        if state.TestSeparatePUCCH, state.TestPUSCHRows=[state.TestPUSCHRows;row]; end
         if state.TestWithHARQ
             HARQEvidence=out.HARQ; %#ok<NASGU>
             save(fullfile(state.TestRoot,sprintf('received_ul_harq_slot_%d.mat',job.StartSlotIndex)), ...
@@ -1235,6 +1372,9 @@ allocated=state.DLHarq.allocate(grant.RNTI,slot,grant.TBSBytes,'NewData',true);
 grant=sixgr.link.resolveWaveformGrant(dl,'DL',frame,'Slot',slot,'SFN',frame-1, ...
     'ControlAbsoluteSlot',slot-1,'HARQProcess',allocated.HARQ.HarqID);
 assert(grant.Valid && grant.ExactPHYFeasible && allocated.HARQ.NDI==grant.HARQ.NDI);
+% This component bypasses scheduler proposal binding. Retain its actual
+% allocator epoch before the grant is frozen or any sample is transmitted.
+grant.HARQ.NDIEpoch=allocated.HARQ.NDIEpoch;
 if sharedHARQ
     % resolveWaveformGrant carries PHY cell identity, whereas scheduled DAI
     % also requires the runtime serving-cell index from the bound UE view.
@@ -1274,7 +1414,11 @@ if sharedHARQ, state.TestScheduledDLDAILedger=candidateLedger; end
 result=sixgr.truth.executeGrantPHYJob(job);
 assert(~result.ReadyForReceiverCommit && isempty(result.Result.TrialTable));
 owner.queueData(1,result.Result.PreparedTransmission,struct('Job',job,'SharedCSISource',~sharedHARQ,'SharedHARQSource',sharedHARQ));
-state.DLQueueBits(1)=state.DLQueueBits(1)+grant.TBSBits;
+if state.TestPacketAccounting
+    state=localOfferPacket(state,'DL',grant.TBSBits);
+else
+    state.DLQueueBits(1)=state.DLQueueBits(1)+grant.TBSBits;
+end
 state.TestSharedCSIReceived=false;
 end
 
@@ -1435,6 +1579,14 @@ if nargin<3, requireExecutedReceiverFrequency=false; end
 archivePath=fullfile(root,row.ChannelEstimateMATFile);
 assert(sixgr.phy.waveform.WaveformHash.file(archivePath)==row.ChannelEstimateMATFileSHA256);
 archive=load(archivePath);
+assert(row.NMSEScoringAvailable && ...
+    row.ChannelNMSEErrorEnergy==archive.Score.ErrorEnergy && ...
+    row.ChannelNMSEReferenceEnergy==archive.Score.ReferenceEnergy && ...
+    row.ChannelNMSEComparedComplexValues==archive.Score.ComparedComplexValueCount && ...
+    row.ChannelNMSEPilotResourceCount==numel(archive.Snapshot.PilotIndices) && ...
+    row.ChannelNMSEReferencePlane==archive.ReferenceEvidence.ReferencePlane && ...
+    ~row.ChannelNMSEGainOrPhaseFitted && ~row.ChannelNMSEReferenceUsedByReceiver, ...
+    'Primary DL/UL NMSE operands and plane must match their independently scored archive.');
 assert(archive.Contract=="scored_data_channel_resource_archive/v1" && ...
     archive.ResourcesCSVSHA256==row.ChannelEstimateResourcesCSVSHA256 && ...
     height(archive.Resources)==row.ChannelEstimateComparedValues && ...
@@ -1589,6 +1741,16 @@ end
 if T.CFOCorrectionApplied
     assert(isfinite(T.CFOCorrectionApplied_Hz));
 end
+end
+
+function state=localOfferPacket(state,direction,bits)
+% Explicit finite offered traffic, inserted through the production arrival
+% boundary before TX. No ledger rows are created from a later decode result.
+slot=state.CurrentSlot;
+assert(slot>state.LastTrafficFrameApplied,'One arrival boundary per fixture slot.');
+field='OfferedBitsDL'; if string(direction)=="UL", field='OfferedBitsUL'; end
+state.Traffic.(field)(slot,1)=bits;
+state=sixgr.truth.CoupledTruthRuntime.enqueueTrafficForFrameRuntime(state,slot);
 end
 
 function localReject(fn,id)

@@ -311,6 +311,24 @@ for si = 1:size(sets, 1)
         before=double(localValue(T,"LargeScaleInputEnergy_mWsample",ii,NaN));
         after=double(localValue(T,"LargeScaleOutputEnergy_mWsample",ii,NaN));
         expected=double(localValue(T,"LargeScaleExpectedOutputEnergy_mWsample",ii,NaN));
+        row.PowerMeasurementEnergyUnit="legacy_field_unit_not_independently_bound";
+        row.WaveformPowerUnit="legacy_input_power_dB_unit_unverified";
+        % New execution rows explicitly separate normalized and absolute
+        % units. Legacy retained rows remain readable without rewriting them.
+        if ismember("LargeScaleInputEnergy",string(T.Properties.VariableNames))
+            before=double(T.LargeScaleInputEnergy(ii));
+            after=double(T.LargeScaleOutputEnergy(ii));
+            expected=double(T.LargeScaleExpectedOutputEnergy(ii));
+            row.PowerMeasurementEnergyUnit=string(T.LargeScaleEnergyUnit(ii));
+            amplitudeUnit=string(T.LargeScaleWaveformAmplitudeUnit(ii));
+            if amplitudeUnit=="sqrt_mW"
+                row.WaveformPowerUnit="dBm";
+            elseif amplitudeUnit=="normalized_complex_baseband"
+                row.WaveformPowerUnit="dB_re_unit_normalized_sample_power_not_dBm";
+            else
+                row.WaveformPowerUnit="dB_re_unit_input_amplitude_squared";
+            end
+        end
         count=double(localValue(T,"LargeScaleSampleElementCount",ii,NaN));
         tolerance=double(localValue(T,"LargeScalePowerClosureRelativeTolerance",ii,NaN));
         row.PowerMeasurementSource=string(localValue(T,"LargeScaleMeasurementSource",ii,""));
@@ -849,6 +867,7 @@ row=struct("RunId","","ScenarioName","","LinkId","","ChannelRealizationId","","P
 "ShadowFadingConfigured",false,"ShadowFadingApplied",false,"O2IConfigured",false,"O2IApplied",false, ...
 "AppliedOk",false,"TruthStatus","","FailureReason","", ...
 "PowerMeasurementAvailable",false,"PowerClosureOk",false,"PowerMeasurementSource","", ...
+"PowerMeasurementEnergyUnit","","WaveformPowerUnit","", ...
 "PowerMeasurementStartSample",NaN,"PowerMeasurementEndSampleExclusive",NaN); row=localIdentityFields(row); end
 function row=localInterferenceRow()
 row=struct("RunId","","ScenarioName","","InterferenceModelId","","InterfererCellId",NaN,"InterfererSectorId",NaN, ...

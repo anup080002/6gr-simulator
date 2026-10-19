@@ -43,12 +43,20 @@ dlT = table( ...
     'WidebandCQI','CQIDerivedModulation','CQIDerivedTargetCodeRate','MCSIndex','Modulation', ...
     'TargetCodeRate','PMI','CRI','RankIndicator','CRCPass','Goodput_Mbps','Crash','PrecodingMode','AppliedPrecoderSource','Status','IsWarmupFrame'});
 dlT.CQIDerivedMCS = [0; 18];
+dlT.LinkAdaptationApplied = [0; 1];
+dlT.LinkAdaptationBootstrap = [1; 0];
+dlT.AppliedLinkAdaptationResolvedCQI = [NaN; 10];
+dlT.AppliedLinkAdaptationMCS = [NaN; 18];
+dlT.LinkAdaptationAppliedFeedbackSourceSlot = [NaN; 1];
 
 artifacts = sixgr.truth.exportLLSLiveDerivedTables(cfg, tmp, struct("DL", dlT, "UL", table(), "SRS", table(), "TRS", table()), struct(), struct(), struct());
 T = readtable(artifacts.LinkAdaptationInputPath, "VariableNamingRule", "preserve");
 
 assert(height(T) == 1, "Live link-adaptation analytics must drop warmup rows when non-warmup rows exist.");
 assert(double(T.MCSIndex(1)) == 18, "Live link-adaptation analytics must retain the applied non-warmup MCS row.");
+assert(T.LinkAdaptationApplied==1 && T.AppliedLinkAdaptationResolvedCQI==10 && ...
+    T.AppliedLinkAdaptationMCS==18 && T.LinkAdaptationAppliedFeedbackSourceSlot==1 && ...
+    string(T.SchedulerConsumptionStatus)=="feedback_applied_to_this_grant");
 
 staleCQI = dlT(2, :);
 staleCQI.WidebandCQI = 1;
@@ -62,6 +70,11 @@ staleCQI.CQIValueStatus = "available";
 staleCQI.PostEqSINRSource = "post_equalization_sinr_from_equalizer_channel_estimate";
 staleCQI.PostEqSINRValueRole = "measured_post_equalization_scheduling_input";
 staleCQI.PostEqSINRValueStatus = "OK";
+staleCQI.LinkAdaptationApplied = 0;
+staleCQI.LinkAdaptationBootstrap = 1;
+staleCQI.AppliedLinkAdaptationResolvedCQI = NaN;
+staleCQI.AppliedLinkAdaptationMCS = NaN;
+staleCQI.LinkAdaptationAppliedFeedbackSourceSlot = NaN;
 
 artifacts = sixgr.truth.exportLLSLiveDerivedTables(cfg, tmp, struct("DL", staleCQI, "UL", table(), "SRS", table(), "TRS", table()), struct(), struct(), struct());
 T = readtable(artifacts.LinkAdaptationInputPath, "VariableNamingRule", "preserve");
@@ -70,6 +83,11 @@ assert(double(T.WidebandCQI(1)) > 1 && double(T.CQIDerivedMCS(1)) > 0, ...
     "Live link-adaptation analytics must replace stale not-emitted CQI=1 with measured-SINR-derived CQI/MCS.");
 assert(contains(string(T.CQIValueSource(1)), "derived_from_PostEqSINR_dB"), ...
     "Backfilled live CQI must keep measured SINR provenance for WebGUI plots.");
+assert(T.LinkAdaptationApplied==0 && isnan(T.AppliedLinkAdaptationMCS) && ...
+    isnan(T.AppliedLinkAdaptationResolvedCQI) && ...
+    string(T.SchedulerConsumptionStatus)=="feedback_not_applied_to_this_grant" && ...
+    string(T.FeedbackEvidenceRole)=="receiver_measurement_not_proof_of_scheduler_consumption", ...
+    'Measured high CQI cannot be promoted into a delivered or applied scheduler decision.');
 
 % Fixed-MCS rows can have valid post-equalization SINR but no CQI table.
 % They must preserve their configured operating point without inventing
@@ -179,5 +197,17 @@ assert(all(ismember(["MeanCRI","MeanCSIPayloadBitLength","SampleCount"], ...
     string(emptyCSISummary.Properties.VariableNames))), ...
     "Declared CSI-RS summary schema must retain CRI/payload/count columns even before measurements arrive.");
 
+% A practical reconstruction residual is not independent channel NMSE.
+measuredCSI=table(20,-31,-7,14,2,1,15, ...
+    'VariableNames',{'SNR_dB','NMSE_dB','PilotResidualNMSE_dB','CQI','PMI','CRI','CSIPayloadBitLength'});
+artifacts=sixgr.truth.exportLLSLiveDerivedTables(cfgSymbol,tmp,struct('CSIRS',measuredCSI));
+summary=sixgr.util.csvReadTable(artifacts.CSIRSStatsPath,'TextType','string');
+assert(summary.MeanNMSE_dB==-31 && summary.MeanPilotResidualNMSE_dB==-7, ...
+    'Independent score and pilot residual must remain separate in the live summary.');
+measuredCSI.NMSE_dB=NaN;
+artifacts=sixgr.truth.exportLLSLiveDerivedTables(cfgSymbol,tmp,struct('CSIRS',measuredCSI));
+summary=sixgr.util.csvReadTable(artifacts.CSIRSStatsPath,'TextType','string');
+assert(isnan(summary.MeanNMSE_dB) && summary.MeanPilotResidualNMSE_dB==-7, ...
+    'An old residual-only trial must never be substituted for independent NMSE.');
 ok = true;
 end

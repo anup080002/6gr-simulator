@@ -2,10 +2,12 @@ function ok = testPDCCHConfigStrictValidation()
 %TESTPDCCHCONFIGSTRICTVALIDATION Strict PDCCH config validation guards.
 
 setup6GRSimToolkit("Verbose", false);
-b = pdcchStrictAnchorResult();
+b = pdcchStrictAnchorResult('Refresh',true);
 configT = b.Result.ArtifactTables.pdcch_config_strict;
 assert(height(configT) == 1, "Strict PDCCH config export must contain one effective config row.");
 assert(logical(configT.StrictValid(1)), "Strict PDCCH mini-anchor config must be valid.");
+assert(configT.CRCLength==24 && configT.CRCPolynomial=="CRC24C" && ...
+    configT.RNTIMaskLength==16,'Export the actual NR CRC width separately from its mask width.');
 assert(string(configT.RNTIType(1)) == "C-RNTI", "Strict PDCCH anchor must preserve configured C-RNTI.");
 assert(double(configT.ConfiguredDCIPayloadSizeBits(1)) == double(configT.DCIPayloadSizeBits(1)), ...
     "Strict PDCCH anchor YAML payload size must match the standard-derived DCI size.");
@@ -46,5 +48,26 @@ badFmt = b.Config;
 badFmt.DCIMonitoringFormats = "2_0";
 badFmt.StrictValidation = sixgr.phy.pdcch.validatePDCCHConfigStrict(badFmt);
 assert(~logical(badFmt.StrictValidation.StrictValid), "Strict PDCCH must fail closed for unsupported DCI formats.");
+for pair=["same_as_reg_bundle","all_contiguous_rbs";"sameAsREG-bundle","allContiguousRBs"]
+    raw=b.Config.CORESETDefinition.Data;
+    raw.PrecoderGranularity=pair(1);
+    canonical=sixgr.phy.pdcch.CORESETDefinition(raw);
+    assert(canonical.Data.PrecoderGranularity==pair(2));
+end
+raw.PrecoderGranularity="arbitrary";
+rejected=false;
+try, sixgr.phy.pdcch.CORESETDefinition(raw); catch ex
+    rejected=strcmp(ex.identifier,'sixgr:phy:pdcch:invalid_coreset_frequency_resources');
+end
+assert(rejected,'Unknown precoder granularity must remain an invalid configuration.');
+for seeds={[-1 2],[1 1],[1 2^32]}
+    bad=b.InternalConfig;
+    bad.phy.pdcch.operatorControl.pdcch_strict.statistical_qualification.deterministic_seeds=seeds{1};
+    rejected=false;
+    try, sixgr.phy.pdcch.buildPDCCHConfigFromScenario(bad); catch ex
+        rejected=strcmp(ex.identifier,'sixgr:phy:pdcch:InvalidStatisticalQualification');
+    end
+    assert(rejected,'Repeated or out-of-range seed families must be rejected before the campaign.');
+end
 ok = true;
 end

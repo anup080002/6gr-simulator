@@ -81,7 +81,8 @@ amplitude=double(prepared.Tx.PowerContext.AmplitudeScale);
 assert(isscalar(amplitude) && isfinite(amplitude) && amplitude>0, ...
     'sixgr:truth:MissingPUSCHReferencePower','Retain the single applied TX amplitude scale.');
 normalization=1;
-if base.NormalizeChannelOutputs, normalization=1/sqrt(base.NumReceiveAntennas); end
+% The executed NR path gains already include NormalizeChannelOutputs.
+% Do not apply another 1/sqrt(Nrx) to this independently scored reference.
 h=reshape(reshape(h,[],base.NumTransmitAntennas)*(projection*W), ...
     shape(1),L,base.NumReceiveAntennas,shape(4))*amplitude*normalization;
 % Sample-space wave*conj(B) corresponds to B' multiplying a channel column.

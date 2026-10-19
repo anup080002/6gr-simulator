@@ -53,7 +53,67 @@ for scs=[15 30 60 120]
 end
 fprintf('PILOT_CHANNEL_PHASE_EVOLUTION_PASS no_spatial_frequency_cancellation=1 no_doppler_spread_claim=1\n');
 fprintf('PILOT_PHASE_OFDM_CLOCK_PASS cases=%d actual_slot_CP_and_FFT_fraction=1\n',cases);
+% One-symbol SRS needs another causal occasion, not an invented zero rate.
+single=false(K,L,P); single(:,12,:)=true; ids=find(single); syms=ones(size(ids));
+for rate=[-125 0 175 400]
+    h0=base.*reshape(exp(2i*pi*rate*times),1,L,1,1);
+    h1=h0*exp(2i*pi*rate*.005);
+    [a,history]=sixgr.phy.rx.pilotChannelPhaseEvolution(carrier,h0,ids,syms,ofdm, ...
+        'ContextID','UE1/epoch1');
+    assert(isnan(a.CommonPhaseRate_Hz)&&a.PairCount==0);
+    [b,next]=sixgr.phy.rx.pilotChannelPhaseEvolution(carrier,h1,ids,syms,ofdm, ...
+        'ObservationStartTime_s',.005,'ContextID','UE1/epoch1','PreviousObservation',history);
+    expected=angle(exp(2i*pi*rate*.005))/(2*pi*.005);
+    assert(abs(b.CommonPhaseRate_Hz-expected)<1e-9 && ...
+        abs(b.UnaliasedHalfWidth_Hz-100)<1e-9 && b.PairCount==1 && ...
+        b.MatchedChannelValueCount==K*R*P && b.ObservationScope=="between_received_occasions");
+    assert(numel(next.ChannelValues)==K*R*P && ~isfield(next,'Hest'));
+    reset=sixgr.phy.rx.pilotChannelPhaseEvolution(carrier,h1,ids,syms,ofdm, ...
+        'ObservationStartTime_s',.005,'ContextID','UE1/epoch2','PreviousObservation',history);
+    assert(isnan(reset.CommonPhaseRate_Hz) && reset.HistoryStatus=="context_changed_no_cross_observation_pair");
+    expectFailure(@()sixgr.phy.rx.pilotChannelPhaseEvolution(carrier,h0,ids,syms,ofdm, ...
+        'ContextID','UE1/epoch1','PreviousObservation',history), ...
+        'sixgr:phy:rx:NoncausalPilotPhaseHistory');
+    future=history; future.AvailableAtTime_s=.02;
+    expectFailure(@()sixgr.phy.rx.pilotChannelPhaseEvolution(carrier,h1,ids,syms,ofdm, ...
+        'ObservationStartTime_s',.005,'ContextID','UE1/epoch1','PreviousObservation',future), ...
+        'sixgr:phy:rx:NoncausalPilotPhaseHistory');
+    bad=history; bad.CoordinateKeys(1)=bad.CoordinateKeys(2);
+    expectFailure(@()sixgr.phy.rx.pilotChannelPhaseEvolution(carrier,h1,ids,syms,ofdm, ...
+        'ObservationStartTime_s',.005,'ContextID','UE1/epoch1','PreviousObservation',bad), ...
+        'sixgr:phy:rx:InvalidPilotPhaseHistory');
+end
+fprintf('PILOT_PHASE_CAUSAL_HISTORY_PASS compact_observations=1 explicit_aliasing=1\n');
+% SISO PDSCH/PUSCH and one-RX multiport observations share this helper.
+% Cover multiple pilots and a single pilot without relying on singleton
+% dimension orientation from find/repelem.
+for rxCount=[1 2 4]
+    for portCount=[1 2 4]
+        for pilotCount=[1 17]
+            mask=false(K,L,portCount); mask(1:pilotCount,[3 12],:)=true;
+            spatial=reshape(1:(K*rxCount*portCount),K,1,rxCount,portCount);
+            observed=spatial.*reshape(exp(2i*pi*75*times),1,L,1,1);
+            [a,snapshot]=sixgr.phy.rx.pilotChannelPhaseEvolution(carrier,observed, ...
+                find(mask),ones(nnz(mask),1),ofdm);
+            assert(abs(a.CommonPhaseRate_Hz-75)<1e-9);
+            expected=pilotCount*rxCount*portCount;
+            assert(a.MatchedChannelValueCount==expected && ...
+                iscolumn(snapshot.CoordinateKeys) && iscolumn(snapshot.ChannelValues) && ...
+                numel(snapshot.CoordinateKeys)==expected && ...
+                numel(unique(snapshot.CoordinateKeys))==expected);
+            [k,r,p]=ind2sub([K rxCount portCount],snapshot.CoordinateKeys);
+            at=sub2ind([K L rxCount portCount],k,12*ones(expected,1),r,p);
+            assert(isequal(snapshot.ChannelValues,observed(at)));
+        end
+    end
+end
+fprintf('PILOT_PHASE_SINGLETON_DIMENSIONS_PASS cases=18 exact_coordinate_values=1\n');
 ok=true;
+end
+
+function expectFailure(f,id)
+try, f(); catch ex, assert(strcmp(ex.identifier,id)); return; end
+error('test:ExpectedFailureMissing','Expected %s',id);
 end
 
 function times=localTimes(carrier,info)

@@ -55,6 +55,36 @@ def csv_records(records):
     return out.getvalue().encode()
 
 
+def test_clipping_plot_uses_both_real_converter_populations_across_all_points():
+    sources = {}
+    for direction, path in zip(("DL", "UL"), radio.TRIALS):
+        records = []
+        for point, snr in enumerate((40, 30, 20, 10, 0, -10, -20, -30), 1):
+            record = dict(Direction=direction, Slot=43, UEID=1, CellID=1,
+                          SweepPointIndex=point, ConfiguredSNR_dB=snr, PeakClippingEvents=0)
+            for converter, count, population in (("DAC", 5824, 3932160), ("ADC", 12, 246216)):
+                record.update({converter + "ClippingStatus": "measured",
+                               converter + "ClippedSampleCount": count,
+                               converter + "ClippingSampleCount": population,
+                               converter + "ClippingRatio": count/population,
+                               converter + "ClippingSource": "actual_converter_mask",
+                               converter + "ClippingPopulation": "complex_samples_any_I_or_Q_component_across_all_channels"})
+            records.append(record)
+        sources[path] = csv_records(records)
+    result, rows = chart("clipping event histogram", sources)
+    assert result["source_row_count"] == 32
+    assert {row["converter"] for row in rows} == {"ADC", "DAC"}
+    assert {row["sweep_point_index"] for row in rows} == set(map(str, range(1, 9)))
+    assert {int(row["clipped_complex_samples"]) for row in rows} == {12, 5824}
+    assert b"DAC" in result["img_bytes"] and b"ADC" in result["img_bytes"]
+    corrupted = records[0].copy()
+    corrupted["DACClippingRatio"] = 0
+    bad, _ = chart("clipping event histogram", {radio.TRIALS[1]: csv_records([corrupted])})
+    assert bad["csv_status"] == "unavailable_exact_reason" and "closure" in bad["note"]
+    legacy, _ = chart("clipping event histogram", {radio.TRIALS[0]: b"Slot,PeakClippingEvents\n1,0\n"})
+    assert legacy["csv_status"] == "unavailable_exact_reason"
+
+
 def normalized_ssb_power_payload(change="", n_rx=2):
     row = next(csv.DictReader(io.StringIO(ssb_power_payload(n_rx=n_rx).decode())))
     evidence = json.loads(row.pop("SSBWindowPowerMeasurementJSON"))
@@ -99,6 +129,9 @@ def test_transmitter_evm_cannot_be_mislabeled_as_equalized_receiver_evm(name, si
     result, output = chart(name, {"air_interface/csv/control_evm_samples.csv": csv_records(rows)})
     assert result["csv_status"] == "specialized_runtime_radio_measurement_dataset"
     assert output[0]["measurement_domain"] == "transmitter_resource_elements"
+    assert output[0]["standardized_modulation_evm_qualified"] == "False"
+    assert output[0]["measurement_claim"] == "raw_gain_inclusive_TX_pair_error_not_standardized_modulation_EVM"
+    assert output[0]["amplitude_reference_treatment"] == "pre_TX_RF_amplitude_no_PA_backoff_or_gain_removal"
     assert b"TX RF" in result["img_bytes"]
     rows[0]["ReferenceSource"] = "receiver_pilot_fit"
     bad, _ = chart(name, {"air_interface/csv/control_evm_samples.csv": csv_records(rows)})

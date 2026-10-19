@@ -15,6 +15,10 @@
   "run_control": {
     "seed": 11,
     "deterministic_mode": true,
+    "runtime_checkpoint_enable": false,
+    "runtime_checkpoint_keep": 3,
+    "runtime_checkpoint_resume_from": "",
+    "runtime_checkpoint_repair_reason": "",
     "execution_mode": "LLS",
     "study_mode": "baseline",
     "simulation_mode": "full_phy",

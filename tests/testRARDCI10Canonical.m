@@ -65,7 +65,22 @@ for scaling=0:2
     candidateEvidence=sixgr.phy.ra.rarPDCCHCandidateEvidence(identity,ra,rx.PDCCHInfo);
     assert(height(candidateEvidence)==1 && candidateEvidence.AggregationLevel==2^(scaling+1));
     assert(candidateEvidence.CrcPass && candidateEvidence.IsSelectedCandidate);
-    assert(isnan(candidateEvidence.CCEIndex) && strlength(candidateEvidence.CCEIndexNAReason)>0);
+    actualCandidates=rx.PDCCHInfo.CandidateResults;
+    actualCandidates=actualCandidates(logical(actualCandidates.DecodeAttempted),:);
+    assert(isequal(candidateEvidence.CCEIndex,double(actualCandidates.CCEIndex)) && ...
+        all(isfinite(candidateEvidence.CCEIndex)) && ...
+        all(strlength(candidateEvidence.CCEIndexNAReason)==0), ...
+        'RAR evidence must retain the actual receiver CCE start, not erase it or use a candidate ordinal.');
+    absentCCE=rx.PDCCHInfo;
+    absentCCE.CandidateResults.CCEIndex=[];
+    absent=sixgr.phy.ra.rarPDCCHCandidateEvidence(identity,ra,absentCCE);
+    assert(all(isnan(absent.CCEIndex)) && all(strlength(absent.CCEIndexNAReason)>0));
+    for invalidCCE=[-1 .5 Inf]
+        invalid=rx.PDCCHInfo;
+        invalid.CandidateResults.CCEIndex(1)=invalidCCE;
+        localError(@()sixgr.phy.ra.rarPDCCHCandidateEvidence(identity,ra,invalid), ...
+            'sixgr:phy:ra:InvalidRARCandidateCCEIndex');
+    end
     assert(height(sixgr.phy.ra.rarPDCCHCandidateEvidence(struct(),ra,struct()))==0);
     evidence=sixgr.phy.ra.rarDCIFieldEvidence(struct('RunId','unit_rar','UEId',1),ra,tx,rx);
     assert(height(evidence)==12 && all(isfinite(evidence.Value)));

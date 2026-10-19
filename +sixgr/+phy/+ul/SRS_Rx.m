@@ -495,11 +495,10 @@ if ~isempty(srsInd)
     [~, symIdx, ~] = ind2sub([K, L, nPorts], double(srsInd(:)));
     srsSymbols = unique(double(symIdx(:)), "stable");
 end
-if combSize >= 4 || numel(srsSymbols) <= 1
-    avgWindow = [0 0];
-else
-    avgWindow = [0 max(0, numel(srsSymbols) - 1)];
-end
+% Preserve each measured pilot's temporal phase. Automatic/three-symbol
+% time averaging suppresses the very evolution exported by the tracker.
+% Frequency-domain CDM despreading remains controlled separately above.
+avgWindow = [0 1];
 end
 
 function tf = localSRSFrequencyHoppingEnabled(srs)

@@ -10,6 +10,12 @@ addParameter(p, "AggregationLevel", strictCfg.AggregationLevel, @(x) isnumeric(x
 parse(p, cfg, strictCfg, varargin{:});
 opt = p.Results;
 
+declaredCRC=sixgr.util.structGet(strictCfg,"CRCLength",24);
+sixgr.phy.pdcch.PDCCHSpecificationProfile.validateCRCLength(declaredCRC);
+cfg=sixgr.util.structSet(cfg,"phy.pdcch.crcLength",double(declaredCRC));
+cfg=sixgr.util.structSet(cfg,"phy.pdcch.crcPolynomial",'CRC24C');
+cfg=sixgr.util.structSet(cfg,"phy.pdcch.rntiMaskLength",16);
+
 cfg = sixgr.util.structSet(cfg, "phy.carrier.NCellID", double(strictCfg.NCellID));
 cfg = sixgr.util.structSet(cfg, "phy.carrier.NSizeGrid", double(strictCfg.NSizeGrid));
 cfg = sixgr.util.structSet(cfg, "phy.carrier.NStartGrid", double(strictCfg.NStartGrid));

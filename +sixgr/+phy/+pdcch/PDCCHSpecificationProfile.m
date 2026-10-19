@@ -18,6 +18,7 @@ classdef PDCCHSpecificationProfile
         Modulation = "QPSK"
         CRCPolynomial = "CRC24C"
         CRCLength = 24
+        RNTIMaskLength = 16
     end
 
     methods (Static)
@@ -37,7 +38,17 @@ classdef PDCCHSpecificationProfile
                 "DataREPerREG", sixgr.phy.pdcch.PDCCHSpecificationProfile.DataREPerREG, ...
                 "BitsPerCCE", sixgr.phy.pdcch.PDCCHSpecificationProfile.BitsPerCCE, ...
                 "Modulation", sixgr.phy.pdcch.PDCCHSpecificationProfile.Modulation, ...
-                "CRCPolynomial", sixgr.phy.pdcch.PDCCHSpecificationProfile.CRCPolynomial);
+                "CRCPolynomial", sixgr.phy.pdcch.PDCCHSpecificationProfile.CRCPolynomial, ...
+                "CRCLength", sixgr.phy.pdcch.PDCCHSpecificationProfile.CRCLength, ...
+                "RNTIMaskLength", sixgr.phy.pdcch.PDCCHSpecificationProfile.RNTIMaskLength);
+        end
+
+        function validateCRCLength(value)
+            % TS 38.212 7.3.2: CRC24C; only the last 16 bits are RNTI-masked.
+            assert(isnumeric(value) && isreal(value) && isscalar(value) && ...
+                isfinite(value) && value==sixgr.phy.pdcch.PDCCHSpecificationProfile.CRCLength, ...
+                'sixgr:phy:pdcch:InvalidNRCRCDeclaration', ...
+                'NR PDCCH uses a 24-bit CRC24C. The 16-bit RNTI mask is not a 16-bit DCI CRC.');
         end
 
         function E = encodedBits(aggregationLevel)

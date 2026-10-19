@@ -30,6 +30,37 @@ bad.CurrentDirection = ['DL'; 'UL'];
 localMustThrow(@() sixgr.truth.canonicalizeRuntimeStatusSnapshot(bad), ...
     "sixgr:truth:RuntimeStatusFieldNotScalar");
 
+% Exercise the production publication boundary, not a hardcoded stage flag.
+folder=tempname; layout=sixgr.report.resultLayout(folder);
+sixgr.util.ensureFolder(layout.AirInterfaceCSVDir);
+cleanup=onCleanup(@()rmdir(folder,'s')); %#ok<NASGU> owned temporary test folder
+file=fullfile(layout.AirInterfaceCSVDir,'link_anchor_kpis.csv');
+anchor=table("fixture_executed_anchor","FAIL", ...
+    'VariableNames',{'Case','Status'});
+for population=0:2
+    if population==1
+        sixgr.util.csvWriteTable(file,anchor([],:),'PreserveSchema',true);
+    elseif population==2
+        sixgr.util.csvWriteTable(file,anchor);
+    end
+    for stage=["link_anchor_complete","control_gating_streaming","dl_raw_trials_ready", ...
+            "harq_ready","final_bundle_ready"]
+        raw.Stage=stage; raw.AnchorKPIsReady=true; % Poison earlier caller's assumption.
+        status=sixgr.truth.canonicalizeRuntimeStatusSnapshot(raw,folder);
+        assert(status.AnchorKPIsReady==(population==2) && ...
+            status.AnchorKPIRowCount==double(population==2));
+        assert(status.AnchorKPIEvidenceSource=="air_interface/csv/link_anchor_kpis.csv");
+        if population==2
+            assert(status.AnchorKPIAvailabilityStatus=="published_rows_not_qualification");
+        end
+        assert(height(struct2table(orderfields(status)))==1);
+    end
+end
+% A persisted zero-row replacement must not inherit a stale previous true.
+sixgr.util.csvWriteTable(file,anchor([],:),'PreserveSchema',true);
+status=sixgr.truth.canonicalizeRuntimeStatusSnapshot(status,folder);
+assert(~status.AnchorKPIsReady);
+
 ok = true;
 fprintf("[PASS] testRuntimeStatusSnapshotIntegrity\n");
 end

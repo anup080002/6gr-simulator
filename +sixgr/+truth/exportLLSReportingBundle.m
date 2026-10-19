@@ -639,8 +639,10 @@ switch key
             localNumericTrialSummaryRows(cat, metric, ctx.Tables.UL, "PAPR_dB", "UL", "dB")];
     case "peak_clipping_events"
         T = [T; ...
-            localNumericTrialSummaryRows(cat, metric, ctx.Tables.DL, "PeakClippingEvents", "DL", "count"); ...
-            localNumericTrialSummaryRows(cat, metric, ctx.Tables.UL, "PeakClippingEvents", "UL", "count")];
+            localNumericTrialSummaryRows(cat, metric, ctx.Tables.DL, "DACClippedSampleCount", "DL_TX_DAC", "clipped_complex_samples"); ...
+            localNumericTrialSummaryRows(cat, metric, ctx.Tables.DL, "ADCClippedSampleCount", "DL_RX_ADC", "clipped_complex_samples"); ...
+            localNumericTrialSummaryRows(cat, metric, ctx.Tables.UL, "DACClippedSampleCount", "UL_TX_DAC", "clipped_complex_samples"); ...
+            localNumericTrialSummaryRows(cat, metric, ctx.Tables.UL, "ADCClippedSampleCount", "UL_RX_ADC", "clipped_complex_samples")];
     case "shaping_rate_loss"
         T = [T; ...
             localNumericTrialSummaryRows(cat, metric, ctx.Tables.DL, "ShapingRateLoss", "DL", "fraction"); ...
@@ -784,7 +786,12 @@ switch key
     case "equalizer_output_sinr"
         T = localNumericTrialSummaryRows(cat, metric, ctx.Tables.DL, "PostEqSINR_dB", "DL", "dB");
     case "residual_interference_power"
-        T = localNumericTrialSummaryRows(cat, metric, ctx.Tables.DL, "ResidualInterferencePower_dB", "DL", "dB");
+        % Legacy request name is not an external-interference measurement.
+        % Keep its routing compatibility, but publish the actual metric name
+        % and dimensionless equalized-symbol reference in the output rows.
+        T = localNumericTrialSummaryRows(cat, "decision_residual_symbol_power", ...
+            ctx.Tables.DL, "DecisionResidualSymbolPower_dB", "DL", ...
+            "dB_relative_equalized_symbol_unit");
     case "beam_precoder_gain"
         T = localNumericTrialSummaryRows(cat, metric, ctx.Tables.Beam, "ChannelGain_dB", "beamforming", "dB");
     case "harq_gain_per_retransmission"
@@ -8495,9 +8502,9 @@ end
 function out = localDefaultSource(entity)
 entity = upper(string(entity));
 switch entity
-    case {"DL","RANK_1","RANK_2","RANK_3","RANK_4"}
+    case {"DL","DL_TX_DAC","DL_RX_ADC","RANK_1","RANK_2","RANK_3","RANK_4"}
         out = "air_interface/csv/dl_pdsch_trials.csv";
-    case "UL"
+    case {"UL","UL_TX_DAC","UL_RX_ADC"}
         out = "air_interface/csv/ul_pusch_trials.csv";
     case "UL_GOOD_BLOCK_SIZE"
         out = "air_interface/csv/ul_pusch_trials.csv";

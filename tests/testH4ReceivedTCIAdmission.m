@@ -87,6 +87,9 @@ for k=1:numel(phases)
         state,grant,'DL',controlRows{2});
     assert(allowed==expected(k) && bound.ControlDecodeOk==expected(k) && ...
         bound.GrantValid==expected(k) && bound.DCICrcPass && bound.PDCCHPayloadMatch);
+    assert(bound.PDCCHReceiverDecodeOk && ...
+        bound.PDCCHDataAdmissionOk==expected(k));
+    assert(strlength(string(bound.PDCCHTCIAdmissionStatus))>0);
     assert(after.GrantsBlockedByGatingCount==double(~expected(k)) && ...
         after.BeamManagementMachines{1}.State==phases(k));
     if ~expected(k)

@@ -40,6 +40,11 @@ for scope=["dl_pdsch_trials","ul_pusch_trials"]
     for name=string(blank.Properties.VariableNames(3:end)), blank.(name)=repmat({''},3,1); end
     fixed=sixgr.truth.canonicalizeLLSLiveSignalChainTable(scope,blank);
     assert(~any(fixed.LinkAdaptationApplied) && height(fixed)==3 && width(fixed)==width(blank));
+    phase=original; phase.AdaptiveMode=true(5,1); phase.LinkAdaptationScheduled=true(5,1);
+    phase.LinkAdaptationBootstrap=false(5,1);
+    phase=sixgr.truth.canonicalizeLLSLiveSignalChainTable(scope,phase);
+    assert(isequal(phase.LinkAdaptationBootstrap,~expected), ...
+        'Bootstrap must reconcile to this row after unsupported applied claims are corrected.');
     path=fullfile(air,scope+".csv");
     sixgr.util.csvWriteTable(path,blank,'PreserveSchema',true);
     sixgr.truth.sanitizeLLSArtifactCSVs(folder);

@@ -4,7 +4,8 @@ setup6GRSimToolkit('Verbose',false); old=rng; cleanup=onCleanup(@()rng(old)); rn
 s=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs','scenarios', ...
     'lls_causal_access_to_data_wiring_tdd.yaml'));
 cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
-cfg.random_access.preamble_detection_policy='awgn_sic_unrestricted';
+for policy=["strongest","awgn_sic_unrestricted"]
+cfg.random_access.preamble_detection_policy=char(policy);
 cfg.random_access.multi_preamble_max_delay_us=2;
 [prepared,cp]=sixgr.phy.ra.runFourStepRA(cfg,'WriteArtifacts',false, ...
     'RuntimeIntegrationMode','provided_observation_unit_channel_test', ...
@@ -29,6 +30,28 @@ assert(t.NoiseFloorDefinition==received.Msg1NoiseFloorDefinition);
 assert(t.NoiseFloorStatus==received.Msg1NoiseFloorStatus);
 assert(t.NoiseFloorPairCount==received.Msg1NoiseFloorPairCount);
 assert(received.Msg1DetectionTrace.NoiseFloor==t.PDPAverageNoiseFloor);
+if policy=="strongest"
+    trace=received.Msg1DetectionTrace;
+    assert(isnan(trace.Threshold) && trace.DecisionThreshold==t.DetectionThreshold);
+    [~,sequenceInfo]=nrPRACH(cp.Msg1Tx.Carrier,cp.Msg1Tx.PRACH);
+    row=struct('DetectionSuccess',true,'FalseAlarm',NaN,'MissedDetection',false, ...
+        'PRACHRootSequenceIndex',cp.Msg1Tx.PRACH.SequenceIndex, ...
+        'PRACHRestrictedSetType',string(cp.Msg1Tx.PRACH.RestrictedSet), ...
+        'PRACHNCS',sequenceInfo.NumCyclicShifts, ...
+        'PRACHZeroCorrelationZone',cp.Msg1Tx.PRACH.ZeroCorrelationZone, ...
+        'PreambleIndex',received.PreambleIndexTx,'Slot',cp.RAConfig.PRACHAbsoluteSlot+1);
+    plotted=sixgr.truth.buildFourStepRACorrelationTraceTable(received,row,cfg,20,1);
+    mirrored=sixgr.truth.buildPRACHCorrelationTraceTable(plotted);
+    assert(height(plotted)==trace.NoiseFloorEvidence.NFFT && height(mirrored)==height(plotted));
+    for name=string(plotted.Properties.VariableNames)
+        assert(isequaln(plotted.(name),mirrored.(name)), ...
+            'test:PRACHTraceRoundtrip','Measured trace field %s changed in the primary mirror.',name);
+    end
+    assert(all(plotted.noise_floor==trace.NoiseFloor) && all(isnan(plotted.threshold)) && ...
+        all(plotted.decision_peak_metric==t.DetectionMetric));
+    assert(all(plotted.noise_floor_normalization==trace.NoiseFloorEvidence.Normalization));
+end
 assert(isnan(t.FalseAlarm),'Signal-present detection is not a false-alarm trial.');
+end
 ok=true; disp('PRACH_BACKGROUND_RUNTIME_EXPORT_PASS: actual B4 received waveform through Msg1 completion and primary evidence table.');
 end

@@ -39,6 +39,12 @@ trialRows(end+1, 1) = row; %#ok<AGROW>
 trialRows(end+1, 1) = row; %#ok<AGROW>
 
 csiBits = int8(mod((0:19).', 2));
+for payloadBits = [12 19]
+    [trialId, row] = localRunPositiveTrial(trialId, ...
+        "positive_format2_csi_crc6_" + string(payloadBits), baseCfg, ...
+        csiBits(1:payloadBits), 2, highSNR, rnti, runId, scenarioName);
+    trialRows(end+1, 1) = row; %#ok<AGROW>
+end
 [trialId, row] = localRunPositiveTrial(trialId, "positive_format2_csi_part1", baseCfg, ...
     csiBits, 2, highSNR, rnti, runId, scenarioName);
 trialRows(end+1, 1) = row; %#ok<AGROW>
@@ -149,7 +155,9 @@ row.ExpectedBitCount = double(sixgr.util.structGet(trial, "ExpectedBitCount", nu
 row.DecodedBitCount = double(sixgr.util.structGet(trial, "DecodedBitCount", numel(decodedBits)));
 row.UCIExpectedBitVector = string(sixgr.util.structGet(trial, "UCIExpectedBitVector", localBitsToDelimitedString(expectedBits)));
 row.UCIDecodedBitVector = string(sixgr.util.structGet(trial, "UCIDecodedBitVector", localBitsToDelimitedString(decodedBits)));
-row.UCIBitErrorVector = string(sixgr.util.structGet(trial, "UCIBitErrorVector", localBitErrorVectorString(expectedBits, decodedBits)));
+comparison = sixgr.link.compareUCIBitEvidence(expectedBits,decodedBits);
+row.UCIBitErrorVector = string(sixgr.util.structGet(trial, "UCIBitErrorVector", comparison.UCIBitErrorVector));
+row.BitComparisonStatus = string(sixgr.util.structGet(trial, "BitComparisonStatus", comparison.BitComparisonStatus));
 row.UCICodedBitCount = double(sixgr.util.structGet(trial, "UCICodedBitCount", localPUCCHUCICodedBitCount(trial, row.ResolvedFormat)));
 row.UCICRCBitCount = double(sixgr.util.structGet(trial, "UCICRCBitCount", localPUCCHUCICRCBitCount(row.ExpectedBitCount, row.ResolvedFormat)));
 row.UCICRCApplicable = logical(sixgr.util.structGet(trial, "UCICRCApplicable", row.UCICRCBitCount > 0));
@@ -160,7 +168,8 @@ row.ExpectedAck = localFirstBit(sixgr.util.structGet(trial, "ExpectedBits", int8
 row.ObservedAck = logical(sixgr.util.structGet(trial, "AckObserved", false));
 row.CRCApplicable = logical(sixgr.util.structGet(trial, "CRCApplicable", row.UCICRCApplicable));
 if row.CRCApplicable
-    row.CRCPass = double(logical(sixgr.util.structGet(trial, "Ok", false)));
+    % Decoder CRC is independent of detector/content/semantic acceptance.
+    row.CRCPass = double(sixgr.util.structGet(trial, "CRCPass", NaN));
 else
     row.CRCPass = NaN;
 end
@@ -473,7 +482,7 @@ row = struct( ...
     "ExpectedBits", "", "DecodedBits", "", "ExpectedBitCount", NaN, "DecodedBitCount", NaN, ...
     "UCIExpectedBitVector", "", "UCIDecodedBitVector", "", "UCIBitErrorVector", "", ...
     "UCICodedBitCount", NaN, "UCICRCBitCount", NaN, "UCICRCApplicable", false, ...
-    "BitsCompared", NaN, "BitErrors", NaN, "UCIContentMatch", false, ...
+    "BitsCompared", NaN, "BitErrors", NaN, "BitComparisonStatus", "", "UCIContentMatch", false, ...
     "ExpectedAck", false, "ObservedAck", false, ...
     "CRCApplicable", false, "CRCPass", NaN, "CRCOutcome", "", ...
     "DetectionOutcome", "", "DetectionMetric", NaN, "DetectionThreshold", NaN, ...
@@ -528,27 +537,12 @@ else
 end
 end
 
-function s = localBitErrorVectorString(expectedBits, decodedBits)
-expectedBits = localNormalizeBits(expectedBits);
-decodedBits = localNormalizeBits(decodedBits);
-n = max(numel(expectedBits), numel(decodedBits));
-if n < 1
-    s = "";
-    return;
-end
-errs = ones(n, 1, "int8");
-nCompare = min(numel(expectedBits), numel(decodedBits));
-if nCompare > 0
-    errs(1:nCompare) = int8(expectedBits(1:nCompare) ~= decodedBits(1:nCompare));
-end
-s = localBitsToDelimitedString(errs);
-end
-
 function n = localPUCCHUCICRCBitCount(numBits, resolvedFormat)
 numBits = max(0, round(double(numBits)));
 resolvedFormat = round(double(resolvedFormat));
 if isfinite(resolvedFormat) && resolvedFormat >= 2 && numBits >= 12
-    n = 6;
+    % TS 38.212 6.3.1.2: CRC length per code block, not total overhead.
+    n = 6 + 5 * double(numBits >= 20);
 else
     n = 0;
 end

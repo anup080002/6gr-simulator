@@ -23,6 +23,16 @@ T.RxRFEndpointMetadataJSON=repmat(string(jsonencode(rxMetadata)),n,1);
 T.TxRFEndpointMetadataAuditJSON=repmat(string(jsonencode(txAudit)),n,1);
 T.RxRFEndpointMetadataAuditJSON=repmat(string(jsonencode(rxAudit)),n,1);
 T.RFMetadataAppliedFlagScope=repmat(rxAudit.AppliedFlagScope,n,1);
+% Metadata-only consumers (PBCH/CSI/control) need the same actual counts as
+% data consumers. Unknown/time-varying counts remain NaN, never default zero.
+for endpoint=["Tx","Rx"]
+    if endpoint=="Tx", metadata=txMetadata; else, metadata=rxMetadata; end
+    for countName=["RFConfiguredStageCount","RFExecutedStageCount","RFAppliedStageCount"]
+        value=double(sixgr.util.structGet(metadata,countName,NaN));
+        T.(endpoint+countName)=repmat(value,n,1);
+    end
+    T.(endpoint+"RFStageCountScope")=repmat("per_execution_segment_not_sum_across_segments",n,1);
+end
 % These legacy flat columns have explicit endpoint owners. Never copy
 % preparation-time placeholders or a different UE's RF replay into them.
 for field=["CFOApplied","TimingOffsetApplied","PhaseNoiseConfigured", ...
@@ -36,6 +46,9 @@ for field=["CFOApplied","TimingOffsetApplied","PhaseNoiseConfigured", ...
         "ADCDNLLSBConfigured","ADCSeedConfigured", ...
         "AGCExecuted","AGCDecisionCausal","AGCGain_dB","AGCGainMin_dB", ...
         "AGCGainMax_dB","AGCGainIsTimeVarying","AGCGainSampleCount", ...
+        "AGCTargetRMS","AGCOverloadGuardEnabled","AGCOverloadGuardGainStep_dB", ...
+        "AGCOverloadGuardHoldSamples","AGCOverloadGuardFeedbackLatencySamples", ...
+        "AGCOverloadGuardTriggerCount", ...
         "ADCErrorSampleCount","ADCInputEnergy","ADCErrorEnergy","ADCErrorMeanSquare"]
     T.(field)=repmat(double(sixgr.util.structGet(rxMetadata,field,NaN)),n,1);
 end
@@ -52,6 +65,7 @@ for field=["ADCClippingPopulation","ADCClippingSource","ADCClippingThresholdRule
         "ADCClippingStatus","ADCConventionConfigured","IQImbalanceModel","ConfiguredIQImbalanceSource", ...
         "PhaseNoiseAvailableBackend","PhaseNoiseTruthClassification","PhaseNoiseApproximationReason", ...
         "AGCControlModel","AGCExecutionStatus","AGCGainEvidenceSource", ...
+        "AGCOverloadGuardObservationPlane", ...
         "ADCErrorMeasurementStatus","ADCErrorDefinition","ADCErrorDomain"]
     T.(field)=repmat(string(sixgr.util.structGet(rxMetadata,field,"unavailable")),n,1);
 end
@@ -62,6 +76,15 @@ for field=["PAModel","DACClippingPopulation","DACClippingSource", ...
 end
 T.TxRFExecutionStatus=repmat(txMetadata.RFExecutionStatus,n,1);
 T.RxRFExecutionStatus=repmat(rxMetadata.RFExecutionStatus,n,1);
+% Compatibility field has one explicit owner. Never sum TX and RX counts
+% (different captures/port populations), or infer clipping from CFR policy.
+T.PeakClippingEvents=T.DACClippedSampleCount;
+T.PeakClippingEventsSource=repmat("actual_TX_DAC_clipped_complex_samples",n,1);
+T.PeakClippingEventsPopulation=T.DACClippingPopulation;
+T.PeakClippingEventsStatus=T.DACClippingStatus;
+% The same completed RX capture owns its noise calibration. Control/RA
+% reducers must retain it too, without treating injection metadata as SINR.
+T=sixgr.truth.bindSharedNoiseReferenceEvidence(T,planes);
 % Control/reference rows share a capture. Bind its actual endpoint metadata
 % once, without rereading/hashing gigabytes of IQ per beam or RS row. This
 % mode makes no whole-capture sample-statistic or waveform-hash claim.

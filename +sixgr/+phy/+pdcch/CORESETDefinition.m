@@ -22,6 +22,13 @@ classdef CORESETDefinition
             end
             data.MappingType = lower(strrep(string(data.MappingType), "-", ""));
             data.PrecoderGranularity = string(data.PrecoderGranularity);
+            % YAML catalog spelling and native toolbox spelling denote the
+            % same configured procedure; normalize only these known aliases.
+            if data.PrecoderGranularity=="same_as_reg_bundle"
+                data.PrecoderGranularity="sameAsREG-bundle";
+            elseif data.PrecoderGranularity=="all_contiguous_rbs"
+                data.PrecoderGranularity="allContiguousRBs";
+            end
             nRB = localInteger(data.NRB, "NRB");
             rbStart = localInteger(data.RBStart, "RBStart");
             if rbStart < 0

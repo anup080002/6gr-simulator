@@ -30,6 +30,13 @@ for phase=[-17 0 17]
     % TX-reference audit corruption must not alter receiver detection evidence.
     row=struct('InjectedTimingOffset_samples',1,'BitErrors',32,'BitsCompared',32);
     out=sixgr.truth.bindPDCCHReceiverObservation(row,rx,info);
+    assert(out.PDCCHLLRCount==numel(rx.DecoderLLRs) && ...
+        out.PDCCHLLRMeanAbs==mean(abs(double(rx.DecoderLLRs(:)))) && ...
+        out.PDCCHLLRMin==min(double(rx.DecoderLLRs(:))) && ...
+        out.PDCCHLLRMax==max(double(rx.DecoderLLRs(:))));
+    assert(out.LLRAvailable && out.LLRFinite && ...
+        all(isfinite(rx.DecoderLLRs(:))), ...
+        'Generic LLR flags must describe the same actual decoder vector as the PDCCH statistics.');
     assert(out.DetectionAttempted && out.DetectionUsable && out.DetectionSuccess);
     assert(isnan(out.DetectionMetric) && contains(out.DetectionMetricStatus,'rnti_masked_crc'));
     assert(out.TimingEstimateUsed && out.TimingEstimate_samples==phase && ...
@@ -42,6 +49,18 @@ for phase=[-17 0 17]
     assert(same.DetectionSuccess==out.DetectionSuccess && ...
         isequaln(same.DetectionMetric,out.DetectionMetric));
 end
+% Explicit export-boundary fixtures, not additional waveform realizations.
+% A nonfinite vector remains present, but cannot be called finite. Missing
+% retained samples are unknown, even if stale summary statistics exist.
+nonfinite=rx; nonfinite.DecoderLLRs(1)=NaN;
+out=sixgr.truth.bindPDCCHReceiverObservation(row,nonfinite,info);
+assert(out.LLRAvailable && ~out.LLRFinite);
+absent=rmfield(rx,'DecoderLLRs');
+out=sixgr.truth.bindPDCCHReceiverObservation(row,absent,info);
+assert(isnan(out.LLRAvailable) && isnan(out.LLRFinite));
+empty=rx; empty.DecoderLLRs=zeros(0,1);
+out=sixgr.truth.bindPDCCHReceiverObservation(row,empty,info);
+assert(~out.LLRAvailable && ~out.LLRFinite);
 % Replay identical received samples with a deliberately wrong TX audit.
 % The physical CRC still passes, but this must not authorize the grant.
 poisoned=prepared;

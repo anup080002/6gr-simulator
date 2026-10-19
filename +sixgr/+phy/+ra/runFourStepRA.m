@@ -333,8 +333,13 @@ try
                     contentionPreparedTransmission.AbsoluteSlot==contentionSlot
                 runtime.StageWaveforms.Msg4RxWaveform=rawPost;
                 runtime.StageWaveforms.Msg4PhysicalExecution=struct('Planes',physical.Planes,'Prepared',contentionPreparedTransmission);
+                % Independent scoring is bound only after the receiver ran,
+                % and only to this actually executed, matching producer.
+                receivedContention.PDSCH=localBindSharedArrivalScoring( ...
+                    receivedContention.PDSCH,runtime,"Msg4");
                 [~,runtime,stageInfo]=localResolveStageRxWaveform("Msg4","DL",msg4Tx.Waveform,cfg,raCfg,msg4Tx,runtime);
                 result=localAppendRuntimeStage(result,stageInfo,runtime);
+                result=sixgr.phy.ra.appendObservedStageAllocation(result,msg4Tx,stageInfo);
                 % Keep failed DCI/TB measurements too; waiting for the UE
                 % timer must not erase the physically executed Msg4 trial.
                 result=localApplyMsg4(result,raCfg,msg3Tx.Msg3, ...
@@ -404,6 +409,18 @@ try
         result.RARMonitoringObservations=rarReceiver.Observations;
         result.RARMonitoringCandidates=rarReceiver.Candidates;
         result.RARMonitoringDecodedFields=rarReceiver.DecodedFields;
+        % Physical TX occupancy is independent of whether the UE accepted
+        % its DCI/RAR. A quiet monitoring occasion has no prepared producer.
+        if ~isempty(fieldnames(rarPreparedTransmission)) && ...
+                rarPreparedTransmission.AbsoluteSlot==rarObservationSlot
+            runtime.StageWaveforms.Msg2RxWaveform=rawPost;
+            runtime.StageWaveforms.Msg2PhysicalExecution=struct('Planes',physical.Planes,'Prepared',rarPreparedTransmission);
+            received.Receiver=localBindSharedArrivalScoring(received.Receiver,runtime,"Msg2");
+            stageConfig=raCfg; stageConfig.Msg2Slot=rarPreparedTransmission.AbsoluteSlot;
+            [~,runtime,stageInfo]=localResolveStageRxWaveform("Msg2","DL",msg2Tx.Waveform,cfg,stageConfig,msg2Tx,runtime);
+            result=localAppendRuntimeStage(result,stageInfo,runtime);
+            result=sixgr.phy.ra.appendObservedStageAllocation(result,msg2Tx,stageInfo);
+        end
         if ~received.Accepted
             [result,continuation]=captureContinuation(2);
             return;
@@ -419,18 +436,6 @@ try
         result.SetupCompleteScheduledSlot=raCfg.SetupCompleteSlot;
         grantRx=rarRx.ULGrant; grantRx.TemporaryCRNTI=rarRx.TemporaryCRNTI;
         grantValidation=sixgr.mac.ra.validateRARULGrant(grantRx,raCfg);
-        % A real gNB transmission may have provided this accepted RAR. Its
-        % stage row is not fabricated for silent or unrelated transmissions.
-        if ~isempty(fieldnames(rarPreparedTransmission)) && ...
-                rarPreparedTransmission.AbsoluteSlot==rarObservationSlot
-            % The stage provenance validator consumes raw post-RF samples;
-            % it derives the gain-compensated decoder plane itself. Keep
-            % the already decoded observation distinct from that raw plane.
-            runtime.StageWaveforms.Msg2RxWaveform=rawPost;
-            runtime.StageWaveforms.Msg2PhysicalExecution=struct('Planes',physical.Planes,'Prepared',rarPreparedTransmission);
-            [~,runtime,stageInfo]=localResolveStageRxWaveform("Msg2","DL",msg2Tx.Waveform,cfg,raCfg,msg2Tx,runtime);
-            result=localAppendRuntimeStage(result,stageInfo,runtime);
-        end
         result=localApplyMsg2(result,raCfg,true,pdcchRx,pdcchInfo,pdschRx2,msg2Tx, ...
             struct(),rarRx,true,grantValidation);
         result.RARBytesHex=string(rarRx.Hex);
@@ -473,13 +478,14 @@ try
             'Shared PRACH origin must lie on its actual sample clock.');
         msg1Tx.WaveformStartSample=round(origin);
     end
+    result=sixgr.phy.ra.appendObservedStageAllocation(result,msg1Tx,stageInfo);
     if faultMode == "no_prach_detected"
         msg1RxWave(:) = 0;
     end
     localProgress(opt, "msg1_detect_start", "");
     cfgMsg1Rx = localApplyRuntimeReceiverSyncContext(cfg, runtime, "UL");
     det = sixgr.phy.ra.detectMsg1PRACH(msg1RxWave, cfgMsg1Rx, raCfg, occasion);
-    det = localAttachMsg1ReferenceEvidence(det, stageInfo, cfgMsg1Rx);
+    det = localAttachMsg1ReferenceEvidence(det, stageInfo, runtime);
     if string(runtime.Mode)=="shared_physical_waveform_stream"
         % Measurement only, after the independent PRACH detector finished.
         physical=runtime.StageWaveforms.Msg1PhysicalExecution;
@@ -569,6 +575,7 @@ try
     [msg2RxWave, runtime, stageInfo] = localResolveStageRxWaveform("Msg2", "DL", msg2Tx.Waveform, cfg, raCfg, msg2Tx, runtime);
     localProgress(opt, "msg2_channel_done", "");
     result = localAppendRuntimeStage(result, stageInfo, runtime);
+    result=sixgr.phy.ra.appendObservedStageAllocation(result,msg2Tx,stageInfo);
     localProgress(opt, "msg2_pdcch_start", "");
     [pdcchRx, pdcchInfo] = sixgr.phy.ra.blindDecodeRARPDCCH(msg2RxWave, cfg, raCfg, msg2Sched, ...
         "RNTIAttempted", attemptedRNTI);
@@ -647,6 +654,7 @@ try
     [msg3Wave, runtime, stageInfo] = localResolveStageRxWaveform("Msg3", "UL", msg3TA.Waveform, cfg, raCfg, msg3Tx, runtime);
     localProgress(opt, "msg3_channel_done", "");
     result = localAppendRuntimeStage(result, stageInfo, runtime);
+    result=sixgr.phy.ra.appendObservedStageAllocation(result,msg3Tx,stageInfo);
     if faultMode == "msg3_pusch_corrupted"
         % Apply a deterministic waveform-domain impairment relative to the
         % actual post-power-control Msg3 RMS power.  An absolute noise
@@ -658,6 +666,7 @@ try
     localProgress(opt, "msg3_pusch_start", "");
     [msg3Rx, msg3Decoded] = sixgr.phy.ra.recoverMsg3PUSCH( ...
         msg3Wave, cfgMsg3Rx, raCfg, grantRx, msg3Tx);
+    msg3Rx=localBindSharedArrivalScoring(msg3Rx,runtime,"Msg3");
     localProgress(opt, "msg3_pusch_done", sprintf("ok=%d", logical(sixgr.util.structGet(msg3Rx, "Ok", false))));
     result = localApplyMsg3(result, raCfg, grantRx, msg3TxPayload, msg3Rx, msg3Decoded, pusch);
     if ~logical(sixgr.util.structGet(msg3Rx, "Ok", false)) || ...
@@ -729,6 +738,7 @@ try
     [msg4RxWave, runtime, stageInfo] = localResolveStageRxWaveform("Msg4", "DL", msg4Tx.Waveform, cfg, raCfg, msg4Tx, runtime);
     localProgress(opt, "msg4_channel_done", "");
     result = localAppendRuntimeStage(result, stageInfo, runtime);
+    result=sixgr.phy.ra.appendObservedStageAllocation(result,msg4Tx,stageInfo);
     cfgMsg4Rx = localApplyRuntimeReceiverSyncContext(cfg, runtime, "DL");
     localProgress(opt, "msg4_rx_start", "");
     [msg4PdcchRx, msg4PdschRx, msg4Decoded] = sixgr.phy.ra.recoverMsg4Waveform(msg4RxWave, cfgMsg4Rx, raCfg, msg4Sched, msg4Tx);
@@ -770,6 +780,8 @@ try
             double(raTiming.ContentionExpirySlotExclusive), false, double(raCfg.RAContentionResolutionTimerSlots), "OK")]; %#ok<AGROW>
     end
     result.RRCSetupDecoded = logical(rrcSetupDecoded);
+    result.SRB1Installed = logical(result.RRCSetupDecoded) && ...
+        isfinite(double(result.ReceivedSRB1LCID));
     result.RRCSetupSHA256 = string(sixgr.util.structGet( ...
         msg4Decoded, "RRCSetupSHA256", ""));
     if stopStage == 4 && logical(result.RACompleted) && logical(raCfg.RequireRRCSetupComplete)
@@ -824,6 +836,7 @@ try
             setupCompleteTA.Waveform, cfg, raCfg, ...
             setupCompleteTx, runtime);
         result = localAppendRuntimeStage(result, stageInfo, runtime);
+        result=sixgr.phy.ra.appendObservedStageAllocation(result,setupCompleteTx,stageInfo);
         if any(faultMode == [ ...
                 "rrc_setup_complete_corrupted", ...
                 "rrc_setup_complete_crc_failure"])
@@ -837,8 +850,10 @@ try
             setupCompleteWave, ...
             localApplyRuntimeReceiverSyncContext(cfg, runtime, "UL"), ...
             raCfg, setupCompleteTx);
+        setupCompleteRx=localBindSharedArrivalScoring(setupCompleteRx,runtime,"RRCSetupComplete");
         result.SetupCompleteTx = setupCompleteTx;
         result.SetupCompleteRx = setupCompleteRx;
+        result.SetupCompleteReceiverDiagnostics=sixgr.phy.ra.receiverDiagnostics(setupCompleteRx);
         result.SetupCompletePUSCH = setupCompletePUSCH;
         result.SetupCompleteTransportBlockSize = double( ...
             sixgr.util.structGet(setupCompleteTx, "TransportBlockSize", NaN));
@@ -860,8 +875,11 @@ try
             setupCompleteRx, "DemapperLLRCount", NaN));
         result.SetupCompleteDecoderIterations = double(sixgr.util.structGet( ...
             setupCompleteRx, "DecoderIterations", NaN));
-        result.RRCSetupCompletePayloadSHA256 = string( ...
+        result.RRCSetupCompleteTransmittedPayloadSHA256 = string( ...
             setupCompleteTxPayload.PayloadHash);
+        result.SetupCompleteDecoded = setupCompleteDecoded;
+        result.RRCSetupCompletePayloadSHA256 = string( ...
+            sixgr.util.structGet(setupCompleteDecoded, "PayloadHash", ""));
         decodedTransaction = double(sixgr.util.structGet( ...
             setupCompleteDecoded, "TransactionID", NaN));
         decodedLCID = double(sixgr.util.structGet( ...
@@ -889,10 +907,8 @@ try
             decodedTransaction == double(result.RRCTransactionID) && ...
             decodedLCID == double(result.SRB1LCID) && ...
             decodedIdentity == ueIdentity;
-        % Installation follows accepted Msg4, not the later UL CRC. A failed
-        % SetupComplete cannot erase received configuration or supply an ID.
-        result.SRB1Installed = logical(result.RRCSetupDecoded) && ...
-            isfinite(double(result.ReceivedRRCSetup.SRB1LCID));
+        % SRB1 was installed when Msg4 completed. The later UL CRC must not
+        % retroactively install or erase the received configuration.
         rrcEventSequence = ...
             "CELL_SELECTED|MSG3_RRC_SETUP_REQUEST_OK|" + ...
             "MSG4_RRC_SETUP_OK|RRC_SETUP_COMPLETE_OK";
@@ -992,7 +1008,6 @@ end
         pending.TimerEvents = struct2table(timerRows(:), "AsArray", true);
         if next > 1
             pending.Msg1Tx = msg1Tx;
-            pending.ObservedREAllocationTable = localMsg1ObservedAllocation(msg1Tx, raCfg, result);
             % Publish only the stage that actually completed. Do not wait
             % for RRC completion to expose the independently detected set.
             pending.ArtifactTables.msg1_prach_detection=struct2table(localMsg1Row(result,raCfg,det),'AsArray',true);
@@ -1317,7 +1332,6 @@ if isfield(result,'ContentionMonitoringObservations')
     result.ArtifactTables.ue_contention_events=result.UEContentionEvents;
 end
 result.Msg1Tx = msg1Tx;
-result.ObservedREAllocationTable = localMsg1ObservedAllocation(msg1Tx, raCfg, result);
 result.Msg2Tx = msg2Tx;
 result.Msg2Rx = pdschRx2;
 % Preserve the actual decoder payload for connected TAG/SRS handoff. A
@@ -1330,17 +1344,6 @@ result.Msg4Tx = msg4Tx;
 if logical(opt.WriteArtifacts)
     result.Artifacts = sixgr.phy.ra.exportRAEvidenceArtifacts(result.RunFolder, result);
 end
-end
-
-function allocation = localMsg1ObservedAllocation(msg1Tx, raCfg, result)
-% The caller may be resuming a later stage or reporting after a frame wrap.
-% Its current slot is not the absolute slot of the measured Msg1 waveform.
-observedSlot = double(raCfg.PRACHAbsoluteSlot);
-allocation = sixgr.truth.buildObservedREAllocation(msg1Tx, ...
-    "Direction", "UL", "Channel", "PRACH", ...
-    "AbsoluteSlot", observedSlot, "CellID", double(result.CellId), ...
-    "UEID", double(result.UEId), "LayerCount", 1, ...
-    "AllocationID", string(result.RunId) + "_msg1");
 end
 
 function [cfg, evidenceT] = localApplyDecodedSIB1IfPresent(cfg, sib1Recovery)
@@ -1399,6 +1402,7 @@ fields = { ...
     "PRACHRawTimingEstimate_samples", NaN, "PRACHPropagationTimingEstimate_samples", NaN, ...
     "PRACHTrueTimingOffset_samples", NaN, "PRACHTimingError_samples", NaN, ...
     "PRACHTimingEstimateValid", false, "PRACHTimingEstimateSource", "", ...
+    "PRACHTimingReferenceSource", "", "PRACHTimingScoringReferenceJSON", "", ...
     "PRACHFrequencyEstimationEnabled", false, "PRACHFrequencyEstimate_Hz", NaN, ...
     "PRACHFrequencyEstimateValid", false, "PRACHFrequencyEstimator", "", ...
     "TimingAdvanceCommand", NaN, ...
@@ -1483,6 +1487,7 @@ fields = { ...
     "SRB1Installed", false, "RRCSetupCompleteCRC", false, ...
     "RRCSetupCompleteDecoded", false, ...
     "RRCSetupCompletePayloadSHA256", "", ...
+    "RRCSetupCompleteTransmittedPayloadSHA256", "", ...
     "RRCSetupCompleteDecodedTransactionID", NaN, ...
     "RRCSetupCompleteDecodedSRB1LCID", NaN, ...
     "RRCSetupCompleteDecodedUEIdentity", "", ...
@@ -1499,6 +1504,7 @@ fields = { ...
     "SetupCompleteDecoderIterations", NaN, ...
     "RRCConnected", false, "RRCTrace", table(), "RRCState", struct(), ...
     "SetupCompleteTx", struct(), "SetupCompleteRx", struct(), ...
+    "SetupCompleteDecoded", struct(), ...
     "SetupCompletePUSCH", [], ...
     "RACompleted", false, "FailureReason", "", "ProxyUsed", false, "Skipped", false, ...
     "ToolboxMissing", false, "UsedOracleFields", "", "StrictOk", false, ...
@@ -2062,7 +2068,7 @@ cfgOut = sixgr.util.structSet(cfgOut, ...
     "lls6g.receiverSync.RuntimeWaveformSampleAligned", false);
 end
 
-function det = localAttachMsg1ReferenceEvidence(det, stageInfo, cfg)
+function det = localAttachMsg1ReferenceEvidence(det, stageInfo, runtime)
 % Attach scoring truth only after the detector has produced its estimate.
 % The locally generated and runtime-channel waveforms share the resolved
 % PRACH-occasion origin.  Runtime fading objects are filter-delay trimmed by
@@ -2074,15 +2080,16 @@ knownReference = logical(sixgr.util.structGet(stageInfo, "SelfLoopWaveformUsed",
 if knownReference
     trueOffset = 0;
     referenceSource = "resolved_prach_occasion_waveform_origin";
-elseif localIsNormalizedFixedSNRSharedPRACH(stageInfo, cfg)
-    % In configured-Es/N0 LLS the shared waveform is deliberately detached
-    % from geometry and absolute pathloss.  ChannelFactory removes the
-    % implementation/filter delay before PRACH scoring and CDL profiles use
-    % a zero-delay first path, so the resolved PRACH occasion is the exact
-    % propagation-timing reference.  This is not valid for a geometry or
-    % externally timed capture; those modes remain unavailable below.
-    trueOffset = 0;
-    referenceSource = "normalized_fixed_esn0_zero_geometry_prach_occasion_origin";
+elseif string(runtime.Mode)=="shared_physical_waveform_stream"
+    physical=runtime.StageWaveforms.Msg1PhysicalExecution;
+    ref=sixgr.truth.sharedArrivalTimingReference(physical.Planes, ...
+        physical.Prepared.PhysicalTiming.TransmitStartSample);
+    % Match the detector's declared gNB-origin/filter-calibrated plane.
+    % Zero geometric distance does not erase the received UE DL clock.
+    trueOffset=ref.ExpectedArrivalOffset_samples-det.ObservationSearchGuard_samples- ...
+        det.ImplementationFilterDelay_samples;
+    referenceSource=ref.Source+"_minus_detector_guard_and_implementation_filter";
+    det.TimingScoringReference=ref;
 else
     trueOffset = NaN;
     referenceSource = "unavailable_for_external_runtime_waveform";
@@ -2097,13 +2104,22 @@ end
 det.TimingReferenceSource = referenceSource;
 end
 
-function tf = localIsNormalizedFixedSNRSharedPRACH(stageInfo, cfg)
-tf = startsWith(string(sixgr.util.structGet(stageInfo, ...
-    "WaveformSource", "")), "shared_physical_stream") && ...
-    sixgr.rf.isNormalizedFixedSNRPowerReference(cfg) && ...
-    ~logical(sixgr.util.structGet(cfg, "channel.pathlossEnabled", true)) && ...
-    ~logical(sixgr.util.structGet(cfg, ...
-    "canonical_control.launch.geometry_enabled", false));
+function rx=localBindSharedArrivalScoring(rx,runtime,stage)
+if string(runtime.Mode)~="shared_physical_waveform_stream", return; end
+physical=runtime.StageWaveforms.(stage+"PhysicalExecution");
+ref=sixgr.truth.sharedArrivalTimingReference(physical.Planes, ...
+    physical.Prepared.PhysicalTiming.TransmitStartSample);
+rx.TimingScoringReferenceJSON=string(jsonencode(ref));
+rx.TimingScoringReferenceSource=ref.Source;
+rx.TimingScoringReferencePlane=ref.ReferencePlane;
+rx.ExpectedArrivalOffset_samples=ref.ExpectedArrivalOffset_samples;
+rx.ResidualTimingError_PostCorrection_samples=ref.ExpectedArrivalOffset_samples- ...
+    double(sixgr.util.structGet(rx,'AppliedTimingCorrection_samples',NaN));
+if isfield(rx,'SynchronizationState')
+    rx.SynchronizationState.ResidualTimingError_PostCorrection_samples=rx.ResidualTimingError_PostCorrection_samples;
+    rx.SynchronizationState.TimingResidualDefinition="executed_earliest_arrival_offset_minus_measured_capture_alignment";
+    rx.SynchronizationState.TimingScoringReference=ref;
+end
 end
 
 function value = localPRACHOccasionID(raCfg)
@@ -2458,6 +2474,10 @@ row = struct( ...
     "WaveformAmplitudeUnit", "", ...
     "TxPowerSource", "", "TxRFExecutionStatus", "", ...
     "TxRFStageOrder", "", "TxRFAppliedStageCount", NaN, ...
+    "TxRFConfiguredStageCount",NaN,"TxRFExecutedStageCount",NaN, ...
+    "RxRFConfiguredStageCount",NaN,"RxRFExecutedStageCount",NaN, ...
+    "TxRFEndpointMetadataAuditJSON","","RxRFEndpointMetadataAuditJSON","", ...
+    "TxRFStageCountScope","","RxRFStageCountScope","", ...
     "AppliedLargeScaleLoss_dB", NaN, ...
     "NoiseApplied", false, "NoiseSNR_dB", NaN, "NoiseVariance", NaN, ...
     "NoiseSNRSource", "", "DesiredReferencePowerBeforeNoise_mW", NaN, ...
@@ -2611,6 +2631,25 @@ for k=1:size(mapping,1)
     end
 end
 row.CompositeReceiverFrontEndApplied=any(cellfun(@(r)r.RFAppliedStageCount>0,rxRF));
+% Raw RF replay has RFStrictOk, not the derived RFExecutionStatus column.
+% Reuse the same completed endpoint reducer as the primary RF exports.
+for endpoint=["TX","RX"]
+    suffix=":tx"; prefix="Tx";
+    if endpoint=="RX", suffix=":post_rf"; prefix="Rx"; end
+    selected=physical.Planes(endsWith(ids,suffix));
+    assert(isscalar(selected),'sixgr:phy:ra:SharedRAEndpointIdentity');
+    [metadata,audit]=sixgr.truth.summarizeSharedRFEndpoint(selected,endpoint);
+    if endpoint=="TX"
+        row.TxRFExecutionStatus=string(metadata.RFExecutionStatus);
+    else
+        row.CompositeReceiverFrontEndStatus=string(metadata.RFExecutionStatus);
+    end
+    for count=["RFConfiguredStageCount","RFExecutedStageCount","RFAppliedStageCount"]
+        row.(prefix+count)=double(sixgr.util.structGet(metadata,count,NaN));
+    end
+    row.(prefix+"RFEndpointMetadataAuditJSON")=string(jsonencode(audit));
+    row.(prefix+"RFStageCountScope")="per_execution_segment_not_sum_across_segments";
+end
 end
 
 function pc = localResolveRATransmitPower(cfg, raCfg, runtimeMode)
@@ -3013,6 +3052,8 @@ result.PRACHTrueTimingOffset_samples = double(sixgr.util.structGet(det, "TrueTim
 result.PRACHTimingError_samples = double(sixgr.util.structGet(det, "TimingErrorSamples", NaN));
 result.PRACHTimingEstimateValid = logical(sixgr.util.structGet(det, "PropagationTimingEstimateValid", false));
 result.PRACHTimingEstimateSource = string(sixgr.util.structGet(det, "PropagationTimingEstimateSource", ""));
+result.PRACHTimingReferenceSource=string(sixgr.util.structGet(det,"TimingReferenceSource",""));
+result.PRACHTimingScoringReferenceJSON=string(jsonencode(sixgr.util.structGet(det,"TimingScoringReference",struct())));
 frequency = sixgr.util.structGet(det, "FrequencyEstimate", struct());
 result.PRACHFrequencyEstimationEnabled = logical(sixgr.util.structGet(det, "FrequencyEstimationEnabled", false));
 result.PRACHFrequencyEstimate_Hz = double(sixgr.util.structGet(frequency, "EstimateHz", NaN));
@@ -3183,7 +3224,7 @@ tables.msg4_contention_resolution = struct2table(localMsg4Row(result, raCfg), "A
 tables.msg4_dci_fields = sixgr.util.structGet(result,'Msg4DCIFields', ...
     sixgr.phy.ra.commonDCIFieldEvidence(result,raCfg.Msg4Slot, ...
     raCfg.TempCRNTI,struct(),struct(),"Msg4"));
-tables.rrc_connection_events = localRRCConnectionRows(result);
+tables.rrc_connection_events = sixgr.phy.ra.buildRRCConnectionEvidence(result,msg3Tx,msg4Tx);
 tables.rrc_setup_complete = localRRCSetupCompleteRows(result);
 tables.ra_timer_events = result.TimerEvents;
 tables.ra_negative_trials = localNegativeRow(result);
@@ -3225,65 +3266,6 @@ for k=1:numel(ds)
 end
 end
 
-function T = localRRCConnectionRows(r)
-names = {'AttemptID','Endpoint','EventOrdinal','PreviousState', ...
-    'Event','NextState','TransactionID','UEIdentity','SRB1Installed', ...
-    'MessageSHA256','CRC','TimerName','FailureReason','Status'};
-types = {'string','string','double','string','string','string', ...
-    'double','string','logical','string','logical','string','string','string'};
-if ~istable(r.RRCTrace) || height(r.RRCTrace) == 0
-    T = table('Size', [0 numel(names)], ...
-        'VariableTypes', types, 'VariableNames', names);
-    return;
-end
-
-trace = r.RRCTrace;
-template = struct( ...
-    "AttemptID", "", "Endpoint", "", "EventOrdinal", NaN, ...
-    "PreviousState", "", "Event", "", "NextState", "", ...
-    "TransactionID", NaN, "UEIdentity", "", ...
-    "SRB1Installed", false, "MessageSHA256", "", ...
-    "CRC", false, "TimerName", "", "FailureReason", "", ...
-    "Status", "");
-rows = repmat(template, 2 * height(trace), 1);
-attempt = string(r.RunId) + "-A" + string(r.AttemptId);
-for ii = 1:height(trace)
-    event = string(trace.Event(ii));
-    messageHash = localRRCMessageHash(r, event);
-    crc = ~contains(event, "CRC_FAIL");
-    failure = string(trace.ErrorIdentifier(ii));
-    for endpointOrdinal = 1:2
-        if endpointOrdinal == 1
-            endpoint = "UE";
-            before = string(trace.UEStateBefore(ii));
-            after = string(trace.UEStateAfter(ii));
-        else
-            endpoint = "GNB";
-            before = string(trace.GNBStateBefore(ii));
-            after = string(trace.GNBStateAfter(ii));
-        end
-        rowIndex = (ii - 1) * 2 + endpointOrdinal;
-        rows(rowIndex) = struct( ...
-            "AttemptID", attempt, ...
-            "Endpoint", endpoint, ...
-            "EventOrdinal", double(ii), ...
-            "PreviousState", before, ...
-            "Event", event, ...
-            "NextState", after, ...
-            "TransactionID", double(r.RRCTransactionID), ...
-            "UEIdentity", "UE-" + string(round(double(r.UEId))), ...
-            "SRB1Installed", logical(r.SRB1Installed), ...
-            "MessageSHA256", messageHash, ...
-            "CRC", logical(crc), ...
-            "TimerName", "T300", ...
-            "FailureReason", failure, ...
-            "Status", string(ternary( ...
-                strlength(failure) == 0, "PASS", "FAIL")));
-    end
-end
-T = struct2table(rows, "AsArray", true);
-end
-
 function T = localRRCSetupCompleteRows(r)
 names = {'RunId','ScenarioName','CellId','UEId','AttemptId', ...
     'ScheduledSlot','RequireRRCSetupComplete','ExpectedTransactionID', ...
@@ -3295,12 +3277,12 @@ names = {'RunId','ScenarioName','CellId','UEId','AttemptId', ...
     'ChannelEstimateMethod','EqualizationAvailable','LLRFinite', ...
     'DemapperLLRCount','DecoderIterations','Status','FailureReason', ...
     'SourceFunction','ReceivedRRCSetupTransactionID','ReceivedSRB1LCID', ...
-    'RRCSetupConfigurationSource'};
+    'RRCSetupConfigurationSource','TransmittedPayloadSHA256'};
 types = {'string','string','double','double','double','double','logical', ...
     'double','double','double','double','string','string','logical','logical', ...
     'logical','double','double','logical','logical','string','logical', ...
     'logical','double','double','logical','string','logical','logical', ...
-    'double','double','string','string','string','double','double','string'};
+    'double','double','string','string','string','double','double','string','string'};
 if ~logical(sixgr.util.structGet(r, "RequireRRCSetupComplete", false))
     T = table('Size', [0 numel(names)], ...
         'VariableTypes', types, 'VariableNames', names);
@@ -3335,6 +3317,7 @@ row = struct( ...
     "CRC", logical(r.RRCSetupCompleteCRC), ...
     "Decoded", logical(r.RRCSetupCompleteDecoded), ...
     "PayloadSHA256", string(r.RRCSetupCompletePayloadSHA256), ...
+    "TransmittedPayloadSHA256", string(r.RRCSetupCompleteTransmittedPayloadSHA256), ...
     "RRCConnected", logical(r.RRCConnected), ...
     "ReceiverOk", logical(r.SetupCompleteReceiverOk), ...
     "PostEqSINR_dB", double(r.SetupCompletePostEqSINR_dB), ...
@@ -3348,24 +3331,8 @@ row = struct( ...
     "Status", string(ternary(passed, "PASS", "FAIL")), ...
     "FailureReason", string(r.FailureReason), ...
     "SourceFunction", "sixgr.phy.ra.runFourStepRA");
+row=localAttachReceiverDiagnostics(row,r,"SetupComplete");
 T = struct2table(row, "AsArray", true);
-end
-
-function hash = localRRCMessageHash(r, event)
-if contains(event, "SETUP_COMPLETE")
-    hash = string(r.RRCSetupCompletePayloadSHA256);
-elseif contains(event, "MSG4")
-    hash = string(r.RRCSetupSHA256);
-elseif contains(event, "MSG3")
-    hash = string(r.RRCSetupRequestSHA256);
-else
-    hash = sixgr.rrc.asn1.asn1SHA256Hex(uint8( ...
-        unicode2native(char(event), "UTF-8")));
-end
-if strlength(hash) ~= 64
-    hash = sixgr.rrc.asn1.asn1SHA256Hex(uint8( ...
-        unicode2native(char(event), "UTF-8")));
-end
 end
 
 function result = localApplyPDSCHEvidence(result, prefix, ev)
@@ -3388,6 +3355,7 @@ if ~(isstruct(rx) && ~isempty(fieldnames(rx)))
 end
 prefix = char(string(prefix));
 result.([prefix 'TimingEstimateUsed']) = logical(sixgr.util.structGet(rx, "TimingEstimateUsed", false));
+result.([prefix 'ReceiverDiagnostics'])=sixgr.phy.ra.receiverDiagnostics(rx);
 result.([prefix 'RawTimingEstimate_samples']) = double(sixgr.util.structGet(rx, "RawTimingEstimate_samples", NaN));
 result.([prefix 'AppliedTimingCorrection_samples']) = double(sixgr.util.structGet(rx, "AppliedTimingCorrection_samples", NaN));
 result.([prefix 'TimingEstimateSource']) = string(sixgr.util.structGet(rx, "TimingEstimateSource", ""));
@@ -3409,6 +3377,14 @@ function result = localApplyPUSCHRxDiagnostics(result, prefix, rx)
 % same synchronization, channel-estimation, equalization, LLR, and decoder
 % boundary used for ordinary PUSCH; no RA-specific proxy is constructed.
 result = localApplyPDSCHRxDiagnostics(result, prefix, rx);
+end
+
+function row=localAttachReceiverDiagnostics(row,result,prefix)
+diagnostics=sixgr.util.structGet(result,prefix+"ReceiverDiagnostics", ...
+    sixgr.phy.ra.receiverDiagnostics());
+for name=string(fieldnames(diagnostics)).'
+    row.(name)=diagnostics.(name);
+end
 end
 
 function row = localAttemptRow(r)
@@ -3543,6 +3519,8 @@ row = struct("RunId", string(r.RunId), "CellId", double(r.CellId), "UEId", doubl
     "TimingError_samples", double(r.PRACHTimingError_samples), ...
     "TimingEstimateValid", logical(r.PRACHTimingEstimateValid), ...
     "TimingEstimateSource", string(r.PRACHTimingEstimateSource), ...
+    "TimingReferenceSource", string(r.PRACHTimingReferenceSource), ...
+    "TimingScoringReferenceJSON", string(r.PRACHTimingScoringReferenceJSON), ...
     "FrequencyEstimationEnabled", logical(r.PRACHFrequencyEstimationEnabled), ...
     "FrequencyEstimate_Hz", double(r.PRACHFrequencyEstimate_Hz), ...
     "FrequencyEstimateValid", logical(r.PRACHFrequencyEstimateValid), ...
@@ -3606,6 +3584,7 @@ row = struct("RunId", string(r.RunId), "CellId", double(r.CellId), "UEId", doubl
     "DecoderIterations", double(r.Msg2DecoderIterations), ...
     "ULGrantValid", logical(r.RARULGrantValid), "Status", string(ternary(logical(r.RARULGrantValid), "OK", "FAIL")), ...
     "FailureReason", string(r.FailureReason)); %#ok<NASGU>
+row=localAttachReceiverDiagnostics(row,r,"Msg2");
 end
 
 function row = localMsg3Row(r, raCfg, msg3Rx)
@@ -3662,6 +3641,7 @@ row = struct("RunId", string(r.RunId), "CellId", double(r.CellId), "UEId", doubl
     "ContentionIdentity", string(r.Msg3ContentionIdentity), ...
     "Status", string(ternary(logical(r.Msg3PUSCHCrcPass), "OK", "FAIL")), ...
     "FailureReason", string(r.FailureReason));
+row=localAttachReceiverDiagnostics(row,r,"Msg3");
 end
 
 function row = localMsg4Row(r, raCfg)
@@ -3698,6 +3678,7 @@ row = struct("RunId", string(r.RunId), "CellId", double(r.CellId), "UEId", doubl
     "RACompleted", logical(r.RACompleted), ...
     "Status", string(ternary(logical(r.RACompleted), "OK", "FAIL")), ...
     "FailureReason", string(r.FailureReason));
+row=localAttachReceiverDiagnostics(row,r,"Msg4");
 row.DCIContextDigest = string(sixgr.util.structGet(r,'Msg4DCIContextDigest',""));
 row.MACEncodingProfile = string(sixgr.util.structGet(r,'Msg4MACEncodingProfile',""));
 row.MACRRCStandardsQualified = logical(sixgr.util.structGet(r,'Msg4MACRRCStandardsQualified',false));

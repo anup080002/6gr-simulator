@@ -133,6 +133,11 @@ for field=string(fieldnames(pilotScore)).'
 end
 out.TRSRuntimeEvidenceUsable = false;
 out.NoiseVariance = NaN;
+out.NoiseVarianceDomain = "resource_grid_pre_equalization";
+out.NoiseVarianceSource = "unavailable_no_practical_TRS_channel_estimate";
+out.InjectedSampleNoiseVariance = NaN;
+out.InjectedSampleNoiseVarianceDomain = "";
+out.InjectedSampleNoiseVarianceSource = "";
 out.StrictOk = false;
 out.FailureReason = "";
 out.Notes = "";
@@ -189,7 +194,7 @@ try
     [strictCfg,tx,rx,replay,timing,det,freq,ch,tracking,score,channelState,reception] = ...
         localRunStrictRuntimeTRSEvidence(cfg,snr_dB,initialChannelState,receivedContext,p.Results.RuntimeSlot);
     out.RuntimeStageCount = 5;
-    out.ObservedREAllocationTable = localObservedTRSAllocation(tx);
+    out.ObservedREAllocationTable = localObservedTRSAllocation(tx,reception.Prepared);
     out.ChannelState = channelState;
     trial = score.TrialRow;
     runtimeEvidenceOk = localRuntimeTRSEvidenceComplete(trial, strictCfg);
@@ -290,7 +295,20 @@ try
     out.QCLAccuracy = double(trial.QCLAccuracy);
     out.DetectionMetric = double(trial.DetectionMetric);
     out.AppliedAWGNSNR_dB = double(trial.AppliedAWGNSNR_dB);
-    out.NoiseVariance = double(trial.NoiseVariance);
+    % trial.NoiseVariance is injected SAMPLE noise used by the diagnostic
+    % scorer. The practical grid estimator has a separate measured value.
+    % Preserve both; never publish the former as the latter.
+    out.InjectedSampleNoiseVariance = double(trial.NoiseVariance);
+    out.InjectedSampleNoiseVarianceDomain = string(sixgr.util.structGet( ...
+        replay,"InjectedNoiseVarianceDomain",""));
+    out.InjectedSampleNoiseVarianceSource = string(sixgr.util.structGet( ...
+        replay,"NoiseVarianceSource",""));
+    if ch.EstimateAvailable && ~isempty(ch.Table) && ...
+            all(isfinite(ch.Table.NoiseEstimate) & ch.Table.NoiseEstimate>=0)
+        out.NoiseVariance = mean(double(ch.Table.NoiseEstimate));
+        out.NoiseVarianceSource = "equal_observed_slot_mean:" + ...
+            strjoin(unique(string(ch.Table.ChannelEstimator),'stable'),"|");
+    end
     out.ChannelModel = char(string(trial.ChannelModel));
     out.DetectionAttempted = logical(trial.DetectionAttempted);
     out.DetectionSuccess = logical(trial.DetectionSuccess);
@@ -399,18 +417,36 @@ catch ME
     end
 end
 
-function T = localObservedTRSAllocation(tx)
+function T = localObservedTRSAllocation(tx,prepared)
 T = table();
 slots = sixgr.util.structGet(tx, "GridSlots", struct([]));
 for ii = 1:numel(slots)
+    grid=slots(ii).Grid;
+    nativePorts=size(grid,3);
+    portDomain="native_logical_reference_ports";
+    projectionHash="";
+    if isfield(prepared,'TransmitProjectionMatrix')
+        % This exact matrix was applied to the prepared waveform by the
+        % shared stream. Never replicate a logical port onto configured
+        % antenna counts: zeros and complex cancellation matter.
+        W=prepared.TransmitProjectionMatrix;
+        assert(size(W,2)==nativePorts && all(isfinite(W),'all'), ...
+            'sixgr:truth:TRSObservedProjectionMismatch','Retain the executed TRS port map.');
+        grid=reshape(reshape(grid,[],nativePorts)*W.',size(grid,1),size(grid,2),size(W,1));
+        portDomain="physical_antenna_ports_after_executed_projection";
+        projectionHash=string(sixgr.channel.ChannelFactory.runtimeNumericArraySHA256(W));
+    end
     slotTx = struct("Carrier", slots(ii).Carrier, ...
-        "Grid", slots(ii).Grid, "Indices", slots(ii).Indices);
+        "Grid", grid, "Indices", find(grid~=0));
     chunk = sixgr.truth.buildObservedREAllocation(slotTx, ...
         "Direction", "DL", "Channel", "TRS", ...
         "AbsoluteSlot", double(slots(ii).Slot), ...
         "CellID", double(slots(ii).Carrier.NCellID), ...
-        "LayerCount", size(slots(ii).Grid, 3), ...
         "AllocationID", "trs_slot_" + string(slots(ii).Slot));
+    chunk.port_domain=repmat(portDomain,height(chunk),1);
+    chunk.grid_port_count=repmat(size(grid,3),height(chunk),1);
+    chunk.native_logical_port_count=repmat(nativePorts,height(chunk),1);
+    chunk.transmit_projection_sha256=repmat(projectionHash,height(chunk),1);
     if isempty(T)
         T = chunk;
     else

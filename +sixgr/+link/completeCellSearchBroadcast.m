@@ -359,6 +359,12 @@ out.EVMReferenceSource = string(sixgr.util.structGet( ...
     rec, "EVMReferenceSource", ""));
 out.EVMValueStatus = string(sixgr.util.structGet( ...
     rec, "EVMValueStatus", "NOT_AVAILABLE"));
+for name = ["EVMErrorEnergy","EVMReferenceEnergy","EVMSymbolCount"]
+    out.(name) = double(sixgr.util.structGet(rec,name,NaN));
+end
+for name = ["EVMEnergyUnit","EVMComputationDomain"]
+    out.(name) = string(sixgr.util.structGet(rec,name,""));
+end
 out.PreEqualizationNoiseVariance = double(sixgr.util.structGet(rec, "PreEqualizationNoiseVariance", NaN));
 out.PreEqualizationNoiseVarianceDomain = string(sixgr.util.structGet(rec, "PreEqualizationNoiseVarianceDomain", ""));
 out.PreEqualizationNoiseVarianceSource = string(sixgr.util.structGet(rec, "PreEqualizationNoiseVarianceSource", ""));
@@ -393,7 +399,7 @@ out.SIB1PDSCHReceiverHestSINRSource = string(sixgr.util.structGet(rec, "SIB1PDSC
 out.SIB1PDSCHStrictReceiverEvidenceOk = logical(sixgr.util.structGet(rec, "SIB1PDSCHStrictReceiverEvidenceOk", false));
 out.FreqOffsetEstimate_Hz = double(rec.FrequencyOffsetHz);
 out.EstimatedCFO_PreCorrection_Hz = double(rec.FrequencyOffsetHz);
-for name = ["CFOCorrectionApplied","CFOCorrectionApplied_Hz", ...
+for name = ["CFOCorrectionEnabled","CFOCorrectionApplied","CFOCorrectionApplied_Hz", ...
         "CFOCorrectionSampleOrigin","CFOCorrectionSource"]
     out.(name) = rec.(name);
 end
@@ -431,6 +437,7 @@ out.SSBTimingSearchGuardSource = string(rec.SSBTimingSearchGuardSource);
 out.RawTimingEstimate_samples = double(sixgr.util.structGet( ...
     rec, "RawTimingEstimate_samples", rec.TimingOffset));
 out.EstimatedTimingOffset_PreCorrection_samples = out.RawTimingEstimate_samples;
+out.TimingEstimateUsed = logical(rec.TimingEstimateUsed);
 out.AppliedTimingCorrection_samples = double(sixgr.util.structGet( ...
     rec, "AppliedTimingCorrection_samples", NaN));
 out.TimingEstimateApplicationPolicy = string(sixgr.util.structGet( ...

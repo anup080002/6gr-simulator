@@ -1,4 +1,4 @@
-function statusOut = canonicalizeRuntimeStatusSnapshot(statusIn)
+function statusOut = canonicalizeRuntimeStatusSnapshot(statusIn, runRoot)
 %CANONICALIZERUNTIMESTATUSSNAPSHOT Enforce a truthful one-row status schema.
 %   Live runtime status is a single measured snapshot. Text values are
 %   represented as scalar strings so an unavailable text value remains one
@@ -16,6 +16,25 @@ names = fieldnames(statusIn);
 for i = 1:numel(names)
     name = names{i};
     statusOut.(name) = localCanonicalValue(statusIn.(name), name);
+end
+if nargin>=2
+    % One canonical publication boundary for all progress/finalization paths.
+    % Later data/control stages cannot manufacture completed anchor KPIs.
+    layout=sixgr.report.resultLayout(runRoot);
+    file=fullfile(layout.AirInterfaceCSVDir,'link_anchor_kpis.csv');
+    count=0;
+    if isfile(file)
+        anchor=sixgr.util.csvReadTable(file);
+        count=height(anchor);
+    end
+    statusOut.AnchorKPIsReady=count>0;
+    statusOut.AnchorKPIRowCount=double(count);
+    statusOut.AnchorKPIEvidenceSource="air_interface/csv/link_anchor_kpis.csv";
+    statusOut.AnchorKPIAvailabilityStatus="no_published_anchor_rows";
+    if count>0
+        % Presence is not a CRC, qualification or overall-scenario PASS.
+        statusOut.AnchorKPIAvailabilityStatus="published_rows_not_qualification";
+    end
 end
 end
 

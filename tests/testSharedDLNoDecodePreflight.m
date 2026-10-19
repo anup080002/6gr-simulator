@@ -23,6 +23,16 @@ for field=["Crash","DecodeAttempted","PDCCHCausalGrantDecodeOk"]
     reject(@()sixgr.truth.completeSharedDLWithoutAcceptedControl(broken,item,bad), ...
         'sixgr:truth:InvalidSharedDLRejectedControlEvidence');
 end
+% A decoded assignment rejected by the runtime TCI/binding policy is not
+% a physical missing-DCI event. Preserve the integration failure explicitly
+% rather than weakening the measured-miss guard or creating feedback rows.
+rejected=control;
+rejected.ReceiverTrial.PDCCHCausalGrantDecodeOk=true;
+rejected.Grant=struct('PDCCHControlFailureReason', ...
+    'pdcch_tci_binding_failed:decoded_tci_does_not_match_active_data_beam');
+rejectedState=state; rejectedState.SharedReceivedGrantControls={rejected};
+reject(@()sixgr.truth.completeSharedDLWithoutAcceptedControl(rejectedState,item,rejected), ...
+    'sixgr:truth:SharedDLDecodedAssignmentRejected');
 assert(~isfield(state,'SharedDLNoDecodeDispositionTable') && ...
     ~isfield(state,'SharedDataNoDecodeCommittedIDs'));
 fprintf('SHARED_DL_NO_DECODE_PREFLIGHT_PASS negative_contract_only RF_executions=0\n');

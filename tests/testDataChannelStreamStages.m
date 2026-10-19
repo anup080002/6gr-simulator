@@ -136,6 +136,7 @@ for caseIndex = reshape(caseIndices,1,[])
         altered.ExpectedUCIPayload=sixgr.phy.ul.pusch.PUSCHUCIPayload('HARQACK',int8([0;1;0]));
         localReject(@()sixgr.truth.validatePreparedPUSCHUCI(altered,prepared), ...
             'sixgr:truth:LateSharedPUSCHUCIChange');
+        localFrozenUCIReconciliation(cfg,calendar,prepared);
         altered=calendar; altered.UCIOnPUSCHFeedbackGrantIds="different-source";
         localReject(@()sixgr.truth.validatePreparedPUSCHUCI(altered,prepared), ...
             'sixgr:truth:LateSharedPUSCHUCIChange');
@@ -431,8 +432,30 @@ for caseIndex = reshape(caseIndices,1,[])
             mode,caseIndex,arrival,withUCI);
     end
 end
+
 ok = true;
 disp('PASS testDataChannelStreamStages: retained coded DL/UL samples, exact coverage and one TX/one RX.');
+end
+
+function localFrozenUCIReconciliation(cfg,grant,prepared)
+% The actual coded waveform above is frozen. This is a declared calendar
+% lifecycle fixture, not a claimed shared-channel reception or HARQ result.
+pending=struct('Kind',"PUSCH",'Context',struct('Prepared',prepared));
+state=struct('CfgMobility',cfg,'SharedWaveformStream',struct('Pending',pending), ...
+    'PendingFeedbackTable',table(),'PendingCSITable',table(),'PUCCHGrantTraceTable',table());
+before=prepared.Tx;
+[same,reconciled,blocked]=sixgr.truth.CoupledTruthRuntime. ...
+    reconcileQueuedPUSCHAfterDLFeedbackRuntime(state,grant,true);
+assert(isempty(blocked) && isequaln(reconciled,grant) && isequaln(same,state) && ...
+    isequaln(prepared.Tx,before), ...
+    'Repeated calendar reconciliation must not sanitize an already encoded PUSCH.');
+sixgr.truth.validatePreparedPUSCHUCI(reconciled,prepared);
+bad=grant; bad.ExpectedUCIPayload=sixgr.phy.ul.pusch.PUSCHUCIPayload('HARQACK',int8([0;1;0]));
+localReject(@()sixgr.truth.CoupledTruthRuntime. ...
+    reconcileQueuedPUSCHAfterDLFeedbackRuntime(state,bad,true), ...
+    'sixgr:truth:LateSharedPUSCHUCIChange');
+fprintf('FROZEN_PUSCH_UCI_RECONCILIATION_PASS bits=%d actual_coded_TX=1 lifecycle_fixture=1\n', ...
+    numel(prepared.Tx.UCIPayload.HARQACK));
 end
 
 function grant = localReceiveControl(cfg,grant)

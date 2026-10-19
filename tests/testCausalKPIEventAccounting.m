@@ -124,6 +124,7 @@ rawTrials = struct();
 rawTrials.UL = raw.UL(2, :);
 rawTrials.UL.Status = "PASS";
 rawTrials.UL.TransportBlockId = "ul_tb_1";
+rawTrials.UL.UEIndex = 1; % Explicit logical endpoint of this single-UE fixture.
 rawTrials.DL = table();
 
 root = tempname;

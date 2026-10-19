@@ -97,11 +97,11 @@ switch channel
         end
         result = sixgr.phy.frame.ChannelAllocationMaterializer.materializePUSCH( ...
             tx.Carrier, tx.PUSCH, "AbsoluteSlot", slot0);
-        localAssertExecutedIndices(tx, result, ...
-            ["PUSCHIndices", "DMRSIndices", "PTRSIndices"]);
+        % Toolbox indices describe native ports, not the logical/element
+        % grid after the transmitter's explicit spatial projection.
+        parts = localPUSCHParts(tx, result);
         defaultLayers = double(tx.PUSCH.NumLayers);
-        resolver = "executed_PUSCH_Tx+nrPUSCHIndices+nrPUSCHDMRSIndices+nrPUSCHPTRSIndices";
-        parts = {result.Data, result.DMRS, result.PTRS};
+        resolver = "executed_PUSCH_Tx_native_toolbox_allocation_and_mapped_waveform_grid";
     case "SSB"
         localRequireDirection(direction, "DL", channel);
         parts = {localExecutedPart(tx,"PSSIndices","PSS"), ...
@@ -130,7 +130,7 @@ switch channel
     case "TRS"
         localRequireDirection(direction, "DL", channel);
         parts = {localExecutedPart(tx, "Indices", "TRS")};
-        defaultLayers = size(tx.Grid, 3);
+        defaultLayers = NaN; % Tracking reference ports are not scheduled data layers.
         resolver = "executed_generateTRSWaveform_nrCSIRSIndices";
     case "CSI-RS"
         localRequireDirection(direction, "DL", channel);
@@ -361,6 +361,63 @@ for index = 1:numel(txFields)
             "Executed TX field %s differs from the Toolbox-rematerialized %s indices.", ...
             txField, resultField);
     end
+end
+end
+
+function parts = localPUSCHParts(tx, result)
+% Validate the normative allocation in its own domain, then export only REs
+% actually mapped in the retained waveform grid. Zero precoder columns are
+% not occupied antennas; a wider antenna inventory is not a higher rank.
+prefixes = ["PUSCH", "DMRS", "PTRS"];
+resultFields = ["Data", "DMRS", "PTRS"];
+labels = ["PUSCH_DATA", "PUSCH_DMRS", "PUSCH_PTRS"];
+parts = cell(1,3);
+assert(isfield(tx,'Grid') && ~isempty(tx.Grid), ...
+    'sixgr:truth:MissingExecutedTXGrid','Observed PUSCH requires the executed waveform grid.');
+planeSize = size(tx.Grid,1)*size(tx.Grid,2);
+for k=1:3
+    nativeField = prefixes(k)+"NativeIndices";
+    mappedField = prefixes(k)+"WaveformIndices";
+    symbolsField = prefixes(k)+"WaveformSymbols";
+    assert(all(isfield(tx,[nativeField,mappedField,symbolsField])), ...
+        'sixgr:truth:MissingExecutedPUSCHDomains', ...
+        'PUSCH occupancy requires retained native and mapped %s evidence.',prefixes(k));
+    expected = sort(unique(double(result.(resultFields(k)).Indices1Based(:))));
+    native = tx.(nativeField);
+    assert(isequal(expected,sort(unique(double(native(:))))), ...
+        'sixgr:truth:ExecutedREIndexMismatch', ...
+        'Native TX field %s differs from the Toolbox-rematerialized allocation.',nativeField);
+    indices = tx.(mappedField);
+    symbols = tx.(symbolsField);
+    assert(isnumeric(indices) && isreal(indices) && isnumeric(symbols) && ...
+        isequal(size(indices),size(symbols)) && ...
+        all(isfinite(indices(:)) & indices(:)==fix(indices(:)) & ...
+            indices(:)>=1 & indices(:)<=numel(tx.Grid)) && ...
+        all(isfinite(symbols(:))), ...
+        'sixgr:truth:InvalidExecutedREIndices', ...
+        'Mapped PUSCH indices and symbols must be finite paired grid evidence.');
+    % PT-RS may have empty inactive columns removed by the TX grid mapper;
+    % spatial mapping must never create a new time/frequency allocation.
+    nativeRE = unique(mod(double(native(:))-1,planeSize));
+    mappedRE = unique(mod(double(indices(:))-1,planeSize));
+    assert(isequal(nativeRE,mappedRE), ...
+        'sixgr:truth:ExecutedREIndexMismatch', ...
+        'Mapped %s changes the native time/frequency allocation.',prefixes(k));
+    if ~isempty(indices)
+        % The spatial mapper preserves RE ordering on each output page.
+        % A set-only comparison hides a missing/duplicated RE on one port
+        % when another port still contains that coordinate.
+        assert(size(indices,1)==size(native,1) && ...
+            all(mod(double(indices)-1,planeSize)== ...
+                mod(double(native(:,1))-1,planeSize),'all'), ...
+            'sixgr:truth:ExecutedREIndexMismatch', ...
+            'Mapped %s changed the ordered native RE coordinates.',prefixes(k));
+    end
+    assert(isequaln(tx.Grid(indices),symbols), ...
+        'sixgr:truth:ExecutedREGridMismatch', ...
+        'Mapped %s symbols disagree with the actual TX grid.',prefixes(k));
+    evidence = struct('Grid',tx.Grid,'Indices',indices(symbols~=0));
+    parts{k}=localExecutedPart(evidence,'Indices',labels(k));
 end
 end
 

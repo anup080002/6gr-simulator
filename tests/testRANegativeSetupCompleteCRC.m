@@ -19,5 +19,24 @@ assert(res.SRB1Installed && res.RRCState.SetupCompleteIdentityEvidenceProvided &
     'Accepted Msg4 configuration survives; the distinct UL completion fails.');
 assert(res.RRCState.Trace.GNBStateAfter(3)=="WAIT_SETUP_COMPLETE", ...
     'Do not misclassify a failed UL message as a failed Msg4.');
+assert(res.RRCSetupCompletePayloadSHA256=="" && ...
+    strlength(res.RRCSetupCompleteTransmittedPayloadSHA256)==64 && ...
+    isempty(fieldnames(res.SetupCompleteDecoded)), ...
+    'A transmitted SetupComplete hash must not become evidence of a received message.');
+T=res.ArtifactTables.rrc_connection_events;
+assert(all(~T.SRB1Installed(T.EventOrdinal<3)) && all(T.SRB1Installed(T.EventOrdinal>=3)));
+received=T(T.EventOrdinal==4 & T.Endpoint=="GNB",:);
+assert(received.CRCApplicable && received.CRC==0 && received.MessageSHA256=="" && received.Status=="FAIL");
+assert(all(isnan(T.CRC(~T.CRCApplicable))) && all(T.MessageSHA256(T.EventOrdinal==1)==""));
+diagnostics=sixgr.phy.ra.receiverDiagnostics(res.SetupCompleteRx);
+stage=res.ArtifactTables.rrc_setup_complete;
+assert(height(stage)==1 && ~stage.CRC && ~stage.RRCConnected);
+assert(any(res.ObservedREAllocationTable.ra_stage=="RRCSetupComplete" & ...
+    res.ObservedREAllocationTable.channel=="PUSCH"), ...
+    'A failed physical CRC must not erase the actually transmitted allocation.');
+for name=string(fieldnames(diagnostics)).'
+    assert(isequaln(stage.(name),diagnostics.(name)), ...
+        'A failed CRC must not erase actually measured receiver field %s.',name);
+end
 ok = true;
 end

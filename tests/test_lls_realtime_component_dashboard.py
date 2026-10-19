@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import sys
 import math
+import csv
+import json
+import shutil
+import subprocess
 from pathlib import Path
 
 
@@ -9,6 +13,113 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "apps"))
 
 import lls_web_dashboard as dashboard  # noqa: E402
+
+
+def test_live_generic_table_does_not_hide_late_measurement_columns() -> None:
+    # Execute the production renderer, including fields that first appear in
+    # a later row. A twelve-column preview hid the receiver-owned AMC state.
+    node = shutil.which("node")
+    if node is None:
+        import playwright
+        node = str(Path(playwright.__file__).parent / "driver" /
+                   ("node.exe" if sys.platform == "win32" else "node"))
+    source = Path(dashboard.__file__).read_text(encoding="utf-8")
+    renderer = next(line.strip() for line in source.splitlines()
+                    if line.strip().startswith("function rows(records, empty, opts)"))
+    first = {f"Field{k}": k for k in range(14)}
+    second = dict(first, RuntimeDLOLLAUpdateCount=6,
+                  RuntimeDLPendingRankIncrease=4)
+    script = """
+const esc = x => String(x).replaceAll('&','&amp;').replaceAll('<','&lt;');
+const text = x => x == null ? 'N/A' : String(x);
+const unavailable = x => x;
+const scrollWrap = x => x;
+""" + renderer + "\nconsole.log(rows(" + json.dumps([first, second]) + ", 'empty', {}));"
+    result = subprocess.run([node, "-e", script], capture_output=True,
+                            text=True, check=True, timeout=15)
+    html = result.stdout
+    assert "<th>Field13</th>" in html
+    assert "<th>RuntimeDLOLLAUpdateCount</th>" in html
+    assert "<th>RuntimeDLPendingRankIncrease</th>" in html
+    assert html.count("<th>") == 16 and html.count("<td>") == 32
+    assert "<td>N/A</td>" in html and "<td>6</td>" in html
+
+
+def test_csv_reader_preserves_qcl_and_zenith_field_names(tmp_path: Path) -> None:
+    # Exercise the production CSV reader, not just a hand-made preview dict.
+    # A blanket Q/Z-prefix repair changed QCLType to CLType before the GUI
+    # projection and left every QCL cell empty despite valid MATLAB evidence.
+    source = dict(Slot=41, UEID=1, QCLStatus="consumed_by_received_pdsch_dmrs_timing_estimator",
+                  QCLType="A", QCLSourceRS="NZP-CSI-RS/TRS", QCLSourceResourceID=100,
+                  QCLSourceSlot0=26, QCLSourceAvailableAtSample=1720320,
+                  QCLTimingPriorUsed=1, QCLTimingPriorSamples=16,
+                  QCLDMRSDelayResidual_samples=0,
+                  QCLMeasurementStatus="type_A_average_delay_transfer_only",
+                  TCIStateID=18, TCICodepoint=2, ZOA_deg=95, ZOD_deg=85,
+                  QCustomEvidence="retained", ZCustomEvidence="retained")
+    path = tmp_path / "dl_pdsch_trials.csv"
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(source))
+        writer.writeheader()
+        writer.writerow(source)
+    artifact = dict(artifact_id=-1, logical_path="air_interface/csv/dl_pdsch_trials.csv",
+                    filesystem_path=str(path), byte_size=path.stat().st_size)
+    rows = dashboard.load_small_csv_rows([artifact], artifact["logical_path"])
+    assert set(rows[0]) == set(source), "Do not rename valid measurement identities."
+    preview = dashboard.summarize_data_trial_preview_rows("dl_trials", rows)[0]
+    labels = dict(dashboard.DATA_TRIAL_PREVIEW_COLUMNS["dl_trials"])
+    for name, value in source.items():
+        if name.startswith("QCL"):
+            assert preview[labels[name]] == value
+    assert preview["QCL DMRS delay residual"] == 0
+    # Retain only the already documented exact legacy header aliases.
+    assert dashboard.normalize_csv_header_name("QStageOrder") == "StageOrder"
+    assert dashboard.normalize_csv_header_name("ZCase") == "Case"
+
+
+def test_rrc_preview_keeps_transmitted_and_failed_received_evidence_separate() -> None:
+    rows = [
+        dict(AttemptID="run-A1", UEIdentity="UE-1", Endpoint="UE", EventOrdinal=4,
+             AbsoluteSlot0Based=14, Slot1Based=15, Event="UL_DCCH_CRC_FAIL",
+             SRB1InstalledBefore=True, SRB1Installed=True, CRCApplicable=False,
+             CRC=float("nan"), MessageSHA256="a" * 64,
+             MessageEvidenceRole="transmitted_message_not_received_evidence",
+             Status="FAIL", StatusScope="bounded_protocol_transition_not_PHY_CRC",
+             MACRRCStandardsQualified=False),
+        dict(AttemptID="run-A1", UEIdentity="UE-1", Endpoint="GNB", EventOrdinal=4,
+             AbsoluteSlot0Based=14, Slot1Based=15, Event="UL_DCCH_CRC_FAIL",
+             SRB1InstalledBefore=True, SRB1Installed=True, CRCApplicable=True,
+             CRC=0, MessageSHA256="", CRCSource="RRCSetupCompleteCRC",
+             MessageEvidenceRole="no_decoded_RRC_message_after_CRC_failure",
+             Status="FAIL", StatusScope="bounded_protocol_transition_not_PHY_CRC",
+             MACRRCStandardsQualified=False),
+    ]
+    tx, rx = dashboard.summarize_procedure_preview_rows("rrc_connection_events", rows)
+    assert tx["Message SHA256"] == "a" * 64
+    assert tx["Receiver CRC applicable"] == 0
+    assert tx["Receiver CRC"] == "N/A"
+    assert rx["Receiver CRC applicable"] == 1 and rx["Receiver CRC"] == 0
+    assert rx["Message SHA256"] == "N/A"
+    assert rx["SRB1 installed after event"] == 1
+    assert rx["Runtime slot (1-based)"] == 15 and rx["Absolute slot (0-based)"] == 14
+    assert rx["Full MAC/RRC standards qualified"] == 0
+    assert rx["Status scope"] == "bounded_protocol_transition_not_PHY_CRC"
+    # No absent decoded identity can be supplied by the UI.
+    assert dashboard.summarize_procedure_preview_rows("rrc_connection_events", [{}]) == [{}]
+
+
+def test_pdcch_preview_retains_independent_nmse_operands_and_scope() -> None:
+    source = dict(PDCCHSelectedCCEIndex=4, NMSEScoringAvailable=True,
+                  ChannelNMSEReferencePlane="executed_effective_DMRS_port",
+                  ChannelNMSEQualificationMode="no_gain_or_phase_fit",
+                  ChannelNMSEPilotResourceCount=36,
+                  ChannelNMSEComparedComplexValues=144,
+                  ChannelNMSEErrorEnergy=2, ChannelNMSEReferenceEnergy=200,
+                  ChannelNMSEGainOrPhaseFitted=False, NMSE_dB=-20)
+    labels = dict(dashboard.CONTROL_TRIAL_PREVIEW_COLUMNS["pdcch_trials"])
+    preview = dashboard.summarize_control_trial_preview_rows("pdcch_trials", [source])[0]
+    for field, value in source.items():
+        assert preview[labels[field]] == value
 
 
 def test_csi_preview_separates_reference_slot_decoded_rank_and_scheduler_admission() -> None:
@@ -175,6 +286,30 @@ def test_ra_rf_preview_preserves_endpoint_and_unknown_without_decode_claim() -> 
     assert '"ra_receiver_rf": ["control/csv/ra_receiver_rf_observations.csv"]' in source
 
 
+def test_ra_receiver_diagnostics_keep_distinct_measured_planes_and_unknowns() -> None:
+    row = dict(UEId=1, ScheduledSlot=14, ReceiverDiagnosticsPresent=1,
+               EstimatedCFO_Hz=-401.25, CFOCorrectionApplied_Hz=-401.25,
+               ReceiverHestSINR_dB=29.3, PostEqSINR_dB=39.8,
+               PostEqSINRValueStatus="OK_decision_residual_bounded",
+               ResidualCFO_EstimatedPostCorrection_Hz="NaN",
+               ResidualCFOEstimatorConsistency_Hz=0,
+               ResidualCFOReusesAcquisitionObservation=1,
+               ResidualCFOEstimateRole="same_window_not_independent")
+    for key in ("ra_rx_msg2", "ra_rx_msg3", "ra_rx_msg4", "ra_rx_setup"):
+        value = dict(row, Msg2Slot=10)
+        out = dashboard.summarize_procedure_preview_rows(key, [value])[0]
+        assert out["Pilot/Hest SINR (dB)"] == 29.3
+        assert out["Post-equalizer SINR (dB)"] == 39.8
+        assert out["Estimated CFO (Hz)"] == -401.25
+        assert out["Same-estimator consistency (Hz)"] == 0
+        assert out["Residual role"] == "same_window_not_independent"
+        assert "Post-correction CFO estimate (Hz)" not in out
+        assert out["Absolute slot (0-based)"] == (10 if key == "ra_rx_msg2" else 14)
+    script = dashboard.product_frontend_script()
+    assert "...raDiagnosticTables" in script and "receiver synchronization and SINR definitions" in script
+    assert "...rows.flatMap(row => Object.keys(row))" in script
+
+
 def test_ra_waveform_preview_separates_prepared_ports_and_physical_dimensions() -> None:
     rows = [
         {"StageName": "Msg2", "TxPortCount": 1,
@@ -305,6 +440,16 @@ def test_beam_power_preview_keeps_absolute_and_normalized_units_distinct() -> No
     assert labels["MeasuredRSRPDBReUnitOccupiedREEs"] == "Measured SS-RSRP (dB re unit Es)"
     assert labels["MeasuredPowerUnit"] == "Measured power unit"
     assert labels["PowerReferencePlane"] == "Power reference plane"
+    source = dict(MeasuredSINRDB=25.58, MeasuredSINRQuantity="SS-SINR",
+                  MeasuredSINRMethod="selected_sss_receiver_measurement",
+                  MeasuredSINRReferencePlane="received_sss_resource_elements",
+                  MeasurementSourceSSBIndex=1, MeasurementSourceSlot1Based=1,
+                  MeasurementAvailableSlot1Based=15, MeasurementResultAvailableAtSample=860160,
+                  ReceiverHestSINR_dB=27.38)
+    view = dashboard.summarize_procedure_preview_rows("beam_state", [source])[0]
+    for name, value in source.items():
+        if name != "ReceiverHestSINR_dB":
+            assert view[labels[name]] == value
 
 
 def test_qcl_tci_and_srs_angle_labels_do_not_upgrade_model_metadata() -> None:
@@ -351,6 +496,96 @@ def artifact(path: str, mime_type: str = "text/csv", artifact_id: int = 1) -> di
         "created_utc": "2026-08-02T00:00:00Z",
         "byte_size": 10,
     }
+
+
+def test_failed_run_raw_observations_remain_visible_but_not_accepted() -> None:
+    paths = ["air_interface/csv/pbch_trials.csv", "control/csv/msg1_prach_detection.csv",
+             "air_interface/csv/prach_trials.csv", "air_interface/csv/dl_pdsch_trials.csv"]
+    artifacts = [artifact(path, artifact_id=i + 1) for i, path in enumerate(paths)]
+    runtime = dict(
+        control_trial_previews=dict(pbch_trials=[{"CRC pass": 1}], prach_trials=[]),
+        procedure_previews=dict(msg1_detection=[{"Strongest detected preamble": 0}]),
+        data_trial_previews=dict(dl_trials=[]),
+        artifact_selection=dict(
+            raw_control_trials={"pbch_trials": {"selected_logical_path": paths[0]},
+                                "prach_trials": {"selected_logical_path": paths[2]}},
+            procedure_evidence={"msg1_detection": {"selected_logical_path": paths[1]}},
+            raw_link_trials={"dl": {"selected_logical_path": paths[3]}}))
+    primary, authority = dashboard.select_primary_result_artifacts(artifacts)
+    assert not primary and authority["status"] == "no_atomic_result_authority"
+    observations = dashboard.runtime_preview_artifacts(artifacts, runtime)
+    assert {row["logical_path"] for row in observations} == set(paths[:2])
+    assert all(row["evidence_scope"] == "raw_runtime_observation_not_qualified"
+               for row in observations)
+    components = {row["component_id"]: row for row in
+                  dashboard.build_realtime_component_dashboard(primary, "failed", [], observations)}
+    for key in ("ssb_pbch", "prach_rach"):
+        assert components[key]["status"] == "runtime_observations_unqualified"
+        assert components[key]["canonical_artifact_count"] == 0
+        assert components[key]["runtime_observation_artifact_count"] == 1
+    assert components["pdsch"]["status"] == "not_published"
+    # Raw cards must not change qualification/gallery authority or mutate input.
+    assert not dashboard.select_primary_result_artifacts(artifacts)[0]
+    assert all("evidence_scope" not in row for row in artifacts)
+
+
+def test_runtime_preview_requires_exact_selected_producer_and_no_duplicate() -> None:
+    source = artifact("air_interface/csv/pbch_trials.csv")
+    runtime = dict(control_trial_previews=dict(pbch_trials=[{"Slot": 1}]),
+                   artifact_selection=dict(raw_control_trials=dict(pbch_trials={
+                       "selected_logical_path": "another_run/pbch_trials.csv"})))
+    assert dashboard.runtime_preview_artifacts([source], runtime) == []
+    runtime["artifact_selection"]["raw_control_trials"]["pbch_trials"]["selected_logical_path"] = source["logical_path"]
+    observations = dashboard.runtime_preview_artifacts([source], runtime)
+    rows = dashboard.build_realtime_component_dashboard([source], "failed", [], observations)
+    ssb = next(row for row in rows if row["component_id"] == "ssb_pbch")
+    assert ssb["artifact_count"] == 1 and ssb["runtime_observation_artifact_count"] == 0
+
+
+def test_ssb_sweep_preview_preserves_all_four_received_candidates() -> None:
+    raw = [dict(UEIndex=1, CellID=1, Slot=1, ObservationDeliverySlot=15,
+                SSBIndex=i, SelectedBeamFlag=int(i == 1), SelectedSSBIndex=1,
+                SSBCandidateCarrierSlot0Based=i // 2, SSBCandidateSymbolWithinSlot0Based=4,
+                SSBBurstConfiguredBeamCount=4, SSBBurstExecutedBeamCount=4,
+                SSBBurstSweepObservedCandidateCount=4, SSBBurstSweepCoverageComplete=True,
+                SS_RSRP_dB_re_UnitOccupiedRE_Es=-15.0-i, SS_SINR_dB=25.0-i,
+                CRCPass=True, SelectionSource="PBCH_receiver", Status="PASS")
+           for i in (0, 2, 3, 1)]
+    rows = dashboard.summarize_procedure_preview_rows("ssb_sweep", raw)
+    assert {row["SSB index (0-based)"] for row in rows} == {0, 1, 2, 3}
+    assert sum(row["Selected"] for row in rows) == 1
+    assert rows[-1]["Selected SSB index"] == 1
+    assert rows[-1]["Source slot (1-based)"] == 1
+    assert rows[-1]["Delivery slot (1-based)"] == 15
+    assert rows[-1]["SS-RSRP (dB re unit Es)"] == -16
+    assert dashboard.summarize_procedure_preview_rows("ssb_sweep", []) == []
+
+
+def test_initial_access_renderer_includes_msg1_before_completed_ra() -> None:
+    node = shutil.which("node")
+    if node is None:
+        import playwright
+        node = str(Path(playwright.__file__).parent / "driver" /
+                   ("node.exe" if sys.platform == "win32" else "node"))
+    source = Path(dashboard.__file__).read_text(encoding="utf-8")
+    block = source.split("    const initialAccessRows = [", 1)[1].split("    const csiRows", 1)[0]
+    control = dict(pbch_trials=[dict(Slot=1, Cell=1, Status="PASS", **{"CRC pass": 1})],
+                   prach_trials=[])
+    procedure = dict(msg1_detection=[{"UE": 1, "Absolute slot (0-based)": 29,
+                                      "Strongest detected preamble": 0, "Status": "PASS"}])
+    script = ("const recent = v => (v || []).slice(-8).reverse();\nconst controlPreviews=" +
+              json.dumps(control) + ";\nconst procedurePreviews=" + json.dumps(procedure) +
+              ";\nconst initialAccessRows = [" + block + "\nconsole.log(JSON.stringify(initialAccessRows));")
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True,
+                            check=True, timeout=15)
+    rows = json.loads(result.stdout)
+    assert len(rows) == 2
+    assert rows[1]["Procedure"] == "PRACH Msg1 observation (not completed RA)"
+    assert rows[1]["Slot"] == 29 and rows[1]["Outcome"] == 0
+    assert rows[1]["Slot convention"] == "absolute, 0-based"
+    assert dashboard.PRODUCT_PAGE_ROUTES["/live"] == "realtime"
+    assert "'Proposed RAR TA command':row['RAR TA command']" in source
+    assert "'Applied TA command':row['RAR TA command']" not in source
 
 
 def test_component_dashboard_separates_raster_from_legacy_svg() -> None:
@@ -455,6 +690,58 @@ def test_ue_status_merges_control_and_performance_without_upgrading_fidelity() -
     assert rows[0]["control_source"] == "reports/csv/live_control_gating_state.csv"
 
 
+def test_ue_status_retains_distinct_dl_ul_admission() -> None:
+    # Slot41-style state: global SRS admission is off, but codebook UL
+    # requires causal SRS. The current DL direction must not hide UL=false.
+    control = {
+        "UEIndex": "1", "RNTI": "4660", "AccessState": "succeeded",
+        "CurrentSchedulingDirection": "DL", "SchedulingEligibility": "1",
+        "SharedSchedulingEligibility": "1", "DLSchedulingEligibility": "1",
+        "ULSchedulingEligibility": "0", "SRSValidityState": "not_required",
+        "DLSchedulingBlockReason": "", "ULSchedulingBlockReason": "srs_no_measurements",
+        "DLSRSRequired": "0", "ULSRSRequired": "1", "ULSRSCausalUsable": "0",
+        "ULSRSCausalStatus": "no_measurements",
+    }
+    for direction, current in (("DL", "1"), ("UL", "0")):
+        control.update(CurrentSchedulingDirection=direction,
+                       SchedulingEligibility=current)
+        ue = dashboard.build_realtime_ue_status(
+            {}, {"control_state_preview": [control]})[0]
+        assert ue["dl_scheduling_eligible"] is True
+        assert ue["ul_scheduling_eligible"] is False
+        assert ue["scheduling_eligible"] is (direction == "DL")
+        assert ue["ul_srs_required"] is True and ue["dl_srs_required"] is False
+        assert ue["ul_srs_causal_usable"] is False
+        assert ue["ul_scheduling_block_reason"] == "srs_no_measurements"
+        assert ue["ul_srs_causal_status"] == "no_measurements"
+
+
+def test_ue_status_does_not_infer_directional_admission_from_shared_flag() -> None:
+    # Legacy or incomplete rows cannot establish either directional result.
+    control = {"UEIndex": 1, "SharedSchedulingEligibility": 1}
+    ue = dashboard.build_realtime_ue_status(
+        {}, {"control_state_preview": [control]})[0]
+    assert ue["dl_scheduling_eligible"] is None
+    assert ue["ul_scheduling_eligible"] is None
+
+
+def test_ue_status_directional_admission_numeric_and_unknown_flags() -> None:
+    for raw, expected in ((1.0, True), (0.0, False), ("1.0", True),
+                          ("0.0", False), ("NaN", None), (float("nan"), None),
+                          (2, None), ("unavailable", None)):
+        row = {"UEIndex": 1, "ULSchedulingEligibility": raw, "ULSRSRequired": raw}
+        ue = dashboard.build_realtime_ue_status({}, {"control_state_preview": [row]})[0]
+        assert ue["ul_scheduling_eligible"] is expected
+        assert ue["ul_srs_required"] is expected
+
+
+def test_ue_card_renders_separate_directional_admission() -> None:
+    source = Path(dashboard.__file__).read_text(encoding="utf-8")
+    assert 'DL eligible' in source and 'UL eligible' in source
+    assert '${admissionDetails}' in source
+    assert 'not proof of a grant' in source
+
+
 def test_ue_status_keeps_serving_ss_and_csi_measurements_distinct() -> None:
     sources = {
         "serving": [{"UEID": 1, "Slot": 8, "ServingRSRP_dBm": -82.5}],
@@ -550,8 +837,148 @@ def test_csi_normalized_physical_power_is_not_legacy_grid_power() -> None:
     assert ue["csi_rsrp_dbm"] is None
     assert ue["csi_rsrq_db"] == -4.474
     assert ue["csi_rsrp_receive_branch"] == 2
+    assert ue["csi_power_unit"] == "dB_re_unit_occupied_RE_Es"
     del sources["csi"][0]["MeasurementRSRP_dB_re_UnitOccupiedRE_Es"]
     assert dashboard.build_realtime_ue_status({}, {}, sources)[0]["csi_rsrp_normalized_db"] is None
+    assert dashboard.build_realtime_ue_status({}, {}, sources)[0]["csi_power_unit"] == ""
+
+
+def test_csi_independent_channel_nmse_never_uses_pilot_residual() -> None:
+    row = dict(UEIndex=1, Slot=6, NMSE_dB=-31, PilotResidualNMSE_dB=-7,
+               NMSEScoringAvailable=1, ChannelNMSEComparedComplexValues=48,
+               ChannelNMSEMeasuredResourceCount=2, ChannelNMSEReferencePlane="nominal_linear",
+               ChannelNMSEScope="all_pilot_ports", ChannelEstimateResourcesCSV="channel_estimation/csv/csirs_test.csv")
+    ue = dashboard.build_realtime_ue_status({}, {}, {"csi": [row]})[0]
+    assert ue["csi_channel_nmse_db"] == -31
+    assert ue["csi_pilot_residual_nmse_db"] == -7
+    assert ue["csi_channel_nmse_count"] == 48
+    assert ue["csi_channel_nmse_reference_plane"] == "nominal_linear"
+    assert ue["csi_channel_nmse_csv"] == row["ChannelEstimateResourcesCSV"]
+    row["NMSEScoringAvailable"] = 0
+    assert dashboard.build_realtime_ue_status({}, {}, {"csi": [row]})[0]["csi_channel_nmse_db"] is None
+    del row["NMSE_dB"]
+    assert dashboard.build_realtime_ue_status({}, {}, {"csi": [row]})[0]["csi_pilot_residual_nmse_db"] == -7
+
+
+def test_csi_synchronization_keeps_actual_receive_planes_separate() -> None:
+    row = dict(UEIndex=1, Slot=6)
+    for prefix, cfo, delay in (("Receiver", 1100, 20), ("PhysicalMeasurement", 700, 13)):
+        row.update({prefix + "SynchronizationSource": prefix + "_received_samples",
+                    prefix + "TimingOffset_samples": delay,
+                    prefix + "TimingCorrection_samples": delay,
+                    prefix + "DemodulatedSampleCount": 61440,
+                    prefix + "EstimatedCFO_Hz": cfo,
+                    prefix + "AppliedCFO_Hz": cfo,
+                    prefix + "CFOStatus": "OK",
+                    prefix + "CFOSource": "cyclic_prefix_cfo_estimator",
+                    prefix + "SynchronizationSampleDomain": "relative_to_observation_capture_start_zero_based"})
+    ue = dashboard.build_realtime_ue_status({}, {}, {"csi": [row]})[0]
+    planes = ue["csi_synchronization"]
+    assert [p["estimated_cfo_hz"] for p in planes] == [1100, 700]
+    assert [p["timing_applied_samples"] for p in planes] == [20, 13]
+    assert planes[0]["plane"] == "post-front-end practical CSI"
+    assert planes[1]["plane"] == "pre-front-end antenna measurement"
+    # Execute the production browser projection; do not only inspect strings.
+    source = Path(dashboard.__file__).read_text(encoding="utf-8")
+    projection = next(line.strip() for line in source.splitlines()
+                      if line.strip().startswith("const csiSyncRows ="))
+    node = shutil.which("node")
+    if node is None:
+        import playwright
+        node = str(Path(playwright.__file__).parent / "driver" /
+                   ("node.exe" if sys.platform == "win32" else "node"))
+    js = "const recent=x=>x; const dashboard=" + json.dumps({"ue_status": [ue]}) + ";"
+    result = subprocess.run([node, "-e", js + projection + "console.log(JSON.stringify(csiSyncRows));"],
+                            capture_output=True, text=True, check=True, timeout=15)
+    displayed = json.loads(result.stdout)
+    assert [p["Estimated CFO (Hz)"] for p in displayed] == [1100, 700]
+    assert [p["Timing applied (samples)"] for p in displayed] == [20, 13]
+    assert all(p["Slot"] == 6 and str(p["UE"]) == "1" for p in displayed)
+    del row["PhysicalMeasurementSynchronizationSource"]
+    remaining = dashboard.build_realtime_ue_status({}, {}, {"csi": [row]})[0]["csi_synchronization"]
+    assert len(remaining) == 1 and remaining[0]["plane"] == planes[0]["plane"]
+    assert dashboard.build_realtime_ue_status({}, {}, {"csi": [dict(UEIndex=1)]})[0]["csi_synchronization"] == []
+
+
+def test_ue_card_normalized_power_and_missing_ul_are_source_bound() -> None:
+    sources = {
+        "ssb": [dict(UEIndex=1, Slot=1, SSBIndex=1, SelectedSSBIndex=1,
+                     SelectedBeamFlag=1, SS_RSRP_dBm="",
+                     SS_RSRP_dB_re_UnitOccupiedRE_Es=-15.0007707867825,
+                     SSBReceivedPower_dB=-17.8374355122784,
+                     PowerReferencePlane="normalized_fixed_esn0_unit_occupied_re_es")],
+        "csi": [dict(UEIndex=1, Slot=46,
+                     MeasurementRSRP_dB_re_UnitOccupiedRE_Es=-10.2622251253811,
+                     MeasurementRelativeRSRP_dB=-18.235357987713)],
+        "ul": [],
+        "cell_paths": [dict(UEID=1, Slot=50, CellID=1, CandidateRank=1,
+                            Pathloss_dB=0, RxPower_dBm=31.4889,
+                            PathlossModelSource="pathloss_disabled_fixed_snr_identity",
+                            PathlossComplianceStatus="unavailable")],
+    }
+    ue = dashboard.build_realtime_ue_status({}, {}, sources)[0]
+    assert ue["ss_rsrp_normalized_db"] == -15.0007707867825
+    assert ue["ss_rsrp_relative_db"] == -17.8374355122784
+    assert ue["csi_rsrp_normalized_db"] == -10.2622251253811
+    assert ue["ss_rsrp_dbm"] is None and ue["csi_rsrp_dbm"] is None
+    assert ue["serving_rsrp_dbm"] is None  # Do not substitute another RS.
+    assert ue["serving_rsrp_missing_reason"] == "No absolute power plane"
+    assert ue["ul_missing_reason"] == "No PUSCH trials"
+    assert ue["phr_missing_reason"] == "No PUSCH measurement"
+    assert ue["pathloss_status"] == "disabled_fixed_snr"
+    assert ue["pathloss_paths"][0]["pathloss_db"] is None
+    assert ue["pathloss_paths"][0]["rx_power_dbm"] is None
+    del sources["ssb"][0]["SS_RSRP_dB_re_UnitOccupiedRE_Es"]
+    assert dashboard.build_realtime_ue_status({}, {}, sources)[0]["ss_rsrp_normalized_db"] is None
+
+
+def test_ue_ssb_summary_uses_selected_candidate_not_csv_order_or_power() -> None:
+    selected = dict(UEIndex=1, Slot=1, SSBIndex=1, SelectedSSBIndex=1,
+                    SelectedBeamFlag=1, SS_RSRP_dB_re_UnitOccupiedRE_Es=-15)
+    other = dict(selected, SSBIndex=0, SelectedBeamFlag=0,
+                 SS_RSRP_dB_re_UnitOccupiedRE_Es=20)
+    for candidates in ([selected, other], [other, selected]):
+        ue = dashboard.build_realtime_ue_status({}, {}, {"ssb": candidates})[0]
+        assert ue["ss_selected_index"] == 1 and ue["ss_rsrp_normalized_db"] == -15
+    # An incomplete newer occasion cannot inherit an older selected power.
+    assert dashboard.latest_realtime_selected_ssb_by_ue(
+        [selected, dict(other, Slot=21)]) == {}
+    assert dashboard.latest_realtime_selected_ssb_by_ue([other]) == {}
+
+
+def test_ue_card_renders_relative_power_without_faking_dbm_or_ul() -> None:
+    node = shutil.which("node")
+    if node is None:
+        import playwright
+        node = str(Path(playwright.__file__).parent / "driver" /
+                   ("node.exe" if sys.platform == "win32" else "node"))
+    source = Path(dashboard.__file__).read_text(encoding="utf-8")
+    formatter = source[source.index("  function realtimeValue("):
+                       source.index("  function realtimeComponentPanel(")]
+    renderer = source[source.index("  function realtimeMeasuredValue("):
+                      source.index("  function realtimeLogPanel(")]
+    ue = dashboard.build_realtime_ue_status({}, {}, {
+        "ssb": [dict(UEIndex=1, Slot=1, SS_RSRP_dB_re_UnitOccupiedRE_Es=-15.00077,
+                     PowerReferencePlane="normalized_fixed_esn0_unit_occupied_re_es")],
+        "csi": [dict(UEIndex=1, Slot=46,
+                     MeasurementRSRP_dB_re_UnitOccupiedRE_Es=-10.26223)]})[0]
+    script = "const esc = x => String(x); const unavailable = x => x;\n"
+    script += "const state = " + json.dumps({"live": {"realtime_dashboard": {"ue_status": [ue]}}}) + ";\n"
+    script += formatter + renderer + "\nconsole.log(realtimeUEStatusPanel());"
+    script += "\nconsole.log(realtimePowerValue(-91, -15));"
+    script += "\nconsole.log(realtimeMeasuredValue(0, '', 3, 'missing'));"
+    result = subprocess.run([node, "-e", script], capture_output=True,
+                            text=True, check=True, timeout=15)
+    html = result.stdout
+    assert "SS-RSRP <strong>-15.00 dB re unit Es</strong>" in html
+    assert "CSI-RSRP <strong>-10.26 dB re unit Es</strong>" in html
+    assert "UL SINR <strong>No PUSCH trials</strong>" in html
+    assert "UL BLER <strong>No PUSCH trials</strong>" in html
+    assert "UL rate <strong>No PUSCH trials</strong>" in html
+    assert "No absolute power plane" in html and "No PUSCH measurement" in html
+    assert "Cell-link loss evidence" in html and "<th>Candidate order</th>" in html
+    assert "-15.00 dBm" not in html and "-10.26 dBm" not in html
+    assert "-91.00 dBm" in html and "0.000" in html
 
 
 def test_post_equalization_csi_row_is_not_relabelled_as_csi_sinr() -> None:

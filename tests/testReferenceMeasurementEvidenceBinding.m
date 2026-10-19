@@ -15,6 +15,16 @@ assert(T.SINR_dB==row.MeasuredTrialSINR_dB && T.SINRSourceField=="MeasuredTrialS
 assert(T.NMSEScoringAvailable && T.ChannelNMSEComparedComplexValues==417792 && ...
     T.ChannelNMSEPilotResourceCount==6528 && T.ChannelNMSEPhaseAligned && ~T.ChannelNMSEGainFitted);
 assert(T.RSRP_dB_re_UnitOccupiedRE_Es==-14 && isnan(T.RSRP_dBm));
+% Match the actual CSI producer's selected-resource power alias. Absolute
+% dBm is deliberately absent from this normalized experiment.
+csi=table(6,-11.031863829463,"normalized_fixed_esn0_unit_occupied_re_es",2, ...
+    'VariableNames',{'Slot','MeasurementRSRP_dB_re_UnitOccupiedRE_Es','PowerReferencePlane','ResourceID'});
+state=sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementRuntime( ...
+    state,'CSI-RS','UE',1,csi,'ProducerSlot',6,'AvailableSlot',7,'Valid',true);
+T=state.ReferenceSignalMeasurementTable;
+assert(T.RSRP_dB_re_UnitOccupiedRE_Es(end)==csi.MeasurementRSRP_dB_re_UnitOccupiedRE_Es && ...
+    isnan(T.RSRP_dBm(end)) && string(T.PowerReferencePlane(end))==csi.PowerReferencePlane && ...
+    T.ResourceId(end)==2,'The selected CSI resource power must retain its value, units and identity.');
 pilotScore=sixgr.phy.trs.scoreTRSPilotDisturbance();
 pilotScore.IndependentPilotSNDRAvailable=true; pilotScore.IndependentPilotSNDR_dB=20;
 pilotScore.IndependentPilotValueRole="declared_scoring_fixture_not_scheduler_input";

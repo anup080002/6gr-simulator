@@ -127,6 +127,9 @@ assert(all(pageEnergy > 0), ...
     "Hybrid UL PUSCH element waveform columns must carry nonzero energy; empty padding is not allowed.");
 assert(size(tx.Waveform, 2) == 4 && size(tx.Grid, 3) >= 4, ...
     "Hybrid UL PUSCH must materialize physical UE element waveform columns and grid pages.");
+observed=sixgr.truth.buildObservedREAllocation(tx,'Direction','UL','AbsoluteSlot',0);
+assert(sum(observed.re_count)==nnz(tx.Grid) && all(observed.layer_count==2), ...
+    'Observed hybrid PUSCH occupancy must use the executed antenna grid, not native ports.');
 end
 
 function localAssertHybridNonCodebookReplayPortRecovery()

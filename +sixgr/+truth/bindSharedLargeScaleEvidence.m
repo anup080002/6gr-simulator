@@ -14,6 +14,7 @@ segments=planes(post).Segments; observation=planes(post).Observation;
 assert(~isempty(segments) && observation.isComplete(), ...
     'sixgr:truth:GainEvidenceIncomplete','Completed execution segments are required.');
 input=0; output=0; expected=0; count=0; tolerance=0;
+energyUnit=""; amplitudeUnit="";
 intervals=zeros(numel(segments),2);
 active=false(numel(segments),1);
 desiredIDs=strings(0,1);
@@ -41,9 +42,14 @@ for k=1:numel(segments)
     assert(string(m.Source)=="actual_samples_before_after_large_scale_gain" && ...
         ~m.ReceiverEstimatorInput && m.SampleCount==e.EndSampleExclusive-e.StartSample, ...
         'sixgr:truth:GainEnergyExecutionScope','Gain energy must bind to the executed processor interval.');
-    input=input+double(m.InputEnergy_mWsample);
-    output=output+double(m.OutputEnergy_mWsample);
-    expected=expected+double(m.InputEnergy_mWsample)* ...
+    if strlength(energyUnit)==0
+        energyUnit=string(m.EnergyUnit); amplitudeUnit=string(m.AmplitudeUnit);
+    end
+    assert(energyUnit==string(m.EnergyUnit) && amplitudeUnit==string(m.AmplitudeUnit), ...
+        'sixgr:truth:GainEnergyMixedUnits','Do not add normalized and absolute sample energies.');
+    input=input+double(m.InputEnergy);
+    output=output+double(m.OutputEnergy);
+    expected=expected+double(m.InputEnergy)* ...
         10.^(double(links.LossReplay.AppliedLargeScaleGain_dB)/10);
     count=count+double(m.SampleElementCount);
     tolerance=max(tolerance,double(m.RelativeTolerance));
@@ -52,9 +58,19 @@ assert(intervals(1,1)<=observation.StartSample && ...
     intervals(end,2)>=observation.EndSampleExclusive && ...
     all(intervals(2:end,1)==intervals(1:end-1,2)), ...
     'sixgr:truth:GainEnergyExecutionGap','Execution energy must cover the receive capture without overlapping or missing segments.');
-T.LargeScaleInputEnergy_mWsample=input;
-T.LargeScaleOutputEnergy_mWsample=output;
-T.LargeScaleExpectedOutputEnergy_mWsample=expected;
+T.LargeScaleInputEnergy=input;
+T.LargeScaleOutputEnergy=output;
+T.LargeScaleExpectedOutputEnergy=expected;
+T.LargeScaleEnergyUnit=energyUnit;
+T.LargeScaleWaveformAmplitudeUnit=amplitudeUnit;
+T.LargeScaleInputEnergy_mWsample=NaN;
+T.LargeScaleOutputEnergy_mWsample=NaN;
+T.LargeScaleExpectedOutputEnergy_mWsample=NaN;
+if amplitudeUnit=="sqrt_mW"
+    T.LargeScaleInputEnergy_mWsample=input;
+    T.LargeScaleOutputEnergy_mWsample=output;
+    T.LargeScaleExpectedOutputEnergy_mWsample=expected;
+end
 T.LargeScaleSampleElementCount=count;
 T.LargeScalePowerClosureRelativeTolerance=tolerance+8*numel(segments)*eps;
 T.LargeScaleMeasurementStartSample=intervals(1,1);

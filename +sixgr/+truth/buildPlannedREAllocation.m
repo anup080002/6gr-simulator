@@ -275,7 +275,9 @@ for slot0 = reshape(slots,1,[])
 end
 value = struct("Resolution",resolution,"Config",cfgSI, ...
     "Slots",slots,"Carrier",carrier);
-out = localPayload(rows,size(unique(vertcat(rows.allocation_id)),1), ...
+% Each allocation ID denotes a monitoring occasion, not a resource element.
+% Count its actual data and DM-RS coordinates, as for other planned channels.
+out = localPayload(rows,sum([rows.re_count]), ...
     sprintf("%d Type-0 monitoring slot(s)",numel(slots)),value);
 end
 

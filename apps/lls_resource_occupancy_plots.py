@@ -3,18 +3,27 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
+from itertools import chain
 
 
 def symbol_occupancy_chart(existing, fetch_artifact_bytes, run_id):
     # Local import keeps the renderer's specialized-dispatch dependency acyclic.
     import lls_contract_materializer as m
 
+    path = "reports/csv/live_re_allocation_snapshot.csv"
+    with m._first_available_csv_stream(existing, fetch_artifact_bytes, [path]) as (_, rows):
+        return _symbol_occupancy_rows(m, rows, run_id)
+
+
+def _symbol_occupancy_rows(m, rows, run_id):
+    # Retain only exact scope/symbol unions and row counts, not raw RE rows.
+    # A full-band archive may contain millions of rows and wide metadata.
     name = "frame/slot/symbol occupancy timeline"
     path = "reports/csv/live_re_allocation_snapshot.csv"
-    header, rows = m._artifact_rows_by_path(existing, fetch_artifact_bytes, path)
+    first = next(rows, None)
     required = {"absolute_slot", "symbol_index", "cell_id", "direction",
                 "subcarrier_count", "active_flag", "evidence_scope"}
-    if not rows or not required.issubset(set(header)):
+    if first is None or not required.issubset(first):
         reason = "Executed TX RE coordinates and occupancy provenance are unavailable; slot-format capacity is not occupancy."
         return {
             "csv_bytes": m._encode_csv(
@@ -29,9 +38,12 @@ def symbol_occupancy_chart(existing, fetch_artifact_bytes, run_id):
     symbols = defaultdict(set)
     counts = defaultdict(int)
     observation_context = {}
-    if any(m._row_text(row, 'ObservationID') for row in rows) and not all(m._row_text(row, 'ObservationID') for row in rows):
-        raise ValueError('Mixed or unbound independent RE observations')
-    for number, row in enumerate(rows, 1):
+    observation_binding = None
+    for number, row in enumerate(chain((first,), rows), 1):
+        bound = bool(m._row_text(row, "ObservationID"))
+        if observation_binding is not None and bound != observation_binding:
+            raise ValueError('Mixed or unbound independent RE observations')
+        observation_binding = bound
         if m._row_text(row, "evidence_scope") != "runtime_observed_tx_occupancy":
             raise ValueError(f"Occupancy row {number} is not executed TX evidence")
         domain = m._row_text(row, "grid_domain")
@@ -73,7 +85,7 @@ def symbol_occupancy_chart(existing, fetch_artifact_bytes, run_id):
     if not symbols:
         # An empty active RE set does not establish complete zero-occupancy
         # coverage for all time intervals. Reuse the explicit missing result.
-        return symbol_occupancy_chart({}, fetch_artifact_bytes, run_id)
+        return _symbol_occupancy_rows(m, iter(()), run_id)
 
     csv_rows = []
     series_points = defaultdict(list)

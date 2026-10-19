@@ -43,7 +43,13 @@ assert(abs(fb.SchedulerAdjustedSINR_dB + fb.SchedulerSINRBackoff_dB - ...
 
 % A preserved data-quality decision must retain its own adaptation metadata.
 % This old PUSCH is fresh at slot 30, and newer SRS is not a downgrade.
-protected=state;
+% The final real SRS must be NEW to this branch. Starting from state (which
+% already consumed it above) would incorrectly ask a duplicate to increment
+% the observation count. Independently check that replay remains a no-op.
+duplicate=sixgr.truth.CoupledTruthRuntime.updateLatestULFeedbackFromSRSTrialRuntime( ...
+    state,1,out,slot);
+assert(isequaln(duplicate,state),'A replayed physical SRS is not another measurement.');
+protected=beforeFinal;
 prior=fb; prior.FeedbackSourceSignal='PUSCH'; prior.FeedbackCRCPass=1;
 prior.SourceSlot=29; prior.Slot=29; prior.DeliveredSlot=29;
 prior.MCSIndex=0; prior.CQI=1; prior.SmoothedCQI=1.25;

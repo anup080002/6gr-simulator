@@ -8,9 +8,11 @@ p.parse(varargin{:});
 
 runFolder = char(string(runFolder));
 lineagePath = char(string(lineagePath));
-plotIds = string(plotIds(:));
-imagePaths = string(imagePaths(:));
-sourceCSVs = string(sourceCSVs(:));
+% Normalize text before reshaping. Reshaping a char pathname first creates
+% one string per character instead of one declared plot/source identity.
+plotIds = string(plotIds); plotIds = plotIds(:);
+imagePaths = string(imagePaths); imagePaths = imagePaths(:);
+sourceCSVs = string(sourceCSVs); sourceCSVs = sourceCSVs(:);
 producerModule = string(producerModule);
 
 n = numel(plotIds);

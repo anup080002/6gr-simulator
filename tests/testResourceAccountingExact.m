@@ -186,7 +186,13 @@ pusch = struct( ...
     "SymbolAllocation", [0 14]);
 idxInfo = struct("Gd", 41766, "G", 83532, "NREPerPRB", 156);
 info = struct("Channel", "PUSCH", "PUSCHIndicesInfo", idxInfo);
-idx = reshape(1:83532, 41766, 2);
+% A second antenna port repeats the same time/frequency RE with a carrier-
+% plane stride, not the next arbitrary sequence of subcarriers. The former
+% reshape spilled into unallocated PRBs and described a larger base grid.
+plane=12*carrier.NSizeGrid*carrier.SymbolsPerSlot;
+allocated=reshape((1:12*268).' + (0:13)*(12*carrier.NSizeGrid),[],1);
+base=allocated(1:41766);
+idx=[base,base+plane];
 acct = sixgr.phy.resource.computeResourceAccounting("PUSCH", carrier, pusch, ...
     "ChannelIndices", idx, ...
     "AllocationInfo", info, ...

@@ -8,8 +8,11 @@ scopeToken = lower(regexprep(char(string(scopeToken)), "[^a-z0-9]+", "_"));
 names = string(T.Properties.VariableNames);
 for index = 1:numel(names)
     fieldName = char(names(index));
-    if sixgr.truth.isImmutableIdentityField(fieldName)
-        % Blank identity remains blank so fail-closed validation can see it.
+    if sixgr.truth.isImmutableIdentityField(fieldName) || endsWith(fieldName,"JSON","IgnoreCase",true)
+        % Identity and serialized evidence are producer-owned, not display
+        % categories. An empty JSON field can mean this reference plane was
+        % not used (e.g. absolute power in normalized AWGN). Do not create
+        % text that masquerades as an available structured measurement.
         continue;
     end
     rawColumn = T.(fieldName);
@@ -45,10 +48,11 @@ elseif endsWith(name, "valuestatus")
     token = "not_emitted_by_active_" + string(scopeToken) + "_runtime";
 elseif endsWith(name, "nareason") || strcmp(name, "nareason") || ...
         strcmp(name, "unavailablereason") || ...
-        endsWith(name, "failurecode") || endsWith(name, "failurereason")
+        endsWith(name, "failurecode") || endsWith(name, "failurereason") || ...
+        endsWith(name, "erroridentifier") || endsWith(name, "errormessage")
     % An empty reason is legitimate for a valid measurement. Only its
     % producer can state why a value is unavailable or why an operation
-    % failed; never invent a cause.  In particular, a successful decoded
+    % failed; never invent an exception or cause. In particular, a successful decoded
     % DCI/grant binding must retain an empty failure code.  Decorating that
     % blank with a generic not-applicable token makes the strict binding
     % gate reinterpret physically proven bindings as failures.

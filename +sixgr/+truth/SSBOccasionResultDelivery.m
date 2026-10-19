@@ -43,6 +43,11 @@ methods(Static)
             'EstimatedTimingOffset_samples','EstimatedCFO_Hz', ...
             'SSBWindowRSSIPerReceiveAntenna_dBm','SSBWindowPowerMeasurementJSON'});
         row.MeasurementSource="actual_shared_ssb_occasion_pre_rx_rf_measurement";
+        % SS-SINR is the received SSS measurement, not PBCH DM-RS SINR.
+        % Keep the actual receiver method and reference plane through the
+        % per-occasion callback and causal ledger delivery.
+        row.SSSINRMeasurementMethod=string(sixgr.util.structGet(r,'SSSINRMeasurementMethod',""));
+        row.SSSINRReferencePlane=string(sixgr.util.structGet(r,'SSSINRReferencePlane',""));
         frequencyFields=sixgr.phy.broadcast.measurePBCHResidualFrequency();
         for field=string(fieldnames(frequencyFields)).'
             row.(field)=r.(field);

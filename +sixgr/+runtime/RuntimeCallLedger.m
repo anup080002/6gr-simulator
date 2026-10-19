@@ -30,6 +30,13 @@ methods(Static)
         out = sixgr.runtime.RuntimeCallLedger.dispatch("flush", struct());
     end
 
+    function out = checkpoint(runFolder)
+        % Persist the actual in-memory prefix before slot-state hashing.
+        % A different configured run must never supply this checkpoint.
+        out=sixgr.runtime.RuntimeCallLedger.dispatch("checkpoint", ...
+            struct('RunFolder',string(runFolder)));
+    end
+
     function T = snapshot()
         T = sixgr.runtime.RuntimeCallLedger.dispatch("snapshot", struct());
     end
@@ -150,7 +157,14 @@ methods(Static, Access=private)
                     source.Sequence = state.Sequence;
                     state.Rows(end+1, 1) = source;
                 end
-            case "flush"
+            case {"flush","checkpoint"}
+                if string(action)=="checkpoint" && state.Configured
+                    requested=string(char(java.io.File(char(payload.RunFolder)).getCanonicalPath()));
+                    owned=string(char(java.io.File(char(state.RunFolder)).getCanonicalPath()));
+                    assert(strcmpi(requested,owned), ...
+                        'sixgr:runtime:RuntimeCallLedgerCheckpointOwnerMismatch', ...
+                        'Do not checkpoint runtime calls from another run folder.');
+                end
                 out = struct2table(state.Rows);
                 if state.Configured && strlength(strtrim(state.RunFolder)) > 0
                     layout = sixgr.report.resultLayout(char(state.RunFolder));

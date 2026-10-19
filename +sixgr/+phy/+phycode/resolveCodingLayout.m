@@ -93,7 +93,7 @@ rateMatchSignature = localSignature(struct( ...
     "Modulation", modulation, "NumLayers", nLayers));
 
 layout = struct();
-layout.ContractVersion = "CodingLayout/v1";
+layout.ContractVersion = "CodingLayout/v2";
 layout.Immutable = true;
 layout.Direction = char(direction);
 layout.A = uint32(A);
@@ -126,6 +126,8 @@ layout.NumLayers = uint8(nLayers);
 layout.NumCodewords = uint8(1);
 layout.CircularBufferPositionMap = positionMap;
 layout.RateMatchPositionMap = positionMap;
+layout.RateMatchAccounting = rmInfo.Accounting;
+layout.InherentPuncturedBits = uint32(2*Zc*C);
 layout.CodingLayoutHash = combineSignature;
 layout.CombineSignature = combineSignature;
 layout.RateMatchSignature = rateMatchSignature;

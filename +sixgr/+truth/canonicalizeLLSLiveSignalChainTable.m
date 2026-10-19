@@ -15,8 +15,40 @@ scopeToken = lower(regexprep(char(string(scopeToken)), "[^a-z0-9]+", "_"));
 T = sixgr.truth.normalizeDisabledInterferenceIdentity(T, string(scopeToken));
 if any(string(scopeToken) == ["dl_pdsch_trials", "ul_pusch_trials"])
     T = localCorrectBootstrapLinkAdaptationClaim(T);
+    phaseFields=["AdaptiveMode","LinkAdaptationScheduled","LinkAdaptationApplied","LinkAdaptationBootstrap"];
+    if all(ismember(phaseFields,string(T.Properties.VariableNames)))
+        % Preserve the frozen row's mode; only reconcile its derived flag.
+        T.LinkAdaptationBootstrap=logical(T.AdaptiveMode) & ...
+            logical(T.LinkAdaptationScheduled) & ~logical(T.LinkAdaptationApplied);
+    end
 end
 names = string(T.Properties.VariableNames);
+% Descriptive siblings (PMIType, codebook mode, source text) cannot make a
+% missing scalar PMI or beam identity available. Correct producer-side
+% inference before serialization, without filling the missing measurement.
+for statusName=["AppliedBeamValueStatus","AppliedPrecoderValueStatus","SINRValueStatus"]
+    if ~ismember(statusName,names), continue; end
+    present=localCompanionAvailabilityMask(T,statusName);
+    values=string(T.(statusName));
+    claimed=ismember(lower(strtrim(values)),["available","ok","measured","derived","configured"]);
+    values(claimed & ~present)="unavailable";
+    if statusName=="SINRValueStatus" && ismember("SINRValueDefinition",names)
+        defined=localColumnAvailabilityMask(T.SINRValueDefinition);
+        values(claimed & present & ~defined)="unavailable_definition_not_recorded";
+    end
+    T.(statusName)=values;
+end
+if all(ismember(["AppliedPrecoderPMI","AppliedPrecoderMatrixSHA256"],names))
+    matrix=string(T.AppliedPrecoderMatrixSHA256);
+    hasMatrix=~cellfun(@isempty,regexp(cellstr(matrix),'^[a-fA-F0-9]{64}$','once'));
+    scalarPresent=localColumnAvailabilityMask(T.AppliedPrecoderPMI);
+    T.AppliedPrecoderScalarPMIStatus=repmat("unavailable",height(T),1);
+    T.AppliedPrecoderScalarPMIStatus(scalarPresent)="available";
+    T.AppliedPrecoderScalarPMIStatus(hasMatrix & ~scalarPresent)="not_applicable_explicit_matrix";
+    T.AppliedPrecoderMatrixStatus=repmat("unavailable",height(T),1);
+    T.AppliedPrecoderMatrixStatus(hasMatrix)="available_hash_bound_matrix";
+end
+names=string(T.Properties.VariableNames);
 for i = 1:numel(names)
     fieldName = char(names(i));
     if sixgr.truth.isImmutableIdentityField(fieldName)
@@ -141,6 +173,18 @@ if strlength(string(base)) == 0
     return;
 end
 names = string(T.Properties.VariableNames);
+switch string(base)
+    case "appliedbeam", candidates="AppliedBeamIndexSet";
+    case "appliedprecoder", candidates="AppliedPrecoderPMI";
+    case "sinr", candidates=["SINR_dB","SINRdB","SINR"];
+    otherwise, candidates=strings(0,1);
+end
+if ~isempty(candidates)
+    for candidate=candidates
+        if ismember(candidate,names), mask=mask | localColumnAvailabilityMask(T.(candidate)); end
+    end
+    return;
+end
 for i = 1:numel(names)
     candidate = char(names(i));
     candidateLower = lower(candidate);
@@ -158,21 +202,7 @@ end
 end
 
 function mask = localColumnAvailabilityMask(col)
-if isnumeric(col)
-    mask = isfinite(double(col));
-    return;
-end
-if islogical(col)
-    mask = true(numel(col), 1);
-    return;
-end
-try
-    vals = string(col);
-    mask = strlength(strtrim(vals)) > 0;
-catch
-    mask = false(numel(col), 1);
-end
-mask = reshape(logical(mask), [], 1);
+mask=sixgr.truth.measurementValuePresent(col);
 end
 
 function tf = localColumnContainsOnlyInactiveSentinels(col)

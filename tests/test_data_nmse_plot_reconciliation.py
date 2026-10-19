@@ -82,3 +82,46 @@ def test_exact_zero_error_has_a_linear_plot_without_a_db_floor():
     assert float(rows[0]['plotted_nmse_linear']) == 0
     assert b'Channel NMSE (linear ratio)' in chart['img_bytes']
     assert b'visual_gate=' not in chart['img_bytes']
+
+
+def test_csirs_joint_points_reconcile_all_resources_not_pilot_residual():
+    existing, payload = {}, {}
+    trials = []
+    for point, snr in enumerate([40, 30, 20, 10, 0, -10, -20, -30], 1):
+        row, _, data = fixture(.5)
+        sample = next(csv.DictReader(io.StringIO(data[1].decode())))
+        identity = f'csi_observation_{point}'
+        sample['CSIChannelEstimateObservationID'] = identity
+        del sample['ChannelObservationID']
+        # Identical RE/port coordinates on different resource identities
+        # are distinct evidence, not duplicate rows to discard.
+        resources = [dict(sample, ResourceID=resource) for resource in [1, 2]]
+        out = io.StringIO(); writer = csv.DictWriter(out, fieldnames=resources[0])
+        writer.writeheader(); writer.writerows(resources)
+        path = f'channel_estimation/csv/csirs_{point}.csv'
+        payload[point] = out.getvalue().encode()
+        existing[path] = dict(artifact_id=point)
+        row.update(SignalFamily='CSI-RS', Direction='DL', Slot='6', UEIndex='1',
+            SweepPointIndex=str(point), ConfiguredSNR_dB=str(snr),
+            CSIChannelEstimateObservationID=identity,
+            ChannelNMSESource=row.pop('NMSESource'),
+            ChannelNMSEReferencePlane=row.pop('ChannelEstimateReferencePlane'),
+            ChannelNMSEReferenceUsedByReceiver='0', ChannelNMSEComparedComplexValues='2',
+            NMSEScoringAvailable='1', PilotResidualNMSE_dB='-99',
+            ChannelEstimateResourcesCSV=path,
+            ChannelEstimateResourcesCSVSHA256=hashlib.sha256(payload[point]).hexdigest(),
+            MeasuredTrialSINR_dB=str(snr-2), MeasuredTrialSINRSource='actual_reference_REs',
+            MeasuredTrialSINRValueStatus='OK', MeasuredTrialSINRValueRole='received_reference_RE_power_ratio_estimate',
+            MeasuredTrialSINRMeasurementDomain='csi_rs_port3000_reference_re_received_plane')
+        trials.append(row)
+    out=io.StringIO(); writer=csv.DictWriter(out,fieldnames=trials[0]); writer.writeheader(); writer.writerows(trials)
+    payload[99]=out.getvalue().encode(); existing[radio.CSI_TRIALS]=dict(artifact_id=99)
+    result=radio._relationships(m,'NMSE vs SNR / SINR',existing,payload.__getitem__,1)
+    rows=list(csv.DictReader(io.StringIO(result['csv_bytes'].decode())))
+    assert len(rows)==8 and {int(r['sweep_point_index']) for r in rows}==set(range(1,9))
+    assert all(abs(float(r['metric_value'])-20*radio.math.log10(.5))<1e-10 for r in rows)
+    assert all(r['signal_family']=='CSI-RS' and r['metric_reference_plane']=='nominal_linear_effective_layer_channel' for r in rows)
+    assert b'CSI-RS' in result['img_bytes'] and b'-99' not in result['img_bytes']
+    trials[0]['NMSE_dB']='-99'
+    with pytest.raises(ValueError,match='independent pilot energies'):
+        radio._scored_data_channel_nmse(m,trials[0],existing,payload.__getitem__)

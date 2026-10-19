@@ -693,7 +693,10 @@ reference_signals:
   srs_slot_within_period: 4
   trs_periodicity_slots: 4
   csi_rs_periodicity_slots: 4
-  csi_rs_offset_slots: 2
+  # Absolute slot0 phase 2 overlaps the common SIB1/Type-0 occasion.
+  # Phase 3 is disjoint from SSB/SI/TRS REs over the 20-slot calendar.
+  # Keep the report calendar unchanged; only eligible earlier CSI-RS may feed it.
+  csi_rs_offset_slots: 3
   pdsch_dmrs:
     enabled: true
     purpose: "pdsch_demodulation"
@@ -1099,7 +1102,7 @@ pdcch:
   dci_families:
     - "1_0"
   dci_size_policy: "baseline"
-  crc_length: 16
+  crc_length: 24
   virtual_crc_flag: false
   modulation: "QPSK"
   aggregation_levels: [1, 2, 4, 8]

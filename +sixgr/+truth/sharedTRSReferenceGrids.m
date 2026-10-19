@@ -25,7 +25,7 @@ loss=10^(double(replay.AppliedLargeScaleGain_dB)/20);
 assert(isfinite(amplitude) && amplitude>0 && isfinite(loss) && loss>0, ...
     'sixgr:truth:MissingTRSScoringPower','Retain declared TX scaling and actual applied loss.');
 normalization=1;
-if base.NormalizeChannelOutputs, normalization=1/sqrt(base.NumReceiveAntennas); end
+% The executed NR path gains already include NormalizeChannelOutputs.
 grids=cell(numel(det.SlotDetections),1); evidence=grids;
 for k=1:numel(grids)
     d=det.SlotDetections(k);

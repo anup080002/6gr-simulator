@@ -42,7 +42,27 @@ resumeExisting = logical(sixgr.util.structGet(executionOptions, ...
     "ResumeCompletedRuntimeFinalization", false));
 existingRunFolder = string(sixgr.util.structGet(executionOptions, ...
     "ExistingRunFolder", ""));
-if resumeExisting
+slotCheckpoint=string(scfg.get('run_control.runtime_checkpoint_resume_from',''));
+checkpointLineage=struct();
+if strlength(slotCheckpoint)>0
+    assert(~resumeExisting && backend=="filesystem", ...
+        'sixgr:checkpoint:UnsupportedResumeBackend', ...
+        'Slot resume requires filesystem output and cannot combine with finalization resume.');
+    [runFolder,checkpointLineage]=sixgr.runtime.SlotCheckpoint.prepareResume( ...
+        slotCheckpoint,scfg.toStruct(), ...
+        scfg.get('run_control.runtime_checkpoint_repair_reason',''),true);
+    logicalRunFolder=runFolder;
+    [~,leaf]=fileparts(runFolder);
+    executionOptions.SlotCheckpointPath=slotCheckpoint;
+    executionOptions.SlotCheckpointRepairReason=string( ...
+        scfg.get('run_control.runtime_checkpoint_repair_reason',''));
+    % Preserve the exact original scientific/config identity for pending
+    % received-control/HARQ bindings. Operational restart input is retained
+    % separately in the lineage, not substituted for the original YAML hash.
+    scfg=sixgr.lls6g.config.ScenarioConfig(checkpointLineage.CanonicalScenario, ...
+        'SourceFiles',scfg.SourceFiles,'ConfigPath',scfg.ConfigPath, ...
+        'ConfigHash',checkpointLineage.CanonicalConfigHash,'Kind',scfg.Kind);
+elseif resumeExisting
     if strlength(strtrim(existingRunFolder)) == 0 || ...
             exist(char(existingRunFolder), "dir") ~= 7
         error("sixgr:lls6g:runner:MissingResumeRunFolder", ...
@@ -102,6 +122,10 @@ out.Result = execOut.Result;
 % omitting it here forced callers to reopen a CSV/MAT file and caused a
 % successful waveform execution to look like an API failure.
 out.ScenarioStatus = execOut.ScenarioStatus;
+if ~isempty(fieldnames(checkpointLineage))
+    out.CheckpointContinuation=checkpointLineage;
+    out.PrimaryStudyEligible=false;
+end
 end
 
 function scfg = localApplyOutputBackendOverride(scfg, backend)
@@ -2637,6 +2661,10 @@ executionIdentity = sixgr.runtime.resolveExecutionIdentity( ...
 % The canonical frame builder executes during configuration construction.
 % Open the actual-entry ledger first; never recreate a call at finalization.
 cfg = sixgr.lls6g.buildInternalConfig(scfg, runFolder);
+if isfield(executionOptions,'SlotCheckpointPath')
+    cfg.run.runtimeCheckpointResumeFrom=executionOptions.SlotCheckpointPath;
+    cfg.run.runtimeCheckpointRepairReason=executionOptions.SlotCheckpointRepairReason;
+end
 cfg.run.runTag = char(string(runTag));
 cfg.run.executionID = char(executionIdentity.ExecutionID);
 cfg.meta.executionID = char(executionIdentity.ExecutionID);
@@ -4155,6 +4183,12 @@ manifest.ScenarioYAML = char(string(scfg.ConfigPath));
 manifest.ConfigOverlay = char(string(configOverlay));
 manifest.ConfigOverlayPath = char(string(configOverlayPath));
 manifest.RunFolder = char(string(runFolder));
+checkpointLineagePath=fullfile(runFolder,'meta','checkpoint_resume.json');
+if isfile(checkpointLineagePath)
+    manifest.CheckpointContinuation=jsondecode(fileread(checkpointLineagePath));
+    manifest.PrimaryStudyEligible=false;
+    manifest.QualificationScope='checkpoint_repair_validation_not_clean_source_qualification';
+end
 manifest.RunID = char(string(sixgr.util.structGet(runtimeSummary, "RunID", "")));
 manifest.ExecutionID = char(string(sixgr.util.structGet(runtimeSummary, "ExecutionID", "")));
 manifest.SourceFiles = cellstr(localPortablePath(scfg.SourceFiles));

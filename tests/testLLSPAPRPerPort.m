@@ -34,8 +34,8 @@ end
 
 cfg.waveform = struct("cfr_enabled", true, "cfr_target_papr_db", 1);
 [metricsCFR, ~] = sixgr.link.deriveModulationTrackingMetrics(tx, rx, cfg, "DL");
-assert(double(metricsCFR.PeakClippingEvents) == 0, ...
-    "CFR clipping-event accounting must use per-port average power thresholds.");
+assert(isnan(metricsCFR.PeakClippingEvents) && isnan(metrics.PeakClippingEvents), ...
+    "A CFR configuration and output waveform do not prove executed clipping counts.");
 
 ok = true;
 end

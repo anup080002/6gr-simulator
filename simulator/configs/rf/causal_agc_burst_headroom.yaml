@@ -1,0 +1,15 @@
+# Receiver implementation assumption, NOT a 3GPP-mandated AGC or RF limit.
+# This changes analogue receiver gain only, not radiated power or noise.
+rf_frontend:
+  receiver:
+    agc:
+      target_rms: 0.25
+      stream_profile:
+        # Retain the existing RMS attack/release detector and add a fast
+        # one-bit overload path. A clipped sample cannot be reconstructed.
+        overload_guard:
+          research_class: optional_research_experiment
+          model: pre_adc_rail_flag_next_sample_gain_step
+          enabled: true
+          gain_step_db: 6.0
+          hold_samples: 128

@@ -157,6 +157,30 @@ det.PeakToNoiseRatio = localSafeRatio(tracePeak, det.PDPNoiseFloor);
 det.PeakToNoiseRatio_dB = localRatioToDb(det.PeakToNoiseRatio);
 det.FrequencyEstimate = freqEst;
 det.Occasion = occasion;
+if backendMode=="toolbox_peak"
+    % Candidate peaks (possibly repeated cyclic shifts of one root) do not
+    % constitute samples of the delay-profile noise floor. Preserve that
+    % diagnostic separately and measure the actual received repetitions.
+    det.CandidatePeakLowerTailMedian=localCorrelationNoiseFloor(peaks);
+    [background,auxiliary]=sixgr.rach.measureNativePRACHBackground( ...
+        rxWaveform,cfg,occasion,candidateDetected);
+    det.NoiseFloorEvidence=background;
+    det.PDPNoiseFloor=background.NoiseFloor;
+    det.PeakToNoiseRatio=localSafeRatio(background.AuxiliaryPeakMetric,background.NoiseFloor);
+    det.PeakToNoiseRatio_dB=localRatioToDb(det.PeakToNoiseRatio);
+    det.PeakToNoiseRatioSource="auxiliary_repetition_matched_filter_same_metric_background";
+    if ~isempty(fieldnames(auxiliary))
+        auxiliary.DecisionThreshold=det.Threshold;
+        auxiliary.DecisionPeakMetric=det.PeakMetric;
+        auxiliary.DecisionPeakLagSamples=det.TimingOffsetSamples;
+        auxiliary.CandidatePeakLowerTailMedian=det.CandidatePeakLowerTailMedian;
+        auxiliary.DetectorBackend=det.DetectorBackend;
+        det.CorrelationTrace=auxiliary;
+    else
+        det.CorrelationTrace.NoiseFloor=NaN;
+        det.CorrelationTrace.NoiseFloorEvidence=background;
+    end
+end
 end
 
 function [idx0, offset0, detInfo] = localDetectByToolboxPRACHDetect(rxWaveform, cfg, occasion, candidateSet, thresholdMode, explicitThreshold)
@@ -222,7 +246,7 @@ detInfo.BestCorrelationTrace = struct( ...
     "PreambleIndex", double(candidateSet(bestIdx)), ...
     "LagSamples", double(bestOffset), ...
     "CorrelationAbs", double(bestPeak), ...
-    "NoiseFloor", localCorrelationNoiseFloor(peaks), ...
+    "NoiseFloor", NaN, ...
     "TraceStatus", "toolbox_peak_only_evidence");
 detInfo.CandidateResults = table(double(candidateSet(:)), peaks(:), offset0(:), ...
     repmat(double(size(rxWaveform, 2)), numel(candidateSet), 1), ...
@@ -621,7 +645,7 @@ finiteVals = trace.CorrelationAbs(isfinite(trace.CorrelationAbs));
 if ~isempty(finiteVals)
     if isfield(src, "NoiseFloor") && isfinite(double(src.NoiseFloor))
         trace.NoiseFloor = double(src.NoiseFloor);
-    else
+    elseif ~contains(string(detInfo.DetectorBackend),"_peak")
         trace.NoiseFloor = localCorrelationNoiseFloor(finiteVals);
     end
     if isfield(src, "TraceStatus") && strlength(strtrim(string(src.TraceStatus))) > 0

@@ -9,6 +9,19 @@ classdef RASIPDSCHContext
     % event; receivers use a CRC-valid decoded-DCI event.
 
     methods (Static)
+        function window = receivedSlotSearchWindow(carrier, waveform)
+            % The common-channel observation owns the search budget, not
+            % the transmitted waveform or injected timing impairment.
+            info=nrOFDMInfo(carrier);
+            localSlot=mod(double(carrier.NSlot),double(carrier.SlotsPerSubframe));
+            symbols=localSlot*double(carrier.SymbolsPerSlot)+(1:double(carrier.SymbolsPerSlot));
+            count=sum(double(info.SymbolLengths(symbols)));
+            extra=size(waveform,1)-count;
+            assert(extra>=0,'sixgr:pdsch:IncompleteCommonReceiveSlot', ...
+                'RAR/Msg4 acquisition requires a complete actual OFDM slot; never pad the received capture.');
+            window=[0 extra];
+        end
+
         function event = scheduledControlEvent(procedure, rnti, ...
                 dciFormat, bits, varargin)
             ip = inputParser;
@@ -327,8 +340,8 @@ classdef RASIPDSCHContext
             end
             sinr = double(sixgr.util.structGet( ...
                 metrics, "MeasuredPostEqualizationSINRdBPerLayer", NaN));
-            nmse = double(sixgr.util.structGet( ...
-                metrics, "ChannelEstimateNMSE", NaN));
+            pilotResidual = double(sixgr.util.structGet( ...
+                metrics, "PilotReconstructionResidualRatio", NaN));
             finiteLLR = double(sixgr.util.structGet( ...
                 metrics, "FiniteDescrambledLLRCountPerCodeword", 0));
             totalLLR = double(sixgr.util.structGet( ...
@@ -343,11 +356,46 @@ classdef RASIPDSCHContext
                 rx, "EqualizedGrid", []));
             rx.ChannelEstimateMethod = string(sixgr.util.structGet( ...
                 rx, "ChannelEstimationMode", ""));
-            rx.ChannelEstimatePilotResidualNMSE_dB = localLinearToDb(nmse);
+            % Independent channel-reference NMSE and received-pilot
+            % reconstruction residual are different measurements.
+            rx.ChannelEstimatePilotResidualNMSE_dB = localLinearToDb(pilotResidual);
+            rx.ChannelEstimatePilotResidualNMSESource = ...
+                "canonical_receiver_pilot_reconstruction_residual";
             rx.PostEqSINR_dB = mean(sinr, "omitnan");
-            rx.ReceiverHestSINR_dB = rx.PostEqSINR_dB;
+            rx.PostEqSINRPerLayer_dB = sinr;
+            rawSINR = double(sixgr.util.structGet(rx, ...
+                "PostEqSINRRawEqualizerPerLayer_dB", NaN));
+            rx.PostEqSINRRawEqualizer_dB = mean(rawSINR,"omitnan");
+            rx.ReceiverHestSINR_dB = rx.PostEqSINRRawEqualizer_dB;
             rx.ReceiverHestSINRSource = ...
-                "canonical_pdsch_dmrs_estimate_and_equalizer";
+                "canonical_dmrs_estimate_and_equalizer";
+            rx.ReceiverHestSINRValueRole = ...
+                "raw_equalizer_diagnostic_not_scheduling_authority";
+            rx.ReceiverHestSINRValueStatus = "OK";
+            rx.ReceiverHestSINRNAReason = "";
+            if ~isfinite(rx.ReceiverHestSINR_dB)
+                rx.ReceiverHestSINRValueStatus = "unavailable";
+                rx.ReceiverHestSINRNAReason = "nonfinite_post_equalization_model_boundary";
+            end
+            rx.PostEqSINRSource = "canonical_post_equalization_sinr";
+            rx.PostEqSINRValueStatus = "OK";
+            if logical(sixgr.util.structGet(rx,"PostEqSINRDecisionResidualBoundApplied",false))
+                rx.PostEqSINRSource = ...
+                    "canonical_decision_directed_post_equalization_residual_bounded_equalizer_sinr";
+                rx.PostEqSINRValueStatus = "OK_DECISION_RESIDUAL_BOUNDED";
+            elseif logical(sixgr.util.structGet(rx,"PostEqSINRDMRSResidualBoundApplied",false))
+                rx.PostEqSINRSource = ...
+                    "canonical_dmrs_post_equalization_residual_bounded_equalizer_sinr";
+                rx.PostEqSINRValueStatus = "OK_DMRS_RESIDUAL_BOUNDED";
+            end
+            rx.PostEqSINRValueRole = "measured_post_equalization_diagnostic_not_control_authority";
+            rx.PostEqSINRNAReason = "";
+            rx.PostEqSINRAvailable = isfinite(rx.PostEqSINR_dB);
+            rx.PostEqSINRReceiverDerived = true;
+            if ~rx.PostEqSINRAvailable
+                rx.PostEqSINRValueStatus = "unavailable";
+                rx.PostEqSINRNAReason = "nonfinite_post_equalization_model_boundary";
+            end
             rx.PreEqualizationNoiseVar = double(sixgr.util.structGet( ...
                 rx, "EstimatedNoiseVariance", NaN));
             rx.DecoderNoiseVar = mean(double(sixgr.util.structGet( ...
@@ -355,11 +403,15 @@ classdef RASIPDSCHContext
             rx.LLRFinite = all(finiteLLR == totalLLR) && all(totalLLR > 0);
             rx.DemapperLLRCount = sum(totalLLR);
             rx.DecoderIterations = mean(iterations, "omitnan");
-            rx.TimingEstimateUsed = false;
-            rx.RawTimingEstimate_samples = NaN;
-            rx.AppliedTimingCorrection_samples = 0;
-            rx.TimingEstimateSource = ...
-                "assignment_aligned_common_procedure_waveform";
+            % Do not erase an actual acquisition performed by the facade.
+            % If it received an already aligned waveform, retain that scope
+            % without manufacturing a measured timing or CFO estimate.
+            if ~isfield(rx,"TimingEstimateSource")
+                rx.TimingEstimateUsed = false;
+                rx.RawTimingEstimate_samples = NaN;
+                rx.AppliedTimingCorrection_samples = 0;
+                rx.TimingEstimateSource = "assignment_aligned_common_procedure_waveform";
+            end
             rx.StrictReceiverEvidenceOk = logical( ...
                 rx.ChannelEstimateAvailable && rx.EqualizationAvailable ...
                 && rx.LLRFinite && isfinite(rx.ReceiverHestSINR_dB));

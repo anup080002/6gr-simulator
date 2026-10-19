@@ -231,6 +231,21 @@ cfg.run.totalSlots = runTiming.TotalSlots;
 cfg.run.warmupSlots = runTiming.WarmupSlots;
 cfg.run.measurementSlots = runTiming.MeasurementSlots;
 cfg.run.checkpointEverySlots = runTiming.CheckpointEverySlots;
+cfg.run.runtimeCheckpointEnabled = logical(localGetNested(s, ...
+    "run_control.runtime_checkpoint_enable", false));
+cfg.run.runtimeCheckpointResumeFrom = string(localGetNested(s, ...
+    "run_control.runtime_checkpoint_resume_from", ""));
+cfg.run.runtimeCheckpointRepairReason = string(localGetNested(s, ...
+    "run_control.runtime_checkpoint_repair_reason", ""));
+if cfg.run.runtimeCheckpointEnabled || strlength(cfg.run.runtimeCheckpointResumeFrom)>0
+    assert(runnerProfile=="waveform_bundle" && executionModel=="slot_coupled_truth", ...
+        'sixgr:checkpoint:UnsupportedRuntime', ...
+        'Runtime checkpoints require waveform_bundle / slot_coupled_truth.');
+    assert(logical(localGetNested(s,'run_control.deterministic_mode',false)), ...
+        'sixgr:checkpoint:DeterminismRequired', ...
+        'Runtime checkpoint execution requires deterministic_mode=true.');
+    cfg.run.runtimeCheckpointScenario = s;
+end
 cfg.run.snapshotEverySlots = runTiming.SnapshotEverySlots;
 cfg.run.logEverySlots = runTiming.LogEverySlots;
 cfg.run.saveIntermediateArtifacts = runTiming.SaveIntermediateArtifacts;
@@ -1038,6 +1053,11 @@ if builtin("isstruct", initialAccess) && ~isempty(fieldnames(initialAccess))
 end
 
 cfg.phy.pdcch.enable = logical(s.control.pdcch_enabled);
+declaredPDCCHCRC = localRequireNested(s,"pdcch.crc_length","pdcch.crc_length");
+sixgr.phy.pdcch.PDCCHSpecificationProfile.validateCRCLength(declaredPDCCHCRC);
+cfg.phy.pdcch.crcLength = double(declaredPDCCHCRC);
+cfg.phy.pdcch.crcPolynomial = 'CRC24C';
+cfg.phy.pdcch.rntiMaskLength = sixgr.phy.pdcch.PDCCHSpecificationProfile.RNTIMaskLength;
 cfg.phy.pdcch.listLength = double(s.control.blind_decode_list_length);
 cfg = sixgr.util.structSet(cfg, "phy.pdcch.blindSearch", ...
     logical(localRequireNested(s, "control.blind_search_enabled", ...
@@ -4460,6 +4480,10 @@ end
 rfFrontend = localGetNested(s, "rf_frontend", struct());
 if isstruct(rfFrontend) && ~isempty(fieldnames(rfFrontend))
     cfg = sixgr.util.structSet(cfg, "rf.frontend", rfFrontend);
+    agcProfile=localGetNested(rfFrontend,"receiver.agc.stream_profile",struct());
+    if isstruct(agcProfile) && isfield(agcProfile,'overload_guard')
+        sixgr.rf.runtime.AGCState.validateOverloadGuard(agcProfile.overload_guard);
+    end
     cfg = localCopyRuntimeField(cfg, s, "rf_frontend.enabled", "rf.enable");
     cfg = localCopyRuntimeField(cfg, s, "rf_frontend.profile_id", ...
         "rf.specification.profile_id");

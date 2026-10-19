@@ -28,7 +28,7 @@ for direction = ["DL","UL"]
 
     % Rejection is checked through the real completion entry point so a
     % helper-only guard cannot hide allocate()/onTx() side effects.
-    state = struct('MultiUser',struct('RNTIStart',1),'CurrentSlot',1, ...
+    state = struct('MultiUser',struct('RNTIStart',1),'NumUsers',1,'CurrentServingIdx',1,'CurrentSlot',1, ...
         'DLHarq',sixgr.l2.mac.HARQEntity(struct(),'Direction','DL'), ...
         'ULHarq',sixgr.l2.mac.HARQEntity(struct(),'Direction','UL'), ...
         'DLCombinedLLR',{cell(1,16)},'ULCombinedLLR',{cell(1,16)});
@@ -61,6 +61,12 @@ for direction = ["DL","UL"]
     localRejectUnchanged(state,row,bad,direction,'sixgr:truth:ExecutedHARQSizeMismatch');
     bad = h; bad.Context.GrantSnapshot=[];
     localRejectUnchanged(state,row,bad,direction,'sixgr:truth:ExecutedHARQInvalidGrant');
+    bad=h; bad.GrantSnapshot.TransportBlockId="original-tb";
+    bad.GrantSnapshot.TBId="contradictory-tb";
+    localRejectUnchanged(state,row,bad,direction,'sixgr:truth:ConflictingGrantTransportBlockIdentity');
+    bad=h; bad.GrantSnapshot.TransportBlockId="original-tb";
+    bad.GrantSnapshot.HARQTBContext=struct('TBId',"contradictory-context");
+    localRejectUnchanged(state,row,bad,direction,'sixgr:truth:ConflictingGrantTransportBlockIdentity');
     bad = h; bad.Context.TransportBlockContext="not_a_layout";
     localRejectUnchanged(state,row,bad,direction,'sixgr:truth:ExecutedHARQInvalidContext');
     bad = h; bad.HARQTBContext.TBSBits=NaN;

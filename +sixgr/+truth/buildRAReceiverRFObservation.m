@@ -48,7 +48,7 @@ T=table(string(ra.RunId),double(ra.UEId),double(item.UE),double(servingCell), ..
     'ConfiguredSNR_dB','TransmitterID','ReceiverID','ObservationStartSample', ...
     'ObservationEndSampleExclusive','ObservationSampleRateHz','ResultAvailableAtSample','EvidenceScope'});
 metadata=sixgr.truth.bindSharedRFExecutionEvidence( ...
-    table(true,'VariableNames',{'ObservationPresent'}),item.Planes,true);
-metadata.ObservationPresent=[];
+    table(double(snr),'VariableNames',{'ConfiguredSNR_dB'}),item.Planes,true);
+metadata.ConfiguredSNR_dB=[];
 T=[T metadata];
 end

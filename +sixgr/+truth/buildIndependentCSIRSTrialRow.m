@@ -65,6 +65,33 @@ row.TxRuntimeMaterializationStatus = string(event.RuntimeMaterializationStatus);
 row.RxRuntimeObservationStatus = string(obs.RuntimeMaterializationStatus);
 row.RuntimeBlocker = string(sixgr.util.structGet(obs,"Blocker",""));
 row.RuntimeEventObserved = row.Scheduled || row.Transmitted || row.Observed;
+for prefix=["Receiver","PhysicalMeasurement"]
+    timingName="ReceiveTiming"; trackingName="ReceiverTrackingCorrection";
+    sourceName="ReceiverReferenceSource";
+    if prefix=="PhysicalMeasurement"
+        timingName="PhysicalMeasurementReceiveTiming";
+        trackingName="PhysicalMeasurementTrackingCorrection";
+        sourceName="PhysicalMeasurementSynchronizationSource";
+    end
+    timing=sixgr.util.structGet(reception,timingName,struct());
+    tracking=sixgr.util.structGet(reception,trackingName,struct());
+    row.(prefix+"TimingOffset_samples")=double(sixgr.util.structGet(timing,"TimingOffsetSamples",NaN));
+    row.(prefix+"TimingCorrection_samples")=double(sixgr.util.structGet(timing,"AppliedTimingCorrectionSamples",NaN));
+    row.(prefix+"DemodulatedSampleCount")=double(sixgr.util.structGet(timing,"DemodulatedSampleCount",NaN));
+    row.(prefix+"TimingSource")=string(sixgr.util.structGet(timing,"TimingSource",""));
+    row.(prefix+"EstimatedCFO_Hz")=double(sixgr.util.structGet(tracking,"EstimatedCFO_Hz",NaN));
+    row.(prefix+"AppliedCFO_Hz")=double(sixgr.util.structGet(tracking,"CFOCorrectionApplied_Hz",NaN));
+    row.(prefix+"CFOEstimateAvailable")=logical(sixgr.util.structGet(tracking,"CFOEstimateAvailable",false));
+    row.(prefix+"CFOCorrectionApplied")=logical(sixgr.util.structGet(tracking,"CFOCorrectionApplied",false));
+    row.(prefix+"CFOStatus")=string(sixgr.util.structGet(tracking,"Status","not_recorded"));
+    row.(prefix+"CFOSource")=string(sixgr.util.structGet(tracking,"Source",""));
+    row.(prefix+"SynchronizationSource")=string(sixgr.util.structGet(reception,sourceName,""));
+    if ~isempty(fieldnames(timing)) || ~isempty(fieldnames(tracking))
+        row.(prefix+"SynchronizationSampleDomain")="relative_to_observation_capture_start_zero_based";
+        row.(prefix+"SynchronizationJSON")=string(jsonencode( ...
+            struct('Timing',timing,'Frequency',tracking)));
+    end
+end
 
 numericObservationFields = [ ...
     "ChannelEstimateNoiseVariance","ChannelEstimationLatency_ms", ...

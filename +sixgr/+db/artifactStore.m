@@ -21,6 +21,8 @@ switch action
         varargout{1} = localStoreText(state, varargin{:});
     case "store_binary"
         varargout{1} = localStoreBinary(state, varargin{:});
+    case "store_file"
+        varargout{1} = localStoreFile(state, varargin{:});
     case "capture_file"
         varargout{1} = localCaptureFile(state, varargin{:});
     case "hydrate_display_folder"

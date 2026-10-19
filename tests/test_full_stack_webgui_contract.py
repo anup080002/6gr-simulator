@@ -173,6 +173,10 @@ def test_contract_cli_materializes_filesystem_runs_without_db_or_synthesis(
     assert (csv_dir / "contract_materialization_coverage.csv").is_file()
     assert payload["tables_missing"] > 0
     assert payload["charts_missing"] > 0
+    manifest = (csv_dir / "contract_materialization_manifest.csv").read_text(encoding="utf-8-sig")
+    assert "unavailable_failed_run_missing_beam_sources" in manifest
+    assert not list(run_folder.rglob("*beam_pattern_3d.png"))
+    assert not list(run_folder.rglob("*beam_pattern_3d.csv"))
 
     strict = subprocess.run(
         [*command, "--strict"],
@@ -185,3 +189,24 @@ def test_contract_cli_materializes_filesystem_runs_without_db_or_synthesis(
     assert "Filesystem contract verification incomplete" in (
         strict.stdout + strict.stderr
     )
+
+
+def test_failed_run_cannot_hide_a_partial_applied_beam_source(tmp_path: Path) -> None:
+    run_folder = tmp_path / "results" / "lls" / SCENARIO / "partial-beam-run"
+    csv_dir = run_folder / "reports" / "csv"
+    csv_dir.mkdir(parents=True)
+    (csv_dir / "full_stack_run_manifest.csv").write_text(
+        "RunID,SuitePreset,ScenarioID,StartUTC,ExitCode,FinalStatus,Status\n"
+        f"partial-beam-run,comprehensive_smoke,{SCENARIO},2026-07-28T00:00:00Z,2,FAIL,FAIL\n",
+        encoding="utf-8",
+    )
+    beam_dir = run_folder / "beamforming" / "csv"
+    beam_dir.mkdir(parents=True)
+    (beam_dir / "applied_data_precoder_weights.csv").write_text("PMI\n0\n", encoding="utf-8")
+    verified = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "materialize_lls_contract_artifacts.py"),
+         "--run-folder", str(run_folder)],
+        cwd=REPO_ROOT, check=False, capture_output=True, text=True,
+    )
+    assert verified.returncode != 0
+    assert "exact executed weights AND angular samples" in verified.stderr

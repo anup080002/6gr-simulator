@@ -3,11 +3,66 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "apps"))
 
 import lls_web_dashboard as dash  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    ("declared_fidelity", "expected_fidelity"),
+    [
+        ("waveform_level", "waveform_level"),
+        ("abstraction_level", "abstraction_level"),
+        (None, "unavailable"),
+        ("", "unavailable"),
+    ],
+)
+def test_live_user_summary_preserves_fidelity_without_filename_inference(
+    monkeypatch, declared_fidelity, expected_fidelity
+) -> None:
+    # Adapter-only fixture: real waveform provenance must survive aggregation,
+    # but the same CSV name cannot turn an abstract/unknown population into PHY.
+    snapshot = {
+        "UEIndex": 1,
+        "DL_Throughput_Mbps": 4104 / 0.021 / 1e6,
+        "DL_Goodput_Mbps": 4104 / 0.021 / 1e6,
+        "DL_BLER": 0.0,
+    }
+    if declared_fidelity is not None:
+        snapshot["FidelityLevel"] = declared_fidelity
+    before = dict(snapshot)
+
+    def load_rows(_artifacts, logical_paths, *, max_rows=64):
+        if logical_paths[0] == "reports/csv/live_user_performance_snapshot.csv":
+            return [snapshot]
+        return []
+
+    monkeypatch.setattr(dash, "load_first_available_csv_rows", load_rows)
+    payload = dash.build_metric_explorer_payload([], {"configured_users": 1})
+    summary = payload["ue_summaries"]["1"]
+    assert summary["fidelity_level"] == expected_fidelity
+    assert summary["dl_throughput_mbps"] == snapshot["DL_Throughput_Mbps"]
+    assert summary["source_table"] == "reports/csv/live_user_performance_snapshot.csv"
+    assert snapshot == before
+
+
+def test_ue_card_does_not_claim_published_dl_metrics_are_missing() -> None:
+    # Slot-41-style measured summary; this is not an extra PHY observation.
+    explorer = {"ue_summaries": {"1": {
+        "dl_throughput_mbps": 4104 / 0.021 / 1e6,
+        "dl_bler": 0.0,
+        "dl_mean_measured_sinr_dB": 33.1194578440652,
+        "fidelity_level": "waveform_level",
+    }}}
+    source_rows = {"dl": [{"UEIndex": 1, "Slot": 41}], "ul": []}
+    ue = dash.build_realtime_ue_status(explorer, {}, source_rows)[0]
+    assert ue["dl_missing_reason"] == ""
+    assert ue["ul_missing_reason"] == "No PUSCH trials"
+    assert ue["performance_fidelity"] == "waveform_level"
 
 
 def main() -> None:

@@ -150,6 +150,20 @@ assert(isnan(missingGeometryResult.LargeScaleParameters.Distance2Dm) && ...
     isnan(missingGeometryResult.LargeScaleParameters.Distance3Dm), ...
     'Legacy propagation range must not manufacture an executed 2-D/3-D geometry pair.');
 missingEnergy=removevars(T,'LargeScaleOutputEnergy_mWsample');
+% Identical measured attenuation in normalized coordinates is NOT dBm.
+normalized=T;
+normalized.LargeScaleInputEnergy=T.LargeScaleInputEnergy_mWsample;
+normalized.LargeScaleOutputEnergy=T.LargeScaleOutputEnergy_mWsample;
+normalized.LargeScaleExpectedOutputEnergy=T.LargeScaleExpectedOutputEnergy_mWsample;
+normalized.LargeScaleEnergyUnit="sum_squared_normalized_complex_amplitude_not_mW";
+normalized.LargeScaleWaveformAmplitudeUnit="normalized_complex_baseband";
+normalized.LargeScaleInputEnergy_mWsample=NaN;
+normalized.LargeScaleOutputEnergy_mWsample=NaN;
+normalized.LargeScaleExpectedOutputEnergy_mWsample=NaN;
+normalizedResult=sixgr.channel.buildInPathChannelRFResult(cfg,anchor,struct('DL',normalized),identity);
+assert(normalizedResult.LargeScaleParameters.PowerClosureOk && ...
+    normalizedResult.LargeScaleParameters.WaveformPowerUnit=="dB_re_unit_normalized_sample_power_not_dBm" && ...
+    normalizedResult.LargeScaleParameters.MeasuredDeltaDb==result.LargeScaleParameters.MeasuredDeltaDb);
 missingResult=sixgr.channel.buildInPathChannelRFResult(cfg,anchor,struct('DL',missingEnergy),identity);
 assert(~missingResult.StrictOk && isnan(missingResult.LargeScaleParameters.MeasuredDeltaDb) && ...
     missingResult.LargeScaleParameters.FailureReason=="runtime_large_scale_independent_energy_missing", ...

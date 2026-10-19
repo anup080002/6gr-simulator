@@ -40,6 +40,10 @@ sections:
       coding: {required: false, type: struct}
       modulation: {required: false, type: struct}
       harq: {required: false, type: struct}
+      # receiver.agc.stream_profile.overload_guard is optional and validated
+      # before runtime construction: model=pre_adc_rail_flag_next_sample_gain_step,
+      # enabled=boolean, gain_step_db>0, hold_samples=nonnegative integer.
+      # Omission preserves the original RMS-only receiver implementation.
       receiver: {required: false, type: struct}
       pdsch: {required: false, type: struct}
       impairments: {required: false, type: struct}

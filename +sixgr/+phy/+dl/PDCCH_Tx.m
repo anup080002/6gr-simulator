@@ -39,6 +39,8 @@ function [tx, info] = PDCCH_Tx(cfg, varargin)
 %
 %   INFO: struct of helper values (E, K, etc.)
 
+sixgr.phy.pdcch.PDCCHSpecificationProfile.validateCRCLength( ...
+    sixgr.util.structGet(cfg,"phy.pdcch.crcLength",24));
 sixgr.runtime.RuntimeCallLedger.record("sixgr.phy.dl.PDCCH_Tx", ...
     "PDCCH", "DL", struct("Stage","TX"));
 
@@ -203,6 +205,9 @@ tx.Grid      = txGrid;
 tx.Waveform  = txWaveform;
 
 info = struct();
+info.CRCLength = sixgr.phy.pdcch.PDCCHSpecificationProfile.CRCLength;
+info.CRCPolynomial = sixgr.phy.pdcch.PDCCHSpecificationProfile.CRCPolynomial;
+info.RNTIMaskLength = sixgr.phy.pdcch.PDCCHSpecificationProfile.RNTIMaskLength;
 info.K = K;
 info.E = E;
 info.NumPDCCHRE = numel(pdcchInd);

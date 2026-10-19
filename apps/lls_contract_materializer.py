@@ -13,6 +13,7 @@ import textwrap
 from collections import Counter, defaultdict
 from contextlib import contextmanager, nullcontext
 from functools import lru_cache
+from itertools import chain, islice
 from pathlib import Path
 from typing import Any, Callable
 
@@ -29,7 +30,7 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-10-14-contract-v101-complete-radio-samples-and-measurement-labels"
+MATERIALIZER_VERSION = "2026-10-17-contract-v105-joint-receiver-constellation-evm"
 FILESYSTEM_CONTRACT_CACHE_PATH = (
     "artifact_generation/browser_contract_exact_source_cache.json"
 )
@@ -1856,8 +1857,22 @@ def _render_multi_series_svg(
     legend_limit = len(series) if (evidence_shape_policy == "operating_point" or show_all_series) else 8
     legend_rows = (sum(max(1, len(textwrap.wrap(str(item.get("name") or ""), 28)))
                        for item in series[:legend_limit]) if wrap_legend else legend_limit)
-    info_h = max(plot_h, 100 + 22 * (min(len(summary_lines) + 6, 14) + legend_rows))
+    # Full-band multiport evidence can have 128 RMS/peak series. A single
+    # vertical key makes the PNG unreadable at normal display width. Keep
+    # EVERY series and point, but lay the complete legend below the plot.
+    grid_legend = wrap_legend and legend_limit > 24
+    legend_columns = 4
+    legend_grid_heights = []
+    if grid_legend:
+        for first in range(0, legend_limit, legend_columns):
+            lines = max(max(1, len(textwrap.wrap(str(item.get("name") or ""), 28)))
+                        for item in series[first:min(first + legend_columns, legend_limit)])
+            legend_grid_heights.append(22 * lines + 12)
+    info_h = max(plot_h, 100 + 22 * (min(len(summary_lines) + 6, 14) + (0 if grid_legend else legend_rows)))
     height = max(height, top + info_h + 64)
+    legend_top = top + info_h + 64
+    if grid_legend:
+        height = legend_top + 64 + sum(legend_grid_heights)
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
         '<rect width="100%" height="100%" fill="#f8fafc"/>',
@@ -2023,7 +2038,15 @@ def _render_multi_series_svg(
         parts.append(f'<text x="{info_x + 18}" y="{y_cursor}" font-family="Segoe UI,Arial,sans-serif" font-size="12.5" fill="#334155">{html.escape(_ellipsize_svg_text(line, 42))}</text>')
         y_cursor += 22
     y_cursor += 12
-    for prepared_series in prepared[:legend_limit]:
+    if grid_legend:
+        parts.append(f'<rect x="40" y="{legend_top}" width="1200" height="{height - legend_top - 20}" rx="14" fill="#ffffff" stroke="#cbd5e1"/>')
+        parts.append(f'<text x="58" y="{legend_top + 25}" font-family="Segoe UI,Arial,sans-serif" font-size="14" font-weight="600">Complete series key ({len(prepared[:legend_limit])} series)</text>')
+    for legend_index, prepared_series in enumerate(prepared[:legend_limit]):
+        legend_x = info_x
+        if grid_legend:
+            legend_row, legend_column = divmod(legend_index, legend_columns)
+            legend_x = 40 + 300 * legend_column
+            y_cursor = legend_top + 48 + sum(legend_grid_heights[:legend_row])
         dash_attr = (
             f' stroke-dasharray="{html.escape(prepared_series["dasharray"])}"'
             if prepared_series["dasharray"]
@@ -2031,15 +2054,15 @@ def _render_multi_series_svg(
         )
         if mode == "scatter":
             if prepared_series["marker"] == "square":
-                parts.append(f'<rect x="{info_x + 23}" y="{y_cursor - 4}" width="8" height="8" fill="none" stroke="{prepared_series["color"]}" stroke-width="1.4"/>')
+                parts.append(f'<rect x="{legend_x + 23}" y="{y_cursor - 4}" width="8" height="8" fill="none" stroke="{prepared_series["color"]}" stroke-width="1.4"/>')
             else:
-                parts.append(f'<circle cx="{info_x + 27}" cy="{y_cursor}" r="3" fill="{prepared_series["color"]}"/>')
+                parts.append(f'<circle cx="{legend_x + 27}" cy="{y_cursor}" r="3" fill="{prepared_series["color"]}"/>')
         else:
-            parts.append(f'<line x1="{info_x + 18}" y1="{y_cursor}" x2="{info_x + 36}" y2="{y_cursor}" stroke="{prepared_series["color"]}" stroke-width="3"{dash_attr}/>')
+            parts.append(f'<line x1="{legend_x + 18}" y1="{y_cursor}" x2="{legend_x + 36}" y2="{y_cursor}" stroke="{prepared_series["color"]}" stroke-width="3"{dash_attr}/>')
         legend_lines = (textwrap.wrap(prepared_series["name"], 28) or [""]) if wrap_legend else [_ellipsize_svg_text(prepared_series["name"], 28)]
         parts.append(f'<g><title>{html.escape(prepared_series["name"])}</title>')
         for legend_line in legend_lines:
-            parts.append(f'<text x="{info_x + 46}" y="{y_cursor + 4}" font-family="Segoe UI,Arial,sans-serif" font-size="13" fill="#334155">{html.escape(legend_line)}</text>')
+            parts.append(f'<text x="{legend_x + 46}" y="{y_cursor + 4}" font-family="Segoe UI,Arial,sans-serif" font-size="13" fill="#334155">{html.escape(legend_line)}</text>')
             y_cursor += 22
         parts.append('</g>')
     parts.append('</svg>')
@@ -2388,13 +2411,21 @@ def _semantic_companion_mask(rows: list[dict[str, str]], field_name: str) -> lis
         present = False
         for candidate, raw_value in row.items():
             cand = str(candidate or "").lower()
+            exact = {"appliedbeam": {"appliedbeamindexset"},
+                     "appliedprecoder": {"appliedprecoderpmi"},
+                     "sinr": {"sinr_db", "sinrdb", "sinr"}}
+            if base in exact and cand not in exact[base]:
+                continue
             if cand == field_name.lower():
                 continue
             if cand != base and not cand.startswith(base):
                 continue
             if re.search(r"(source|valuerole|valuestatus|nareason|definition)$", cand):
                 continue
-            if _nonblank_text(raw_value):
+            text = str(raw_value or "").strip().lower()
+            sentinel = text in {"unavailable", "not_available", "not_applicable", "none_recorded"} or text.startswith(
+                ("not_recorded_", "not_emitted_", "field_not_emitted_", "not_applicable_", "unavailable_"))
+            if _nonblank_text(raw_value) and not sentinel:
                 present = True
                 break
         masks.append(present)
@@ -2595,6 +2626,17 @@ def _canonicalize_contract_source_rows(logical_path: str, header: list[str], row
         companion_mask = _semantic_companion_mask(dict_rows, lower_name)
         for row_idx, row in enumerate(dict_rows):
             current = str(row.get(field_name, "") or "").strip()
+            if (lower_name in {"appliedbeamvaluestatus", "appliedprecodervaluestatus", "sinrvaluestatus"}
+                    and current.lower() in {"available", "ok", "measured", "derived", "configured"}
+                    and not companion_mask[row_idx]):
+                row[field_name] = "unavailable"
+                continue
+            if (lower_name == "sinrvaluestatus" and "SINRValueDefinition" in row
+                    and current.lower() in {"available", "ok", "measured", "derived", "configured"}):
+                definition = row["SINRValueDefinition"].strip().lower()
+                if not _nonblank_text(definition) or definition.startswith(("not_emitted_", "not_recorded_", "unavailable")):
+                    row[field_name] = "unavailable_definition_not_recorded"
+                    continue
             if current not in {"", "NaN", "nan", "<missing>", "missing"}:
                 continue
             fill_value = _semantic_fill_value(lower_name, scope, companion_mask[row_idx])
@@ -3691,6 +3733,40 @@ def _artifact_rows_by_path(
     return _decode_csv_dicts(fetch_artifact_bytes(int(art["artifact_id"])))
 
 
+@contextmanager
+def _first_available_csv_stream(existing, fetch_artifact_bytes, candidates):
+    """Same source precedence as _first_available_rows, without loading samples.
+
+    Filesystem callers expose an opener; remote/legacy byte callbacks remain
+    supported. Parse every row, with only two rows of lookahead to recognize
+    the existing one-row absence contract. Close files on early rejection.
+    """
+    opener = getattr(fetch_artifact_bytes, "open_artifact_binary", None)
+    for logical_path in candidates:
+        artifact = existing.get(logical_path)
+        if not artifact:
+            continue
+        artifact_id = int(artifact["artifact_id"])
+        raw = opener(artifact_id) if callable(opener) else io.BytesIO(fetch_artifact_bytes(artifact_id))
+        with raw:
+            raw.seek(0, os.SEEK_END)
+            size = raw.tell()
+            raw.seek(0)
+            prior_limit = csv.field_size_limit()
+            csv.field_size_limit(max(prior_limit, size + 1))
+            try:
+                with io.TextIOWrapper(raw, encoding="utf-8", errors="ignore", newline="") as text:
+                    reader = csv.DictReader(text)
+                    rows = ({str(k): str(v) for k, v in row.items()} for row in reader)
+                    first = list(islice(rows, 2))
+                    if first and not _is_absence_placeholder_rows(first):
+                        yield str(logical_path), chain(first, rows)
+                        return
+            finally:
+                csv.field_size_limit(prior_limit)
+    yield "", iter(())
+
+
 def _json_object(payload: Any) -> dict[str, Any]:
     if isinstance(payload, dict):
         return payload
@@ -4376,7 +4452,8 @@ def _specialized_live_report_table(
                     "iq_phase_imbalance_deg": _row_text(row, "ConfiguredIQPhaseImbalance_deg"),
                     "iq_measurement_status": _row_text(row, "IQImbalanceMeasurementStatus"),
                     "interference_mode": _row_text(row, "InterferenceMode"),
-                    "residual_interference_power_db": _row_text(row, "ResidualInterferencePower_dB"),
+                    "decision_residual_symbol_power_db": _row_text(row, "DecisionResidualSymbolPower_dB"),
+                    "decision_residual_definition": _row_text(row, "ResidualMetricDefinition"),
                     "source_artifact": logical_path,
                     "value_status": "runtime_waveform_impairment_evidence",
                 })
@@ -4771,7 +4848,8 @@ def _specialized_live_report_table(
                         "interference_mode": _row_text(row, "InterferenceMode"),
                         "interference_contributor_count": _row_text(row, "InterferenceContributorCount"),
                         "interference_rx_power_dbm": _row_text(row, "InterferenceAggregatedRxPower_dBm"),
-                        "residual_interference_power_db": _row_text(row, "ResidualInterferencePower_dB"),
+                        "decision_residual_symbol_power_db": _row_text(row, "DecisionResidualSymbolPower_dB"),
+                        "decision_residual_definition": _row_text(row, "ResidualMetricDefinition"),
                         "interference_power_source": _row_text(row, "InterferencePowerSource"),
                     })
                 elif table_name == "live_tracking_table":
@@ -5559,7 +5637,7 @@ def _prach_peak_chart_materialization(
     status_counts: Counter[str] = Counter()
     background_observations: set[tuple[str, ...]] = set()
     for idx, row in enumerate(records, start=1):
-        slot = _row_float(row, "trial_id", "Slot")
+        slot = _row_float(row, "source_slot_1based", "Slot", "trial_id")
         if slot is None:
             slot = float(idx)
         peak_value = _row_float(row, "correlation_abs", "PeakValue", "peak_value", "DetectionMetric", "detection_metric")
@@ -5574,14 +5652,15 @@ def _prach_peak_chart_materialization(
             # A correlation trace repeats one background estimate at every
             # lag. Those rows are not independent noise observations.
             observation = tuple(_row_text(row, name) for name in (
-                "RunID", "trial_id", "UEIndex", "preamble_index", "seed", "snr_db",
+                "RunID", "trial_id", "UEIndex", "ue_index", "sweep_point_index", "SweepPointIndex",
+                "source_slot_1based", "preamble_index", "seed", "snr_db",
                 "ObservationStartSample", "peak_lag_samples")) + (str(float(metric)),)
             if observation in background_observations:
                 continue
             background_observations.add(observation)
         values.append(float(metric))
         points.append([float(slot), float(metric)])
-        status_text = _row_text(row, "Status", "DetectionOutcome") or "unknown"
+        status_text = _row_text(row, "detection_result", "Status", "DetectionOutcome") or "unknown"
         status_counts[status_text] += 1
         csv_rows.append(
             {
@@ -5598,7 +5677,20 @@ def _prach_peak_chart_materialization(
                 "source_capture_sha256": _row_text(row, "SourceCaptureSHA256"),
                 "detection_metric": _row_float(row, "correlation_abs", "DetectionMetric", "detection_metric"),
                 "timing_error_samples": _row_float(row, "TimingError_samples", "timing_error_samples"),
-                "status": _row_text(row, "Status", "DetectionOutcome"),
+                "status": _row_text(row, "detection_result", "Status", "DetectionOutcome"),
+                "trace_scope": _row_text(row, "trace_scope"),
+                "detector_backend": _row_text(row, "detector_backend"),
+                "lag_reference": _row_text(row, "lag_reference"),
+                "false_alarm": _row_float(row, "false_alarm", "FalseAlarm"),
+                "missed_detection": _row_float(row, "missed_detection", "MissedDetection"),
+                "false_alarm_classification": _row_text(row, "false_alarm_classification", "FalseAlarmClassification"),
+                "sweep_point_index": _row_float(row, "sweep_point_index", "SweepPointIndex"),
+                "configured_snr_db": _row_float(row, "configured_snr_db", "ConfiguredSNR_dB"),
+                "ue_index": _row_float(row, "ue_index", "UEIndex"),
+                "sample_rate_hz": _row_float(row, "sample_rate_hz"),
+                "detector_input_start_offset_samples": _row_float(row, "detector_input_start_offset_samples"),
+                "raw_timing_offset_samples": _row_float(row, "raw_timing_offset_samples"),
+                "propagation_timing_offset_samples": _row_float(row, "propagation_timing_offset_samples"),
                 "source_table_logical_path": source_path,
             }
         )
@@ -5631,6 +5723,9 @@ def _prach_peak_chart_materialization(
         }
     unique_values = _unique_numeric_count(values)
     summary = [f"source={source_path}", f"rows={len(csv_rows)}"]
+    trace_scopes = sorted({row["trace_scope"] for row in csv_rows if row["trace_scope"]})
+    if trace_scopes:
+        summary.append("Trace scope: " + ", ".join(trace_scopes))
     if source_path == "reports/csv/prach_background_replay.csv":
         dataset["evidence_scope"] = "offline_reanalysis_not_original_in_path_row"
         summary.append("Offline replay of retained received IQ; original decisions unchanged")
@@ -5642,7 +5737,7 @@ def _prach_peak_chart_materialization(
     )
     return {
         "csv_bytes": _encode_dict_rows(
-            ["run_id", "chart_name", "slot", "peak_index", "peak_value", "noise_floor", "detection_metric", "timing_error_samples", "status", "source_table_logical_path", "noise_floor_estimator", "noise_floor_definition", "noise_floor_status", "evidence_scope", "source_capture_sha256"],
+            list(csv_rows[0]),
             csv_rows,
         ),
         "img_bytes": img_bytes,
@@ -8833,7 +8928,6 @@ def _explicit_runtime_metric_chart_materialization(
         "joules/GB over time": {"sources": ["reports/csv/live_energy_efficiency_table.csv", "reports/csv/live_power_runtime_table.csv"], "fields": ["joules_per_gb"], "kind": "timeline", "label": "Energy (J/GB)"},
         "PAPR distribution": {"sources": ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"], "fields": ["PAPR_dB"], "kind": "distribution", "label": "PAPR (dB)"},
         "noise variance trend": {"sources": ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"], "fields": ["NoiseVariance", "LLRNoiseVariance"], "kind": "timeline", "label": "Noise variance"},
-        "clipping event histogram": {"sources": ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"], "fields": ["PeakClippingEvents"], "kind": "distribution", "label": "Clipping events"},
         "code-block error rates": {"sources": ["reports/csv/live_pdsch_code_block_table.csv", "air_interface/csv/dl_pdsch_trials.csv"], "fields": ["code_block_bler", "CodeBlockBLER"], "kind": "distribution", "label": "Code-block BLER"},
         "CBG error rates": {"sources": ["reports/csv/live_pdsch_code_block_table.csv", "air_interface/csv/dl_pdsch_trials.csv"], "fields": ["cbg_bler", "CBGBLER"], "kind": "distribution", "label": "CBG BLER"},
         "per-layer SINR": {"sources": ["beamforming/csv/mimo_layer_metrics.csv"], "fields": ["PostEqSINRdB", "MeasuredSINR_dB", "LayerSINR_dB"], "kind": "distribution", "label": "Layer SINR (dB)"},
@@ -8851,7 +8945,7 @@ def _explicit_runtime_metric_chart_materialization(
         "crash/error timeline": {"sources": ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"], "fields": ["Crash", "FailureFlag"], "x_fields": ["Slot"], "kind": "timeline", "label": "Crash/error flag"},
         "SRS consumption by scheduler/beam module": {"sources": ["reports/csv/live_srs_stage_table.csv", "air_interface/csv/srs_trials.csv"], "fields": ["SRSOccupiedPRBCount", "SRSRuntimeEvidenceUsable"], "x_fields": ["Slot"], "kind": "timeline", "label": "SRS resources / usable evidence"},
         "channel quality timeline": {"sources": ["reports/csv/live_channel_state_tti.csv", "air_interface/csv/dl_pdsch_trials.csv"], "fields": ["PostEqSINR_dB", "MeasuredTrialSINR_dB"], "x_fields": ["Slot"], "kind": "timeline", "label": "Measured post-equalization SINR (dB)"},
-        "interference power timeline": {"sources": ["reports/csv/live_interference_table.csv"], "fields": ["interference_rx_power_dbm", "residual_interference_power_db"], "x_fields": ["slot"], "kind": "timeline", "label": "Interference power (dB/dBm)"},
+        "interference power timeline": {"sources": ["reports/csv/live_interference_table.csv"], "fields": ["interference_rx_power_dbm"], "x_fields": ["slot"], "kind": "timeline", "label": "External interference power (dBm)"},
         "measurement source coverage chart": {"sources": ["reports/csv/measurement_output_integrity_audit.csv"], "fields": ["MeasurementRows"], "kind": "distribution", "label": "Measurement rows by source"},
         "config-vs-measured conflict dashboard": {"sources": ["reports/csv/reports_config_vs_measured_conflicts_v.csv"], "fields": ["measured_minus_configured_snr_db", "mean_measured_sinr_db"], "kind": "timeline", "label": "Measured minus configured SNR/SINR (dB)"},
         "config vs measured conflict dashboard": {"sources": ["reports/csv/reports_config_vs_measured_conflicts_v.csv"], "fields": ["measured_minus_configured_snr_db", "mean_measured_sinr_db"], "kind": "timeline", "label": "Measured minus configured SNR/SINR (dB)"},
@@ -8866,7 +8960,7 @@ def _explicit_runtime_metric_chart_materialization(
         "NMSE vs SNR / SINR": {"sources": ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"], "fields": ["NMSE_dB"], "x_fields": ["ConfiguredSNR_dB"], "kind": "timeline", "label": "Channel-estimate NMSE (dB)"},
         "estimator bias / variance summaries": {"sources": ["reports/csv/live_channel_estimation_stats.csv", "air_interface/csv/dl_pdsch_trials.csv"], "fields": ["NMSE_dB", "MeanNMSE_dB"], "kind": "distribution", "label": "Estimator error (dB)"},
         "angle spread chart": {"sources": ["reports/csv/channel_rf_cdlc_realization_table.csv", "channel/csv/path_gains.csv"], "fields": ["AngleAoD_deg", "AngleAoA_deg", "AngleZoD_deg", "AngleZoA_deg"], "kind": "distribution", "label": "Runtime channel path angle (deg)"},
-        "serving vs interferer decomposition": {"sources": ["reports/csv/live_interference_table.csv"], "fields": ["interference_rx_power_dbm", "residual_interference_power_db"], "x_fields": ["slot"], "kind": "timeline", "label": "Interference contribution (dB/dBm)"},
+        "serving vs interferer decomposition": {"sources": ["reports/csv/live_interference_table.csv"], "fields": ["interference_rx_power_dbm"], "x_fields": ["slot"], "kind": "timeline", "label": "External interference contribution (dBm)"},
         "SSB detection statistics": {"sources": ["air_interface/csv/pbch_trials.csv"], "fields": ["DecodeSuccess", "BCHCrcPass", "CRCPass"], "kind": "distribution", "label": "SSB/PBCH detection success"},
         "control decode success/failure tables": {"sources": ["air_interface/csv/pdcch_trials.csv", "air_interface/csv/pucch_trials.csv", "air_interface/csv/pbch_trials.csv"], "fields": ["DecodeSuccess", "CRCPass", "PUCCHDecodeOk"], "kind": "distribution", "label": "Control decode success"},
         "PBCH/PDCCH/PUCCH detection and decode timelines": {"sources": ["air_interface/csv/pbch_trials.csv", "air_interface/csv/pdcch_trials.csv", "air_interface/csv/pucch_trials.csv"], "fields": ["DecodeSuccess", "CRCPass", "PUCCHDecodeOk"], "x_fields": ["Slot"], "kind": "timeline", "label": "Control decode success"},
@@ -8875,7 +8969,8 @@ def _explicit_runtime_metric_chart_materialization(
         "ServingRSRP / RSRP / CSI-RSRP trends": {"sources": ["reports/csv/live_rsrp_serving_trace.csv", "air_interface/csv/dl_pdsch_trials.csv"], "fields": ["ServingRSRP_dBm", "RSRP_dBm", "CSI_RSRP_dBm"], "x_fields": ["Slot"], "kind": "timeline", "label": "RSRP / CSI-RSRP (dBm)"},
         "per-beam quality plot": {"sources": ["reports/csv/live_beam_selection_table.csv"], "fields": ["selected_beam_gain_db", "best_beam_gain_db", "beam_gain_gap_db"], "x_fields": ["selected_beam_index"], "kind": "timeline", "label": "Beam quality (dB)"},
         "per-layer quality plot": {"sources": ["beamforming/csv/mimo_layer_metrics.csv"], "fields": ["PostEqSINRdB", "ChannelEstimateNMSEdB"], "x_fields": ["LayerIndex"], "kind": "timeline", "label": "Per-layer quality (dB)"},
-        "inter-user leakage": {"sources": ["reports/csv/live_interference_table.csv"], "fields": ["residual_interference_power_db", "interference_rx_power_dbm"], "x_fields": ["slot"], "kind": "timeline", "label": "Inter-user leakage (dB/dBm)"},
+        "inter-user leakage": {"sources": ["reports/csv/live_interference_table.csv"], "fields": ["measured_inter_user_leakage_db"], "x_fields": ["slot"], "kind": "timeline", "label": "Independently measured inter-user leakage (dB)"},
+        "decision residual": {"sources": ["reports/csv/live_interference_table.csv"], "fields": ["decision_residual_symbol_power_db"], "x_fields": ["slot"], "kind": "timeline", "label": "Decision residual symbol power (normalized dB; not external interference)"},
         "MU grouping analytics": {"sources": ["packet_flow/csv/live_dl_scheduler_grants.csv", "packet_flow/csv/live_ul_scheduler_grants.csv"], "fields": ["MUMIMOGroupSize"], "kind": "distribution", "label": "MU-MIMO group size"},
         "baseband power": {"sources": ["reports/csv/live_bb_power_table.csv"], "fields": ["digital_baseband_power_w", "metric_value"], "x_fields": ["slot"], "kind": "timeline", "label": "Baseband power (W)"},
         "energy/bit": {"sources": ["reports/csv/live_energy_efficiency_table.csv"], "fields": ["energy_per_bit_j"], "kind": "distribution", "label": "Energy per bit (J/bit)"},
@@ -11410,6 +11505,236 @@ def _runtime_phy_signal_diagnostic_chart(
     }
 
 
+def _constellation_experiment_fields(row):
+    """Retain declared experiment/attempt scope; never infer it from samples.
+
+    Sample/RE indices restart at every observation. SNR alone cannot identify
+    repeated sweep points, realizations or retransmissions of the same TB.
+    Missing scope stays empty and cannot be supplied by a different row.
+    """
+    return {
+        "configured_snr_db": _row_float(row, "ConfiguredSNR_dB", "SNR_dB", "snr_db"),
+        "sweep_point_index": _row_text(row, "SweepPointIndex"),
+        "source_run_id": _row_text(row, "SourceRunID", "RunID"),
+        "drop_index": _row_text(row, "DropIndex", "Drop"),
+        "realization_index": _row_text(row, "RealizationIndex", "Realization"),
+        "seed": _row_text(row, "Seed", "RandomSeed"),
+        "trial_ordinal": _row_text(row, "TrialOrdinal", "TrialIndex"),
+        "transmission_attempt_id": _row_text(row, "TransmissionAttemptID", "PHYGrantContextId"),
+    }
+
+
+def _constellation_experiment_label(scope):
+    labels = []
+    for field, label in (("sweep_point_index", "point"), ("configured_snr_db", "SNR"),
+                         ("source_run_id", "run"), ("drop_index", "drop"),
+                         ("realization_index", "realization"), ("seed", "seed"),
+                         ("trial_ordinal", "trial"), ("transmission_attempt_id", "attempt")):
+        value = scope.get(field)
+        if value is not None and value != "":
+            # Do not round distinct configured SNR values into one legend key.
+            labels.append(f"{label}={value}" + (" dB" if field == "configured_snr_db" else ""))
+    return " ".join(labels)
+
+
+def _runtime_constellation_chart(chart_name, existing, fetch_artifact_bytes, run_id):
+    """One receiver-sample authority for data constellations and paired errors.
+
+    Panels pool retained observations only within a declared operating point,
+    UE, modulation and normalization. The CSV keeps every observation identity;
+    display previews never become measurement or statistical populations.
+    """
+    group_field = {"constellation per layer": "LayerIndex",
+                   "constellation per codeword": "CodewordIndex"}.get(chart_name)
+    pre = chart_name == "pre-equalization constellation"
+    xy_chart = chart_name in {"pre-equalization constellation", "post-equalization constellation"}
+    chosen, groups, csv_rows = {}, {}, []
+    sources = _all_available_rows(existing, fetch_artifact_bytes, [
+        "air_interface/csv/dl_constellation_samples.csv", "air_interface/csv/ul_constellation_samples.csv",
+        "air_interface/csv/dl_constellation_preview.csv", "air_interface/csv/ul_constellation_preview.csv",
+        "reports/csv/equalized_constellations.csv", "analytics/csv/constellation_analytics.csv"])
+    for source_path, rows in sources:
+        default = "DL" if "/dl_" in source_path else "UL" if "/ul_" in source_path else ""
+        for source_row_index, row in enumerate(rows, 1):
+            direction = _row_text(row, "Direction", "direction").upper() or default
+            if direction not in {"DL", "UL"}:
+                continue
+            if default and direction != default:
+                raise ValueError("Constellation direction contradicts its source table")
+            chosen.setdefault(direction, source_path)
+            if chosen[direction] != source_path:
+                continue  # Full capture wins; report/preview aliases are not extra samples.
+            if _non_runtime_evidence_field(row):
+                raise ValueError("Non-runtime evidence cannot become a measured constellation")
+            if pre:
+                x, y = _row_float(row, "ReceivedReal", "RxReal"), _row_float(row, "ReceivedImag", "RxImag")
+                if x is None or y is None:
+                    continue  # Never substitute the post-equalization plane.
+            else:
+                if "RawEqualizedReal" in row or "RawEqualizedImag" in row:
+                    x, y = _row_float(row, "RawEqualizedReal"), _row_float(row, "RawEqualizedImag")
+                elif _row_text(row, "EqualizationSource") == "receiver_output_without_payload_gain_or_phase_fit":
+                    x, y = _row_float(row, "EqualizedReal"), _row_float(row, "EqualizedImag")
+                else:
+                    raise ValueError("Constellation requires raw receiver samples or explicit no-payload-fit provenance")
+                if x is None or y is None:
+                    raise ValueError("Constellation requires finite receiver samples; nonfinite or missing raw values cannot use fitted aliases")
+            group = _row_float(row, group_field) if group_field else None
+            if group_field and (group is None or group != int(group) or group < (1 if group_field == "LayerIndex" else 0)):
+                raise ValueError("Layer/codeword constellation requires finite receiver samples and a legal integral group identity")
+            modulation = _row_text(row, "Modulation", "modulation").upper()
+            if chart_name == "constellation per modulation order" and not modulation:
+                raise ValueError("Modulation constellation requires an exported modulation identity")
+            experiment = _constellation_experiment_fields(row)
+            ue = _row_text(row, "UEIndex", "ue_id")
+            normalization = _row_text(row, "RuntimeNormalization", "Normalization", "normalization")
+            panel_scope = {name: experiment[name] for name in ("sweep_point_index", "configured_snr_db", "source_run_id")}
+            panel_key = (direction, ue, modulation, normalization, group, *panel_scope.values())
+            title = f"{direction} {group_field} {int(group)}" if group_field else (
+                f"{direction} {chart_name.replace(' constellation', '')}" if xy_chart else f"{direction} {modulation}")
+            details = _constellation_experiment_label(panel_scope)
+            if ue:
+                details += f" U{ue}"
+            if modulation and chart_name != "constellation per modulation order":
+                details += f" {modulation}"
+            if details.strip():
+                title += "\n" + "\n".join(textwrap.wrap(details.strip(), 39))
+            if normalization:
+                title += "\n" + "\n".join(textwrap.wrap(normalization, 39))
+            panel = groups.setdefault(panel_key, {"title": title, "points": [], "references": {}})
+            panel["points"].append((x, y, direction))
+            ref_x, ref_y = _row_float(row, "ReferenceSymbolReal"), _row_float(row, "ReferenceSymbolImag")
+            if ref_x is not None and ref_y is not None:
+                panel["references"][(ref_x, ref_y)] = None
+            values = {"x_value": x, "y_value": y, "reference_x": ref_x, "reference_y": ref_y} if xy_chart else {
+                "EqualizedReal": x, "EqualizedImag": y, "ReferenceSymbolReal": ref_x, "ReferenceSymbolImag": ref_y}
+            csv_rows.append({"run_id": run_id, "chart_name": chart_name, "direction": direction,
+                **experiment, **values, "ue_index": ue, "frame": _row_text(row, "Frame"),
+                "sfn": _row_text(row, "SFN"), "slot": _row_text(row, "RuntimeSlot", "Slot", "slot"),
+                "tb_id": _row_text(row, "LogicalTBID", "TBId", "tb_id"),
+                "layer_index": _row_text(row, "LayerIndex", "layer"),
+                "codeword_index": _row_text(row, "CodewordIndex"), "modulation": modulation,
+                "sample_index": _row_text(row, "SampleIndex"), "capture_scope": _row_text(row, "CaptureScope"),
+                "normalization": normalization, "source_table_logical_path": source_path,
+                "source_row_index": source_row_index,
+                **({group_field: int(group)} if group_field else {})})
+    if not groups:
+        if xy_chart and chosen:
+            raise ConstellationPlaneUnavailableError(chart_name)
+        return None
+    if chart_name == "symbol decision error histogram":
+        return _runtime_paired_symbol_error_histogram(csv_rows, chart_name)
+
+    def preview(values, limit):
+        count = min(len(values), limit)
+        return [values[i*(len(values)-1)//max(count-1, 1)] for i in range(count)]
+
+    panels = [(p["title"], preview(p["points"], 450), preview(list(p["references"]), 256)) for p in groups.values()]
+    counts = Counter(row["direction"] for row in csv_rows)
+    return {"csv_bytes": _encode_dict_rows(list(csv_rows[0]), csv_rows),
+        "img_bytes": _render_scatter_panels_svg(chart_name,
+            "Separate point / UE / modulation panels; uniform row-index preview per panel. All retained samples in CSV.",
+            panels, [f"dl_rows={counts['DL']}", f"ul_rows={counts['UL']}", f"panels={len(panels)}",
+                     "Preview: up to 450 samples/panel", "256 unique references/panel", "CSV: all retained samples"]),
+        "csv_status": "specialized_runtime_constellation_dataset",
+        "image_status": "generated_specialized_runtime_constellation_svg",
+        "source_table_path": "|".join(dict.fromkeys(r["source_table_logical_path"] for r in csv_rows)),
+        "source_row_count": len(csv_rows),
+        "note": "Canonical captures take precedence over aliases. Raw receiver symbols are not payload fitted; exact planes and declared sweep/UE/modulation scopes remain separate. CSV retains all samples and attempt identities; images are labelled per-panel previews, not statistical populations."}
+
+
+def _runtime_paired_symbol_error_histogram(rows, chart_name):
+    """Count raw received-minus-paired-transmitted errors, not nearest decisions."""
+    populations = defaultdict(list)
+    errors = []
+    for row in rows:
+        real, imag = row["ReferenceSymbolReal"], row["ReferenceSymbolImag"]
+        paired = real is not None and imag is not None
+        error = math.hypot(row["EqualizedReal"] - real, row["EqualizedImag"] - imag) if paired else None
+        row.update(decision_error_magnitude=error, bin_index=None, bin_lower=None,
+                   bin_upper=None, bin_count=None, population_sample_count=None,
+                   value_status="available" if paired else "unavailable_paired_reference")
+        if not paired:
+            continue
+        label = (f"{row['direction']} U{row['ue_index']} {row['modulation']} "
+                 f"{row['normalization']} " + _constellation_experiment_label(row)).strip()
+        populations[label].append(row)
+        errors.append(error)
+    if not errors:
+        raise ValueError("Symbol error histogram requires retained paired reference symbols")
+    low, high = min(errors), max(errors)
+    count = 16 if high > low else 1
+    width = (high-low)/count
+    for row in rows:
+        # This domain also defines every zero-count bin in the image, allowing
+        # exact reconstruction from the single complete plotted CSV.
+        row.update(histogram_bin_count=count, histogram_minimum=low, histogram_maximum=high)
+    series = []
+    for label, population in populations.items():
+        counts = Counter(min(int((r["decision_error_magnitude"]-low)/width), count-1)
+                         if width else 0 for r in population)
+        for row in population:
+            index = min(int((row["decision_error_magnitude"]-low)/width), count-1) if width else 0
+            row.update(bin_index=index, bin_lower=low+index*width, bin_upper=low+(index+1)*width,
+                       bin_count=counts[index], population_sample_count=len(population))
+        series.append({"name": label, "points": [[low+(i+0.5)*width, counts[i]] for i in range(count)],
+                       "marker": "circle"})
+    note = ("Raw receiver minus its paired transmitted symbol; not a hard-decision symbol error rate. "
+            "Common equal-width bins; counts, not means. Last bin includes its upper edge. "
+            "CSV retains all sample errors and bin assignments; count each bin once per population.")
+    return {"csv_bytes": _encode_dict_rows(list(rows[0]), rows),
+        "img_bytes": _render_multi_series_svg(chart_name, note, series,
+            [f"paired_samples={len(errors)}", f"unpaired_samples={len(rows)-len(errors)}", f"bins={count}"],
+            x_label="Paired symbol error magnitude (receiver units)", y_label="Sample count per bin",
+            mode="scatter", evidence_shape_policy="operating_point", wrap_legend=True,
+            wrap_subtitle=True, max_points_per_series=None),
+        "csv_status": "specialized_runtime_symbol_error_dataset",
+        "image_status": "generated_specialized_runtime_summary_svg",
+        "source_table_path": "|".join(dict.fromkeys(r["source_table_logical_path"] for r in rows)),
+        "source_row_count": len(rows), "note": note}
+
+
+def _runtime_trial_evm_chart(existing, fetch_artifact_bytes, run_id):
+    """Preserve each measured trial; averaging RMS values is not aggregate EVM."""
+    rows, populations = [], defaultdict(list)
+    paths = ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"]
+    for path, trials in _all_available_rows(existing, fetch_artifact_bytes, paths):
+        direction = "DL" if "/dl_" in path else "UL"
+        for index, trial in enumerate(trials, 1):
+            if _non_runtime_evidence_field(trial):
+                raise ValueError("Non-runtime trial cannot become measured EVM")
+            if _row_text(trial, "Direction").upper() not in ("", direction):
+                raise ValueError("EVM direction contradicts its source table")
+            evm = _row_float(trial, "EVM_rms")
+            if evm is None:
+                continue  # No invented zero when a trial lacks a measurement.
+            if evm < 0:
+                raise ValueError("Measured RMS EVM cannot be negative")
+            experiment = _constellation_experiment_fields(trial)
+            row = {"run_id": run_id, "chart_name": "EVM RMS", "direction": direction, **experiment,
+                "ue_index": _row_text(trial, "UEIndex", "UEID"), "slot": _row_text(trial, "RuntimeSlot", "Slot"),
+                "frame": _row_text(trial, "Frame"), "sfn": _row_text(trial, "SFN"),
+                "tb_id": _row_text(trial, "LogicalTBID", "TBId"), "modulation": _row_text(trial, "Modulation"),
+                "layers": _row_text(trial, "Layers", "NumLayers"), "rms_evm": evm, "rms_evm_pct": 100*evm,
+                "measurement_scope": "individual_runtime_trial_not_aggregate_or_RF_conformance",
+                "source_table_logical_path": path, "source_row_index": index}
+            rows.append(row)
+            label = f"{direction} U{row['ue_index']} " + _constellation_experiment_label(experiment)
+            populations[label].append([index, 100*evm])
+    if not rows:
+        return None
+    note = "Individual receiver trial RMS EVM, not an average across trials or points; not RF conformance EVM. Source EVM_rms is a ratio; displayed percent is 100 times that ratio."
+    return {"csv_bytes": _encode_dict_rows(list(rows[0]), rows),
+        "img_bytes": _render_multi_series_svg("EVM RMS", note,
+            [{"name": name, "points": points, "marker": "circle"} for name, points in populations.items()],
+            [f"measured_trials={len(rows)}"], x_label="Source trial row index (not time)", y_label="EVM (%)",
+            mode="scatter", evidence_shape_policy="operating_point", wrap_legend=True,
+            wrap_subtitle=True, max_points_per_series=None),
+        "csv_status": "specialized_runtime_evm_dataset", "image_status": "generated_specialized_runtime_summary_svg",
+        "source_table_path": "|".join(dict.fromkeys(r["source_table_logical_path"] for r in rows)),
+        "source_row_count": len(rows), "note": note}
+
+
 def _runtime_evm_profile_chart(chart_name, existing, fetch_artifact_bytes, run_id):
     required_direction = "DL" if chart_name.startswith("PDSCH ") else "UL" if chart_name.startswith("PUSCH ") else ""
     profile_name = chart_name.removeprefix("PDSCH ").removeprefix("PUSCH ")
@@ -11484,7 +11809,8 @@ def _runtime_evm_profile_chart(chart_name, existing, fetch_artifact_bytes, run_i
                 return None
             scope = _row_text(row, "CaptureScope")
             full = scope == "full_allocation_paired_symbols"
-            observation_key = (direction, ue, frame, sfn, slot, cell, tb)
+            experiment = _constellation_experiment_fields(row)
+            observation_key = (direction, ue, frame, sfn, slot, cell, tb, *experiment.values())
             observation = observations.setdefault(observation_key, {"full": full, "expected": None, "indices": set(), "resources": set()})
             if observation["full"] != full:
                 return None  # Mixed full/preview rows cannot establish coverage.
@@ -11504,11 +11830,12 @@ def _runtime_evm_profile_chart(chart_name, existing, fetch_artifact_bytes, run_i
                 observation["expected"] = count
                 observation["indices"].add(index)
                 observation["resources"].add(resource)
-            key = (direction, ue, frame, sfn, slot, cell, tb,
+            key = (*observation_key,
                    layer if axis_field != "LayerIndex" else "", codeword, normalization,
                    comparison_domain, ordering, ordering_status, sample_source, coordinate_domain, int(x_value))
             bucket = buckets.setdefault(key, {
                 "run_id": run_id, "chart_name": chart_name, "direction": direction,
+                **experiment,
                 "ue_index": ue, "frame": frame, "sfn": sfn, "slot": slot,
                 "cell_id": cell, "tb_id": tb, "layer_index": layer,
                 "codeword_index": codeword, axis_field: int(x_value),
@@ -11544,6 +11871,9 @@ def _runtime_evm_profile_chart(chart_name, existing, fetch_artifact_bytes, run_i
         # hardcoded 14-symbol numerology or fabricated absolute time axis.
         label = (f"{row['direction']} U{row['ue_index']} S{row['slot']} "
                  f"F{row['frame'] or row['sfn']} CW{row['codeword_index']}")
+        experiment_label = _constellation_experiment_label(row)
+        if experiment_label:
+            label = experiment_label + " " + label
         if axis_field != "LayerIndex":
             label += f" L{row['layer_index']}"
         if row["cell_id"]:
@@ -11564,7 +11894,8 @@ def _runtime_evm_profile_chart(chart_name, existing, fetch_artifact_bytes, run_i
         x_label={"OFDMSymbolIndex": "OFDM symbol index (within slot)",
                  "SubcarrierIndex": "Subcarrier index", "LayerIndex": "Layer index"}[axis_field],
         y_label="EVM (%)", mode="scatter",
-        evidence_shape_policy="operating_point")
+        evidence_shape_policy="operating_point", wrap_legend=True, wrap_subtitle=True,
+        max_points_per_series=None)
     return {
         "csv_bytes": _encode_dict_rows(list(csv_rows[0]), csv_rows),
         "img_bytes": image_bytes,
@@ -12895,66 +13226,11 @@ def _specialized_chart_materialization(
             "source_row_count": len(csv_rows),
             "note": "UL summary built from real PUSCH trials and equalized-symbol preview samples.",
         }
-    if chart_name == "constellation per modulation order":
-        all_records: list[tuple[str, str, dict[str, str]]] = []
-        for source_path in (
-            "reports/csv/equalized_constellations.csv",
-            "analytics/csv/constellation_analytics.csv",
-            "air_interface/csv/dl_constellation_preview.csv",
-            "air_interface/csv/ul_constellation_preview.csv",
-        ):
-            _, rows = _artifact_rows_by_path(existing, fetch_artifact_bytes, source_path)
-            for row in rows:
-                direction = _row_text(row, "Direction")
-                if not direction:
-                    direction = "DL" if "/dl_" in source_path else ("UL" if "/ul_" in source_path else "")
-                if direction:
-                    all_records.append((direction, source_path, row))
-        panels: list[tuple[str, list[tuple[float, float, str]], list[tuple[float, float]]]] = []
-        csv_rows: list[dict[str, Any]] = []
-        for modulation in ("QPSK", "16QAM", "64QAM", "256QAM"):
-            points: list[tuple[float, float, str]] = []
-            ideal: list[tuple[float, float]] = []
-            for direction, source_path, row in all_records:
-                if _row_text(row, "Modulation").upper() != modulation:
-                    continue
-                eq_r = _row_float(row, "EqualizedReal", "PostEqualizedReal", "RawEqualizedReal")
-                eq_i = _row_float(row, "EqualizedImag", "PostEqualizedImag", "RawEqualizedImag")
-                ref_r = _row_float(row, "ReferenceSymbolReal", "TxReal")
-                ref_i = _row_float(row, "ReferenceSymbolImag", "TxImag")
-                if eq_r is None or eq_i is None:
-                    continue
-                points.append((eq_r, eq_i, direction))
-                if ref_r is not None and ref_i is not None:
-                    ideal.append((ref_r, ref_i))
-                csv_rows.append(
-                    {
-                        "run_id": run_id,
-                        "chart_name": chart_name,
-                        "direction": direction,
-                        "modulation": modulation,
-                        "EqualizedReal": eq_r,
-                        "EqualizedImag": eq_i,
-                        "ReferenceSymbolReal": ref_r,
-                        "ReferenceSymbolImag": ref_i,
-                        "source_table_logical_path": source_path,
-                    }
-                )
-            if points:
-                panels.append((modulation, points[:500], ideal[:64]))
-        if not panels:
-            return None
-        source_summary = "|".join(sorted({str(row["source_table_logical_path"]) for row in csv_rows}))
-        summary = [f"source={source_summary}", f"points={len(csv_rows)}"]
-        return {
-            "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "direction", "modulation", "EqualizedReal", "EqualizedImag", "ReferenceSymbolReal", "ReferenceSymbolImag", "source_table_logical_path"], csv_rows),
-            "img_bytes": _render_scatter_panels_svg(chart_name, "Equalized runtime constellation samples grouped by modulation order.", panels, summary),
-            "csv_status": "specialized_runtime_constellation_dataset",
-            "image_status": "generated_specialized_runtime_constellation_svg",
-            "source_table_path": source_summary,
-            "source_row_count": len(csv_rows),
-            "note": "Constellation grouped by modulation order using runtime equalized samples.",
-        }
+    if chart_name in {"pre-equalization constellation", "post-equalization constellation",
+                      "constellation per layer", "constellation per codeword", "constellation per modulation order"}:
+        constellation = _runtime_constellation_chart(chart_name, existing, fetch_artifact_bytes, run_id)
+        if constellation is not None or chart_name == "constellation per modulation order":
+            return constellation
     if chart_name in {
         "Tx waveform",
         "Rx waveform",
@@ -13114,154 +13390,14 @@ def _specialized_chart_materialization(
                             "source_row_count": len(csv_rows),
                             "note": "Stage waveform chart derived from persisted stage-trace samples when exported by runtime.",
                         }
-    if chart_name in {"pre-equalization constellation", "post-equalization constellation", "EVM RMS", "symbol decision error histogram"}:
-        preview_rows = []
-        chosen_sources = {}
-        for direction in ("DL", "UL"):
-            for suffix in ("samples", "preview"):
-                source_path = f"air_interface/csv/{direction.lower()}_constellation_{suffix}.csv"
-                _, source_rows = _artifact_rows_by_path(existing, fetch_artifact_bytes, source_path)
-                if source_rows:
-                    chosen_sources[direction] = source_path
-                    preview_rows.extend((direction, row, source_path) for row in source_rows)
-                    break
-        for source_path in ("reports/csv/equalized_constellations.csv", "analytics/csv/constellation_analytics.csv"):
-            _, constellation_rows = _artifact_rows_by_path(existing, fetch_artifact_bytes, source_path)
-            for row in constellation_rows:
-                direction = _row_text(row, "Direction").upper()
-                if direction not in {"DL", "UL"}:
-                    continue  # Missing direction cannot default to a UL measurement.
-                chosen_sources.setdefault(direction, source_path)
-                if chosen_sources[direction] == source_path:
-                    preview_rows.append((direction, row, source_path))
-        if chart_name in {"pre-equalization constellation", "post-equalization constellation"} and preview_rows:
-            panels: list[tuple[str, list[tuple[float, float, str]], list[tuple[float, float]]]] = []
-            csv_rows: list[dict[str, Any]] = []
-            for direction in ("DL", "UL"):
-                points: list[tuple[float, float, str]] = []
-                ideal: list[tuple[float, float]] = []
-                for row_direction, row, source_path in preview_rows:
-                    if row_direction != direction:
-                        continue
-                    declared_direction = _row_text(row, "Direction", "direction").upper()
-                    if declared_direction and declared_direction != direction:
-                        raise ValueError("Constellation direction contradicts its source table")
-                    if _non_runtime_evidence_field(row):
-                        raise ValueError("Non-runtime evidence cannot become a measured constellation")
-                    if chart_name == "pre-equalization constellation":
-                        x_val = _row_float(row, "ReceivedReal", "RxReal")
-                        y_val = _row_float(row, "ReceivedImag", "RxImag")
-                    else:
-                        if "RawEqualizedReal" in row or "RawEqualizedImag" in row:
-                            x_val = _row_float(row, "RawEqualizedReal")
-                            y_val = _row_float(row, "RawEqualizedImag")
-                        elif _row_text(row, "EqualizationSource") == "receiver_output_without_payload_gain_or_phase_fit":
-                            x_val = _row_float(row, "EqualizedReal")
-                            y_val = _row_float(row, "EqualizedImag")
-                        else:
-                            raise ValueError("Post-equalization constellation requires raw receiver samples or explicit no-payload-fit provenance")
-                    if chart_name == "post-equalization constellation" and (x_val is None or y_val is None):
-                        raise ValueError("Post-equalization constellation contains nonfinite or missing receiver samples")
-                    if x_val is None or y_val is None:
-                        continue
-                    ref_r = _row_float(row, "ReferenceSymbolReal")
-                    ref_i = _row_float(row, "ReferenceSymbolImag")
-                    points.append((float(x_val), float(y_val), direction))
-                    if ref_r is not None and ref_i is not None:
-                        ideal.append((float(ref_r), float(ref_i)))
-                    csv_rows.append(
-                        {
-                            "run_id": run_id,
-                            "chart_name": chart_name,
-                            "direction": direction,
-                            "x_value": x_val,
-                            "y_value": y_val,
-                            "reference_x": ref_r if ref_r is not None else "",
-                            "reference_y": ref_i if ref_i is not None else "",
-                            "ue_index": _row_text(row, "UEIndex", "ue_id"),
-                            "frame": _row_text(row, "Frame"),
-                            "sfn": _row_text(row, "SFN"),
-                            "slot": _row_text(row, "RuntimeSlot", "Slot", "slot"),
-                            "layer_index": _row_text(row, "LayerIndex", "layer"),
-                            "codeword_index": _row_text(row, "CodewordIndex"),
-                            "modulation": _row_text(row, "Modulation", "modulation"),
-                            "sample_index": _row_text(row, "SampleIndex"),
-                            "capture_scope": _row_text(row, "CaptureScope"),
-                            "source_table_logical_path": source_path,
-                        }
-                    )
-                if points:
-                    # A prefix showed only bootstrap QPSK in an adapted run.
-                    # Sample the entire retained sequence deterministically;
-                    # keep every observation in the source CSV, unchanged.
-                    count = min(len(points), 450)
-                    selected = [points[i * (len(points) - 1) // max(count - 1, 1)] for i in range(count)]
-                    references = list(dict.fromkeys(ideal))
-                    ref_count = min(len(references), 256)
-                    reference_preview = [references[i * (len(references) - 1) // max(ref_count - 1, 1)] for i in range(ref_count)]
-                    panels.append((f"{direction} {chart_name.replace(' constellation', '')}", selected, reference_preview))
-            if panels:
-                direction_counts = Counter(str(row["direction"]) for row in csv_rows)
-                return {
-                    "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "direction", "x_value", "y_value", "reference_x", "reference_y", "ue_index", "frame", "sfn", "slot", "layer_index", "codeword_index", "modulation", "sample_index", "capture_scope", "source_table_logical_path"], csv_rows),
-                    "img_bytes": _render_scatter_panels_svg(chart_name, "Uniform row-index preview across retained samples; full dataset in CSV. Grey markers: exported references.", panels, [f"dl_rows={direction_counts['DL']}", f"ul_rows={direction_counts['UL']}", "display_limit=450 samples/direction", "reference_limit=256 unique/direction"]),
-                    "csv_status": "specialized_runtime_constellation_dataset",
-                    "image_status": "generated_specialized_runtime_constellation_svg",
-                    "source_table_path": "|".join(sorted({row["source_table_logical_path"] for row in csv_rows})),
-                    "source_row_count": len(csv_rows),
-                    "note": "Full canonical captures take precedence over aliases/previews. Receiver samples are not payload-fitted, and post-equalized data cannot substitute for pre-equalization observations.",
-                }
-            raise ConstellationPlaneUnavailableError(chart_name)
-        if chart_name == "EVM RMS":
-            trial_sources = _all_available_rows(existing, fetch_artifact_bytes, ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"])
-            named_values: list[tuple[str, float]] = []
-            csv_rows: list[dict[str, Any]] = []
-            for source_path, rows in trial_sources:
-                direction = "DL" if "dl_pdsch" in source_path else "UL"
-                evm_values = [float(value) for value in (_row_float(row, "EVM_rms") for row in rows) if value is not None]
-                if not evm_values:
-                    continue
-                mean_evm = sum(evm_values) / len(evm_values)
-                named_values.append((direction, mean_evm))
-                csv_rows.append({"run_id": run_id, "chart_name": chart_name, "direction": direction, "mean_evm_rms": mean_evm, "sample_count": len(evm_values), "source_table_logical_path": source_path})
-            if named_values:
-                dataset, summary = _bar_dataset_from_named_values("Direction bucket", "Mean EVM RMS", named_values)
-                return {
-                    "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "direction", "mean_evm_rms", "sample_count", "source_table_logical_path"], csv_rows),
-                    "img_bytes": _render_svg_plot(chart_name, "Mean trial-level EVM from persisted waveform trials.", dataset, summary),
-                    "csv_status": "specialized_runtime_evm_dataset",
-                    "image_status": "generated_specialized_runtime_summary_svg",
-                    "source_table_path": "|".join(source_path for source_path, _rows in trial_sources),
-                    "source_row_count": len(csv_rows),
-                    "note": "EVM RMS chart derived from trial-level runtime EVM fields.",
-                }
-        if chart_name == "symbol decision error histogram" and preview_rows:
-            values: list[float] = []
-            csv_rows: list[dict[str, Any]] = []
-            for direction, row, source_path in preview_rows:
-                eq_r = _row_float(row, "EqualizedReal")
-                eq_i = _row_float(row, "EqualizedImag")
-                ref_r = _row_float(row, "ReferenceSymbolReal")
-                ref_i = _row_float(row, "ReferenceSymbolImag")
-                if None in {eq_r, eq_i, ref_r, ref_i}:
-                    continue
-                error_mag = math.sqrt((float(eq_r) - float(ref_r)) ** 2 + (float(eq_i) - float(ref_i)) ** 2)
-                values.append(error_mag)
-                csv_rows.append({"run_id": run_id, "chart_name": chart_name, "direction": direction, "decision_error_magnitude": error_mag, "source_table_logical_path": source_path})
-            if values:
-                bins = _bin_mean_points([(value, 1.0) for value in values], 16)
-                dataset = {"mode": "bar", "x_label": "Decision error magnitude", "y_label": "Mean count per bin", "points": bins}
-                return {
-                    "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "direction", "decision_error_magnitude", "source_table_logical_path"], csv_rows),
-                    "img_bytes": _render_svg_plot(chart_name, "Histogram of equalized-symbol distance to the nearest exported reference symbol.", dataset, [f"samples={len(values)}"]),
-                    "csv_status": "specialized_runtime_symbol_error_dataset",
-                    "image_status": "generated_specialized_runtime_summary_svg",
-                    "source_table_path": "|".join(sorted({
-                        str(row["source_table_logical_path"]) for row in csv_rows
-                    })),
-                    "source_row_count": len(csv_rows),
-                    "note": "Decision-error histogram derived from preview equalized and reference symbols.",
-                }
+    if chart_name == "EVM RMS":
+        result = _runtime_trial_evm_chart(existing, fetch_artifact_bytes, run_id)
+        if result is not None:
+            return result
+    if chart_name == "symbol decision error histogram":
+        result = _runtime_constellation_chart(chart_name, existing, fetch_artifact_bytes, run_id)
+        if result is not None:
+            return result
     if chart_name in {"BER", "BLER", "FER", "BLER vs SNR", "BLER vs SINR", "BLER vs MCS", "BER vs SNR", "FER vs SNR", "CRC pass/fail rates", "decoder iteration distributions", "per-UE and per-cell reliability"}:
         trial_rows = _trial_rows_with_paths(
             existing,
@@ -14021,76 +14157,6 @@ def _specialized_chart_materialization(
                     "source_row_count": len(csv_rows),
                     "note": "PUCCH format confusion matrix derived from truthful runtime trial rows.",
                 }
-    if chart_name in {"constellation per codeword", "constellation per layer"}:
-        preview_sources = _all_available_rows(
-            existing,
-            fetch_artifact_bytes,
-            ["air_interface/csv/dl_constellation_samples.csv", "air_interface/csv/ul_constellation_samples.csv",
-             "air_interface/csv/dl_constellation_preview.csv", "air_interface/csv/ul_constellation_preview.csv",
-             "reports/csv/equalized_constellations.csv"],
-        )
-        chosen_sources: dict[str, str] = {}
-        group_field = "CodewordIndex" if chart_name == "constellation per codeword" else "LayerIndex"
-        panels: list[tuple[str, list[tuple[float, float, str]], list[tuple[float, float]]]] = []
-        csv_rows: list[dict[str, Any]] = []
-        grouped_points: dict[str, list[tuple[float, float, str]]] = defaultdict(list)
-        grouped_ideal: dict[str, list[tuple[float, float]]] = defaultdict(list)
-        for source_path, rows in preview_sources:
-            default_direction = "DL" if "/dl_" in source_path else ("UL" if "/ul_" in source_path else "")
-            for row in rows:
-                direction = _row_text(row, "Direction").upper() or default_direction
-                if direction not in {"DL", "UL"}:
-                    continue
-                if default_direction and direction != default_direction:
-                    raise ValueError("Constellation direction contradicts its source table")
-                chosen_sources.setdefault(direction, source_path)
-                if chosen_sources[direction] != source_path:
-                    continue  # Report aliases must not duplicate physical samples.
-                if _non_runtime_evidence_field(row):
-                    raise ValueError("Non-runtime evidence cannot become a measured constellation")
-                group_value = _row_float(row, group_field)
-                if "RawEqualizedReal" in row or "RawEqualizedImag" in row:
-                    eq_r = _row_float(row, "RawEqualizedReal")
-                    eq_i = _row_float(row, "RawEqualizedImag")
-                elif _row_text(row, "EqualizationSource") == "receiver_output_without_payload_gain_or_phase_fit":
-                    eq_r = _row_float(row, "EqualizedReal")
-                    eq_i = _row_float(row, "EqualizedImag")
-                else:
-                    raise ValueError("Layer/codeword constellation requires raw receiver samples or explicit no-payload-fit provenance")
-                if group_value is None or group_value != int(group_value) or eq_r is None or eq_i is None:
-                    raise ValueError("Layer/codeword constellation requires finite receiver samples and an integral group identity")
-                group_name = f"{direction or 'link'} {group_field} {int(round(group_value))}"
-                grouped_points[group_name].append((float(eq_r), float(eq_i), direction or "link"))
-                ref_r = _row_float(row, "ReferenceSymbolReal")
-                ref_i = _row_float(row, "ReferenceSymbolImag")
-                if ref_r is not None and ref_i is not None:
-                    grouped_ideal[group_name].append((float(ref_r), float(ref_i)))
-                csv_rows.append(
-                    {
-                        "run_id": run_id,
-                        "chart_name": chart_name,
-                        "direction": direction,
-                        group_field: int(round(group_value)),
-                        "EqualizedReal": eq_r,
-                        "EqualizedImag": eq_i,
-                        "ReferenceSymbolReal": ref_r if ref_r is not None else "",
-                        "ReferenceSymbolImag": ref_i if ref_i is not None else "",
-                        "source_table_logical_path": source_path,
-                    }
-                )
-        for group_name, points in grouped_points.items():
-            panels.append((group_name, points[:450], grouped_ideal.get(group_name, [])[:64]))
-        if panels:
-            return {
-                "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "direction", group_field, "EqualizedReal", "EqualizedImag", "ReferenceSymbolReal", "ReferenceSymbolImag", "source_table_logical_path"], csv_rows),
-                "img_bytes": _render_scatter_panels_svg(chart_name, "Equalized constellation samples grouped by runtime RE-mapped codeword/layer coordinates.", panels,
-                    [f"samples={len(csv_rows)}", "Preview: first 450 samples per panel", "CSV: all retained samples"]),
-                "csv_status": "specialized_runtime_constellation_dataset",
-                "image_status": "generated_specialized_runtime_constellation_svg",
-                "source_table_path": "|".join(dict.fromkeys(row["source_table_logical_path"] for row in csv_rows)),
-                "source_row_count": len(csv_rows),
-                "note": "Constellation grouping uses raw receiver samples and runtime codeword/layer coordinates from one source per direction; aliases are not counted twice.",
-            }
     if chart_name in {"EVM per symbol", "PDSCH EVM per symbol", "PUSCH EVM per symbol", "EVM per subcarrier", "EVM per layer"}:
         evm_chart = _runtime_evm_profile_chart(chart_name, existing, fetch_artifact_bytes, run_id)
         if evm_chart is not None:
@@ -14557,6 +14623,17 @@ def materialize_run_contract_artifacts(
             return filesystem_payloads[artifact_id]
         return bytes(source_fetch_artifact_bytes(artifact_id))
 
+    def effective_open_artifact_binary(artifact_id: int):
+        artifact_id = int(artifact_id)
+        if artifact_id in filesystem_payloads:
+            return io.BytesIO(filesystem_payloads[artifact_id])
+        opener = getattr(source_fetch_artifact_bytes, "open_artifact_binary", None)
+        if callable(opener):
+            return opener(artifact_id)
+        return io.BytesIO(source_fetch_artifact_bytes(artifact_id))
+
+    effective_fetch_artifact_bytes.open_artifact_binary = effective_open_artifact_binary
+
     def persist_artifact(
         logical_path: str,
         artifact_kind: str,
@@ -14776,6 +14853,21 @@ def materialize_run_contract_artifacts(
             ):
                 continue
             target_img = chart_contract_image_path(chart_spec)
+            if (chart_name == "beam pattern 3d" and run_status == "failed"
+                    and target_csv not in existing and target_img not in existing
+                    and not any(path in source_lookup for path in (
+                        "beamforming/csv/applied_data_precoder_weights.csv",
+                        "beamforming/csv/applied_data_precoder_patterns.csv"))):
+                # Recovery can publish other retained evidence after a failed
+                # run that never wrote either beam source. This records a gap
+                # in the manifest only: no numeric CSV, replacement pattern,
+                # or reason-card image, and strict coverage still fails.
+                # Even one present (possibly malformed) source must reach the
+                # unchanged exact-weight/angular-sample validation below.
+                for path, kind in ((target_csv, "table_csv"), (target_img, "image_png")):
+                    manifest_rows.append([path, kind, "unavailable_failed_run_missing_beam_sources", "",
+                        "Failed run has neither executed data-precoder weights nor angular samples."])
+                continue
             absent_sources = no_data_chart_sources if chart_name in _DATA_ATTEMPT_ONLY_CHARTS else []
             for direction, names in _DIRECTION_DATA_ATTEMPT_CHARTS.items():
                 if chart_name in names and directional_sources[direction]:
@@ -15335,6 +15427,14 @@ def materialize_filesystem_run_contract_artifacts(
                 f"Filesystem artifact {int(artifact_id)} has no indexed path."
             )
         return _windows_long_path(path).read_bytes()
+
+    def open_artifact_binary(artifact_id: int):
+        path = artifact_paths.get(int(artifact_id))
+        if path is None:
+            raise FileNotFoundError(f"Filesystem artifact {int(artifact_id)} has no indexed path.")
+        return _windows_long_path(path).open("rb")
+
+    fetch_artifact_bytes.open_artifact_binary = open_artifact_binary
 
     return materialize_run_contract_artifacts(
         run_row,

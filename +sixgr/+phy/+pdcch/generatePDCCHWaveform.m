@@ -26,7 +26,8 @@ tx.RNTI = double(opt.RNTI);
 tx.RNTIType = string(strictCfg.RNTIType);
 tx.AggregationLevel = double(opt.AggregationLevel);
 tx.CandidateIndex = double(strictCfg.CandidateIndex);
-tx.CCEIndex = double(strictCfg.CandidateCCEIndex);
+tx.CCEIndex = sixgr.phy.pdcch.candidateFirstCCE(tx.Carrier,tx.PDCCH, ...
+    tx.AggregationLevel,tx.CandidateIndex-1,false);
 tx.GridHash = sixgr.rrc.asn1.asn1SHA256Hex(localComplexBytes(tx.Grid));
 tx.WaveformHash = sixgr.rrc.asn1.asn1SHA256Hex(localComplexBytes(tx.Waveform));
 tx.PDCCHResourceHash = sixgr.rrc.asn1.asn1SHA256Hex(uint8(unicode2native(jsonencode(struct( ...

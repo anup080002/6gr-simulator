@@ -123,6 +123,9 @@ out.InjectedDoppler_Hz = NaN;
 out.EstimatedDopplerHz = NaN;
 out.DopplerError_Hz = NaN;
 out.DopplerEstimateCRLB_Hz = NaN;
+phase=sixgr.link.srsPilotPhaseEvidence();
+for field=string(fieldnames(phase)).', out.(field)=phase.(field); end
+out.PilotPhaseTrackingState = struct();
 out.EstimatedRI = NaN;
 out.EstimatedTPMI = NaN;
 out.RankEstimate = NaN;
@@ -438,6 +441,8 @@ try
     out.InjectedSampleNoiseVarianceSource = string(sixgr.util.structGet( ...
         replay, "NoiseVarianceSource", ""));
     out.NoiseVarianceDomain = "resource_grid_pre_equalization";
+    out.RuntimeNoiseVarianceDomain = out.NoiseVarianceDomain;
+    out.RuntimeNoiseVarianceSource = out.NoiseVarianceSource;
     out.InjectedSampleNoiseVariance = double(sixgr.util.structGet( ...
         replay,'InjectedNoiseVariance',injectedNoiseVariance));
     out.InjectedSampleNoiseVarianceDomain = string(sixgr.util.structGet( ...
@@ -496,7 +501,7 @@ try
         out.DetectionUsable = false;
         return;
     end
-    [hTrue, symTimes_s, symIdx, nmseReferenceSource] = localReferencePilotChannel( ...
+    [hTrue, ~, symIdx, nmseReferenceSource] = localReferencePilotChannel( ...
         txWaveForReference, tx.Carrier, tx.SRSIndices, tx.SRSSymbols, tx.SRS, sampleRateHz);
     if localHasFiniteComplexData(hTrue) && isfield(replay,'NMSEReferenceSource')
         nmseReferenceSource=string(replay.NMSEReferenceSource);
@@ -633,8 +638,30 @@ try
         % not a fading-only label. Identity AWGN retains its own source tag.
         sharedScoringAvailable=true;
     end
-    estimatedDopplerHz = localEstimateDopplerHz(hEst, symTimes_s);
-    out.DopplerEstimateCRLB_Hz = localDopplerCRLBHz(hEst, symTimes_s, rx.NoiseVar);
+    % Measurement uses the practical per-resource receiver channel, never
+    % noiseless scoring references, configured Doppler or antenna averages.
+    phaseArgs={};
+    if received
+        phaseArgs={'ObservationStartTime_s', ...
+            (context.Observation.StartSample+rx.Timing.AppliedTimingCorrectionSamples)/sampleRateHz, ...
+            'AvailableAtTime_s',context.Observation.EndSampleExclusive/sampleRateHz, ...
+            'ContextID',string(sixgr.util.structGet(context,'PilotPhaseContextID',"")), ...
+            'PreviousObservation',sixgr.util.structGet(context,'PilotPhaseHistory',struct())};
+    end
+    [phase,out.PilotPhaseTrackingState]=sixgr.phy.rx.pilotChannelPhaseEvolution( ...
+        rx.Carrier,rx.Hest,rx.SRSIndices,rx.SRSSymbols,rxInfo.OFDMInfo,phaseArgs{:});
+    out.PilotCommonPhaseRate_Hz=phase.CommonPhaseRate_Hz;
+    out.PilotPhaseFitResidualRMS_deg=phase.PhaseFitResidualRMS_deg;
+    out.PilotPhasePairCount=phase.PairCount;
+    out.PilotPhaseMatchedChannelValueCount=phase.MatchedChannelValueCount;
+    out.PilotPhaseUnaliasedHalfWidth_Hz=phase.UnaliasedHalfWidth_Hz;
+    out.PilotPhaseEvolutionSource=phase.Source;
+    out.PilotPhaseEvolutionStatus=phase.Status;
+    out.PilotPhaseObservationScope=phase.ObservationScope;
+    out.PilotPhaseHistoryStatus=phase.HistoryStatus;
+    out.PilotPhasePreviousObservationTime_s=phase.PreviousObservationTime_s;
+    out.PilotPhaseCurrentObservationTime_s=phase.CurrentObservationTime_s;
+    out.PilotPhaseObservationSeparation_s=phase.ObservationSeparation_s;
 
     if isnan(nmse)
         out.NMSE_dB=NaN;
@@ -656,10 +683,10 @@ try
     % It mirrors radio-time observation duration, not wall-clock compute runtime.
     out.AcquisitionTime_ms = out.AirInterfaceObservation_ms;
     out.TrackingFailure = 0;
-    out.InjectedDoppler_Hz = injectedDopplerHz;
-    out.EstimatedDopplerHz = estimatedDopplerHz;
-    if isfinite(out.EstimatedDopplerHz) && isfinite(out.InjectedDoppler_Hz)
-        out.DopplerError_Hz = out.EstimatedDopplerHz - out.InjectedDoppler_Hz;
+    if ~received && ~out.ChannelFadingApplied
+        % Only this isolated nonfading path applies a single common
+        % frequency rotation. CDL maximum Doppler is not that rotation.
+        out.InjectedDoppler_Hz = injectedDopplerHz;
     end
     linkState = sixgr.phy.ul.measureULLinkState(rx.Hest, rx.NoiseVar, cfgSRS, ...
         "ReceivedGrid", rx.RxGrid, ...
@@ -823,7 +850,7 @@ try
     end
     if logical(out.MeasurementUsable)
         out.Notes = "SRS NMSE=" + string(round(out.NMSE_dB,2)) + ...
-            " dB, injected Doppler=" + string(round(injectedDopplerHz, 3)) + " Hz" + ...
+            " dB, measured pilot common phase rate=" + string(out.PilotCommonPhaseRate_Hz) + " Hz" + ...
             ", CQI=" + string(out.CQI) + ", MCS=" + string(out.MCSIndex);
     else
         out.Notes = "SRS channel estimate available; SINR/CQI unavailable from receiver noise evidence: " + ...
@@ -1803,73 +1830,6 @@ if den <= 0
     return;
 end
 qcl = abs(hTrue' * hEst) / den;
-end
-
-function dopplerHz = localEstimateDopplerHz(hEst, symTimes_s)
-dopplerHz = NaN;
-hEst = hEst(:);
-symTimes_s = double(symTimes_s(:));
-N = min(numel(hEst), numel(symTimes_s));
-if N == 0
-    return;
-end
-hEst = hEst(1:N);
-symTimes_s = symTimes_s(1:N);
-mask = isfinite(real(hEst)) & isfinite(imag(hEst)) & isfinite(symTimes_s);
-if nnz(mask) < 2
-    dopplerHz = 0;
-    return;
-end
-maxTime = max(symTimes_s(mask), [], "omitnan");
-if isfinite(maxTime) && maxTime >= 1e-2
-    error("sixgr:link:SRS:DopplerEstimateUnexpectedTimescale", ...
-        "SRS symbol times appear to be in wrong units (max %.6g s). Expected less than 10 ms.", maxTime);
-end
-[uTimes, ~, grp] = unique(symTimes_s(mask), "stable");
-if numel(uTimes) < 2
-    dopplerHz = 0;
-    return;
-end
-hMean = accumarray(grp, hEst(mask), [], @localComplexMean);
-phaseObs = unwrap(angle(hMean(:)));
-phaseRange = max(phaseObs) - min(phaseObs);
-if isfinite(phaseRange) && phaseRange > 0.9 * pi
-    warning("sixgr:link:SRS:PhaseUnwrapRisk", ...
-        "SRS phase range %.2f rad exceeds 90%% of pi; Doppler estimation may wrap.", phaseRange);
-end
-p = polyfit(uTimes(:), phaseObs(:), 1);
-dopplerHz = p(1) / (2 * pi);
-end
-
-function crlbHz = localDopplerCRLBHz(hEst, symTimes_s, nVar)
-crlbHz = NaN;
-hEst = hEst(:);
-symTimes_s = double(symTimes_s(:));
-N = min(numel(hEst), numel(symTimes_s));
-if N < 2
-    return;
-end
-hEst = hEst(1:N);
-symTimes_s = symTimes_s(1:N);
-mask = isfinite(real(hEst)) & isfinite(imag(hEst)) & isfinite(symTimes_s);
-if nnz(mask) < 2
-    return;
-end
-[uTimes, ~, grp] = unique(symTimes_s(mask), "stable");
-if numel(uTimes) < 2
-    return;
-end
-hMean = accumarray(grp, hEst(mask), [], @localComplexMean);
-if numel(hMean) < 2
-    return;
-end
-snrLin = mean(abs(hMean).^2, "omitnan") / max(double(nVar), eps);
-Lpilots = numel(hMean);
-trep = mean(diff(uTimes), "omitnan");
-if ~(isfinite(snrLin) && snrLin > 0 && isfinite(trep) && trep > 0 && Lpilots > 1)
-    return;
-end
-crlbHz = sqrt(6 / (snrLin * Lpilots * (Lpilots^2 - 1) * (2 * pi * trep)^2));
 end
 
 function loss_dB = localInterpolationLossNormalized(symIdx, hEst, hTrue)

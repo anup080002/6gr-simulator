@@ -108,6 +108,7 @@ classdef ChannelFactory
                     sixgr.util.structGet(cfg, "channel.type", "nrTDL")));
             end
             [cfg, model] = sixgr.channel.ChannelFactory.localResolveModel(cfg, opt.Model);
+            cfg = sixgr.channel.bindRuntimeDoppler(cfg);
 
             % Resolve carrier frequency if possible (used by some models)
             if isempty(opt.Fc_Hz)
@@ -324,6 +325,15 @@ classdef ChannelFactory
                 error("ChannelFactory:create:UnknownModel", "Unsupported cfg.channel.model='%s'.", model);
             end
 
+            if isobject(ch.Object) && isprop(ch.Object,'MaximumDopplerShift')
+                ch.Meta.MaximumDopplerShift_Hz = double(ch.Object.MaximumDopplerShift);
+                ch.Meta.MaximumDopplerSource = string(cfg.channel.maximumDopplerSource);
+                ch.Meta.MaximumDopplerEvidenceSource = ...
+                    string(class(ch.Object))+".MaximumDopplerShift";
+                if isprop(ch.Object,'UTDirectionOfTravel')
+                    ch.Meta.DopplerTravelDirection_deg = double(ch.Object.UTDirectionOfTravel);
+                end
+            end
             % Spatial non-stationarity hook (optional metadata only)
             if opt.EnableSpatialNonStationarity
                 try
@@ -493,6 +503,8 @@ classdef ChannelFactory
                 "LastApplyStartSample", NaN, ...
                 "LastApplyEndSample", NaN, ...
                 "LastIdleAdvancedSamples", 0, ...
+                "LastIdlePhysicalChunkCount", 0, ...
+                "LastIdlePhysicalMaxChunkSamples", 0, ...
                 "TargetSlotStartTime_s", NaN, ...
                 "TargetSlot", NaN, ...
                 "TargetFrame", NaN, ...
@@ -691,11 +703,7 @@ classdef ChannelFactory
                 return;
             end
 
-            cfgCh = cfg;
-            dopp = double(sixgr.util.structGet(cfgCh, "channel.doppler_Hz", ...
-                sixgr.util.structGet(cfgCh, "channel.dopplerHz", ...
-                sixgr.util.structGet(cfgCh, "channel.fading.maxDoppler_Hz", 0))));
-            cfgCh.channel.doppler_Hz = max(0, dopp);
+            cfgCh = sixgr.channel.bindRuntimeDoppler(cfg);
             if startsWith(modelRaw, "TDL")
                 cfgCh.channel.model = "TDL";
                 if modelRaw ~= "TDL"
@@ -763,6 +771,7 @@ classdef ChannelFactory
             else
                 ch = sixgr.channel.ChannelFactory.create(cfgCh, ...
                     "Model", cfgCh.channel.model, ...
+                    "LinkDirection", state.Direction, ...
                     "SampleRate", fs, ...
                     "NumTxAnt", max(1, round(numTx)), ...
                     "NumRxAnt", max(1, round(numRx)), ...
@@ -1283,6 +1292,17 @@ classdef ChannelFactory
                     'StateKey',string(state.StateKey),'AdditionalChannelExecutions',0, ...
                     'ReceiverEstimatorInput',false,'LargeScaleLossApplied',false, ...
                     'PhysicalPortMappingApplied',false,'RFIncluded',false);
+                % NR sampleTimes include the actually consumed warm-up;
+                % physical sample zero begins AFTER that object prehistory.
+                % Preserve both clocks rather than relabel native timestamps.
+                reference.SampleTimeClockDomain="nr_channel_object_seconds";
+                reference.ObjectTimeOffsetSamples=double(state.TotalObjectInputSamples)- ...
+                    double(state.CurrentSampleIndex);
+                assert(reference.ObjectTimeOffsetSamples==double(state.WarmupSamples) && ...
+                    all(abs(double(sampleTimes)*state.SampleRate_Hz- ...
+                    (double(state.TotalObjectInputSamples)+(0:size(xChannel,1)-1).'))<1e-5), ...
+                    'ChannelFactory:ChannelReferenceClockMismatch', ...
+                    'Native channel timestamps must match actual warm-up plus physical consumption.');
                 reference.OutputSampleAlignment=outputAlignment;
                 reference.AppliedAlignmentTrimSamples=0;
                 reference.AlignmentLookaheadSamples=0;
@@ -2499,6 +2519,9 @@ classdef ChannelFactory
             tdl.DelayProfile = delayProfile;
             tdl.DelaySpread = sixgr.util.structGet(cfg, "channel.delaySpread_s", 300e-9);
             tdl.MaximumDopplerShift = sixgr.util.structGet(cfg, "channel.doppler_Hz", 30);
+            arrayRuntimeMeta.MaximumDopplerShift_Hz = double(tdl.MaximumDopplerShift);
+            arrayRuntimeMeta.MaximumDopplerSource = string(cfg.channel.maximumDopplerSource);
+            arrayRuntimeMeta.MaximumDopplerEvidenceSource = "nrTDLChannel.MaximumDopplerShift";
             tdl.NumTransmitAntennas = opt.NumTxAnt;
             tdl.NumReceiveAntennas  = opt.NumRxAnt;
             [normalizePathGains, normalizationMode, normalizationSource] = ...
@@ -2798,6 +2821,32 @@ classdef ChannelFactory
             cdl.DelayProfile = delayProfile;
             cdl.DelaySpread = sixgr.util.structGet(cfg, "channel.delaySpread_s", 300e-9);
             cdl.MaximumDopplerShift = sixgr.util.structGet(cfg, "channel.doppler_Hz", 30);
+            % CDL projects the maximum along each ray internally. Bind the
+            % actual UE velocity direction, not a LOS-projected magnitude.
+            velocity = sixgr.util.structGet(cfg, ...
+                "lls6g.userContext.RuntimeUEVelocity_mps", []);
+            if ~isempty(velocity)
+                validateattributes(velocity,{'numeric'}, ...
+                    {'real','finite','vector','numel',3});
+                velocity = double(velocity(:));
+                travel = [0;90]; % Direction is immaterial at zero speed.
+                if norm(velocity)>0
+                    travel = [atan2d(velocity(2),velocity(1)); ...
+                        atan2d(hypot(velocity(1),velocity(2)),velocity(3))];
+                end
+                if any(lower(string(opt.LinkDirection)) == ["ul","uplink"])
+                    cdl.MaximumDopplerShift = [0 cdl.MaximumDopplerShift];
+                    cdl.UTDirectionOfTravel = [[0;90] travel];
+                else
+                    cdl.UTDirectionOfTravel = travel;
+                end
+                arrayRuntimeMeta.DopplerTravelDirectionSource = ...
+                    "runtime_ue_velocity_in_global_coordinates";
+            end
+            arrayRuntimeMeta.MaximumDopplerShift_Hz = double(cdl.MaximumDopplerShift);
+            arrayRuntimeMeta.DopplerTravelDirection_deg = double(cdl.UTDirectionOfTravel);
+            arrayRuntimeMeta.MaximumDopplerSource = string(cfg.channel.maximumDopplerSource);
+            arrayRuntimeMeta.MaximumDopplerEvidenceSource = "nrCDLChannel.MaximumDopplerShift";
             [normalizePathGains, normalizationMode, normalizationSource] = ...
                 sixgr.channel.ChannelFactory.localResolveNormalizePathGains(cfg, "CDL");
             if isprop(cdl, "NormalizePathGains")

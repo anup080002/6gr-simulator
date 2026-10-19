@@ -247,3 +247,156 @@ def test_dft_despread_qam_is_valid_per_symbol_but_not_physical_subcarrier_evm():
     result = materializer._specialized_chart_materialization("EVM per subcarrier",
         {path: {"artifact_id": 1, "logical_path": path}}, lambda _: payload, 17)
     assert result["csv_status"] == "unavailable_exact_reason"
+
+
+@pytest.mark.parametrize("full", [True, False])
+@pytest.mark.parametrize("chart", ["EVM per symbol", "EVM per subcarrier", "EVM per layer"])
+def test_joint_evm_preserves_all_eight_points_without_sample_id_collisions(full, chart):
+    # Serialization fixture only: repeated coordinate IDs are legal in distinct
+    # sweep points. These are not eight simulated receiver realizations.
+    source = list(csv.DictReader(io.StringIO(full_capture_payload().decode())))
+    rows = []
+    snrs = [40, 30, 20, 10, 0, -10, -20, -30]
+    for point, snr in enumerate(snrs, 1):
+        for original in source:
+            row = {**original, "SweepPointIndex": str(point), "SNR_dB": str(snr),
+                   "Seed": str(100+point), "Modulation": "QPSK"}
+            row["EqualizedReal"] = str(float(row["ReferenceSymbolReal"]) * (1+point/100))
+            if not full:
+                row["CaptureScope"] = "paired_sample_preview"
+            rows.append(row)
+    payload = encode_rows(rows)
+    path = "air_interface/csv/dl_constellation_samples.csv"
+    result = materializer._specialized_chart_materialization(
+        chart, {path: {"artifact_id": 1}}, lambda _: payload, 17)
+    assert result["csv_status"] == "specialized_runtime_evm_dataset"
+    plotted = list(csv.DictReader(io.StringIO(result["csv_bytes"].decode())))
+    assert {int(r["sweep_point_index"]) for r in plotted} == set(range(1, 9))
+    assert sum(int(r["sample_count"]) for r in plotted) == 16
+    for row in plotted:
+        point = int(row["sweep_point_index"])
+        assert float(row["configured_snr_db"]) == snrs[point-1]
+        assert float(row["rms_evm_pct"]) == pytest.approx(point)
+        assert f"point={point}".encode() in result["img_bytes"]
+    assert encode_rows(rows) == payload
+
+
+@pytest.mark.parametrize("field,exported", [
+    ("SweepPointIndex", "sweep_point_index"), ("Seed", "seed"),
+    ("RealizationIndex", "realization_index"), ("TrialOrdinal", "trial_ordinal"),
+    ("TransmissionAttemptID", "transmission_attempt_id"),
+])
+def test_full_evm_identity_keeps_repeated_snr_realizations_or_attempts(field, exported):
+    source = list(csv.DictReader(io.StringIO(full_capture_payload().decode())))
+    payload = encode_rows([{**row, "SNR_dB": "20", field: identity}
+                           for identity in ("1", "2") for row in source])
+    result = render(payload)
+    assert result["csv_status"] == "specialized_runtime_evm_dataset"
+    rows = list(csv.DictReader(io.StringIO(result["csv_bytes"].decode())))
+    assert {r[exported] for r in rows} == {"1", "2"}
+    assert len(rows) == 2
+
+
+def test_missing_samples_at_one_sweep_point_cannot_be_filled_by_another():
+    source = list(csv.DictReader(io.StringIO(full_capture_payload().decode())))
+    # Together these have indices 1 and 2, but neither point is complete.
+    payload = encode_rows([{**row, "SweepPointIndex": str(i), "SNR_dB": str(10*i)}
+                           for i, row in enumerate(source, 1)])
+    assert render(payload)["csv_status"] == "unavailable_exact_reason"
+
+
+def test_evm_subcarrier_plot_does_not_silently_truncate_full_csv():
+    # Rendering/serialization fixture, not an executed PHY performance result.
+    import xml.etree.ElementTree as ET
+
+    source = next(csv.DictReader(io.StringIO(full_capture_payload().decode())))
+    count = materializer.MAX_PREVIEW_ROWS + 31
+    rows = [{**source, "SubcarrierIndex": str(i), "SampleIndex": str(i),
+             "ObservationSymbolCount": str(count), "CapturedSymbolCount": str(count)}
+            for i in range(1, count + 1)]
+    path = "air_interface/csv/dl_constellation_samples.csv"
+    result = materializer._specialized_chart_materialization(
+        "EVM per subcarrier", {path: {"artifact_id": 1}}, lambda _: encode_rows(rows), 17)
+    assert result["csv_status"] == "specialized_runtime_evm_dataset"
+    plotted = list(csv.DictReader(io.StringIO(result["csv_bytes"].decode())))
+    assert len(plotted) == count
+    svg = ET.fromstring(result["img_bytes"])
+    # One RMS circle per subcarrier; Peak uses a different square marker.
+    circles = svg.findall(".//{http://www.w3.org/2000/svg}circle")
+    assert len(circles) >= count
+
+
+def test_trial_evm_rms_keeps_point_and_trial_populations_without_mean_of_rms():
+    path = "air_interface/csv/dl_pdsch_trials.csv"
+    payload = b"Direction,SweepPointIndex,ConfiguredSNR_dB,UEIndex,Slot,EVM_rms\nDL,1,40,1,41,0.01\nDL,2,30,1,41,0.2\nDL,2,30,1,42,0.4\n"
+    result = materializer._specialized_chart_materialization("EVM RMS", {path: {"artifact_id": 1}}, lambda _: payload, 17)
+    rows = list(csv.DictReader(io.StringIO(result["csv_bytes"].decode())))
+    assert len(rows) == 3
+    assert [float(row["rms_evm_pct"]) for row in rows] == [1, 20, 40]
+    assert [row["sweep_point_index"] for row in rows] == ["1", "2", "2"]
+    assert "mean_evm_rms" not in rows[0]
+    assert b"EVM (%)" in result["img_bytes"]
+
+
+def test_trial_evm_rejects_proxy_rows():
+    path = "air_interface/csv/dl_pdsch_trials.csv"
+    payload = b"Slot,EVM_rms,Source\n41,0.01,fast_proxy\n"
+    with pytest.raises(ValueError, match="Non-runtime"):
+        materializer._specialized_chart_materialization("EVM RMS", {path: {"artifact_id": 1}}, lambda _: payload, 17)
+
+
+def test_symbol_error_histogram_counts_raw_paired_errors_per_point():
+    path = "air_interface/csv/dl_constellation_samples.csv"
+    source = next(csv.DictReader(io.StringIO(PAYLOAD.decode())))
+    rows = [{**source, "SweepPointIndex": str(point), "ConfiguredSNR_dB": str(40-10*point),
+             "RawEqualizedReal": "1.5", "RawEqualizedImag": "0", "EqualizedReal": "1",
+             "ReferenceSymbolReal": "1", "ReferenceSymbolImag": "0"}
+            for point in (1, 2) for _ in range(3)]
+    result = materializer._specialized_chart_materialization("symbol decision error histogram",
+        {path: {"artifact_id": 1}}, lambda _: encode_rows(rows), 17)
+    plotted = list(csv.DictReader(io.StringIO(result["csv_bytes"].decode())))
+    assert len(plotted) == 6
+    assert {float(row["decision_error_magnitude"]) for row in plotted} == {0.5}
+    assert {row["sweep_point_index"] for row in plotted} == {"1", "2"}
+    assert {int(row["bin_count"]) for row in plotted} == {3}
+    assert b"Mean count" not in result["img_bytes"]
+    assert b"not a hard-decision symbol error rate" in result["img_bytes"]
+
+
+def test_symbol_error_histogram_image_counts_reconstruct_from_csv(monkeypatch):
+    source = next(csv.DictReader(io.StringIO(PAYLOAD.decode())))
+    # Unequal populations, zero-error samples, exact upper endpoint and a
+    # missing pair. All are independent reporting fixtures, not PHY results.
+    source_rows = [{**source, "SweepPointIndex": str(point),
+                    "RawEqualizedReal": str(1+error), "RawEqualizedImag": "0",
+                    "ReferenceSymbolReal": "1", "ReferenceSymbolImag": "0"}
+                   for point, errors in ((1, [0, 0, 0.1, 1]), (2, [0.5])) for error in errors]
+    source_rows.append({**source_rows[-1], "ReferenceSymbolReal": "NaN"})
+    captured = []
+    def capture(_title, _subtitle, series, _summary, **kwargs):
+        captured.extend(series)
+        return b"rendering boundary test fixture"
+    monkeypatch.setattr(materializer, "_render_multi_series_svg", capture)
+    path = "air_interface/csv/dl_constellation_samples.csv"
+    result = materializer._specialized_chart_materialization("symbol decision error histogram",
+        {path: {"artifact_id": 1}}, lambda _: encode_rows(source_rows), 17)
+    rows = list(csv.DictReader(io.StringIO(result["csv_bytes"].decode())))
+    assert len(rows) == 6 and sum(r["value_status"] == "available" for r in rows) == 5
+    for series, point in zip(captured, (1, 2)):
+        paired = [r for r in rows if r["sweep_point_index"] == str(point) and r["value_status"] == "available"]
+        n = int(paired[0]["histogram_bin_count"])
+        low, high = float(paired[0]["histogram_minimum"]), float(paired[0]["histogram_maximum"])
+        counts = {int(r["bin_index"]): int(r["bin_count"]) for r in paired}
+        expected = [[low+(i+0.5)*(high-low)/n, counts.get(i, 0)] for i in range(n)]
+        assert series["points"] == expected
+        assert sum(p[1] for p in expected) == len(paired)
+
+
+@pytest.mark.parametrize("bad", [{"Source": "synthetic"}, {"RawEqualizedReal": "NaN"}])
+def test_symbol_error_cannot_use_proxy_or_replace_invalid_raw_values(bad):
+    source = next(csv.DictReader(io.StringIO(PAYLOAD.decode())))
+    row = {**source, "RawEqualizedReal": "1.1", "RawEqualizedImag": "0", **bad}
+    path = "air_interface/csv/dl_constellation_samples.csv"
+    with pytest.raises(ValueError):
+        materializer._specialized_chart_materialization("symbol decision error histogram",
+            {path: {"artifact_id": 1}}, lambda _: encode_rows([row]), 17)

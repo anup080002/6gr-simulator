@@ -11,6 +11,7 @@ import hashlib
 import json
 import math
 import re
+import sqlite3
 from collections import defaultdict
 
 TRIALS = ("air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv")
@@ -34,7 +35,7 @@ DATA_POWER_CHARTS = {"PDSCH-window carrier RSSI timeline": TRIALS[:1],
                      "PUSCH-window carrier RSSI timeline": TRIALS[1:]}
 PRECODER_CHARTS = {"reported versus applied PMI", "precoder ports and layers", "precoder matrix integrity"}
 CHARTS = tuple(CONTROL_EVM) + tuple(CSI_FIELDS) + tuple(CSI_POWER_FIELDS) + tuple(DATA_POWER_CHARTS) + (SSB_POWER_CHART,) + tuple(sorted(PRECODER_CHARTS)) + (
-    "measured_sinr_vs_slot",
+    "measured_sinr_vs_slot", "clipping event histogram",
     "throughput vs SNR", "PDSCH BLER vs measured SINR", "PUSCH BLER vs measured SINR",
     "PUCCH BLER vs measured SINR", "CSI-RS pilot residual", "NMSE vs SNR / SINR",
 )
@@ -47,7 +48,8 @@ CHART_SOURCES[SSB_POWER_CHART] = ("air_interface/csv/pbch_trials.csv",)
 CHART_SOURCES.update(DATA_POWER_CHARTS)
 CHART_SOURCES.update({name: TRIALS + (RECEIVED_CSI, CSI_OBLIGATIONS, FEEDBACK) for name in PRECODER_CHARTS})
 CHART_SOURCES["measured_sinr_vs_slot"] = TRIALS
-CHART_SOURCES.update({"throughput vs SNR": TRIALS, "NMSE vs SNR / SINR": TRIALS + ("air_interface/csv/srs_trials.csv",),
+CHART_SOURCES["clipping event histogram"] = TRIALS
+CHART_SOURCES.update({"throughput vs SNR": TRIALS, "NMSE vs SNR / SINR": TRIALS + ("air_interface/csv/srs_trials.csv", CSI_TRIALS),
     "PDSCH BLER vs measured SINR": TRIALS[:1], "PUSCH BLER vs measured SINR": TRIALS[1:],
     "PUCCH BLER vs measured SINR": ("air_interface/csv/pucch_trials.csv",),
     "CSI-RS pilot residual": ("air_interface/csv/csi_rs_trials.csv",)})
@@ -86,6 +88,42 @@ def _feedback_rows(m, existing, fetch):
     return ([(RECEIVED_CSI, i, row) for i, row in enumerate(received, 1)] +
             [(FEEDBACK, i, row) for i, row in enumerate(legacy, 1)
              if m._row_text(row, "Direction").upper() == "UL"])
+
+
+def _converter_clipping(m, name, existing, fetch, run_id):
+    rows, histograms, sources = [], defaultdict(lambda: defaultdict(int)), []
+    for path in TRIALS:
+        _, measured = m._artifact_rows_by_path(existing, fetch, path)
+        if not measured:
+            continue
+        sources.append(path)
+        for index, raw in enumerate(measured, 1):
+            identity = _identity(m, raw, path, index)
+            for converter, endpoint in (("DAC", "TX"), ("ADC", "RX")):
+                status = m._row_text(raw, converter + "ClippingStatus")
+                if status != "measured":
+                    continue
+                count = m._row_float(raw, converter + "ClippedSampleCount")
+                population = m._row_float(raw, converter + "ClippingSampleCount")
+                ratio = m._row_float(raw, converter + "ClippingRatio")
+                if (count is None or population is None or ratio is None or
+                        count != int(count) or population != int(population) or
+                        not 0 <= count <= population or population <= 0 or
+                        not math.isclose(ratio, count / population, abs_tol=1e-12)):
+                    raise ValueError("Converter clipping needs exact count/population/ratio closure.")
+                source = m._row_text(raw, converter + "ClippingSource")
+                definition = m._row_text(raw, converter + "ClippingPopulation")
+                if not source or not definition:
+                    raise ValueError("Converter clipping requires its executed source and sample population.")
+                rows.append({**identity, "converter": converter, "endpoint": endpoint,
+                             "clipped_complex_samples": int(count), "population_complex_samples": int(population),
+                             "clipping_ratio": ratio, "population_definition": definition, "measurement_source": source})
+                label = f"{identity['direction']} {endpoint} {converter} U{identity['ue_index']} {_point_label(identity)}"
+                histograms[label][count] += 1
+    series = {label: [[count, occurrences] for count, occurrences in sorted(hist.items())]
+              for label, hist in histograms.items()}
+    return _finish(m, name, run_id, rows, series, "Clipped complex samples per capture",
+                   "Observed captures", "Measured TX DAC and RX ADC populations remain separate; no CFR-policy inference.", sources)
 
 
 def _same_sweep_point(m, left, right):
@@ -223,11 +261,46 @@ def _data_sinr_timeline(m, name, existing, fetch, run_id):
         "Individual receiver samples; direction, UE, cell and sweep points are never averaged together.", sources)
 
 
+class _ExactControlSampleIdentities:
+    """Disk-backed exact duplicate check; memory scales with observations.
+
+    SQLite's empty filename creates a private temporary on-disk database,
+    removed on close. This is scratch indexing, not primary measurement data.
+    Full keys are preserved: no Bloom filter, digest collision or row cap.
+    """
+
+    def __enter__(self):
+        self.groups = {}
+        self.db = sqlite3.connect("")
+        self.db.execute("PRAGMA cache_size=-2048")
+        self.db.execute("PRAGMA journal_mode=OFF")
+        self.db.execute("CREATE TABLE samples (g INTEGER, i TEXT, PRIMARY KEY(g,i)) WITHOUT ROWID")
+        return self
+
+    def add(self, key):
+        group = self.groups.setdefault(key[:-1], len(self.groups))
+        try:
+            self.db.execute("INSERT INTO samples VALUES (?,?)", (group, str(key[-1])))
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+    def __exit__(self, *_):
+        self.db.close()
+
+
 def _control_evm(m, name, existing, fetch, run_id):
+    _, canonical = CONTROL_EVM[name]
+    sources = [canonical, "air_interface/csv/control_evm_samples.csv"]
+    with m._first_available_csv_stream(existing, fetch, sources) as (path, samples):
+        with _ExactControlSampleIdentities() as seen:
+            return _control_evm_rows(m, name, run_id, path, samples, seen)
+
+
+def _control_evm_rows(m, name, run_id, path, samples, seen):
     family, canonical = CONTROL_EVM[name]
     sources = [canonical, "air_interface/csv/control_evm_samples.csv"]
-    path, samples = m._first_available_rows(existing, fetch, sources)
-    buckets, seen = {}, set()
+    buckets = {}
     for index, row in enumerate(samples, 1):
         signal = m._row_text(row, "SignalName").upper()
         allowed = {family} if family != "SSB" else {"PSS", "SSS", "PBCH", "PBCH-DMRS"}
@@ -262,12 +335,14 @@ def _control_evm(m, name, existing, fetch, run_id):
         sample_key = _point_key(identity) + (signal, domain, identity["frame"], identity["slot"],
                                            observation, port, int(sample_index))
         key = sample_key[:-1] + (definition, alignment, reference_source)
-        if sample_key in seen:
+        if not seen.add(sample_key):
             return _unavailable(m, name, run_id, "Duplicate paired control-sample identity; refusing double-counted EVM.", sources)
-        seen.add(sample_key)
         bucket = buckets.setdefault(key, {**identity, "signal_name": signal, "observation_id": observation,
             "port_index": port, "evm_definition": definition, "alignment_source": alignment,
             "reference_source": reference_source, "measurement_domain": domain,
+            "standardized_modulation_evm_qualified": False,
+            "amplitude_reference_treatment": "pre_TX_RF_amplitude_no_PA_backoff_or_gain_removal" if tx_domain else "retained_reference_and_receiver_equalization",
+            "measurement_claim": "raw_gain_inclusive_TX_pair_error_not_standardized_modulation_EVM" if tx_domain else "receiver_paired_symbol_error_not_RF_conformance",
             "sample_count": 0, "reference_energy": 0., "error_energy": 0.,
             "peak_error_power": 0., "measurement_scope": "persisted_independently_paired_control_samples"})
         ref_r, ref_i, rx_r, rx_i = values
@@ -284,10 +359,10 @@ def _control_evm(m, name, existing, fetch, run_id):
         row["peak_evm_pct"] = 100 * math.sqrt(row["peak_error_power"] * row["sample_count"] / row["reference_energy"])
         rows.append(row)
         for metric in ("rms", "peak"):
-            plane = "TX RF" if row["measurement_domain"] == "transmitter_resource_elements" else "RX equalized"
+            plane = "TX RF raw gain-inclusive" if row["measurement_domain"] == "transmitter_resource_elements" else "RX equalized"
             series[f"{row['signal_name']} {plane} {metric} P{row['port_index']} U{row['ue_index']} {_point_label(row)}"].append([row["slot"], row[f"{metric}_evm_pct"]])
     return _finish(m, name, run_id, rows, series, "Executed slot", "EVM (%)",
-        "Independent paired control samples with explicit alignment/reference. No conversion from SINR, detection score, or pilot-fit residual. Not RF conformance EVM.", sources)
+        "Independent paired control samples. TX raw error includes configured PA backoff/gain; no gain normalization or standardized modulation-EVM claim. RX uses its declared equalization. No conversion from SINR or pilot-fit residual. Not RF conformance EVM.", sources)
 
 
 def _csi(m, name, existing, fetch, run_id):
@@ -560,21 +635,25 @@ def _scored_data_channel_nmse(m, row, existing, fetch):
         return None
     if not path.startswith("channel_estimation/csv/") or ".." in path.split("/"):
         raise ValueError("Invalid channel NMSE resource path")
-    source = m._row_text(row, "NMSESource")
-    plane = m._row_text(row, "ChannelEstimateReferencePlane")
+    csi = m._row_text(row, "SignalFamily") == "CSI-RS"
+    source = m._row_text(row, "ChannelNMSESource" if csi else "NMSESource")
+    plane = m._row_text(row, "ChannelNMSEReferencePlane" if csi else "ChannelEstimateReferencePlane")
     # An isolated post-decode score is not a shared physical-channel/path-gain
     # archive. Retain its own identity; do not invent a ChannelObservationID
     # that would falsely assert the stronger shared-channel evidence contract.
     identity_field = ("ChannelEstimateObservationID" if m._row_text(row, "ChannelEstimateObservationID")
                       else "ChannelObservationID")
+    if csi:
+        identity_field = "CSIChannelEstimateObservationID"
     observation = m._row_text(row, identity_field)
-    count = m._row_float(row, "ChannelEstimateComparedValues")
+    count = m._row_float(row, "ChannelNMSEComparedComplexValues" if csi else "ChannelEstimateComparedValues")
     value = m._row_float(row, "NMSE_dB")
     if m._row_text(row, "NMSE_dB").lower() == "-inf":
         value = -math.inf
     if (not source or not plane or not observation or count is None or count < 1
             or count != int(count) or value is None
-            or m._row_flag(row, "ChannelEstimateReferenceUsedByReceiver") is not False):
+            or m._row_flag(row, "ChannelNMSEReferenceUsedByReceiver" if csi else "ChannelEstimateReferenceUsedByReceiver") is not False
+            or (csi and m._row_flag(row, "NMSEScoringAvailable") is not True)):
         raise ValueError("Incomplete independently scored channel NMSE identity")
     artifact = existing.get(path)
     if artifact is None:
@@ -596,6 +675,8 @@ def _scored_data_channel_nmse(m, row, existing, fetch):
             raise ValueError("Channel NMSE reference identity mismatch")
         coordinate = tuple(m._row_float(sample, key) for key in
             ("SubcarrierIndex0", "SymbolIndex0", "RxBranchIndex0", "ReferencePortIndex0"))
+        if csi:
+            coordinate = (m._row_float(sample, "ResourceID"),) + coordinate
         if any(v is None or v < 0 or int(v) != v for v in coordinate) or coordinate in coordinates:
             raise ValueError("Invalid or repeated channel NMSE resource coordinate")
         coordinates.add(coordinate)
@@ -627,7 +708,7 @@ def _relationships(m, name, existing, fetch, run_id):
     elif name.startswith("PUSCH"):
         paths = TRIALS[1:]
     elif name == "NMSE vs SNR / SINR":
-        paths = TRIALS + ("air_interface/csv/srs_trials.csv",)
+        paths = TRIALS + ("air_interface/csv/srs_trials.csv", CSI_TRIALS)
     else:
         paths = TRIALS
     rows, series = [], defaultdict(list)
@@ -694,8 +775,9 @@ def _relationships(m, name, existing, fetch, run_id):
                     y_field = "NMSE_dB_independently_reconciled_to_complex_pilot_resources"
             record.update({"x_value": x, "x_source_field": x_field, "x_source": x_source,
                 "metric_value": y, "metric_source_field": y_field,
-                "metric_reference_source": m._row_text(row, "NMSEReferenceSource", "NMSESource") if name == "NMSE vs SNR / SINR" else "",
-                "metric_reference_plane": m._row_text(row, "ChannelEstimateReferencePlane") if name == "NMSE vs SNR / SINR" else "",
+                "metric_reference_source": m._row_text(row, "NMSEReferenceSource", "NMSESource", "ChannelNMSESource") if name == "NMSE vs SNR / SINR" else "",
+                "metric_reference_plane": m._row_text(row, "ChannelEstimateReferencePlane", "ChannelNMSEReferencePlane") if name == "NMSE vs SNR / SINR" else "",
+                "signal_family": m._row_text(row, "SignalFamily") or path.rsplit("/", 1)[-1].removesuffix("_trials.csv"),
                 "mcs": m._row_text(row, "MCS", "MCSIndex"), "layers": m._row_text(row, "Layers"),
                 "format": m._row_text(row, "Format", "PUCCHFormat"),
                 "crc_pass": m._row_text(row, "CRCPass"),
@@ -714,7 +796,8 @@ def _relationships(m, name, existing, fetch, run_id):
                         series[f"{record['direction']} U{record['ue_index']} {label}"].append([x, record[field]])
             elif x is not None and y is not None:
                 limit_label = "[limited] " if is_sinr_axis and sinr_evidence["limited"] else ""
-                series[f"{limit_label}{record['direction']} U{record['ue_index']} {y_field}"].append([x, y])
+                reference_label = f" {record['signal_family']} {record['metric_reference_plane']}" if name == "NMSE vs SNR / SINR" else ""
+                series[f"{limit_label}{record['direction']} U{record['ue_index']}{reference_label} {y_field}"].append([x, y])
     linear_nmse_axis = name == "NMSE vs SNR / SINR" and any(r["metric_value"] == -math.inf for r in rows)
     if linear_nmse_axis:
         # Show an exact zero in linear units, retaining the original -Inf dB
@@ -724,11 +807,11 @@ def _relationships(m, name, existing, fetch, run_id):
             value = r["metric_value"]
             r["plotted_nmse_linear"] = None if value is None else 10**(value/10)
             if r["x_value"] is not None and value is not None:
-                series[f"{r['direction']} U{r['ue_index']} independent channel NMSE"].append(
+                series[f"{r['direction']} U{r['ue_index']} {r['signal_family']} {r['metric_reference_plane']} independent channel NMSE"].append(
                     [r["x_value"], r["plotted_nmse_linear"]])
     notes = {"throughput vs SNR": "Scheduled TB bitrate and Delivered goodput are separate measured series. Actual noise-calibration SNR; no configured-SNR substitution or controlled sweep is claimed.",
              "CSI-RS pilot residual": "Measured residual on channel-estimation pilots. This is neither independent channel NMSE nor CSI-RS EVM.",
-             "NMSE vs SNR / SINR": "Independent channel-reference scoring, not pilot-fit residual or noise/gain. Data-channel values reconcile to hashed complex pilot resources. Reference plane retained in CSV; exact zero uses a linear plot axis."}
+             "NMSE vs SNR / SINR": "Independent channel-reference scoring, not pilot-fit residual or noise/gain. Data-channel and CSI-RS values reconcile to hashed complex pilot resources. Different signals/reference planes remain separate series; CSI nominal-channel scores include RF-induced estimate error. Exact zero uses a linear plot axis."}
     note = notes.get(name, "Individual measured block-error outcomes (0/1), not a fitted BLER curve or an independent Monte Carlo sweep. MCS/rank/format retained per trial.")
     limited_count = sum(row.get("x_is_limited", False) and row["value_status"] == "available" for row in rows)
     limit_summary = [f"Limited SINR values: {limited_count}", "Limited values are not raw estimates"] if limited_count else []
@@ -1176,6 +1259,8 @@ def radio_measurement_chart(name, existing, fetch, run_id):
             return _data_sinr_timeline(m, name, existing, fetch, run_id)
         if name in CONTROL_EVM:
             return _control_evm(m, name, existing, fetch, run_id)
+        if name == "clipping event histogram":
+            return _converter_clipping(m, name, existing, fetch, run_id)
         if name in CSI_FIELDS:
             return _csi(m, name, existing, fetch, run_id)
         if name in CSI_POWER_FIELDS:

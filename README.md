@@ -1,5 +1,426 @@
 # SixGR Foundation v2
 
+## 19 October 2026: server handoff and current acceptance
+
+**Use this section first when moving execution to another machine.** All source,
+YAML, tests, WebGUI and documentation belong to this repository's **`main`**
+branch. There is no separate repair codebase. Historical dated evidence below
+is retained for traceability; it does not supersede the following status.
+
+| Item | Current evidence / limitation |
+| --- | --- |
+| Latest H4 run | Operator interrupted MATLAB after slot-46 exports. No final completion/failure receipt was written. **Not an accepted 100-slot result.** |
+| Restart boundary | Last verified completed checkpoint: **45**, next slot **46**. A slot-46 CSV is not proof that slot 46 or the scenario finished. |
+| Large paired-CSI export | Bounded MATLAB writer retained all 1,677,312 sample pairs; the live CSV matched its independently replayed SHA256. No sample decimation. |
+| Occupancy plot memory | Python renderer now reduces CSV records as a stream, instead of retaining the entire approximately 498 MB input as dictionaries. **217 affected Python tests pass**, including late invalid-row and identity checks. Full retained-run republishing remains pending. This does not establish why the manually interrupted process exited. |
+| Server handoff utilities | **18 orchestration/packaging tests pass**, with MATLAB mocked. These verify command construction, failure handling, evidence hashes and exclusions—not a physical server run. |
+| Integrated acceptance | Connected UL, delivered CSI/UCI-driven adaptation, all 100 slots, complete terminal CSV/PNG publication and statistical qualification remain **unaccepted**. A larger server does not by itself fix or qualify these. |
+| Verification policy | Affected tests only at the operator's request. **No full `testAll` and no new scenario were launched for this handoff.** |
+
+Final handoff verification: **253/253 focused Python checks passed**, covering
+the launcher/collector, refreshed documentation and affected publication paths.
+The three initially stale documentation-snapshot checks passed after regeneration
+with the actual MATLAB loader/builder. Local receipts are
+`logs/server_handoff_final_20261019.xml` and
+`logs/server_handoff_guide_refresh_20261019.log`; the original failed check receipt
+is preserved. This does not replace MATLAB PHY or full-scenario qualification.
+
+The exact launcher prints and saves the source commit for each execution.
+Original local evidence stays under `logs/` and `results/`; these are ignored by
+Git and **are not downloaded by cloning GitHub**. Only source, configuration,
+tests and documentation are published. The current issue ledger is
+[the H4 repair ledger](docs/lls/h4_100mhz_20261015_issue_status.csv), with broader
+context in the [repair matrix](docs/repairs/repair_matrix.md).
+
+### A. Prepare the higher-capacity server
+
+The commands in this section are for **Windows Command Prompt (`cmd.exe`)**.
+Use a normal Windows workstation/server with licensed MATLAB; MATLAB Production
+Server, MATLAB Online, an MCP connection and a GPU are **not required** for this
+batch workflow. Remote execution on your particular server has not yet been
+verified. For Linux, do not paste the Windows launcher/checkpoint commands;
+the shell, MEX binaries, MATLAB flags and checkpoint path assumptions need a
+separate host qualification.
+
+- Use **MATLAB R2026a** for the reference setup. Install/license 5G Toolbox,
+  Communications Toolbox, Phased Array System Toolbox and any additional
+  products reported as required by the selected configuration. Setup inventories
+  optional products too; an inventory is not proof of usable licenses.
+- Install Git including **Git LFS**, and Python **3.12**. The repository stores
+  MAT reference files in LFS: do not use GitHub's source ZIP or leave pointer
+  text in place of reference MAT files.
+- Practical starting provision for one H4 job: **128 GB RAM** and **at least
+  1 TB free fast local storage**. These are conservative engineering planning
+  values, not measured minimum requirements or a runtime guarantee. The laptop
+  reached approximately 31 GB private MATLAB memory before late export work,
+  and individual full-slot lossless channel archives approached 2.63 GiB.
+  Checkpoint prefixes, IQ and reports add storage. Keep the page file enabled;
+  free disk capacity and available RAM/commit headroom are different quantities.
+- Run one scenario per checkout at a time. Do not assume more CPU cores launch
+  independent slots safely; channel, RF, HARQ and scheduler state are causal.
+  Do not add a parallel pool or relax measurement fidelity to make it fit.
+- Use local non-synced storage, not OneDrive/network storage for the active
+  run. Disable sleep/logoff for the execution session according to site policy;
+  disconnecting an RDP session is different from signing out or closing MATLAB.
+
+MathWorks references: [Windows MATLAB batch options](https://www.mathworks.com/help/matlab/ref/matlabwindows.html)
+(`-wait` supplies a reliable process exit status) and
+[Python compatibility by MATLAB release](https://www.mathworks.com/support/requirements/python-compatibility.html).
+
+First-time clone (change only the installation path if necessary):
+
+```bat
+if not exist "C:\SixGR" mkdir "C:\SixGR"
+cd /d "C:\SixGR"
+git lfs install
+git clone --branch main --single-branch https://github.com/anup080002/6gr-simulator.git "6gr-simulator"
+cd /d "C:\SixGR\6gr-simulator"
+git lfs pull
+git lfs fsck
+git status --short --branch
+git rev-parse HEAD
+```
+
+For a previously cloned server, **only when all runs are stopped and Git is
+clean**, use the following. Do not use `reset --hard`, `clean -fd`, a force-push,
+or overwrite a dirty server checkout. Bring any server edits back for review.
+
+```bat
+cd /d "C:\SixGR\6gr-simulator"
+git status --short
+git switch main
+git pull --ff-only origin main
+git lfs pull
+git lfs fsck
+```
+
+Install the ignored local Python environment, then bind the same interpreter
+to YAML loading, plotting and the dashboard. Repeat the three `set` lines in
+each new Command Prompt; they are session-local and contain no credentials.
+
+```bat
+cd /d "C:\SixGR\6gr-simulator"
+py -3.12 -m venv "apps\.webgui-venv"
+"apps\.webgui-venv\Scripts\python.exe" -m pip install -r "apps\requirements-webgui.txt" pytest
+set "PYTHON_EXE=C:\SixGR\6gr-simulator\apps\.webgui-venv\Scripts\python.exe"
+set "SIXGR_WEBGUI_PYTHON=%PYTHON_EXE%"
+set "SIXGR_MATLAB_EXE=C:\Program Files\MATLAB\R2026a\bin\matlab.exe"
+if not exist "logs" mkdir "logs"
+"%PYTHON_EXE%" -m pip freeze > "logs\server_python_environment.txt"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "scripts\run_server_testall.ps1" -MatlabExe "%SIXGR_MATLAB_EXE%" -PreflightOnly
+```
+
+Despite its filename, **`-PreflightOnly` does not run `testAll` or a scenario**.
+It saves environment/setup findings under a unique `logs/testall_*/` directory.
+Stop and resolve preflight failures before starting the long run. Do not omit
+`-PreflightOnly` unless you deliberately intend to run the complete suite.
+Do not commit `.env`, passwords, license files or server credentials.
+
+Optional focused checks on the server (no scenario or full-suite launch):
+
+```bat
+"%PYTHON_EXE%" -m pytest tests/test_server_handoff.py tests/test_executed_symbol_occupancy.py tests/test_live_csv_plot_publication.py tests/test_lls_radio_measurement_plots.py tests/test_data_nmse_plot_reconciliation.py -q --junitxml=logs/server_publication_checks.xml
+"%SIXGR_MATLAB_EXE%" -wait -logfile "logs\server_focused_01.log" -batch "setup6GRSimToolkit('Verbose',false); addpath(fullfile(pwd,'scripts')); runLLSRepairChecks('server_focused_01',{'testCSVBoundedRoundTrip','testControlEVMDetailStorage','testSlotCheckpoint','testH4100AdaptationHorizon'});"
+```
+
+Choose a new label if a receipt already exists. These checks do not establish
+full H4 acceptance. The full-suite command is documented in
+[testAll command](#testall-command), but is not part of this handoff execution.
+
+### B. Exact fresh 100 MHz / 4 GHz TDD command
+
+Use the **100-slot adaptation YAML**, not the 60-slot check, 200-slot parent,
+old 19-site scenario, or a laptop-local `tmp/` resume YAML:
+
+`simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_adaptation.yaml`
+
+It retains 273 PRBs, 30 kHz SCS, normal CP, 4096 FFT, 122.88 MSa/s,
+CDL-C/100 ns, 64 gNB TXRUs, four-chain UE, maximum DL/UL rank four,
+four SSB/eight CSI-RS beams, physical access/control/CSI/SRS/TRS/HARQ,
+configured RF impairments and completed-slot checkpoints every five slots.
+Rank is selected causally; maximum rank four does **not** force every grant
+to rank four. Configured 40 dB is the normalized occupied-RE reference, not a
+promise of 40 dB receiver SINR or calibrated absolute dBm.
+
+First inspect the command without executing MATLAB or writing evidence:
+
+```bat
+"%PYTHON_EXE%" "scripts\run_server_lls.py" --matlab "%SIXGR_MATLAB_EXE%" --scenario "simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_adaptation.yaml" --tag h4_server_01 --plan
+```
+
+Then run this **single line** from the server checkout:
+
+```bat
+"%PYTHON_EXE%" "scripts\run_server_lls.py" --matlab "%SIXGR_MATLAB_EXE%" --scenario "simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_adaptation.yaml" --tag h4_server_01
+```
+
+Use `h4_server_02`, etc., for a new attempt. This wrapper:
+
+- Requires a clean tracked checkout and existing committed YAML; records the
+  commit, YAML hash, OS/Python and MATLAB/toolbox versions.
+- Launches the existing `run_6g_phy_lls_single` once, with filesystem output and
+  the selected Python renderer. It changes **no PHY/scenario thresholds**.
+- Rejects checkpoint-resume YAMLs and existing run/log destinations. It never
+  retries automatically, starts another scenario or launches `testAll`.
+- Requires MATLAB exit code zero, a true `out.Ok` receipt and unchanged source
+  for launcher status `scenario_passed`. Missing receipts/crashes are not passes.
+  A scenario pass still does not constitute statistical BLER/HARQ qualification.
+
+Expected locations (use the printed/saved `RunFolder` as final authority):
+
+| Content | Location |
+| --- | --- |
+| Launcher/console/terminal status | `logs/server/h4_server_01/launcher.json`, `matlab.log`, `scenario_receipt.json` or `matlab_failure.json` |
+| Runtime environment | Same log folder: `matlab_environment.json`; Python package list in `logs/server_python_environment.txt` |
+| Run root | `results/lls/h4_100_cdlc100_connected_impaired_40db_adaptation/h4_server_01/` |
+| Measured trials/access/control | Run root: `air_interface/csv/` and `air_interface/logs/` |
+| Resolved configuration/identity | Run root: `meta/` (keep the entire directory, not only the leaf YAML) |
+| Reports/plots/channel/IQ | Run root: `reports/`, `beamforming/`, `channel/` and the other generated component subdirectories |
+| Committed checkpoint pointer | Run root: `meta/latest_slot_checkpoint.json` |
+| Private restart state | `results/lls/h4_100_cdlc100_connected_impaired_40db_adaptation/.checkpoints/h4_server_01/` |
+
+For a larger results volume, add `--results "E:\SixGRResults"` to the launch
+command **only if that drive exists and has sufficient space**. In the dashboard
+Command Prompt also set `SIXGR_RESULTS_ROOT=E:\SixGRResults`. Logs remain in the
+one source checkout. The separate results location is data, not another branch.
+
+### C. WebGUI and remote monitoring without starting a duplicate
+
+Open a **second Command Prompt on the server**, not the laptop:
+
+```bat
+cd /d "C:\SixGR\6gr-simulator"
+set "SIXGR_MATLAB_EXE=C:\Program Files\MATLAB\R2026a\bin\matlab.exe"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "apps\start_lls_web_dashboard.ps1" -BindHost 127.0.0.1 -Port 62906 -NoBrowser -SkipFirewallRule
+```
+
+On the server open **http://127.0.0.1:62906/** and select `h4_server_01`.
+Starting this dashboard does not start MATLAB. **Do not click Run again** to
+view a CLI-launched scenario. Filesystem run discovery supports this workflow;
+MySQL is optional for this filesystem run, not a prerequisite to simulate it.
+Configure a private login using `apps/.env.example` as a template and keep real
+credentials only in ignored local files. Do not expose this development server
+directly to the Internet or share its auth file with diagnostic evidence.
+
+For access from the laptop, use the server's remote desktop, or an approved SSH
+tunnel if SSH is already enabled there. In a laptop Command Prompt, replacing
+`YOUR_USER` and `YOUR_SERVER` with actual values:
+
+```bat
+ssh -N -L 62916:127.0.0.1:62906 YOUR_USER@YOUR_SERVER
+```
+
+Then open **http://127.0.0.1:62916/** on the laptop. Port 62916 avoids a conflict
+with the laptop's own 62906 dashboard. SSH setup/authentication is site-specific;
+this command does not install or configure an SSH service.
+For text-only monitoring, run on the server in a separate terminal:
+
+```bat
+powershell.exe -NoProfile -Command "Get-Content -LiteralPath 'C:\SixGR\6gr-simulator\logs\server\h4_server_01\matlab.log' -Tail 60 -Wait"
+```
+
+GUI state can lag behind expensive exports. The authoritative completion is
+the final scenario/launcher receipt plus validated artifacts, not a green card,
+a last-slot CSV or a process that is still rebuilding reports.
+
+### D. Send failures and measurements back to this laptop
+
+Do not delete, truncate, relabel or edit failed-run measurements. First let the
+run exit, or stop it deliberately at a verified completed checkpoint. Confirm
+that no producer is still writing the selected run. **A stopped failed run is
+not a pass.** Keep all IQ/MAT, large paired CSVs, checkpoints and external archive
+targets on the server; the initial triage bundle is deliberately much smaller.
+
+On the server, after the run has stopped:
+
+```bat
+cd /d "C:\SixGR\6gr-simulator"
+"apps\.webgui-venv\Scripts\python.exe" "scripts\collect_server_evidence.py" --run-folder "results\lls\h4_100_cdlc100_connected_impaired_40db_adaptation\h4_server_01" --log-folder "logs\server\h4_server_01" --output "logs\handoff\h4_server_01.zip" --include-images --confirm-stopped
+```
+
+The ZIP includes unchanged CSV/JSON/YAML/log/text and optional PNG/SVG files up
+to **16 MiB each**, with a **512 MiB uncompressed total** by default. Its
+`manifest.json` lists each included file's SHA256 and **every omitted file with
+the reason**. It does not silently truncate a CSV. MAT/IQ/binary files and
+symlink/junction targets are not copied. Increase `--max-file-mib` and
+`--max-total-mib` only when the particular large diagnostic files are needed.
+`--confirm-stopped` is your confirmation, not an automatic MATLAB process stop.
+Files changing during a copy cause rejection, not a fabricated consistent bundle.
+
+Send both `h4_server_01.zip` and `h4_server_01.zip.sha256`. Also send
+`logs/server_python_environment.txt` and any focused preflight/test log bundle.
+Review logs for sensitive host/project information before sharing. No secret
+environment files or raw environment-variable dump are collected by the helper.
+
+On **this laptop**, place them under the ignored `logs/server_returns/` folder,
+not over an existing local run. For example, after copying the two files from
+an approved share/USB/SSH transfer:
+
+```bat
+cd /d "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main"
+if not exist "logs\server_returns" mkdir "logs\server_returns"
+powershell.exe -NoProfile -Command "$p='logs\server_returns\h4_server_01.zip'; if ((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash -ine (Get-Content -LiteralPath ($p+'.sha256') -Raw).Trim()) { throw 'Transfer checksum mismatch' }; Expand-Archive -LiteralPath $p -DestinationPath 'logs\server_returns\h4_server_01'"
+```
+
+Tell me the extracted folder path, run tag, last observed slot, whether MATLAB
+exited or was manually closed, and which GUI/table value looked wrong. I can
+trace errors and measurements to the exact recorded commit, fix the main
+MATLAB/Python/YAML implementation here, run the affected regressions and push
+the repair. On the server, preserve the old evidence and update with the clean
+`git pull --ff-only` procedure **only while no run is active**.
+
+If the run fails before a result folder exists, send its complete
+`logs/server/h4_server_01/` folder directly. The collector requires an existing
+run directory. If it crashes during packaging, keep the incomplete ZIP but do
+not treat it as complete: a completed package has `manifest.json` and a checksum
+sidecar. Use a new package filename for the retry.
+
+### E. Checkpoint restart and transfer limitations
+
+For the first higher-capacity-server verification, **start fresh from slot 0**.
+Do not move the laptop's slot-45 `state.mat` alone and expect portable resume:
+checkpoints bind the exact MATLAB version, configuration/source identity,
+saved absolute run paths, external file prefixes and channel archive ownership.
+Cross-host/path remapping is **not qualified**. A diagnostic ZIP is neither a
+full archival copy nor a runnable checkpoint.
+
+On the **same server/path**, after an identified failure, inspect
+`meta/latest_slot_checkpoint.json` and follow
+[completed-slot restart checkpoints](#completed-slot-restart-checkpoints).
+Review whether a fix invalidates state already saved before choosing a boundary.
+After slot 45 means restart at slot 46, not at slot 45. A source-changing resume
+needs an explicit repair reason and is labelled repair validation. Scientific
+configuration changes require a fresh run. Do not edit source while resuming.
+The fresh-run launcher intentionally refuses resume YAML; use the documented
+direct MATLAB entry point after this review.
+
+For complete archival transfer, retain **the entire run root, its sibling
+`.checkpoints/<tag>/`, launcher logs, and all external `channel/mat` targets and
+ownership receipts**. A Windows junction is not a copy of its target. Preserve
+original path/hash metadata; do not rewrite it to imply a run happened on the
+laptop. Keep large archives on the server unless they are needed for a specific
+receiver replay. Neither storage reduction nor missing-source substitution is
+an accepted repair.
+
+### F. Other scenario commands
+
+The same fresh-run launcher accepts another committed LLS YAML via `--scenario`
+and a new tag. Choose a single scenario, not all rows at once:
+
+| Intended execution | YAML / existing command section |
+| --- | --- |
+| 5 MHz 20 dB saturated traffic | `simulator/configs/scenarios/lls_tdd_5mhz_rank2_shared_awgn_20db_saturated.yaml` |
+| 5 MHz eight-point sweep | `simulator/configs/scenarios/lls_tdd_2ghz_5mhz_rank2_shared_awgn_snr_sweep_saturated.yaml` |
+| 100 MHz H4 adaptation | `simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_adaptation.yaml` (**first priority**) |
+| 400 MHz control-disabled research IQ benchmark | `simulator/configs/scenarios/lls_7ghz_400mhz_1024qam_tdd_30db_rate082_iq.yaml`; not H4 full physical-feedback acceptance |
+| LLS calibration | [Generic LLS BLER/HARQ calibration](#generic-lls-blerharq-calibration-bounded-collection-not-qualification); separate resumable collector, not this fresh-run launcher |
+| SLS | [YAML-selected LLS and SLS](#yaml-selected-lls-and-sls); matching accepted calibration is still required, not supplied by a 100-slot H4 pass |
+
+For example, after H4 work and with no competing run:
+
+```bat
+"%PYTHON_EXE%" "scripts\run_server_lls.py" --matlab "%SIXGR_MATLAB_EXE%" --scenario "simulator/configs/scenarios/lls_tdd_5mhz_rank2_shared_awgn_20db_saturated.yaml" --tag five_mhz_server_01
+```
+
+## Interactive 100 MHz LLS documentation
+
+The [H4 field guide](docs/lls/h4_100mhz_guide/README.md) explains the
+4 GHz / 100 MHz TDD configuration in 34 chapters, with interactive diagrams,
+clickable current MATLAB source, a 3GPP/MATLAB/SixGR comparison, resolved YAML,
+and searchable scenario/parameter catalogs. It is read-only documentation
+inside this main checkout; opening it does not launch a simulation.
+
+Windows Command Prompt, one line:
+
+```bat
+cd /d "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main" && "C:\ProgramData\anaconda3\python.exe" "docs\lls\h4_100mhz_guide\serve.py" --port 62907
+```
+
+Then open **http://127.0.0.1:62907/**. Catalog declarations and teaching
+illustrations are explicitly separate from accepted waveform results.
+
+## 16 October: main-folder core repairs
+
+Continued development uses this repository and its existing `main` branch only.
+The audit's temporary isolated patch has been consolidated without overwriting
+pre-existing edits. Original receipts are retained under
+`logs/lls_repair_consolidation_20261016`; their original source paths are not
+rewritten to imply they ran in main. The isolated batch passed 42 affected
+MATLAB tests. Main-folder verification now passes **44/44 affected MATLAB
+checks and 82/82 Python export checks**, including receiver-delivery timing.
+Receipts: `logs/lls_repairs/main_consolidated_20261016_v1/receipt.json` and
+`logs/lls_repair_consolidation_20261016/python_main.xml`. The temporary working
+copy has been removed to the Recycle Bin; a verified ZIP is retained in the
+consolidation log directory for recovery, not as an executable codebase.
+The separate physical PUSCH-UCI variant also passes, as do the manifest,
+exact scheduler TBS/grant and proxy-guard checks. These are additional
+affected checks, not a claim that all historical failures are closed.
+
+The [35-item repair matrix](docs/repairs/repair_matrix.md) and
+[export contract](docs/repairs/export_contract_v2.md) distinguish focused fixes
+from remaining integration and qualification work. The 100-slot H4 run is
+**not yet accepted**; neither the isolated checks nor the main-folder checks
+are a full scenario or statistical calibration result.
+
+Transport-identity follow-up: **14/14 affected final-source checks pass**, and
+both expanded physical PUCCH/PUSCH packet-publication variants pass. Core
+reservation/delivery no longer substitutes MAC or current-attempt IDs for an
+existing logical TB; contradictory aliases and mismatched RX/TX TB/NDI epochs
+are rejected. Packet matching includes the stable logical UE. Actual DL/UL
+packet mappings retain measured receiver-availability timing, while metadata
+mapping is explicitly distinct from application-byte delivery. The corresponding
+receipts are under `logs/lls_repairs/tb_identity_final_source_20261016_v1` and
+`logs/lls_repairs/tb_packet_physical_final_20261016_v1`; the PUSCH CSVs are in
+`logs/lls_repairs/tb_packet_pusch_final_20261016_v1`. Session/configuration-epoch
+migration and full shared-runtime multi-TB reassembly qualification remain open;
+no 100-slot or statistical acceptance is implied.
+
+Packet-delivery follow-up: the production SDU reducer now retains the first
+successful decoder proof through duplicate and later failed attempts, with
+separate `LastAttemptProtocol*` fields. Application completion checks the logical
+UE/direction/application owner and exact fragment coverage. A new two-TB coded
+PDSCH test reproduces the former duplicate-proof loss and cross-UE completion,
+then passes after repair. Five focused checks pass in
+`logs/lls_repairs/packet_reassembly_after_20261016_v1/receipt.json`.
+Its duplicate/failure callbacks are injected component events, not additional
+measured radio attempts or BLER samples. Final fresh-process verification passes
+**9/9 affected checks**, including the physical PUCCH path, and the separate
+physical PUSCH-UCI variant also passes. Receipt and unchanged-source hashes:
+`logs/lls_repairs/packet_delivery_final_20261016_v1/verification.json`.
+The shared physical tests retain CRC-backed metadata mappings; they do not
+claim protocol application-byte delivery when that mode is disabled.
+
+Adaptation follow-up: duplicate CSI/SRS callbacks were reproduced as false
+rank-confirmation events and are now ignored before scheduler-state mutation.
+Older-source and backward-delivery events cannot replace newer accepted quality.
+Fragment numbering also now uses the logical UE/application owner. Seven affected
+checks pass in `logs/lls_repairs/adaptation_delivery_final_20261016_v1/receipt.json`;
+these are consumer-boundary checks, not complete H4 adaptation qualification.
+
+CSI storage follow-up: shared CSI-RS completion now retains complete EVM pairs
+in checksum-bound MAT details instead of copying large JSON arrays through live
+trial tables. The 273-PRB/64-port fixture retains all 559,104 paired samples
+exactly, reducing its live row from 90.4 MB to 5.4 KB. Scalar measurements and
+expanded sample CSV semantics are unchanged. Missing/corrupt details still fail
+validation. Focused receipts: `logs/lls_repairs/csi_detail_after_20261016_v1` and
+`logs/lls_repairs/csi_detail_clock_repaired_20261016_v1`. This is not a full-run
+memory or throughput qualification.
+
+Affected checks only, from Windows Command Prompt (use a new label each time):
+
+```bat
+cd /d "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main"
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -wait -logfile "logs\lls_repairs_manual_01.log" -batch "addpath(fullfile(pwd,'scripts')); runLLSRepairRegression('manual_01');"
+```
+
+This runs 50 explicitly listed affected tests, **not `testAll`**. The two
+new transport-identity guards were also verified in a separate 14-check batch;
+the packet-delivery guard is separately verified. The earlier 44-check receipt
+remains historical evidence, not a 50-check claim. The added CSI detail-storage,
+shared-receiver and event-retention checks have separate focused receipts. Receipts are
+saved in `logs/lls_repairs/manual_01/receipt.json`. Do not run it concurrently
+with a full scenario or modify source during either execution.
+
 ## Current LLS commands and acceptance status (15 October 2026)
 
 These commands are for **Windows Command Prompt (`cmd.exe`)**, not PowerShell.
@@ -7,7 +428,7 @@ They document the executable entry points; they are **not a claim that every
 scenario is accepted on this revision**. Run one job at a time. Use a new run
 tag and log filename for each scenario execution; never delete active results.
 
-The latest 4 GHz / 100 MHz TDD attempt, `h4_100mhz_4ghz_short_20261015_v4`,
+The 15 October 4 GHz / 100 MHz TDD attempt, `h4_100mhz_4ghz_short_20261015_v4`,
 failed at slot **30/60** because the shared waveform completion dropped its
 registered random-access observation `ID`. Its recovery/export process was
 subsequently stopped at the operator's request; all written evidence is retained.
@@ -312,8 +733,15 @@ The next verification uses
 grants is determined by the receiver/scheduler, not promised by the duration.
 CSI report occasions retain one-based slots 19, 39, 59, 79 and 99; an occasion
 is usable only when its causal reference/control obligations are satisfied.
-Bandwidth, antennas, reference-signal cadences, RF impairments, acceptance
-thresholds and enabled exports are unchanged. Pending feedback beyond the
+Bandwidth, antennas, reference-signal cadences, enabled RF impairments,
+acceptance thresholds and enabled exports are retained. The adaptation YAML
+also includes `simulator/configs/rf/causal_agc_burst_headroom.yaml`: receiver
+target RMS 0.25, a 6 dB next-sample gain reduction on a pre-ADC I/Q rail flag,
+and a 128-sample hold. These are explicit receiver-design research settings,
+not 3GPP-mandated AGC values or hardware qualification. The original 200-slot
+parent keeps its RMS-only AGC profile for comparison. No clipped sample is
+reconstructed, and no TX power, channel noise or detector threshold changes.
+Pending feedback beyond the
 horizon remains right-censored, not silently counted as successful. This is
 not statistical BLER qualification. Run this command only after the affected
 final-source repair checks are accepted and scenario execution is resumed:
@@ -325,7 +753,62 @@ final-source repair checks are accepted and scenario execution is resumed:
 Expected result root:
 `results/lls/h4_100_cdlc100_connected_impaired_40db_adaptation/h4_100mhz_40db_adaptation_manual_01/`.
 Use the actual printed `RUN_FOLDER` as authority and a new tag/log name for
-every attempt. MATLAB execution remains stopped at this revision's handoff.
+every attempt. Check the current log and live run state before launching;
+do not start a duplicate while an adaptation run is active.
+
+#### Completed-slot restart checkpoints
+
+The adaptation YAML enables `run_control.runtime_checkpoint_enable` with
+`checkpoint_every_slots: 5`. The default `runtime_checkpoint_keep: 3` retains
+the latest three completed save points. A failure during one-based slot 42
+can continue from the saved **end of slot 40**, executing slot 41 next;
+a failure during slot 48 can continue after slot 45. A checkpoint cannot
+be reconstructed retrospectively from an older CSV-only run.
+
+`meta/latest_slot_checkpoint.json` inside the result folder identifies the
+latest committed MAT checkpoint. Private state is stored alongside the run
+under `.checkpoints/<run-tag>/`, outside the published run tree, so plot/CSV
+reducers cannot ingest old failed-attempt data. This is saved execution data,
+not another codebase or branch. The checkpoint retains the shared physical
+channel/RF/event objects, pending observations/grants/feedback, runtime and
+link-adaptation state, decoder objects, trial tables and random-generator
+state. External IQ prefixes are byte-count/hash checked before restoration.
+The previous failed attempt is preserved under a `recovery_*` directory in
+that private checkpoint store; it is not overwritten or deleted. Rolling
+retention removes only older generated checkpoint snapshots, not run evidence.
+
+To continue, stop the failed process first, then set the following in the
+same YAML and invoke the same `run_6g_phy_lls_single` command:
+
+```yaml
+run_control:
+  runtime_checkpoint_resume_from: 'C:/absolute/path/from/latest_slot_checkpoint.json/state.mat'
+  runtime_checkpoint_repair_reason: ''
+```
+
+Use the actual `Checkpoint` value from the JSON, not the illustrative path
+above. The original run tag/folder and scientific configuration are retained.
+A changed source is rejected unless an explicit repair reason is supplied
+after checking that the fix does not invalidate earlier saved state. **All
+checkpoint continuations are labelled repair-validation evidence and are not
+clean-source study qualification.** Source hashes, repair reason and retained
+attempt location are recorded in `meta/checkpoint_resume.json` and the scenario
+manifest. Changes to bandwidth, channel, seeds, antenna/RF parameters, traffic,
+timing or the scheduling horizon require a fresh run. Do not use a checkpoint
+that already contains state produced by the defect being repaired.
+
+Production restart also requires the actual runtime-call ledger captured at
+the same completed-slot boundary. Checkpoint creation now flushes this
+in-memory ledger before hashing/copying the prefix; execution identity is
+persisted before the first waveform. An older checkpoint without
+`reports/csv/runtime_call_ledger.csv` is rejected before moving run files.
+Do not reconstruct those historical calls from trial outputs or copy a
+later failed-attempt ledger into an earlier checkpoint. Use a complete
+checkpoint or begin a fresh execution in that case.
+
+Focused checkpoint mechanics cover real CDL/RF continuation, a pending receive
+window and file rollback. Full 100 MHz resumed-scenario acceptance remains a
+separate integrated check; enabling checkpoints does not declare that run passed.
 
 The retained diagnostic attached at slot 40; this is an observation, **not an
 attachment deadline**. Access progresses using the configured SSB/Type-0 SI

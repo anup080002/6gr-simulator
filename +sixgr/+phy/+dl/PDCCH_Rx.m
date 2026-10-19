@@ -31,6 +31,8 @@ function [rx, info] = PDCCH_Rx(rxWaveform, cfg, varargin)
 %     RX.AppliedTimingCorrection_samples : applied waveform correction
 %     RX.NoiseVar       : noise variance used
 
+sixgr.phy.pdcch.PDCCHSpecificationProfile.validateCRCLength( ...
+    sixgr.util.structGet(cfg,"phy.pdcch.crcLength",24));
 sixgr.runtime.RuntimeCallLedger.record("sixgr.phy.dl.PDCCH_Rx", ...
     "PDCCH", "DL", struct("Stage","RX"));
 
@@ -309,6 +311,7 @@ rx.Ok = false;
 rx.CandidateIndex = 0;
 rx.CandidateFlatIndex = 0;
 rx.CandidateAggregationLevel = NaN;
+rx.CandidateCCEIndex = NaN;
 rx.CandidateIndexWithinAggregation = NaN;
 rx.TimingOffset = double(timingResolution.RawEstimate_samples);
 rx.RawTimingEstimate_samples = double(timingResolution.RawEstimate_samples);
@@ -438,6 +441,13 @@ for c = 1:numel(candSymInd)
     rx.CandidateFlatIndex = c;
     rx.CandidateAggregationLevel = double(candAggregationLevel(c));
     rx.CandidateIndexWithinAggregation = double(candWithinAggregation(c));
+    rx.CandidateCCEIndex = sixgr.phy.pdcch.candidateFirstCCE( ...
+        carrier,pdcch,candAggregationLevel(c),candWithinAggregation(c),blind);
+    rx.LLRMeanAbs = mean(abs(double(rxCW(:))));
+    rx.LLRMin = min(double(rxCW(:)));
+    rx.LLRMax = max(double(rxCW(:)));
+    rx.LLRCount = numel(rxCW);
+    rx.DecoderLLRs = rxCW;
     rx.NoiseVar = nVar;
     rx.NoiseVarStatus = char(string(nVarStatus));
     rx.NoiseVarSource = char(string(nVarSource));
@@ -448,6 +458,7 @@ for c = 1:numel(candSymInd)
     rx.ChannelEstimateInfo = channelEstimateInfo;
     rx.MonitoredDataREIndices = symInd;
     rx.MonitoredDMRSREIndices = dmrsInd;
+    rx.MonitoredDMRSSymbols = dmrsSym;
     rx.EqualizedSymbols = eqSym;
     rx.ReceiverHestSINR_dB = double(candidateSINR_dB);
     rx.ReceiverHestSINRSource = "pdcch_dmrs_hest_noise_variance";
@@ -464,6 +475,13 @@ for c = 1:numel(candSymInd)
     row.CandidateFlatIndex = double(c);
     row.AggregationLevel = double(candAggregationLevel(c));
     row.CandidateIndexWithinAggregation = double(candWithinAggregation(c));
+    row.CCEIndex = rx.CandidateCCEIndex;
+    row.LLRMeanAbs = rx.LLRMeanAbs;
+    row.LLRMin = rx.LLRMin;
+    row.LLRMax = rx.LLRMax;
+    row.LLRCount = rx.LLRCount;
+    row.PayloadHash = string(sixgr.rrc.asn1.asn1SHA256Hex(uint8(dciBits(:))));
+    row.DecodedPayloadHex = sixgr.phy.pdcch.payloadBitsToHex(dciBits);
     row.DecodeAttempted = true;
     row.DCIPayloadLength=K;
     row.DCIFormat=rx.DCIFormat;
@@ -604,6 +622,8 @@ row = struct( ...
     "CandidateFlatIndex", NaN, ...
     "AggregationLevel", NaN, ...
     "CandidateIndexWithinAggregation", NaN, ...
+    "CCEIndex", NaN, "LLRMeanAbs", NaN, "LLRMin", NaN, "LLRMax", NaN, "LLRCount", 0, ...
+    "PayloadHash", "", "DecodedPayloadHex", "", ...
     "DecodeAttempted", false, ...
     "DecodeOK", false, ...
     "ErrFlag", NaN, ...

@@ -224,10 +224,7 @@ end
 function path=localPath(root,relative,expected)
 assert(isfolder(root) && string(relative)==expected, ...
     'sixgr:channel:ChannelArtifactPathMismatch','Use the content-addressed artifact path inside the declared run.');
-base=string(javaObject('java.io.File',char(root)).getCanonicalPath());
-path=string(javaObject('java.io.File',char(fullfile(root,relative))).getCanonicalPath());
-assert(startsWith(path,base+filesep,'IgnoreCase',ispc) && isfile(path), ...
-    'sixgr:channel:ChannelArtifactMissing','A real channel artifact inside the declared run is required.');
+path=sixgr.util.resolveRunArtifactPath(root,relative);
 end
 function ok=localHash(value)
 ok=isscalar(string(value)) && ~ismissing(string(value)) && ...

@@ -50,12 +50,12 @@ function [rmBits, info] = rateMatchLDPC(codedCB, outLen, rv, modScheme, nLayers,
     if isempty(Nref)
         rmBits = nrRateMatchLDPC(codedCB, outLen, rv, modScheme, nLayers);
         NrefUsed = [];
-        positionMap = localRateMatchPositionMap(size(codedCB), outLen, rv, modScheme, nLayers, []);
+        positionMap = localRateMatchPositionMap(codedCB, outLen, rv, modScheme, nLayers, []);
     else
         validateattributes(Nref, {'numeric'}, {'scalar','finite','integer','positive'}, mfilename, 'Nref', 6);
         rmBits = nrRateMatchLDPC(codedCB, outLen, rv, modScheme, nLayers, Nref);
         NrefUsed = Nref;
-        positionMap = localRateMatchPositionMap(size(codedCB), outLen, rv, modScheme, nLayers, Nref);
+        positionMap = localRateMatchPositionMap(codedCB, outLen, rv, modScheme, nLayers, Nref);
     end
 
     info = struct();
@@ -68,10 +68,15 @@ function [rmBits, info] = rateMatchLDPC(codedCB, outLen, rv, modScheme, nLayers,
     info.PositionMap = positionMap;
     info.CircularBufferPositionMap = positionMap;
     info.EPerCodeBlock = localEPerCodeBlock(positionMap, size(codedCB, 2));
+    info.Accounting = localAccounting(codedCB, positionMap, NrefUsed);
 end
 
-function positionMap = localRateMatchPositionMap(codedShape, outLen, rv, modScheme, nLayers, Nref)
+function positionMap = localRateMatchPositionMap(codedCB, outLen, rv, modScheme, nLayers, Nref)
+codedShape = size(codedCB);
 labels = reshape((1:prod(codedShape)).', codedShape);
+% NULL/filler positions affect selection, not only transmitted values.
+% The labels must use precisely the mask used by the real bit rate matcher.
+labels(codedCB < 0) = -1;
 if isempty(Nref)
     matched = nrRateMatchLDPC(labels, outLen, rv, modScheme, nLayers);
 else
@@ -85,6 +90,29 @@ positionMap.MotherCodeLinearIndex = uint32(matched);
 positionMap.MotherCodeBitIndex = uint32(rowIdx(:));
 positionMap.CodeBlockIndex = uint16(cbIdx(:));
 positionMap.MotherCodeShape = uint32(codedShape);
+positionMap.ContractVersion = "LDPCSelection/v2";
+end
+
+function a = localAccounting(codedCB, map, Nref)
+[N,C] = size(codedCB);
+Ncb=N; if ~isempty(Nref), Ncb=min(N,double(Nref)); end
+a=struct('ContractVersion',"LDPCSelectionAccounting/v2", ...
+    'Source',"actual_nrRateMatchLDPC_selection_with_filler_mask", ...
+    'EncoderOutputPositions',repmat(N,1,C), ...
+    'BufferPositions',repmat(Ncb,1,C), ...
+    'BufferFillerPositions',sum(codedCB(1:Ncb,:)<0,1), ...
+    'EligibleBufferPositions',sum(codedCB(1:Ncb,:)>=0,1), ...
+    'SelectedPositions',zeros(1,C),'UniqueSelectedPositions',zeros(1,C), ...
+    'RepeatedSelections',zeros(1,C),'UnselectedEligiblePositions',zeros(1,C));
+for c=1:C
+    idx=double(map.MotherCodeBitIndex(map.CodeBlockIndex==c));
+    a.SelectedPositions(c)=numel(idx);
+    a.UniqueSelectedPositions(c)=numel(unique(idx));
+end
+a.RepeatedSelections=a.SelectedPositions-a.UniqueSelectedPositions;
+a.UnselectedEligiblePositions=a.EligibleBufferPositions-a.UniqueSelectedPositions;
+assert(all(a.UnselectedEligiblePositions>=0),'sixgr:phy:InvalidLDPCSelectionAccounting', ...
+    'Selected positions exceed the eligible circular buffer.');
 end
 
 function e = localEPerCodeBlock(positionMap, C)

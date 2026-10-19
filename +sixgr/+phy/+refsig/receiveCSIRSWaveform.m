@@ -21,6 +21,51 @@ enabled=sixgr.util.structGet(cfg,'phy.rx.cfoCorrectionEnabled',[]);
 assert(isscalar(enabled) && (islogical(enabled)||isnumeric(enabled)) && ...
     any(double(enabled)==[0 1]),'sixgr:refsig:CSIReceiverFrequencyPolicyRequired', ...
     'Install explicit phy.rx.cfoCorrectionEnabled before CSI-RS reception.');
+[aligned,timing,tracking]=localSynchronize( ...
+    carrier,cfg,waveform,indices,symbols,referenceInfo,searchWindow,enabled);
+% RX LO/timing stages occur AFTER the antenna connector. Their correction
+% cannot be applied to an upstream capture that never experienced them.
+% Synchronize each actual plane using installed pilots and its own samples;
+% neither the injected RF parameters nor scoring references are estimates.
+[physicalAligned,physicalTiming,physicalTracking]=localSynchronize( ...
+    carrier,cfg,physicalWaveform,indices,symbols,referenceInfo,searchWindow,enabled);
+[grid,gridInfo]=sixgr.phy.waveform.ofdmDemodulate(carrier,aligned);
+[physicalGrid,physicalInfo]=sixgr.phy.waveform.ofdmDemodulate(carrier,physicalAligned);
+received=struct('OFDMGrid',grid,'OFDMInfo',gridInfo);
+options=struct('PhysicalMeasurementGrid',physicalGrid, ...
+    'PhysicalMeasurementOFDMInfo',physicalInfo, ...
+    'PhysicalMeasurementGridStatus',"available_exact_pre_front_end_grid", ...
+    'PhysicalMeasurementReferencePlane',"receiver_antenna_connector_pre_composite_front_end", ...
+    'PhysicalMeasurementSource',"actual_independent_csirs_pre_front_end_capture", ...
+    'ReceivedExecutionEvidence',execution);
+rx=sixgr.phy.refsig.receiveCSIRSFromGrid(carrier,cfg,received,options);
+% Preserve executed noise calibration for audit AFTER receiver estimation.
+% These operands must never replace the receiver's measured disturbance.
+rx.NoiseExecutionEvidence=struct();
+for name=["AppliedAWGNSNR_dB","ReferenceAWGNGridNoiseVariance", ...
+        "ReferenceAWGNSampleNoiseVariance","SignalEnergyPerOccupiedRE", ...
+        "SampleToGridNoiseVarianceGain","NoiseOperatingMode", ...
+        "AppliedAWGNSNRSource","AppliedAWGNSNRValueRole", ...
+        "AWGNReferenceEnergySource","SharedNoiseCalibrationSource"]
+    if isfield(execution,name)
+        rx.NoiseExecutionEvidence.(name)=execution.(name);
+    end
+end
+rx.ReceiveTiming=timing;
+rx.ReceiverTrackingCorrection=tracking;
+rx.PhysicalMeasurementReceiveTiming=physicalTiming;
+rx.PhysicalMeasurementTrackingCorrection=physicalTracking;
+rx.PhysicalMeasurementSynchronizationSource= ...
+    "installed_CSI_RS_and_independent_pre_front_end_received_samples";
+rx.ReceiverReferenceSource="installed_CSI_RS_configuration_and_received_waveform";
+rx.PDSCHDecodeAttempted=false;
+rx.RxGrid=grid;
+rx.ReceiverOFDMInfo=gridInfo;
+end
+
+function [aligned,timing,tracking]=localSynchronize( ...
+        carrier,cfg,waveform,indices,symbols,referenceInfo,searchWindow,enabled)
+% The exact same practical algorithm is executed separately at each plane.
 [aligned,timing]=sixgr.phy.sync.alignULReferenceObservation( ...
     carrier,waveform,indices,symbols,searchWindow);
 ofdm=nrOFDMInfo(carrier);
@@ -62,42 +107,12 @@ if enabled
         tracking.EstimatedCFO_Hz=frequency;
         rotation=exp(-1i*2*pi*frequency*(0:size(waveform,1)-1).'/ofdm.SampleRate);
         waveform=waveform.*cast(rotation,'like',waveform);
-        physicalWaveform=physicalWaveform.*cast(rotation,'like',physicalWaveform);
         [aligned,timing]=sixgr.phy.sync.alignULReferenceObservation( ...
             carrier,waveform,indices,symbols,searchWindow);
         tracking.CFOCorrectionApplied=true;
         tracking.CFOCorrectionApplied_Hz=frequency;
     end
 end
-selected=timing.AppliedTimingCorrectionSamples+(1:timing.DemodulatedSampleCount);
-physicalAligned=physicalWaveform(selected,:);
-[grid,gridInfo]=sixgr.phy.waveform.ofdmDemodulate(carrier,aligned);
-[physicalGrid,physicalInfo]=sixgr.phy.waveform.ofdmDemodulate(carrier,physicalAligned);
-received=struct('OFDMGrid',grid,'OFDMInfo',gridInfo);
-options=struct('PhysicalMeasurementGrid',physicalGrid, ...
-    'PhysicalMeasurementOFDMInfo',physicalInfo, ...
-    'PhysicalMeasurementGridStatus',"available_exact_pre_front_end_grid", ...
-    'PhysicalMeasurementReferencePlane',"receiver_antenna_connector_pre_composite_front_end", ...
-    'PhysicalMeasurementSource',"actual_independent_csirs_pre_front_end_capture", ...
-    'ReceivedExecutionEvidence',execution);
-rx=sixgr.phy.refsig.receiveCSIRSFromGrid(carrier,cfg,received,options);
-% Preserve executed noise calibration for audit AFTER receiver estimation.
-% These operands must never replace the receiver's measured disturbance.
-rx.NoiseExecutionEvidence=struct();
-for name=["AppliedAWGNSNR_dB","ReferenceAWGNGridNoiseVariance", ...
-        "ReferenceAWGNSampleNoiseVariance","SignalEnergyPerOccupiedRE", ...
-        "SampleToGridNoiseVarianceGain","NoiseOperatingMode", ...
-        "AppliedAWGNSNRSource","AppliedAWGNSNRValueRole", ...
-        "AWGNReferenceEnergySource","SharedNoiseCalibrationSource"]
-    if isfield(execution,name)
-        rx.NoiseExecutionEvidence.(name)=execution.(name);
-    end
-end
-rx.ReceiveTiming=timing;
-rx.ReceiverTrackingCorrection=tracking;
-rx.ReceiverReferenceSource="installed_CSI_RS_configuration_and_received_waveform";
-rx.PDSCHDecodeAttempted=false;
-rx.RxGrid=grid;
 end
 function groups=localReferenceGroups(info,indices)
 % Calendar/resource identity is receiver-installed configuration authority.

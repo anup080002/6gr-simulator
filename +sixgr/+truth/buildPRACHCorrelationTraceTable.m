@@ -35,7 +35,7 @@ if ~any(valid)
     T = localEmptyTable(names);
     return;
 end
-T = adapted(valid, names);
+T = adapted(valid, :);
 end
 
 function names = localVariableNames()

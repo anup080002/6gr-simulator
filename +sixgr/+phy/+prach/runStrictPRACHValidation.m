@@ -259,19 +259,32 @@ else
     waveform = complex(zeros(size(tx.Waveform)));
 end
 waveform = localApplyIntegerDelay(waveform, timingOffsetSamples);
-[waveform, channelInfo] = localApplyStrictChannel(waveform, cfg, nextTrialId + 977);
+channelSeed=double(sixgr.util.structGet(cfg,"ChannelSeedOverride",nextTrialId+977));
+[waveform, channelInfo] = localApplyStrictChannel(waveform, cfg, channelSeed);
 trueTimingOffsetSamples = double(timingOffsetSamples) + double(sixgr.util.structGet(channelInfo, "ChannelFilterDelay", 0));
 waveform = localApplyFrequencyOffset(waveform, freqOffsetHz, tx.SampleRate_Hz);
 noiseSeed = double(sixgr.util.structGet(cfg, "NoiseSeedOverride", double(cfg.Seed) + nextTrialId + 991));
+identity=sixgr.util.structGet(cfg,"NoiseTrialIdentity",struct());
+if ~isempty(fieldnames(identity))
+    noiseSeed=identity.Seed;
+    noiseStream=RandStream(char(identity.Generator),'Seed',noiseSeed, ...
+        'NormalTransform',char(identity.NormalTransform));
+    noiseStream.Substream=identity.Substream;
+else
+    % Legacy diagnostic episodes retain their actual generator/seed; they
+    % are not promoted into the independently partitioned H0/H1 campaigns.
+    if ~preamblePresent, noiseSeed=noiseSeed+1; end
+    noiseStream=RandStream('mt19937ar','Seed',noiseSeed,'NormalTransform','Ziggurat');
+end
 if preamblePresent
-    [rx, noiseVar] = localAddNoise(waveform, snrDb, noiseSeed);
+    [rx, noiseVar] = localAddNoise(waveform, snrDb, noiseStream);
 else
     % localAddNoise historically derives unit-reference noise variance for
     % an all-zero input and then discards that first noise realization.
     % Compute the same variance directly and generate only the receiver
     % noise realization that is actually consumed by the detector.
     noiseVar = 1 / max(10^(double(snrDb) / 10), eps);
-    rx = localNoiseOnly(size(waveform), noiseVar, noiseSeed + 1);
+    rx = localNoiseOnly(size(waveform), noiseVar, noiseStream);
 end
 txMeta = struct("PreambleIndexTx", double(preamble), "InjectedTimingOffsetSamples", double(trueTimingOffsetSamples), ...
     "PreamblePresent", logical(preamblePresent));
@@ -283,6 +296,20 @@ score = sixgr.phy.prach.scorePRACHDetection(det, txMeta, cfg, "TrialType", trial
 row = localTrialRowFromDetection(runId, scenarioName, nextTrialId, trialType, cfg, occ, tx, det, score, ...
     snrDb, trueTimingOffsetSamples, freqOffsetHz, collisionInjected, configHash);
 row.NoiseSeed = noiseSeed;
+row.NoiseGenerator=string(noiseStream.Type);
+row.NoiseNormalTransform=string(noiseStream.NormalTransform);
+row.AppliedSampleNoiseVariance=noiseVar;
+row.ReceivedWaveformSHA256=string(sixgr.rrc.asn1.asn1SHA256Hex( ...
+    typecast([real(rx(:));imag(rx(:))],'uint8')));
+if ~isempty(fieldnames(identity))
+    row.NoiseSubstream=identity.Substream;
+    row.NoisePointIndex=identity.Point;
+    row.NoiseTrialIndex=identity.Trial;
+    row.NoiseMaximumTrials=identity.MaximumTrials;
+end
+if ~ismember(upper(string(cfg.ChannelModel)),["","AWGN","NONE","OFF"])
+    row.ChannelSeed=channelSeed;
+end
 candidateT = localCandidateTable(runId, nextTrialId, cfg, occ, det, freqOffsetHz);
 oracleT = localOracleGuardTable(runId, nextTrialId);
 end
@@ -375,6 +402,9 @@ row = struct("RunId", "", "ScenarioName", "", "TrialId", NaN, "TrialType", "", .
     "OccasionFrame", NaN, "OccasionSlot", NaN, "OccasionSymbol", NaN, ...
     "OccasionFrequencyIndex", NaN, "RARNTI", NaN, "WaveformSampleRateHz", NaN, ...
     "WaveformNumSamples", NaN, "WaveformHash", "", "ChannelModel", "", "NoiseSeed", NaN, "SNRdB", NaN, ...
+    "NoiseGenerator","","NoiseNormalTransform","","NoiseSubstream",NaN, ...
+    "NoisePointIndex",NaN,"NoiseTrialIndex",NaN,"NoiseMaximumTrials",NaN, ...
+    "ChannelSeed",NaN,"AppliedSampleNoiseVariance",NaN,"ReceivedWaveformSHA256","", ...
     "InjectedTimingOffsetSamples", NaN, "EstimatedTimingOffsetSamples", NaN, ...
     "TimingErrorSamples", NaN, "InjectedFrequencyOffsetHz", NaN, "DetectionThreshold", NaN, ...
     "DetectionMetric", NaN, "PeakToSecondPeakRatio", NaN, "CandidateCount", NaN, ...
@@ -479,7 +509,7 @@ end
 
 function [rows, candidateParts, oracleParts, firstWave] = localRunStatisticalBatch( ...
     cfg, occ, preamble, snrDb, threshold, runId, scenarioName, configHash, ...
-    preparedTx, trialIdBeforeBatch, trialIndices, seedSet, seedOffset, ...
+    preparedTx, trialIdBeforeBatch, trialIndices, seedSet, pointIndex, ...
     preamblePresent, trialType, useParallel, retainFirstWave)
 n = numel(trialIndices);
 rows = repmat(localTrialRowTemplate(), n, 1);
@@ -491,7 +521,7 @@ if useParallel
         [rows(j), candidateParts{j}, oracleParts{j}, waveParts{j}] = ...
             localRunStatisticalBatchTrial(cfg, occ, preamble, snrDb, ...
             threshold, runId, scenarioName, configHash, preparedTx, ...
-            trialIdBeforeBatch, trialIndices(j), j, seedSet, seedOffset, ...
+            trialIdBeforeBatch, trialIndices(j), j, seedSet, pointIndex, ...
             preamblePresent, trialType, retainFirstWave && j == 1);
     end
 else
@@ -499,7 +529,7 @@ else
         [rows(j), candidateParts{j}, oracleParts{j}, waveParts{j}] = ...
             localRunStatisticalBatchTrial(cfg, occ, preamble, snrDb, ...
             threshold, runId, scenarioName, configHash, preparedTx, ...
-            trialIdBeforeBatch, trialIndices(j), j, seedSet, seedOffset, ...
+            trialIdBeforeBatch, trialIndices(j), j, seedSet, pointIndex, ...
             preamblePresent, trialType, retainFirstWave && j == 1);
     end
 end
@@ -511,11 +541,18 @@ end
 
 function [row, candidateRows, oracleRows, retainedWave] = localRunStatisticalBatchTrial( ...
     cfg, occ, preamble, snrDb, threshold, runId, scenarioName, configHash, ...
-    preparedTx, trialIdBeforeBatch, trialNumber, batchOrdinal, seedSet, seedOffset, ...
+    preparedTx, trialIdBeforeBatch, trialNumber, batchOrdinal, seedSet, pointIndex, ...
     preamblePresent, trialType, retainWave)
 cfgTrial = cfg;
-seedBase = seedSet(mod(trialNumber - 1, numel(seedSet)) + 1);
-cfgTrial.NoiseSeedOverride = seedBase + seedOffset + trialNumber;
+% One frozen cap for both populations and every point. Early stopping or
+% worker/batch order must not move the next point into another noise stream.
+maximumTrials=max([double(cfg.StatisticalQualification.MaximumTrials), ...
+    double(cfg.StatisticalQualification.DetectionMaximumTrials),double(cfg.NumTrials)]);
+identity=sixgr.phy.prach.noiseTrialIdentity(seedSet,pointIndex,trialNumber,maximumTrials,preamblePresent);
+cfgTrial.NoiseTrialIdentity=identity;
+assert(identity.Episode<=2^32-1,'sixgr:phy:prach:ChannelSeedOverflow', ...
+    'Native NR channel seed cannot identify this many campaign episodes.');
+cfgTrial.ChannelSeedOverride=mod(double(cfg.Seed)+identity.Episode,2^32);
 inputTrialId = trialIdBeforeBatch + batchOrdinal - 1;
 [~, row, cand, oracle, wave] = localRunOneTrial(inputTrialId, trialType, ...
     cfgTrial, occ, preamble, snrDb, 0, 0, preamblePresent, false, ...
@@ -593,7 +630,7 @@ for iSNR = 1:numel(snrs)
         [batchRows, batchCandidates, batchOracles] = localRunStatisticalBatch( ...
             cfg, occ, preamble, snrs(iSNR), threshold, runId, scenarioName, ...
             configHash, preparedTx, trialId, trialIndices, seedSet, ...
-            200000*iSNR, true, "missed_detection_sweep", useParallel, false);
+            iSNR, true, "missed_detection_sweep", useParallel, false);
         nBatch = numel(trialIndices);
         for j = 1:nBatch
             row = batchRows(j);
@@ -663,7 +700,7 @@ for iSNR = 1:numel(snrs)
         "StoppingReason",string(stoppingReason), ...
         "DeterministicSeedCount",double(numel(seedSet)), ...
         "DeterministicSeedSet",strjoin(string(seedSet),"|"), ...
-        "SeedDerivation","configured_seed_plus_snr_and_trial_index", ...
+        "SeedDerivation","Threefry_disjoint_H0_H1_point_trial_substreams_v1", ...
         "EvidenceUnit","preamble_present_prach_occasion", ...
         "Status",string(statisticalQualification));
     candidateTableParts{iSNR} = sixgr.util.tablePartsToTable( ...
@@ -721,7 +758,7 @@ for iSNR = 1:numel(snrs)
         [batchRows, batchCandidates, batchOracles, batchFirstWave] = localRunStatisticalBatch( ...
             cfg, occ, localFirstPreamble(cfg), snrs(iSNR), threshold, runId, scenarioName, ...
             configHash, preparedTx, trialId, trialIndices, seedSet, ...
-            100000*iSNR, false, "false_alarm_sweep", useParallel, isempty(noiseWaveform));
+            iSNR, false, "false_alarm_sweep", useParallel, isempty(noiseWaveform));
         nBatch = numel(trialIndices);
         for j = 1:nBatch
             row = batchRows(j);
@@ -781,7 +818,7 @@ for iSNR = 1:numel(snrs)
         "StoppingReason",qualification.StoppingReason, ...
         "DeterministicSeedCount",double(numel(seedSet)), ...
         "DeterministicSeedSet",strjoin(string(seedSet),"|"), ...
-        "SeedDerivation","configured_seed_plus_snr_and_trial_index", ...
+        "SeedDerivation","Threefry_disjoint_H0_H1_point_trial_substreams_v1", ...
         "EvidenceUnit","no_signal_prach_occasion", "Status",qualification.Qualification);
     candidateTableParts{iSNR} = sixgr.util.tablePartsToTable( ...
         pointCandidateTableParts(1:pointBatchIndex), localCandidateRowTemplate());
@@ -880,7 +917,8 @@ candRows = repmat(localCandidateRowTemplate(), 0, 1);
 idx = 0;
 for iCase = 1:numel(cases)
     [caseWaveform, ~] = localApplyStrictChannel(cases(iCase).Waveform, cfg, 700 + iCase);
-    [rx, ~] = localAddNoise(caseWaveform, highSNR, 700 + iCase);
+    stream=RandStream('mt19937ar','Seed',700+iCase,'NormalTransform','Ziggurat');
+    [rx, ~] = localAddNoise(caseWaveform, highSNR, stream);
     det = sixgr.phy.prach.detectPRACHWaveform(rx, cfg, "Occasion", occ, ...
         "CandidatePreambles", 0:(min(64, cfg.NumPreambles) - 1), ...
         "DetectionThreshold", threshold, "DetectorBackend", "toolbox_peak");
@@ -947,7 +985,8 @@ function [negT, trialT, candT, oracleT] = localNegativeWrongConfigTrial(cfg, occ
 tx = sixgr.phy.prach.generatePRACHWaveform(cfg, "Occasion", occ, "PreambleIndex", preamble);
 [waveform, channelInfo] = localApplyStrictChannel(tx.Waveform, cfg, 4401);
 trueTimingOffsetSamples = double(sixgr.util.structGet(channelInfo, "ChannelFilterDelay", 0));
-[rx, ~] = localAddNoise(waveform, highSNR, 4401);
+stream=RandStream('mt19937ar','Seed',4401,'NormalTransform','Ziggurat');
+[rx, ~] = localAddNoise(waveform, highSNR, stream);
 badCfg = cfg;
 badCfg.SequenceIndex = mod(double(cfg.SequenceIndex) + 13, 838);
 badCfg.ToolboxPRACH.SequenceIndex = double(badCfg.SequenceIndex);
@@ -972,14 +1011,13 @@ negT = table(string(runId), "wrong_root_sequence", "receiver_sequence_index_shif
     'ObservedFailureStage','FalseAlarm','MissedDetection','StrictOk','NegativeExpectedOk','FailureReason'});
 end
 
-function [rx, noiseVar] = localAddNoise(waveform, snrDb, seed)
-rng(double(seed), "twister");
+function [rx, noiseVar] = localAddNoise(waveform, snrDb, stream)
 signalPower = mean(abs(waveform(:)).^2, "omitnan");
 if ~(isfinite(signalPower) && signalPower > 0)
     signalPower = 1;
 end
 noiseVar = signalPower / max(10^(double(snrDb) / 10), eps);
-noise = sqrt(noiseVar / 2) .* (randn(size(waveform)) + 1i .* randn(size(waveform)));
+noise = localNoiseOnly(size(waveform),noiseVar,stream);
 rx = waveform + noise;
 end
 
@@ -1053,9 +1091,8 @@ end
 tol = max(1.5, double(tol));
 end
 
-function wave = localNoiseOnly(sz, noiseVar, seed)
-rng(double(seed), "twister");
-wave = sqrt(double(noiseVar) / 2) .* (randn(sz) + 1i .* randn(sz));
+function wave = localNoiseOnly(sz, noiseVar, stream)
+wave = sqrt(double(noiseVar) / 2) .* (randn(stream,sz) + 1i .* randn(stream,sz));
 end
 
 function wave = localApplyIntegerDelay(wave, delaySamples)

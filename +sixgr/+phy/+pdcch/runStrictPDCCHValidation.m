@@ -170,7 +170,8 @@ tx = sixgr.phy.pdcch.generatePDCCHWaveform(cfg, dci);
 rxWave = tx.Waveform;
 noiseOnly = [];
 noiseSeed = double(sixgr.util.structGet(cfg, "NoiseSeedOverride", 7000 + nextTrialId));
-[rxWave, nVar, noiseOnly] = localAddAWGN(rxWave, snrDb, noiseSeed);
+noiseSubstream = double(sixgr.util.structGet(cfg,"NoiseSubstreamOverride",NaN));
+[rxWave, noiseReference, noiseOnly] = localAddAWGN(rxWave, tx, snrDb, noiseSeed,noiseSubstream);
 switch string(mode)
     case "no_signal"
         rxWave = noiseOnly;
@@ -178,27 +179,44 @@ switch string(mode)
         corruptGrid = tx.Grid;
         corruptGrid(tx.PDCCHInd) = -tx.Grid(tx.PDCCHInd);
         rxWave = sixgr.phy.waveform.ofdmModulate(tx.Carrier, corruptGrid);
-        [rxWave, nVar, noiseOnly] = localAddAWGN(rxWave, snrDb, 7100 + nextTrialId);
+        noiseSeed=7100+nextTrialId; noiseSubstream=NaN;
+        [rxWave, noiseReference, noiseOnly] = localAddAWGN(rxWave, tx, snrDb, noiseSeed);
     case "corrupt_dmrs"
         corruptGrid = tx.Grid;
         rng(7200 + nextTrialId, "twister");
         corruptGrid(tx.DMRSInd) = (randn(numel(tx.DMRSInd),1) + 1i*randn(numel(tx.DMRSInd),1)) ./ sqrt(2);
         rxWave = sixgr.phy.waveform.ofdmModulate(tx.Carrier, corruptGrid);
-        [rxWave, nVar, noiseOnly] = localAddAWGN(rxWave, snrDb, 7300 + nextTrialId);
+        noiseSeed=7300+nextTrialId; noiseSubstream=NaN;
+        [rxWave, noiseReference, noiseOnly] = localAddAWGN(rxWave, tx, snrDb, noiseSeed);
 end
 det = sixgr.phy.pdcch.blindDecodePDCCH(rxWave, cfg, ...
     "Carrier", tx.Carrier, "PDCCH", tx.PDCCH, "RNTIAttempted", attemptedRNTI, ...
-    "DCIFormatAttempted", attemptedFormat, "NoiseVar", nVar, ...
-    "NoiseOnlyWaveform", noiseOnly, "ListLength", 8);
+    "DCIFormatAttempted", attemptedFormat, "ListLength", 8);
+% Generated noise and its variance belong to scoring only. The practical
+% receiver must estimate noise from its own received samples/DMRS.
 score = sixgr.phy.pdcch.scorePDCCHDetection(det, tx, cfg, ...
     "TrialType", trialType, "NegativeExpected", negativeExpected);
 row = localTrialRowFromScore(nextTrialId, trialType, cfg, tx, det, score, attemptedRNTI, attemptedFormat, snrDb);
 row.NoiseSeed = noiseSeed;
+row.NoiseSubstream = noiseSubstream;
+row.SignalEnergyPerOccupiedRE=noiseReference.SignalEnergyPerOccupiedRE;
+row.AppliedGridNoiseVariance=noiseReference.GridNoiseVariance;
+row.AppliedSampleNoiseVariance=noiseReference.SampleNoiseVariance;
+row.SampleToGridNoiseVarianceGain=noiseReference.SampleToGridNoiseVarianceGain;
+row.SNRReferencePlane=noiseReference.SNRReferencePlane;
+row.NoiseCalibrationSource=noiseReference.Source;
+row.ReceiverNoiseVarianceSource=string(det.Rx.NoiseVarSource);
+row.GeneratedNoiseSuppliedToReceiver=false;
+noiseGrid=sixgr.phy.waveform.ofdmDemodulate(tx.Carrier,noiseOnly);
+row.ScoringMeasuredGridNoiseVariance=mean(abs(noiseGrid(:)).^2);
+row.ScoringNoiseComparedRECount=numel(noiseGrid);
+row.NoiseGenerator = "mt19937ar";
+if isfinite(noiseSubstream), row.NoiseGenerator="Threefry"; end
 candidateT = det.Candidates;
 candidateT.RunId = repmat(string(cfg.RunId), height(candidateT), 1);
 candidateT.TrialId = repmat(double(nextTrialId), height(candidateT), 1);
 candidateT = movevars(candidateT, ["RunId","TrialId"], "Before", 1);
-candidateT.GrantValid(:) = logical(score.GrantValid);
+candidateT.GrantValid(:) = logical(score.GrantValid) & logical(candidateT.SelectedCandidate);
 fieldT = score.FieldEquality;
 if isempty(fieldT)
     fieldT = struct2table(repmat(localDCIFieldRow(), 0, 1));
@@ -229,16 +247,23 @@ row.DCIPayloadSizeBits = double(cfg.DCIPayloadSizeBits);
 row.TxAggregationLevel = double(tx.AggregationLevel);
 row.TxCandidateIndex = double(tx.CandidateIndex);
 row.TxCCEIndex = double(tx.CCEIndex);
-row.SelectedAggregationLevel = double(ternary(logical(det.Rx.Ok), cfg.AggregationLevel, NaN));
-row.SelectedCandidateIndex = double(ternary(logical(det.Rx.Ok), det.Rx.CandidateIndex, NaN));
-row.SelectedCCEIndex = double(ternary(logical(det.Rx.Ok), det.Rx.CandidateIndex - 1, NaN));
+selected = logical(det.Rx.PhysicalHypothesisSelected);
+row.SelectedAggregationLevel = double(ternary(selected, det.Rx.CandidateAggregationLevel, NaN));
+row.SelectedCandidateIndex = double(ternary(selected, det.Rx.CandidateIndex, NaN));
+row.SelectedCCEIndex = double(ternary(selected, det.Rx.CandidateCCEIndex, NaN));
 row.CandidatesAttempted = double(score.CandidatesAttempted);
-row.DCICrcPass = logical(det.Rx.Ok);
-row.DCIMask = string(ternary(logical(det.Rx.Ok), "rnti_crc_mask_pass", "crc_fail"));
+row.DCICrcPass = isfinite(det.Rx.ErrFlag) && det.Rx.ErrFlag==0;
+row.DCIMask = string(ternary(row.DCICrcPass, "rnti_crc_mask_pass", "crc_fail"));
 row.DCIPayloadHexTx = string(tx.DCI.PayloadHex);
 row.DCIPayloadHexRx = string(det.DecodedDCI.PayloadHex);
 row.DCIPayloadHashTx = string(tx.DCI.PayloadHash);
 row.DCIPayloadHashRx = string(det.DecodedDCI.PayloadHash);
+if selected
+    selectedRow=det.Candidates(logical(det.Candidates.SelectedCandidate),:);
+    assert(height(selectedRow)==1,'sixgr:phy:pdcch:AmbiguousSelectedCandidate');
+    row.DCIPayloadHexRx=string(selectedRow.DecodedPayloadHex);
+    row.DCIPayloadHashRx=string(selectedRow.PayloadHash);
+end
 row.DCIPayloadMatch = logical(score.PayloadMatch);
 row.DecodedDCIFieldsHash = localDecodedFieldHash(det.DecodedDCI);
 row.ControlResourceValidity = logical(score.ControlResourceValidity);
@@ -275,36 +300,36 @@ design = cfg.StatisticalQualification;
 maximumWaveformTrials = round(double(design.MaximumWaveformTrials));
 batchSize = round(double(design.BatchSizeWaveformTrials));
 seedSet = double(design.DeterministicSeeds(:).');
-maximumCandidatesPerWaveform = max(1, round(sum([cfg.NumCandidatesAL1 cfg.NumCandidatesAL2 ...
-    cfg.NumCandidatesAL4 cfg.NumCandidatesAL8 cfg.NumCandidatesAL16])));
-maximumDecisionBudget = maximumWaveformTrials * maximumCandidatesPerWaveform;
 rows = repmat(localFalseAlarmRow(), numel(snrs), 1);
 trialRows = repmat(localTrialRow(), 0, 1);
 candRows = repmat(localCandidateRow(), 0, 1);
 oracleRows = repmat(localOracleRow(), 0, 1);
 for si = 1:numel(snrs)
-    falseCount = 0; candCount = 0;
+    falseCount = 0; candCount = 0; falseWaveforms = 0;
     qualification = localUnevaluatedQualification("no_candidate_decisions_observed");
     lookIndex = 0;
     waveformTrialCount = 0;
     for tt = 1:maximumWaveformTrials
         cfgTrial = cfg;
-        seedBase = seedSet(mod(tt-1, numel(seedSet)) + 1);
-        cfgTrial.NoiseSeedOverride = seedBase + 100000*si + tt;
+        identity=sixgr.phy.pdcch.noiseTrialIdentity(seedSet,si,tt,maximumWaveformTrials);
+        cfgTrial.NoiseSeedOverride = identity.Seed;
+        cfgTrial.NoiseSubstreamOverride = identity.Substream;
         [trialId, tr, cand, ~, ~, oracle] = localRunOneTrial(trialId, "false_alarm_sweep", cfgTrial, dci, "1_0", cfg.RNTIValue, snrs(si), "no_signal", true);
         falseCount = falseCount + double(tr.FalseCandidateCount);
+        falseWaveforms = falseWaveforms + double(tr.FalseCandidateCount > 0);
         candCount = candCount + height(cand);
         waveformTrialCount = tt;
         trialRows(end+1,1) = tr; %#ok<AGROW>
         candRows = [candRows; table2struct(cand)]; oracleRows = [oracleRows; table2struct(oracle)]; %#ok<AGROW>
         atLook = mod(tt,batchSize) == 0 || tt == maximumWaveformTrials;
-        if atLook && candCount > 0 && tt >= round(double(design.MinimumWaveformTrials))
+        if atLook && candCount >= round(double(design.MinimumCandidateDecisions)) && ...
+                tt >= round(double(design.MinimumWaveformTrials))
             lookIndex = lookIndex + 1;
             qualification = sixgr.stats.evaluateBinomialStopping( ...
-                falseCount,candCount,double(design.TargetProbability), ...
+                falseWaveforms,tt,double(design.TargetProbability), ...
                 "ConfidenceLevel",double(design.ConfidenceLevel), ...
-                "MinimumTrials",round(double(design.MinimumCandidateDecisions)), ...
-                "MaximumTrials",maximumDecisionBudget, ...
+                "MinimumTrials",round(double(design.MinimumWaveformTrials)), ...
+                "MaximumTrials",maximumWaveformTrials, ...
                 "MinimumEvents",round(double(design.MinimumFalseAlarmEvents)), ...
                 "CIWidthTarget",double(design.CIWidthTarget), ...
                 "LookIndex",lookIndex,"PlannedLooks",round(double(design.PlannedLooks)), ...
@@ -323,7 +348,9 @@ for si = 1:numel(snrs)
     row.NumCandidatesPerTrial = candCount / max(waveformTrialCount,1);
     row.CandidateDecisionCount = candCount;
     row.NumFalseCandidates = falseCount;
-    if candCount > 0, row.FalseAlarmProbability = falseCount/candCount; end
+    row.FalseAlarmWaveformCount = falseWaveforms;
+    if waveformTrialCount > 0, row.FalseAlarmProbability = falseWaveforms/waveformTrialCount; end
+    if candCount > 0, row.CandidateFalseAlarmFraction = falseCount/candCount; end
     row.TargetFalseAlarmProbability = double(design.TargetProbability);
     row.CILower = qualification.CILower; row.CIUpper = qualification.CIUpper;
     row.CIWidth = qualification.CIWidth; row.CIWidthTarget = double(design.CIWidthTarget);
@@ -342,8 +369,8 @@ for si = 1:numel(snrs)
     row.StoppingReason = qualification.StoppingReason;
     row.DeterministicSeedCount = numel(seedSet);
     row.DeterministicSeedSet = strjoin(string(seedSet), "|");
-    row.SeedDerivation = "configured_seed_plus_snr_and_trial_index";
-    row.EvidenceUnit = "blind_candidate_decision";
+    row.SeedDerivation = "first_configured_seed_Threefry_disjoint_episode_blocks_configured_family_offset";
+    row.EvidenceUnit = "independent_noise_only_waveform";
     row.Status = qualification.Qualification;
     rows(si) = row;
 end
@@ -405,15 +432,22 @@ grantT = struct2table(grantRows, "AsArray", true);
 oracleT = struct2table(oracleRows, "AsArray", true);
 end
 
-function [y, nVar, noise] = localAddAWGN(x, snrDb, seed)
-rng(seed, "twister");
-power = mean(abs(double(x(:))).^2, "omitnan");
-if ~(isfinite(power) && power > 0)
-    power = 1;
+function [y, provenance, noise] = localAddAWGN(x, tx, snrDb, seed,substream)
+if nargin<5, substream=NaN; end
+if isfinite(substream)
+    stream=RandStream('Threefry','Seed',seed);
+    stream.Substream=substream;
+else
+    stream=RandStream('mt19937ar','Seed',seed);
 end
-nVar = power / (10.^(double(snrDb) / 10));
-noise = sqrt(nVar/2) .* (randn(size(x)) + 1i*randn(size(x)));
-y = x + noise;
+reference=double(tx.Grid([tx.PDCCHInd(:);tx.DMRSInd(:)]));
+energy=mean(abs(reference).^2);
+if ~(isfinite(energy) && energy > 0)
+    error('sixgr:phy:pdcch:MissingNoiseReferencePower', ...
+        'Noise-only trials require a nonzero transmitted reference for the declared noise calibration.');
+end
+[y,provenance,noise]=sixgr.phy.waveform.addOccupiedREAWGN( ...
+    x,tx.Carrier,snrDb,'Stream',stream,'SignalEnergyPerOccupiedRE',energy);
 end
 
 function T = localGrantTable(cfg, trialId, score)
@@ -465,7 +499,8 @@ T = table(T0.RunId, T0.TrialId, string(T0.TrialType), erase(string(T0.TrialType)
 end
 
 function T = localOracleGuardTable(runId, trialId)
-fields = ["tx_dci_bits","tx_payload_hex","tx_rnti","tx_candidate_index","tx_aggregation_level","tx_cce_index","scheduler_grant"];
+fields = ["tx_dci_bits","tx_payload_hex","tx_rnti","tx_candidate_index","tx_aggregation_level","tx_cce_index","scheduler_grant", ...
+    "generated_noise_samples","injected_noise_variance"];
 rows = repmat(localOracleRow(), numel(fields), 1);
 for ii = 1:numel(fields)
     rows(ii).RunId = string(runId);
@@ -507,6 +542,9 @@ T = table(string(runId), string(scenarioName), double(cfg.CellId), double(cfg.UE
     'ConfiguredDCIPayloadSizeBits','DCIPayloadSizeBits','DCIPayloadFrequencyAssignmentBits', ...
     'DCIPayloadSizeSource','DCIPayloadConfiguredMismatch', ...
     'StrictValid','StrictUnsupportedReason','Status'});
+T.CRCLength=double(cfg.CRCLength);
+T.CRCPolynomial=string(cfg.CRCPolynomial);
+T.RNTIMaskLength=double(cfg.RNTIMaskLength);
 end
 
 function summary = localSummaryStruct(runId, scenarioName, strictOk, cfg, trialT, falseAlarmT, lowSNRT, oracleT)
@@ -524,14 +562,8 @@ summary.WrongRNTIRows = sum(string(trialT.TrialType) == "wrong_rnti");
 summary.NoSignalRows = sum(string(trialT.TrialType) == "no_signal_coreset");
 summary.CorruptionRows = sum(startsWith(string(trialT.TrialType), "corrupted"));
 summary.FalseAlarmSweepRows = height(falseAlarmT);
-summary.StatisticallyQualified = ~isempty(falseAlarmT) && all(logical(falseAlarmT.StatisticallyQualified));
-if summary.StatisticallyQualified
-    summary.StatisticalQualification = "PASS";
-elseif any(string(falseAlarmT.StatisticalQualification) == "FAIL")
-    summary.StatisticalQualification = "FAIL";
-else
-    summary.StatisticalQualification = "NOT_EVALUATED";
-end
+[summary.StatisticallyQualified,summary.StatisticalQualification] = ...
+    sixgr.stats.summarizeBinomialQualifications(falseAlarmT);
 summary.LowSNRSweepRows = height(lowSNRT);
 summary.OracleGuardViolationCount = sum(logical(oracleT.Violation));
 summary.ProxyUsed = any(logical(trialT.ProxyUsed));
@@ -598,7 +630,13 @@ row = struct("RunId", "", "ScenarioName", "", "TrialId", NaN, "TrialType", "", .
     "NoSignalRejectCount", NaN, "FalseCandidateCount", NaN, ...
     "CorruptedCandidateRejectCount", NaN, "InvalidGrantRejectCount", NaN, ...
     "DetectionMetric", NaN, "BestCandidateMetric", NaN, "SecondBestCandidateMetric", NaN, ...
-    "MetricMargin", NaN, "NoiseVariance", NaN, "NoiseSeed", NaN, "SNRdB", NaN, "ChannelModel", "", ...
+    "MetricMargin", NaN, "NoiseVariance", NaN, "NoiseSeed", NaN, "NoiseSubstream", NaN, ...
+    "SignalEnergyPerOccupiedRE", NaN, "AppliedGridNoiseVariance", NaN, ...
+    "AppliedSampleNoiseVariance", NaN, "SampleToGridNoiseVarianceGain", NaN, ...
+    "SNRReferencePlane", "", "NoiseCalibrationSource", "", ...
+    "ReceiverNoiseVarianceSource", "", "GeneratedNoiseSuppliedToReceiver", false, ...
+    "ScoringMeasuredGridNoiseVariance", NaN, "ScoringNoiseComparedRECount", 0, ...
+    "NoiseGenerator", "", "SNRdB", NaN, "ChannelModel", "", ...
     "ProxyUsed", false, "Skipped", false, "ToolboxMissing", false, "UsedOracleFields", "", ...
     "StrictOk", false, "NegativeExpectedOk", false, "Status", "", "FailureReason", "");
 end
@@ -608,7 +646,7 @@ row = struct("RunId", "", "TrialId", NaN, "CandidateIndex", NaN, "AggregationLev
     "CCEIndex", NaN, "CORESETId", NaN, "SearchSpaceId", NaN, "RNTIAttempted", NaN, ...
     "ExpectedRNTI", NaN, "DCIFormatAttempted", "", "CrcPass", false, "Mask", "", ...
     "PayloadHash", "", "DecodedPayloadHex", "", "GrantValid", false, "Metric", NaN, ...
-    "LLRMeanAbs", NaN, "LLRMin", NaN, "LLRMax", NaN, "SelectedCandidate", false, ...
+    "LLRMeanAbs", NaN, "LLRMin", NaN, "LLRMax", NaN, "LLRCount", 0, "SelectedCandidate", false, ...
     "RejectedReason", "");
 end
 
@@ -631,6 +669,7 @@ function row = localFalseAlarmRow()
 row = struct("RunId", "", "SweepId", "", "ConfigHash", "", "NoiseModel", "", "SNRdB", NaN, ...
     "NumTrials", NaN, "WaveformTrialCount", NaN, "NumCandidatesPerTrial", NaN, ...
     "CandidateDecisionCount", NaN, "NumFalseCandidates", NaN, ...
+    "FalseAlarmWaveformCount",NaN,"CandidateFalseAlarmFraction",NaN, ...
     "FalseAlarmProbability", NaN, "TargetFalseAlarmProbability", NaN, ...
     "CILower", NaN, "CIUpper", NaN, "CIWidth", NaN, "CIWidthTarget", NaN, ...
     "ConfidenceLevel", NaN, "EffectiveDirectionalConfidenceLevel", NaN, ...
@@ -640,7 +679,7 @@ row = struct("RunId", "", "SweepId", "", "ConfigHash", "", "NoiseModel", "", "SN
     "PointEstimatePass", false, "StatisticalQualification", "NOT_EVALUATED", ...
     "StatisticallyQualified", false, "StoppingReason", "", ...
     "DeterministicSeedCount", NaN, "DeterministicSeedSet", "", "SeedDerivation", "", ...
-    "EvidenceUnit", "blind_candidate_decision", "Status", "NOT_EVALUATED");
+    "EvidenceUnit", "independent_noise_only_waveform", "Status", "NOT_EVALUATED");
 end
 
 function q = localUnevaluatedQualification(reason)

@@ -51,7 +51,12 @@ grant=sixgr.link.resolveWaveformGrant(dl,'DL',1,'Slot',1,'SFN',0,'ControlAbsolut
 allocated=state.DLHarq.allocate(grant.RNTI,1,grant.TBSBits/8,'NewData',true);
 assert(allocated.HARQ.HarqID==grant.HARQ.HarqID && allocated.HARQ.NDI==grant.HARQ.NDI);
 grant.ControlDecodeOk=false; grant.PDCCHGrantBindingOk=false;
-context=struct('GrantSnapshot',grant,'PHYGrant',grant.PHYGrant,'PrepareOnly',true);
+% Use the production new-TB binding boundary before freezing the PHY job.
+% Constructing only a grant snapshot bypasses the logical TB/NDI owner and
+% cannot be used to qualify the actual TX-to-RX ledger join.
+grant.HARQ=allocated.HARQ;
+[state,context]=sixgr.truth.CoupledTruthRuntime.buildTrialContextFromGrant(state,dl,1,'DL',grant);
+context.PrepareOnly=true;
 job=sixgr.truth.buildGrantPHYJob(dl,'DL',cfg.channel.snr_dB,1,[],context);
 job.StartSlotIndex=1;
 result=sixgr.truth.executeGrantPHYJob(job);
@@ -75,8 +80,10 @@ allocated2=state.DLHarq.allocate(g2.RNTI,2,g2.TBSBits/8,'NewData',true);
 g2=sixgr.link.resolveWaveformGrant(dl2,'DL',1,'Slot',2,'SFN',0,'ControlAbsoluteSlot',1,'HARQProcess',allocated2.HARQ.HarqID);
 assert(allocated2.HARQ.NDI==g2.HARQ.NDI);
 g2.ControlDecodeOk=false; g2.PDCCHGrantBindingOk=false;
-j2=sixgr.truth.buildGrantPHYJob(dl2,'DL',cfg.channel.snr_dB,1,[], ...
-    struct('GrantSnapshot',g2,'PHYGrant',g2.PHYGrant,'PrepareOnly',true));
+g2.HARQ=allocated2.HARQ;
+[state,context2]=sixgr.truth.CoupledTruthRuntime.buildTrialContextFromGrant(state,dl2,1,'DL',g2);
+context2.PrepareOnly=true;
+j2=sixgr.truth.buildGrantPHYJob(dl2,'DL',cfg.channel.snr_dB,1,[],context2);
 j2.StartSlotIndex=2;
 r2=sixgr.truth.executeGrantPHYJob(j2); p2=r2.Result.PreparedTransmission;
 owner.queueData(1,p2,struct('Purpose',"adjacent_grant_receive_tail_overlap",'Job',j2));
@@ -131,6 +138,11 @@ outage=sixgr.link.classifyCompletedAcquisitionOutage(missingTrials,2);
 assert(~outage.Recognized && outage.Reason=="data_transmitted_but_trials_missing", ...
     'Executed data with lost receiver rows must not be published as acquisition outage.');
 assert(state.DLHarq.Stats.Tx==2 && state.DLQueueBits(1)==0 && numel(state.SharedDataTXLedger)==2);
+tb1=sixgr.truth.resolveGrantTransportBlockIdentity(state.SharedDataTXLedger{1}.Grant);
+tb2=sixgr.truth.resolveGrantTransportBlockIdentity(state.SharedDataTXLedger{2}.Grant);
+assert(tb1~=tb2 && tb1==string(context.GrantSnapshot.TransportBlockId) && ...
+    tb2==string(context2.GrantSnapshot.TransportBlockId), ...
+    'The original production TB identities must survive preparation and actual shared TX.');
 assert(owner.DataTransmissions(1).Identity.TransmissionID~=owner.DataTransmissions(2).Identity.TransmissionID);
 localReject(@()owner.queueData(1,p,struct()),'sixgr:truth:LateSharedDataPreparation');
 fprintf('SHARED_DATA_PHYSICAL_QUEUE_PASS: %s TX=[%d,%d) RX=[%d,%d), no decode claimed.\n', ...
@@ -340,8 +352,8 @@ for item=items
     gainEvidence=sixgr.truth.bindSharedLargeScaleEvidence(table(1,'VariableNames',{'Slot'}),item.Planes);
     assert(gainEvidence.LargeScaleMeasurementStartSample<=post.StartSample && ...
         gainEvidence.LargeScaleMeasurementEndSampleExclusive>=post.EndSampleExclusive && ...
-        abs(gainEvidence.LargeScaleOutputEnergy_mWsample-gainEvidence.LargeScaleExpectedOutputEnergy_mWsample) ...
-        <=gainEvidence.LargeScalePowerClosureRelativeTolerance*gainEvidence.LargeScaleExpectedOutputEnergy_mWsample, ...
+        abs(gainEvidence.LargeScaleOutputEnergy-gainEvidence.LargeScaleExpectedOutputEnergy) ...
+        <=gainEvidence.LargeScalePowerClosureRelativeTolerance*gainEvidence.LargeScaleExpectedOutputEnergy, ...
         'Adjacent data capture tails require sample-backed, explicitly scoped gain evidence.');
     assert(~isfield(item.Context,'SNR') && isfield(item.Context,'Job'), ...
         'The physical regression must retain the production data-context shape.');

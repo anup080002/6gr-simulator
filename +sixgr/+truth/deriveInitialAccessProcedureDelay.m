@@ -30,6 +30,11 @@ T = localEnsureNumericColumn(T, "ProcedureStartSlot", n);
 T = localEnsureNumericColumn(T, "ProcedureEndSlot", n);
 T = localEnsureNumericColumn(T, "ProcedureDelay_ms", n);
 T = localEnsureNumericColumn(T, "AccessDelay_ms", n);
+for field=["ProcedureStartTime_s","ProcedureEndTime_s","EventElapsed_ms", ...
+        "ProcedureIntervalStart_s","ProcedureIntervalEndExclusive_s"]
+    T=localEnsureNumericColumn(T,field,n); T.(field)(:)=NaN;
+end
+T.AccessTimingContractVersion=repmat("AccessTiming/v2",n,1);
 T = localEnsureLogicalColumn(T, "CompleteFlag", n);
 % These fields are derived outputs, never authority from an earlier export.
 % Clear them even on rows that cannot join a valid UE/sweep group; otherwise
@@ -113,6 +118,11 @@ for groupIdx = 1:size(groups, 1)
     T.ProcedureEndSlot(endRow) = slots(endRow);
     T.ProcedureDelay_ms(endRow) = delayMs;
     T.AccessDelay_ms(endRow) = delayMs;
+    T.ProcedureStartTime_s(endRow)=times_s(startRow);
+    T.ProcedureEndTime_s(endRow)=times_s(endRow);
+    T.EventElapsed_ms(endRow)=1e3*(times_s(endRow)-times_s(startRow));
+    T.ProcedureIntervalStart_s(endRow)=times_s(startRow);
+    T.ProcedureIntervalEndExclusive_s(endRow)=times_s(endRow)+slotDuration_s;
     T.CompleteFlag(endRow) = true;
     T = localAssignText(T, "LifecycleState", endRow, "CONNECTED");
     T = localAssignText(T, "ValueSource", endRow, ...
@@ -126,7 +136,8 @@ for groupIdx = 1:size(groups, 1)
     else
         definition = "SSB/PBCH through PRACH/Msg2/Msg3/Msg4 delay from runtime event timestamps";
     end
-    T = localAssignText(T, "ValueDefinition", endRow, definition);
+    T = localAssignText(T, "ValueDefinition", endRow, definition + ...
+        "; legacy ProcedureDelay_ms/AccessDelay_ms cover the inclusive terminal-slot extent, not decoder-availability latency; EventElapsed_ms uses event endpoints only");
     T = localAssignText(T, "Notes", endRow, ...
         "Delay uses slot-coupled runtime timestamps only; configured values and compute runtime are not substituted.");
 end

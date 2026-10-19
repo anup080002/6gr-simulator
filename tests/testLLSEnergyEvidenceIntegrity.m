@@ -22,13 +22,47 @@ localAssertMetricUnavailable(zero.SummaryTable, "race_to_sleep_gains");
 localAssertMetricUnavailable(zero.SummaryTable, "bandwidth_adaptation_energy_effect");
 
 passTrials = struct("DL", localTrial("PASS", 800), "UL", table());
+passTrials.DL.CSI_RSRP_dB=-10.26;
+passTrials.DL.ServingRSRP_dBm=-90; % Per-RS-RE, not total receiver power.
 pass = sixgr.truth.exportLLSEnergyDiagnostics(cfg, airFolder, passTrials);
+assert(all(isnan(pass.TimelineTable.RxPowerEst_dBm)), ...
+    'Neither normalized CSI power nor per-RE RSRP may become total RX dBm.');
 for key = ["ue_energy_per_successful_bit","gnb_energy_per_successful_bit"]
     row = pass.SummaryTable(string(pass.SummaryTable.MetricKey) == key, :);
     assert(height(row) == 1 && isfinite(row.Value) && row.Value > 0);
     assert(string(row.Availability) == "AVAILABLE");
     assert(string(row.EvidenceType) == "runtime_state_conditioned_engineering_model");
 end
+% Qualification PASS/FAIL is not the decoder CRC. Energy efficiency uses
+% the same first-success payload credit as the connected runtime.
+crcFailed=localTrial("PASS",800); crcFailed.CRCPass=0;
+a=sixgr.truth.exportLLSEnergyDiagnostics(cfg,airFolder,struct('DL',crcFailed));
+localAssertMetricValue(a.SummaryTable,"first_delivered_bits",0,0);
+crcPassed=localTrial("FAIL",800); crcPassed.CRCPass=1;
+a=sixgr.truth.exportLLSEnergyDiagnostics(cfg,airFolder,struct('DL',crcPassed));
+localAssertMetricValue(a.SummaryTable,"first_delivered_bits",800,0);
+sameLabel=[localTrial("PASS",800);localTrial("PASS",800)];
+sameLabel.UEID=[1;2];
+a=sixgr.truth.exportLLSEnergyDiagnostics(cfg,airFolder,struct('DL',sameLabel));
+localAssertMetricValue(a.SummaryTable,"first_delivered_bits",1600,0);
+sameLabel.UEID(:)=1; sameLabel.SweepPointIndex=[1;2];
+a=sixgr.truth.exportLLSEnergyDiagnostics(cfg,airFolder,struct('DL',sameLabel));
+localAssertMetricValue(a.SummaryTable,"first_delivered_bits",1600,0);
+% Slice of a repeated success must retain the prior runtime zero credit.
+credited=[localTrial("PASS",800);localTrial("PASS",800)];
+credited.Direction(:)="DL"; credited.Slot=[1;2];
+credited=sixgr.kpi.creditTransportGoodput(credited);
+a=sixgr.truth.exportLLSEnergyDiagnostics(cfg,airFolder,struct('DL',credited(2,:)));
+localAssertMetricValue(a.SummaryTable,"first_delivered_bits",0,0);
+unknown=removevars(localTrial("PASS",800),'CRCPass');
+a=sixgr.truth.exportLLSEnergyDiagnostics(cfg,airFolder,struct('DL',unknown));
+localAssertMetricUnavailable(a.SummaryTable,"first_delivered_bits");
+unknown=removevars(localTrial("PASS",800),'TransportBlockId');
+unknown.GrantContextId="attempt_not_a_logical_TB";
+a=sixgr.truth.exportLLSEnergyDiagnostics(cfg,airFolder,struct('DL',unknown));
+localAssertMetricUnavailable(a.SummaryTable,"first_delivered_bits");
+assert(all(strlength(a.TimelineTable.TransportBlockId)==0), ...
+    'Do not manufacture a TB identity from a slot or grant context.');
 assert(~any(contains(lower(string(pass.SummaryTable.EvidenceType)), ...
     ["proxy","fallback","synthetic","placeholder"])));
 
@@ -42,6 +76,8 @@ fixedT.FixedLinkDropIndex = ones(3, 1);
 fixedT.FixedLinkTrialIndex = ones(3, 1);
 fixedT.FixedLinkSeedIndex = ones(3, 1);
 fixedT.FixedLinkSeedValue = 104729 * ones(3, 1);
+fixedT.FixedLinkCampaign = true(3,1);
+fixedT.FixedLinkCampaignKind = repmat("fixed_link_monte_carlo",3,1);
 fixed = sixgr.truth.exportLLSEnergyDiagnostics(cfg, airFolder, ...
     struct("DL", fixedT, "UL", table()));
 fixedIds = string(fixed.TimelineTable.TransportBlockId);
@@ -72,6 +108,38 @@ activeTime = connected.SummaryTable(string(connected.SummaryTable.MetricKey) == 
     "rf_chain_active_time", :);
 assert(height(activeTime) == 1 && abs(double(activeTime.Value) - 0.001) < 1e-12, ...
     "Simultaneous per-UE/control gNB rows must reduce to one interval of active time.");
+localAssertMetricValue(connected.SummaryTable,"first_delivered_bits",1600,0);
+assert(all(connected.TimelineTable.SuccessfulBits( ...
+    connected.TimelineTable.Domain=="PDCCH_monitoring")==0), ...
+    'Control bits are not delivered transport-block payload.');
+controlOnly=sixgr.truth.exportLLSEnergyDiagnostics(cfg,airFolder, ...
+    struct('PDCCH',multiPDCCH));
+localAssertMetricValue(controlOnly.SummaryTable,"first_delivered_bits",0,0);
+localAssertMetricUnavailable(controlOnly.SummaryTable,"gnb_energy_per_successful_bit");
+
+% Link trials use absolute Slot, not a within-frame slot. Adding Frame*10ms
+% a second time moves the observation and corrupts the energy/time axis.
+clocked=localTrial("PASS",800); clocked.Frame=3; clocked.Slot=47;
+clocked.RuntimeAbsoluteSlotIndex0=46;
+timed=sixgr.truth.exportLLSEnergyDiagnostics(cfg,airFolder,struct('DL',clocked));
+assert(all(abs(timed.TimelineTable.TimestampSim_ms-46)<1e-12), ...
+    'An absolute slot must not acquire a second frame offset.');
+clocked.Slot=46; clocked.SlotIndexBase=0;
+zeroBased=sixgr.truth.exportLLSEnergyDiagnostics(cfg,airFolder,struct('DL',clocked));
+assert(isequal(timed.TimelineTable.TimestampSim_ms,zeroBased.TimelineTable.TimestampSim_ms));
+clocked.RuntimeAbsoluteSlotIndex0=45;
+try
+    sixgr.truth.exportLLSEnergyDiagnostics(cfg,airFolder,struct('DL',clocked));
+    error('test:ExpectedEnergyClockRejection','Contradictory runtime clock was accepted.');
+catch ex
+    assert(strcmp(ex.identifier,'sixgr:truth:EnergyTrialClockMismatch'),'%s',ex.message);
+end
+clocked.Slot=47; clocked.SlotIndexBase=1; clocked.RuntimeAbsoluteSlotIndex0=46;
+h4Clock=cfg; h4Clock.phy.carrier.SubcarrierSpacing=30;
+mu1=sixgr.truth.exportLLSEnergyDiagnostics(h4Clock,airFolder,struct('DL',clocked));
+assert(all(abs(mu1.TimelineTable.TimestampSim_ms-23)<1e-12) && ...
+    all(abs(mu1.TimelineTable.Duration_s-.0005)<1e-15), ...
+    'H4 slot47 starts at23ms on the native30kHz nominal clock, not43ms.');
 
 missingCfg = cfg;
 missingCfg.lls6g.energy_efficiency = rmfield( ...
@@ -122,6 +190,8 @@ end
 function T = localTrial(status, bits)
 T = table(string(status), 1, 1, 8, double(bits), 1, "dl_tb_1", ...
     'VariableNames', {'Status','Frame','Slot','PRBs','TBSize_bits','UEID','TransportBlockId'});
+T.Direction="DL";
+T.CRCPass=double(string(status)=="PASS");
 end
 
 function localAssertMetricUnavailable(T, key)

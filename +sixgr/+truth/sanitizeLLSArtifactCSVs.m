@@ -256,6 +256,13 @@ tf = any(name == [ ...
 end
 
 function tf = localPreserveDeclaredRawSchemaFile(filePath)
+% Content-addressed live plots and their retained measurement inputs are
+% sealed by the producer. A targeted call must preserve them just as the
+% whole-run annotator does; never rehash modified samples as a repair.
+if contains(lower(replace(string(filePath),"\","/")),"/reports/live_measurements/")
+    tf=true;
+    return;
+end
 % Browser chart sources retain even blank axes/series fields: the Python
 % producer hashes these exact bytes after rendering. Recovery must neither
 % rewrite them nor certify changed measurements with replacement hashes.

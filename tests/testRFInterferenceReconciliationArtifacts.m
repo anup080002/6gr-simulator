@@ -423,6 +423,44 @@ assert(localAsLogical(mimo.DLExecutionPolicyOk(1)) && ...
     localAsLogical(mimo.MimoKpiReconciliationOk(1)), ...
     "Causally evidenced adaptive decisions must pass the separate execution-policy contract.");
 
+% Explicit audit fixtures: legitimate bootstrap does not claim adaptation;
+% later rows must prove the actually consumed feedback, not post-decode CQI.
+mixed=adaptiveTrials;
+for direction=["DL","UL"]
+    t=mixed.(direction); t.LinkAdaptationBootstrap(1)=true;
+    t.LinkAdaptationApplied(1)=false;
+    t.MCSSelectionSource(1)="bootstrap_cqi_conservative_lab_default";
+    t.MCSValueStatus(1)="bootstrap_not_measured_cqi";
+    t.CSIReportId(1)="";
+    for field=["AppliedLinkAdaptationResolvedCQI","AppliedLinkAdaptationCQIBasedMCS", ...
+            "LinkAdaptationAppliedFeedbackSourceSlot","LinkAdaptationAppliedFeedbackAgeSlots", ...
+            "LinkAdaptationFeedbackDelaySlots"]
+        t.(field)(1)=NaN;
+    end
+    mixed.(direction)=t;
+end
+for variant=["mixed","all_bootstrap","false_applied","wrong_bootstrap_mcs", ...
+        "missing_source","future_feedback","post_decode_only","wrong_scheduled_mcs"]
+    candidate=mixed;
+    switch variant
+        case "all_bootstrap"
+            candidate.DL=candidate.DL(ones(height(candidate.DL),1),:);
+        case "false_applied", candidate.DL.LinkAdaptationApplied(1)=true;
+        case "wrong_bootstrap_mcs", candidate.DL.ScheduledMCS(1)=2;
+        case "missing_source", candidate.DL.LinkAdaptationAppliedFeedbackSourceSlot(2)=NaN;
+        case "future_feedback", candidate.DL.LinkAdaptationFeedbackDelaySlots(2)=99;
+        case "post_decode_only"
+            candidate.DL.AppliedLinkAdaptationResolvedCQI(2)=NaN;
+            candidate.DL.AppliedLinkAdaptationCQIBasedMCS(2)=NaN;
+        case "wrong_scheduled_mcs", candidate.DL.ScheduledMCS(2)=2;
+    end
+    a=sixgr.analytics.writeRFInterferenceReconciliation(adaptiveCfg, ...
+        fullfile(tmp,"bootstrap_"+variant),candidate,mobilityArtifacts,struct());
+    assert(logical(a.Tables.MIMO.DL_AdaptivePolicyOk)==(variant=="mixed"), ...
+        'Bootstrap/adaptive policy incorrectly classified %s.',variant);
+    assert(a.Tables.MIMO.UL_AdaptivePolicyOk,'Valid UL decision lineage must remain accepted.');
+end
+
 % Bootstrap rank one is not an adaptive ceiling. These are explicitly
 % declared audit fixtures, not new physical or antenna-pattern evidence.
 rankCfg=adaptiveCfg;
@@ -505,6 +543,13 @@ T.MCSAuthority = repmat("scheduler_decoded_csi_feedback", n, 1);
 T.ModulationAuthority = repmat("ts38214_mcs_profile_from_scheduled_mcs", n, 1);
 T.AppliedOperatingPointSource = repmat("frozen_scheduler_grant", n, 1);
 T.CSIReportId = "csi-report-" + string((1:n).');
+T.GrantContextId = "declared-frozen-grant-" + string((1:n).');
+T.LinkAdaptationBootstrap = false(n,1);
+T.AppliedLinkAdaptationResolvedCQI = repmat(8,n,1);
+T.AppliedLinkAdaptationCQIBasedMCS = ones(n,1);
+T.LinkAdaptationAppliedFeedbackSourceSlot = (1:n).';
+T.LinkAdaptationAppliedFeedbackAgeSlots = repmat(3,n,1);
+T.LinkAdaptationFeedbackDelaySlots = ones(n,1);
 T.WidebandCQI = repmat(8, n, 1);
 T.CQIDerivedMCS = ones(n, 1);
 T.MCSValueStatus = repmat("measured_feedback_adapted", n, 1);

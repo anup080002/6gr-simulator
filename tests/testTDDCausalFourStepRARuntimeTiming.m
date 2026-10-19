@@ -113,6 +113,7 @@ assert(isequaln(result.RuntimeDLChannelState, dlState) && ...
     "Preparation must preserve complete channel identities, objects, and clocks, not empty result defaults.");
 for completed = 0:4
     priorRows = result.RuntimeStageRows;
+    priorAllocation=sixgr.util.structGet(result,'ObservedREAllocationTable',table());
     nextStage = result.NextRuntimeStage;
     nextSlot = result.NextRuntimeStageSlot;
     transmission = result.PreparedTransmission;
@@ -129,6 +130,8 @@ for completed = 0:4
         waiting.RuntimeDLChannelState.TotalObjectInputSamples == objectInputBefore && ...
         isequaln(rng, rngBefore), ...
         "An incomplete receive interval must not advance the shared CDL object, consume noise, or publish a decode.");
+    assert(isequaln(priorAllocation,sixgr.util.structGet(waiting,'ObservedREAllocationTable',table())), ...
+        'A prepared future waveform cannot appear in the observed resource map.');
     [result, continuation] = sixgr.truth.CoupledTruthRuntime.runFourStepRARuntime(cfgRuntime, ...
         "Continuation", continuation, "StopAfterStage", nextStage, ...
         "ReceiveThroughTime_s", transmission.EndTimeExclusive_s, ...
@@ -139,6 +142,9 @@ for completed = 0:4
         isequaln(priorRows, result.RuntimeStageRows(1:completed,:)), ...
         "Resuming the physical TDD channel must not repeat or rewrite completed stage execution (completed=%d, received=%d).", ...
         completed, height(result.RuntimeStageRows));
+    assert(isequal(sort(unique(result.ObservedREAllocationTable.ra_stage)), ...
+        sort(unique(result.RuntimeStageRows.StageName))), ...
+        'Every physically completed stage must publish occupancy, without future stages.');
     % A completed receiver stage must be visible before overall attachment.
     stageTables={'msg1_prach_detection','msg2_rar_trials','msg3_pusch_trials', ...
         'msg4_contention_resolution'};
@@ -163,6 +169,8 @@ for completed = 0:4
             'Completed Msg2 candidate/DCI evidence must publish before attachment.');
     end
     if completed>=3
+        assert(result.RRCSetupDecoded && result.SRB1Installed, ...
+            'Accepted Msg4 must install SRB1 before the later SetupComplete receiver executes.');
         assert(height(result.ArtifactTables.msg4_dci_fields)==24, ...
             'Received Msg4 DCI fields must not disappear between live and terminal publication.');
     end
@@ -212,6 +220,34 @@ for completed = 0:4
     end
 end
 assert(isempty(fieldnames(continuation)) && result.RuntimeExecutionState == "terminal");
+localAssertObservedAllocations(result);
+% Compare primary RA tables against the actual receivers, not injected CFO,
+% configured SNR, or success-only defaults. A failed CRC still owns frontend
+% measurements when it actually executed them.
+receivers={result.Msg2Rx,result.Msg3Rx,result.SetupCompleteRx};
+tables={result.ArtifactTables.msg2_rar_trials,result.ArtifactTables.msg3_pusch_trials, ...
+    result.ArtifactTables.rrc_setup_complete};
+for k=1:numel(receivers)
+    expected=sixgr.phy.ra.receiverDiagnostics(receivers{k}); actual=tables{k};
+    assert(height(actual)==1 && actual.ReceiverDiagnosticsPresent);
+    for name=string(fieldnames(expected)).'
+        assert(isequaln(actual.(name),expected.(name)), ...
+            'RA stage %d lost actual receiver diagnostic %s.',k,name);
+    end
+end
+
+assert(result.ArtifactTables.msg4_contention_resolution.ReceiverDiagnosticsPresent && ...
+    strlength(result.ArtifactTables.msg4_contention_resolution.PostEqSINRSource)>0);
+rrcEvents=result.ArtifactTables.rrc_connection_events;
+assert(height(rrcEvents)==8 && sum(rrcEvents.CRCApplicable)==3 && ...
+    all(rrcEvents.CRC(rrcEvents.CRCApplicable)==1) && ...
+    all(isnan(rrcEvents.CRC(~rrcEvents.CRCApplicable))) && ...
+    all(~rrcEvents.SRB1Installed(rrcEvents.EventOrdinal<3)) && ...
+    all(rrcEvents.SRB1Installed(rrcEvents.EventOrdinal>=3)) && ...
+    all(rrcEvents.MessageSHA256(rrcEvents.EventOrdinal==1)==""));
+assert(result.RRCSetupCompletePayloadSHA256==result.SetupCompleteDecoded.PayloadHash && ...
+    result.RRCSetupCompleteTransmittedPayloadSHA256==result.SetupCompleteTx.RRCSetupComplete.PayloadHash);
+sixgr.util.csvWriteTable(fullfile(runRoot,'measured_rrc_connection_events.csv'),rrcEvents,'PreserveSchema',true);
 % Export the actual receiver-produced Msg3 timing row and verify its CSV
 % round-trip; this is diagnostic test output, not a production run artifact.
 timingRow = result.ArtifactTables.msg3_pusch_trials;
@@ -373,4 +409,40 @@ ok = true;
 fprintf(['PASS testTDDCausalFourStepRARuntimeTiming: decoded RAR TA=%g, NTA=%g Tc, ' ...
     '%g samples at %g Hz; configured CDL Msg3 CRC passed with receiver-derived residual timing.\n'], ...
     result.TimingAdvanceCommand,result.TimingAdvanceNTA_Tc,result.TimingAdvanceSamples,result.TimingAdvanceSampleRate_Hz);
+end
+
+function localAssertObservedAllocations(result)
+T=result.ObservedREAllocationTable;
+stages=["Msg1","Msg2","Msg3","Msg4","RRCSetupComplete"];
+objects={result.Msg1Tx,result.Msg2Tx,result.Msg3Tx,result.Msg4Tx,result.SetupCompleteTx};
+for k=1:numel(stages)
+    stage=table2struct(result.RuntimeStageRows(result.RuntimeStageRows.StageName==stages(k),:));
+    selected=T(T.ra_stage==stages(k),:);
+    assert(~isempty(selected) && all(selected.ra_attempt_id==result.AttemptId) && ...
+        all(selected.absolute_slot==stage.StageSlot) && ...
+        all(selected.ue_id==result.UEId) && all(selected.cell_id==result.CellId));
+    replay=sixgr.phy.ra.appendObservedStageAllocation(result,objects{k},stage);
+    assert(isequaln(replay.ObservedREAllocationTable,T),'Continuation replay cannot duplicate allocations.');
+    if k==1
+        assert(all(selected.grid_domain=="prach_native_ofdm"));
+    elseif any(k==[2 4])
+        tx=objects{k};
+        assert(sum(selected.re_count(selected.channel=="PDCCH" & selected.component=="DATA"))==numel(tx.PDCCH.PDCCHInd));
+        assert(sum(selected.re_count(selected.channel=="PDCCH" & selected.component=="DM-RS"))==numel(tx.PDCCH.DMRSInd));
+        assert(sum(selected.re_count(selected.channel=="PDSCH" & selected.component=="DATA"))==nnz(tx.PDSCH.DataPortSymbols));
+        assert(sum(selected.re_count(selected.channel=="PDSCH" & selected.component=="DM-RS"))==nnz(tx.PDSCH.DMRSPortSymbols));
+    else
+        tx=objects{k};
+        % The native PUSCH materializer retains channel-qualified labels.
+        assert(sum(selected.re_count(selected.component=="PUSCH_DATA"))==numel(tx.PUSCHIndices) && ...
+            sum(selected.re_count(selected.component=="PUSCH_DMRS"))==numel(tx.DMRSIndices));
+    end
+end
+unexecuted=result; unexecuted.RuntimeStageRows=unexecuted.RuntimeStageRows([],:);
+try
+    sixgr.phy.ra.appendObservedStageAllocation(unexecuted,objects{end},stage);
+    error('test:ExpectedUnexecutedAllocationRejection','Prepared occupancy was accepted.');
+catch ex
+    assert(string(ex.identifier)=="sixgr:ra:UnexecutedAllocation");
+end
 end

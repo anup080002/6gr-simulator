@@ -148,6 +148,18 @@ aliasOk = (dl | ul) & alias == expectedAlias & isfinite(aliasError) & ...
     aliasError <= max(1e-12, 1e-10 .* abs(expectedLegacy));
 add("legacy_noise_variance_alias", all(aliasOk), localFiniteMax(aliasError), ...
     "legacy NoiseVariance is not an exact, explicitly named DL/UL compatibility alias");
+% Legacy retained tables may lack these columns. When published, however,
+% the alias must retain the source/domain of its value, not of injected AWGN.
+for suffix = ["Source","Domain"]
+    field = "NoiseVariance" + suffix;
+    if ~ismember(field,string(T.Properties.VariableNames)), continue; end
+    expectedMetadata = strings(height(T),1);
+    expectedMetadata(dl) = string(T.("PostEqualizationNoiseVariance"+suffix)(dl));
+    expectedMetadata(ul) = string(T.("PreEqualizationNoiseVariance"+suffix)(ul));
+    correct = string(T.(field))==expectedMetadata & strlength(expectedMetadata)>0;
+    add("legacy_noise_variance_"+lower(suffix),all(correct),nnz(~correct), ...
+        "NoiseVariance metadata belongs to a different physical plane from its value");
+end
 
 % Validate the executed demapper convention, not just nonempty labels.
 % Pre-EQ variance plus equalizer CSI and post-EQ variance without a second

@@ -57,7 +57,8 @@ for i = 1:numel(files)
     % Only the browser producer may write its rendered chart datasets and
     % exact lineage. Late generic annotations would invalidate those bytes.
     if any(lower(topLevel) == lower(immutableRoots)) || ...
-            any(lower(relativePath) == immutableFiles) || browserOwned
+            any(lower(relativePath) == immutableFiles) || browserOwned || ...
+            startsWith(lower(relativePath),"reports/live_measurements/")
         summary.SkippedImmutableCount = summary.SkippedImmutableCount + 1;
         continue;
     end
@@ -116,7 +117,8 @@ files = dir(fullfile(runFolder, "**", "*plot_lineage.csv"));
 for fileIndex = 1:numel(files)
     lineagePath = string(fullfile(files(fileIndex).folder, files(fileIndex).name));
     if sixgr.runtime.isNestedExecutionPath(runFolder, lineagePath) || ...
-            strcmpi(files(fileIndex).name,"contract_plot_lineage.csv")
+            strcmpi(files(fileIndex).name,"contract_plot_lineage.csv") || ...
+            contains(lower(replace(lineagePath,"\","/")),"/reports/live_measurements/")
         continue;
     end
     try

@@ -42,6 +42,10 @@ if ~isempty(metrics)
     margin = best - second;
 end
 falseCandidates = sum(logical(cand.CrcPass) & ~logical(cand.SelectedCandidate));
+if any(lower(trialType)==["no_signal_coreset","false_alarm_sweep"])
+    % Under H0 even the chosen candidate is a false CRC acceptance.
+    falseCandidates = sum(logical(cand.CrcPass));
+end
 strictOk = ~negativeExpected && rxOk && payloadMatch && grantValid && falseCandidates == 0 && ...
     controlResourceValid && ...
     strlength(string(det.UsedOracleFields)) == 0 && ~logical(det.ProxyUsed) && ...

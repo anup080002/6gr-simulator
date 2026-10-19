@@ -326,7 +326,8 @@ classdef SharedWaveformPhysicalRuntime < handle
                     beforeGain=contribution;
                     contribution=contribution.*cast(gain,'like',contribution);
                     lossReplay=link.LossReplay;
-                    lossReplay.GainStageMeasurement=sixgr.truth.measureWaveformGainEnergy(beforeGain,contribution);
+                    lossReplay.GainStageMeasurement=sixgr.truth.measureWaveformGainEnergy( ...
+                        beforeGain,contribution,obj.Receivers(link.RX).NoiseReplay.PowerContextAmplitudeUnit);
                     contributions{k}=contribution;
                     sums{link.RX}=sums{link.RX}+contribution;
                     lastNonzero=find(any(x~=0,2),1,'last');

@@ -1,6 +1,16 @@
 function ok=testWaveformOperatingPointAuthority()
 % Typed authority/state-machine fixtures; not exported radio measurements.
 setup6GRSimToolkit('Verbose',false);
+assert(sixgr.truth.describeNoiseOperatingPoint('standalone_awgn_snr_argument') == ...
+    "controlled occupied-RE reference-SNR point");
+assert(sixgr.truth.describeNoiseOperatingPoint('receiver_noise_figure_thermal_noise') == ...
+    "thermal receiver-noise operating-point label");
+try
+    sixgr.truth.describeNoiseOperatingPoint('unrecorded_mode');
+    error('test:ExpectedRejection','An unknown mode must not be described as thermal noise.');
+catch cause
+    assert(strcmp(cause.identifier,'sixgr:truth:UnknownOperatingModeAuthority'));
+end
 cfg=struct('channel',struct('snr_dB',12));
 state=struct('CurrentSlot',10,'CurrentSNR_dB',35.78);
 f=sixgr.truth.CoupledTruthRuntime.emptyLatestFeedbackRowRuntime();
@@ -34,6 +44,9 @@ end
 % must use the configured authority; the retired mixed-domain resolver must
 % not remain available for a legacy waveform path.
 code=fileread(which('sixgr.truth.runWaveformLinkBundle'));
+assert(contains(code,'sixgr.truth.describeNoiseOperatingPoint(executedNoiseMode)') && ...
+    contains(code,'"NoiseOperatingMode",localResolveNoiseOperatingMode(cfg)') && ...
+    ~contains(code,'at receiver-noise operating point label'));
 assert(~contains(code,'localResolveCoupledRuntimeLinkSNR') && ...
     ~contains(code,'localEstimateCoupledRuntimeLargeScaleSINR'));
 assert(numel(strfind(code,'sixgr.truth.resolveWaveformOperatingPointMetadata('))==8);

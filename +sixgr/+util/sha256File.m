@@ -11,7 +11,8 @@ arguments
 end
 
 filePath = char(filePath);
-if exist(filePath, "file") ~= 2
+% EXIST classifies MEX/P-code as 3/6; they are still real byte streams.
+if ~isfile(filePath)
     error("sixgr:util:sha256File:MissingFile", ...
         "SHA-256 source file does not exist: %s.", filePath);
 end

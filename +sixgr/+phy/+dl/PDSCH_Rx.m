@@ -1612,6 +1612,7 @@ if sharedTiming
     rx.SynchronizationState = syncState;
     rx.ReceiverTrackingCorrection = trackingCorrection;
     rx.EstimatedCFO_Hz = double(trackingCorrection.EstimatedCFO_Hz);
+    rx.CFOEstimateAvailable = logical(trackingCorrection.CFOEstimateAvailable);
     rx.CFOObservation = sixgr.util.structGet(trackingCorrection,"CFOObservation",struct());
     rx.CFOCorrectionApplied = logical(trackingCorrection.CFOCorrectionApplied);
     rx.CFOCorrectionApplied_Hz = double(trackingCorrection.CFOCorrectionApplied_Hz);

@@ -1,0 +1,15 @@
+inherits:
+  - ./lls_tdd_pusch_independent_shared_harq_fixture.yaml
+
+meta:
+  scenario_id: lls_received_ul_separate_pucch_fixture
+  description: Received DL HARQ remains on symbols 12-13 PUCCH beside symbols 0-10 PUSCH.
+  purpose: Physical nonoverlapping transport regression; not statistical qualification.
+  research_class: optional_research_experiment
+
+pusch:
+  start_symbol: 0
+  num_symbols: 11
+  time_domain_allocations:
+    - [0, 0, 11, 1]
+    - [1, 0, 11, 2]

@@ -31,7 +31,7 @@
       "enabled": {"required": true, "type": "boolean"}, "coreset_definitions": {"required": true, "type": "struct_array"},
       "search_space_definitions": {"required": true, "type": "struct_array"}, "css_uss_policy": {"required": true, "type": "string"},
       "candidate_locations": {"required": true, "type": "struct_array"}, "dci_families": {"required": true, "type": "string_list", "min_items": 1},
-      "dci_size_policy": {"required": true, "type": "string"}, "crc_length": {"required": true, "type": "integer", "min": 0},
+      "dci_size_policy": {"required": true, "type": "string"}, "crc_length": {"required": true, "type": "integer", "allowed_values": [24]},
       "virtual_crc_flag": {"required": true, "type": "boolean"}, "modulation": {"required": true, "type": "string"},
       "aggregation_levels": {"required": true, "type": "number_list", "min_items": 1}, "cce_to_reg_mapping": {"required": true, "type": "string"},
       "reg_bundle_size": {"required": true, "type": "integer", "min": 1}, "dmrs_policy": {"required": true, "type": "string"},

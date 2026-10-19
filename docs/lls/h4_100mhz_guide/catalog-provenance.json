@@ -1,0 +1,83 @@
+{
+  "scope": "effective_catalog_declared_options_not_runtime_qualification",
+  "created": "2026-10-19 07:14:05",
+  "matlab": "26.1.0.3312084 (R2026a) Update 4",
+  "sources": [
+    {
+      "path": "+sixgr/+lls6g/+config/loadParameterCatalog.m",
+      "sha256": "b368c6f9853fe62da5c70da9077812da7b1a3d3c4a6647c6ac6417697303d5bb"
+    },
+    {
+      "path": "simulator/configs/schema/scenario_parameter_catalog.yaml",
+      "sha256": "102c4a5b9407002b5d8f974d082f320d84aa2b06222e1074d548392809074a19"
+    },
+    {
+      "path": "simulator/configs/schema/matrix_parameter_catalog.yaml",
+      "sha256": "282f33cf8d65e039abf24f0b3104a6bd46fd4ae4609edbd7647bab70e8cc10e4"
+    },
+    {
+      "path": "simulator/configs/schema/scenario_parameter_catalog_extension_01.yaml",
+      "sha256": "f6a6abfda3ed253e01b1a75f9cb1f3f6c3f2dc904034726f4fe57fc2f3b5e9de"
+    },
+    {
+      "path": "simulator/configs/schema/scenario_parameter_catalog_extension_02.yaml",
+      "sha256": "3569b8e82beefbd26111c06ce327bbe2f17b01d6922afa1afe011860c178cd75"
+    },
+    {
+      "path": "simulator/configs/schema/scenario_parameter_catalog_extension_03.yaml",
+      "sha256": "4d46b798344c2786793b81957bc5b66335b0a18b9253c82670663cc2c48c60f6"
+    },
+    {
+      "path": "simulator/configs/schema/scenario_parameter_catalog_extension_04.yaml",
+      "sha256": "8e27d0965005035841a98095780d7a85746817fc9946c4f7987cd432967e0c43"
+    },
+    {
+      "path": "simulator/configs/schema/scenario_parameter_catalog_extension_05.yaml",
+      "sha256": "c68f0b3b3420eb5b2f80ec6552b3487b5fefabc6a49e4c6d33d46531ee14d6cb"
+    },
+    {
+      "path": "simulator/configs/schema/scenario_parameter_catalog_extension_06.yaml",
+      "sha256": "32453cfe4357d11554be6983f07ea95e73f81e63f1289193bd1f450dae02434d"
+    },
+    {
+      "path": "simulator/configs/schema/scenario_parameter_catalog_extension_07.yaml",
+      "sha256": "8aa1e033f5478ebadc81b25139f78b4f2d1ae376a256d29ff9a4b9aea00537f0"
+    },
+    {
+      "path": "simulator/configs/schema/scenario_parameter_catalog_extension_09.yaml",
+      "sha256": "80d341abbfea257f5f63167ec0db64883a0bd8e7455adf828c5d9964a3804f30"
+    },
+    {
+      "path": "simulator/configs/schema/scenario_parameter_catalog_extension_12.yaml",
+      "sha256": "04055a46c39fc0655079215086416c824916d429ca09fcd04ba12905acb2aa85"
+    },
+    {
+      "path": "simulator/configs/schema/scenario_parameter_catalog_extension_13.yaml",
+      "sha256": "b6648a4057fac08fd592d4533af9f99b3729e78cb2de7f47bb27d0cfb016add2"
+    },
+    {
+      "path": "simulator/configs/schema/scenario_parameter_catalog_extension_16.yaml",
+      "sha256": "27df7e3b915ea796fba441ebbc78e77a4ad85b6d15db71caee83b475e12d95ef"
+    },
+    {
+      "path": "simulator/configs/schema/scenario_parameter_catalog_extension_18.yaml",
+      "sha256": "7c4554a162eba3f78e1c1c09c9cb5e339fd0b774bd746af769772de015317bfb"
+    },
+    {
+      "path": "simulator/configs/schema/scenario_parameter_catalog_extension_19.yaml",
+      "sha256": "f1f53e45714d9be59bbef948ce67936178ef502af6a2e0c10739c536658bb740"
+    },
+    {
+      "path": "simulator/configs/schema/scenario_parameter_catalog_extension_20.yaml",
+      "sha256": "654043d6e2061bcac4db8d65bc35b769f97981313d490895e6b574c7ec9dc029"
+    },
+    {
+      "path": "simulator/configs/schema/scenario_parameter_catalog_extension_21.yaml",
+      "sha256": "cbb6574af5fdb61d54da6853f32282b2221d4d3927f5dfc9d2179179602c8e77"
+    },
+    {
+      "path": "simulator/configs/schema/scenario_parameter_catalog_extension_22.yaml",
+      "sha256": "d51452d651a302fe5580a67a147e3938137d2783e23b5ba7af79ea9a7dd98762"
+    }
+  ]
+}

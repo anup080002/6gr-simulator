@@ -3,18 +3,21 @@ function T=captureHARQTransmitterLifecycle(state)
 % Archived points are immutable: the caller captures before replacing the
 % HARQ entities at an independent sweep boundary. Reading is non-mutating.
 T=sixgr.util.structGet(state,'HARQTransmitterLifecycleArchive',table());
-assert(istable(T),'sixgr:truth:InvalidHARQLifecycleArchive');
+assert(istable(T),'sixgr:truth:InvalidHARQLifecycleArchive', ...
+    'The archived transmitter lifecycle must be a table.');
 for field=["DLHarq","ULHarq"]
     entity=sixgr.util.structGet(state,field,[]);
     if isempty(entity), continue; end
     assert(isa(entity,'sixgr.l2.mac.HARQEntity'), ...
-        'sixgr:truth:InvalidHARQLifecycleOwner');
+        'sixgr:truth:InvalidHARQLifecycleOwner', ...
+        'Only the actual HARQ transmitter entity may supply lifecycle events.');
     current=entity.getTransmitterLifecycle();
     if isempty(current), continue; end
     point=double(sixgr.util.structGet(state,'CurrentSweepPointIndex',NaN));
     snr=double(sixgr.util.structGet(state,'CurrentSNR_dB',NaN));
     assert(isscalar(point) && isfinite(point) && point>=1 && point==fix(point), ...
-        'sixgr:truth:HARQLifecycleSweepIdentityMissing');
+        'sixgr:truth:HARQLifecycleSweepIdentityMissing', ...
+        'Executed transmitter events require an installed positive integer sweep identity.');
     current.SweepPointIndex=repmat(point,height(current),1);
     current.ConfiguredSNR_dB=repmat(snr,height(current),1);
     if isempty(T), T=current; else, T=[T;current]; end %#ok<AGROW>

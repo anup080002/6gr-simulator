@@ -17,6 +17,14 @@ metrics = struct( ...
     "CodeBlockLength_bits", NaN, ...
     "SegmentationOccurred", NaN, ...
     "SegmentationPaddingBits", NaN, ...
+    "CBCRCBits", NaN, ...
+    "CodeBlockInputBits", NaN, ...
+    "SegmentationOverheadBits", NaN, ...
+    "InherentLDPCPuncturedBits", NaN, ...
+    "RateMatchEligibleBits", NaN, ...
+    "RateMatchUniqueSelectedBits", NaN, ...
+    "CodingAccountingVersion", "LDPCSelectionAccounting/v2", ...
+    "RateMatchAccountingJSON", "", ...
     "TBCRCLength_bits", NaN, ...
     "TBLengthWithCRC_bits", NaN, ...
     "BaseGraph", NaN, ...
@@ -46,11 +54,6 @@ metrics.BaseGraph = localFiniteCommon(sixgr.util.structGet( ...
 metrics.RateMatchedBits = localFiniteSum(sixgr.util.structGet( ...
     tx, "GPerCodeword",sixgr.util.structGet(tx, "G", NaN)));
 
-codeword = sixgr.util.structGet(tx, "Codeword", []);
-if ~isempty(codeword)
-    metrics.EncodedBits = double(numel(codeword));
-end
-
 seg = sixgr.util.structGet(txInfo, "Segmentation", struct());
 metrics.NumCodeBlocks = localFiniteSum( ...
     sixgr.util.structGet(seg, "nCB", NaN));
@@ -60,7 +63,37 @@ if isfinite(metrics.NumCodeBlocks)
     metrics.SegmentationOccurred = double(metrics.NumCodeBlocks > 1);
 end
 if isfinite(metrics.NumCodeBlocks) && isfinite(metrics.CodeBlockLength_bits) && isfinite(metrics.TBLengthWithCRC_bits)
-    metrics.SegmentationPaddingBits = max(metrics.NumCodeBlocks * metrics.CodeBlockLength_bits - metrics.TBLengthWithCRC_bits, 0);
+    metrics.CodeBlockInputBits = metrics.NumCodeBlocks * metrics.CodeBlockLength_bits;
+    metrics.CBCRCBits = metrics.NumCodeBlocks * double(sixgr.util.structGet(seg,"CBCRCLength",NaN));
+    metrics.SegmentationPaddingBits = double(sixgr.util.structGet(seg,"FillerCount",NaN));
+    metrics.SegmentationOverheadBits = metrics.CBCRCBits + metrics.SegmentationPaddingBits;
+end
+% Canonical per-codeword layouts own K/C/filler, including unequal layouts.
+layouts=sixgr.util.structGet(tx,"CodingLayouts",{});
+if isempty(layouts)
+    one=sixgr.util.structGet(tx,"CodingLayout",struct());
+    if isstruct(one) && isfield(one,'MotherCodeLength'), layouts={one}; end
+end
+if ~isempty(layouts)
+    metrics.NumCodeBlocks=sum(cellfun(@(x) double(x.NumCodeBlocks),layouts));
+    lengths=cellfun(@(x) double(x.CodeBlockLength),layouts);
+    metrics.CodeBlockLength_bits=localFiniteCommon(lengths);
+    metrics.CodeBlockInputBits=sum(cellfun(@(x) double(x.CodeBlockLength)*double(x.NumCodeBlocks),layouts));
+    metrics.CBCRCBits=sum(cellfun(@(x) double(x.CBCRCLength)*double(x.NumCodeBlocks),layouts));
+    metrics.SegmentationPaddingBits=sum(cellfun(@(x) double(x.FillerCount),layouts));
+    metrics.SegmentationOverheadBits=metrics.CBCRCBits+metrics.SegmentationPaddingBits;
+    metrics.SegmentationOccurred=double(any(cellfun(@(x) double(x.NumCodeBlocks)>1,layouts)));
+    metrics.EncodedBits=sum(cellfun(@(x) double(x.MotherCodeLength)*double(x.NumCodeBlocks),layouts));
+    metrics.InherentLDPCPuncturedBits=sum(cellfun(@(x) 2*double(x.LiftingSize)*double(x.NumCodeBlocks),layouts));
+    if all(cellfun(@(x) isfield(x,'RateMatchAccounting'),layouts))
+        accounting=cellfun(@(x) x.RateMatchAccounting,layouts,'UniformOutput',false);
+        metrics.RateMatchAccountingJSON=string(jsonencode(accounting));
+        metrics.RateMatchRepetitionBits=sum(cellfun(@(x) sum(x.RepeatedSelections),accounting));
+        % Legacy puncture field means eligible positions NOT selected, not 2*Zc.
+        metrics.RateMatchPunctureBits=sum(cellfun(@(x) sum(x.UnselectedEligiblePositions),accounting));
+        metrics.RateMatchEligibleBits=sum(cellfun(@(x) sum(x.EligibleBufferPositions),accounting));
+        metrics.RateMatchUniqueSelectedBits=sum(cellfun(@(x) sum(x.UniqueSelectedPositions),accounting));
+    end
 end
 
 actIter = double(sixgr.util.structGet(rx, "ActiveIterations", []));
@@ -93,16 +126,6 @@ end
 if isfinite(metrics.DecoderComplexityUnits) && isfinite(metrics.OfferedBits) && metrics.OfferedBits > 0
     metrics.NormalizedDecoderComplexity = metrics.DecoderComplexityUnits / metrics.OfferedBits;
     metrics.AreaEfficiencyProxy = metrics.OfferedBits / max(metrics.DecoderComplexityUnits, eps);
-end
-
-if isfinite(metrics.EncodedBits) && isfinite(metrics.RateMatchedBits)
-    if metrics.RateMatchedBits <= metrics.EncodedBits
-        metrics.RateMatchPunctureBits = metrics.EncodedBits - metrics.RateMatchedBits;
-        metrics.RateMatchRepetitionBits = 0;
-    else
-        metrics.RateMatchPunctureBits = 0;
-        metrics.RateMatchRepetitionBits = metrics.RateMatchedBits - metrics.EncodedBits;
-    end
 end
 
 [cbErr, cbCount, cbgErr, cbgCount] = localCodeBlockErrorStats(tx, rx, cfg);

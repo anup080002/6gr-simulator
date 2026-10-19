@@ -1,5 +1,5 @@
 function ok=testSharedCSIReportClock(mode,withHARQ,staleScalarMetadata,receiveAudit,scenarioFile,reportedCQI,priorOutage,reportedRI)
-% Actual PUCCH IQ/CDL/RF/thermal noise, followed by decoded CSI delivery.
+% Actual PUCCH IQ/CDL/RF/configured noise, followed by decoded CSI delivery.
 % Input CSI and DL clock/TAG are declared component inputs. Optional HARQ
 % comes from an actual isolated PDSCH connector, not this shared CDL owner;
 % this fixture does not qualify simulated access or measured CSI generation.
@@ -24,6 +24,7 @@ end
 if ~isfile(file), file=fullfile('simulator','configs','scenarios',file); end
 s=sixgr.lls6g.config.loadScenarioConfig(file);
 cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
+operatingPoint=sixgr.truth.resolveWaveformOperatingPointMetadata(cfg);
 if reportedRI==2
     cfg.phy.linkAdaptation.rankIncreaseConfirmationReports=2;
 end
@@ -38,7 +39,7 @@ if priorOutage
 end
 multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
 state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,tempname,multi,struct(),10);
-state=sixgr.truth.CoupledTruthRuntime.startSlot(state,cfg,'DL',1,1,1,10,12);
+state=sixgr.truth.CoupledTruthRuntime.startSlot(state,cfg,'DL',1,1,1,10,operatingPoint);
 state.CurrentServingIdx(:)=1;
 priorSchedulerFeedback=state.LatestDLFeedback;
 if priorOutage
@@ -156,12 +157,18 @@ assert(isnan(csiGrant.PRIValue) && ...
 state.TestCSIExpected=expected; state.TestCSIWithHARQ=withHARQ;
 for slot=1:due+1
     [state,~,blocked]=sixgr.truth.CoupledTruthRuntime.startSlotWithQueuedUL( ...
-        state,cfg,'DL',1,1,slot,10,12,repmat(struct(),0,1),true);
+        state,cfg,'DL',1,1,slot,10,operatingPoint,repmat(struct(),0,1),true);
     assert(isempty(blocked));
     if slot<=due, assert(~state.PendingCSITable.Processed(state.TestCSIReportIndex)); end
     [state,~]=owner.advanceSlot(state,cfg,@localReceive);
 end
 report=state.PendingCSITable(state.TestCSIReportIndex,:);
+if string(cfg.run.noiseOperatingMode)=="standalone_awgn_snr_argument"
+    physical=state.ControlTrials.PUCCH;
+    assert(all(physical.ConfiguredSNR_dB==operatingPoint & ...
+        physical.AppliedAWGNSNR_dB==operatingPoint), ...
+        'The test must label the installed physical noise reference, not its former hardcoded 12 dB.');
+end
 assert(isequaln(state.PendingCSITable([1 3],:),state.TestCSIUnrelatedReports), ...
     'Shared PUCCH delivery must not alter unrelated CSI history or future reports.');
 assert(report.Processed && report.CSIUCIDecodeOk && string(report.CSIUCITransport)=="pucch_decoded");
@@ -176,10 +183,22 @@ if reportedRI==2
         isequaln(state.LatestDLFeedback,priorSchedulerFeedback), ...
         'One higher RI must not replace rank/PMI/CQI or refresh the accepted report clock.');
     fprintf('PHYSICAL_CSI_RANK_CONFIRMATION_HELD_PASS received_RI=2 accepted_rank=1\n');
+elseif string(cfg.phy.linkAdaptation.rankPolicy)=="fixed" && ...
+        reportedRI~=cfg.phy.pdsch.numLayers
+    % The FDD scoring fixture is deliberately fixed rank 2. Reception of
+    % RI=1 must remain visible but cannot authorize an adaptive grant.
+    assert(report.SchedulerSpatialDecisionDeferred && ...
+        string(report.RankUpdateStatus)=="held_fixed_rank_feedback_mismatch" && ...
+        report.SchedulerAcceptedRank==cfg.phy.pdsch.numLayers && ...
+        isequaln(state.LatestDLFeedback,priorSchedulerFeedback), ...
+        'A decoded out-of-policy RI must not replace the fixed-rank scheduler context.');
 else
 assert(state.LatestDLFeedback.Valid && ...
     state.LatestDLFeedback.SchedulerCQIRawCQI==expected.CQI && ...
-    isequaln(state.LatestDLFeedback.CQI,report.SchedulerResolvedCQI));
+    isequaln(state.LatestDLFeedback.CQI,report.SchedulerResolvedCQI), ...
+    'test:CSIAdmissionEvidence','Received CSI admission: latest=%s; decodedCQI=%g resolved=%g spatialDeferred=%d reason=%s.', ...
+    jsonencode(state.LatestDLFeedback),report.CQI,report.SchedulerResolvedCQI, ...
+    report.SchedulerSpatialDecisionDeferred,string(report.LinkAdaptationDecisionReason));
 end
 if priorOutage
     assert(report.CQIOutageRecoveryPending && report.CQIOutageRecoveryResolvedCQI>0 && ...
@@ -255,6 +274,11 @@ srs=table("PASS",state.CurrentSlot,1,true,1,0, ...
     "SRSChannelEstimateAvailable","SRSRuntimeEvidenceUsable", ...
     "ReceiverHestSINR_dB","NMSE_dB","ChannelNMSEThreshold_dB", ...
     "ProxyUsed","Skipped","ToolboxMissing","UsedOracleFields"]);
+if string(cfg.phy.linkAdaptation.rankPolicy)=="fixed"
+    % This separate SRS boundary case tests valid UL feedback isolation,
+    % so its declared RI must obey the fixture's fixed UL rank policy.
+    srs.RIEstimate=cfg.phy.pusch.numLayers;
+end
 dlBefore=state.LatestDLFeedback;
 adaptationBefore=state.DLLinkAdaptationState;
 for ulSINR=[-15 45]
@@ -264,7 +288,9 @@ for ulSINR=[-15 45]
         state.LastSuccessfulSRSSlotByUE(1)==srs.Slot && ...
         state.LatestULFeedback(1).RI==srs.RIEstimate && ...
         state.LatestULFeedback(1).PMI==srs.TPMIEstimate, ...
-        'UL SRS RI/TPMI must still be consumed; rejecting SRS is not a source-authority fix.');
+        'UL SRS must be consumed: validity=%s source=%g expectedSlot=%g RI=%g expectedRI=%g TPMI=%g expectedTPMI=%g.', ...
+        string(state.SRSValidityState(1)),state.LastSuccessfulSRSSlotByUE(1),srs.Slot, ...
+        state.LatestULFeedback(1).RI,srs.RIEstimate,state.LatestULFeedback(1).PMI,srs.TPMIEstimate);
     % This boundary fixture deliberately does not contain a calibrated
     % per-layer PUSCH prediction. It must not invent an UL MCS either.
     assert(~state.LatestULFeedback(1).Valid && isnan(state.LatestULFeedback(1).MCSIndex));

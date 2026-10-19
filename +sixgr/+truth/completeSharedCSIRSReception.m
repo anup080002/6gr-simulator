@@ -43,7 +43,18 @@ row=sixgr.truth.bindSharedRFExecutionEvidence(row,item.Planes,true);
 % Execute only after practical CSI reception/report calculation. This
 % measures the actual transmitter chain; it never claims RX-pilot EVM.
 paired=sixgr.phy.refsig.pairCSIRSTransmitterSymbols(prepared,transmitted);
-row.ControlEVMSamplesJSON=string(jsonencode(paired));
+% state.RunFolder belongs to air_interface in a full bundle. Paired sample
+% references are relative to the canonical RUN root, including control/CSV
+% mirrors; never add air_interface twice or search outside this run.
+storageRoot=string(sixgr.util.structGet(prepared.ReceiverConfig,'run.rootRunFolder',''));
+assert(isscalar(storageRoot) && ~ismissing(storageRoot) && strlength(strtrim(storageRoot))>0, ...
+    'sixgr:truth:MissingCSIRSArtifactRunRoot', ...
+    'Completed CSI-RS sample storage requires the configured run.rootRunFolder.');
+[~,channelSource,channelCaptures]=sixgr.truth.sharedLinkScoringObservation( ...
+    item.Planes,prepared,context.DesiredReferencePlane);
+row=sixgr.truth.exportSharedCSIRSChannelEstimate( ...
+    storageRoot,row,prepared,reception,channelSource,channelCaptures);
+row=sixgr.report.retainControlEVMPairs(storageRoot,row,paired);
 row = sixgr.truth.bindIndependentCSIRSClock( ...
     row,prepared,post,state.SharedWaveformStream.Events.NextSampleIndex, ...
     state.SharedWaveformStream.Physical.ConfigurationEpoch);

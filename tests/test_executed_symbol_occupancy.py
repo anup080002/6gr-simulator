@@ -2,6 +2,7 @@
 import csv
 import io
 import sys
+import tracemalloc
 from pathlib import Path
 
 import pytest
@@ -152,3 +153,54 @@ def test_dmrs_map_uses_executed_component_not_parent_channel_name():
     assert result is not None
     points = decoded(result)
     assert len(points) == 1 and float(points[0]["occupancy_value"]) == 1
+
+
+def test_occupancy_uses_stream_opener_without_retaining_unused_columns(tmp_path):
+    # Reporting-only fixture: all records must be visited; no PHY claim.
+    path = tmp_path / "executed.csv"
+    count = 20_000
+    fields = list(record()) + ["unused_capture_detail"]
+    with path.open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.DictWriter(stream, fieldnames=fields)
+        writer.writeheader()
+        for index in range(count):
+            writer.writerow(record(symbol=index % 14, unused_capture_detail="x"*1024))
+
+    def fetch(_):
+        raise AssertionError("Occupancy must not load the complete raw CSV into memory")
+    opened = []
+    def opener(_):
+        stream = path.open("rb")
+        opened.append(stream)
+        return stream
+    fetch.open_artifact_binary = opener
+    # Warm imports/renderer before tracing the sample-volume reduction.
+    plot([record()])
+    tracemalloc.start()
+    try:
+        result = m._specialized_chart_materialization(NAME, {SOURCE: {"artifact_id": 1}}, fetch, 7)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    rows = decoded(result)
+    assert len(rows) == 1 and rows[0]["y_value"] == "14"
+    assert int(rows[0]["source_row_count"]) == count
+    assert rows[0]["symbol_indices_0based"] == "|".join(map(str, range(14)))
+    assert peak < 4*1024*1024, f"Retained raw occupancy rows: {peak} bytes"
+    assert opened and all(stream.closed for stream in opened)
+
+
+@pytest.mark.parametrize("first_bound", [False, True])
+def test_streamed_occupancy_rejects_late_mixed_observation_identity(first_bound):
+    bound = dict(ObservationID="observation", ObservationUEIndex=1,
+                 ConfiguredSNR_dB=40, Seed=42, TrialIndex=1,
+                 ExecutionScope="independent_link_execution")
+    rows = [record(**(bound if first_bound else {})) for _ in range(20)]
+    rows.append(record(active_flag=0, **({} if first_bound else bound)))
+    with pytest.raises(ValueError, match="Mixed or unbound"):
+        plot(rows)
+
+
+def test_streamed_occupancy_does_not_skip_invalid_final_row():
+    with pytest.raises(ValueError, match="Occupancy row 21"):
+        plot([record() for _ in range(20)] + [record(direction="GUARD")])

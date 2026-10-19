@@ -1,7 +1,9 @@
-function hypothesis=buildScheduledHARQTransportReception(state,cfg,ue,targetSlot,observationID)
+function hypothesis=buildScheduledHARQTransportReception(state,cfg,ue,targetSlot,observationID,resolveTransport)
 % Independent gNB allocation from transmitted DL grants and installed UCI.
 % Select the gNB's scheduled HARQ transport independently of UE reception.
 % Never borrow UE report presence, serialized payload length or selected RI.
+if nargin<6, resolveTransport=true; end
+assert(islogical(resolveTransport) && isscalar(resolveTransport));
 uciOnPUSCH=sixgr.util.structGet(cfg,'phy.pucch.uciOnPUSCHEnabled',[]);
 assert((islogical(uciOnPUSCH)||isnumeric(uciOnPUSCH)) && isscalar(uciOnPUSCH) && ...
     isreal(uciOnPUSCH) && isfinite(uciOnPUSCH) && any(uciOnPUSCH==[0 1]), ...
@@ -72,7 +74,7 @@ if shortHARQ
 end
 resource=localResource(resourceBitCount,rrc,mapping,packed);
 transport=struct(); overlapping=cell(0,1);
-if uciOnPUSCH
+if uciOnPUSCH && resolveTransport
     [overlapping,transport]=sixgr.truth.findScheduledPUSCHOverlap(state,cfg,ue,targetSlot, ...
         [resource.Data.StartSymbol resource.Data.NumSymbols]);
 end

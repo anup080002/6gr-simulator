@@ -37,6 +37,20 @@ row.DetectionSuccess = row.DetectionUsable && ...
     isequal(sixgr.util.structGet(rx,'Ok',false),true) && ...
     isequal(sixgr.util.structGet(rx,'ErrFlag',NaN),0);
 row.Modulation = "QPSK"; % PDCCH modulation, not the scheduled data modulation.
+for name=["LLRMeanAbs","LLRMin","LLRMax","LLRCount"]
+    row.("PDCCH"+name)=double(sixgr.util.structGet(rx,name,NaN));
+end
+% These flags describe the retained decoder samples, not a SINR/EVM proxy
+% or a stale aggregate. Absent samples cannot establish finite LLRs.
+row.LLRAvailable = NaN;
+row.LLRFinite = NaN;
+if isfield(rx,'DecoderLLRs')
+    llrs = rx.DecoderLLRs;
+    assert(isnumeric(llrs) && isreal(llrs) && (isvector(llrs) || isempty(llrs)), ...
+        'sixgr:truth:InvalidPDCCHLLREvidence','Decoder LLR evidence must be a real numeric vector.');
+    row.LLRAvailable = ~isempty(llrs);
+    row.LLRFinite = ~isempty(llrs) && all(isfinite(llrs(:)));
+end
 
 % The injected RF delay is not the arrival time after channel/filter delay.
 % Keep it in InjectedTimingOffset_samples; do not relabel it as truth timing.

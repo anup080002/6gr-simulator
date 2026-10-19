@@ -2,6 +2,12 @@ function validation = validatePDCCHConfigStrict(pdcchCfg)
 %VALIDATEPDCCHCONFIGSTRICT Validate strict PDCCH config invariants.
 
 reasons = strings(0, 1);
+try
+    sixgr.phy.pdcch.PDCCHSpecificationProfile.validateCRCLength( ...
+        sixgr.util.structGet(pdcchCfg,"CRCLength",24));
+catch
+    reasons(end+1,1)="invalid_nr_crc_length";
+end
 toolboxMissing = false;
 needed = ["nrCarrierConfig","nrCORESETConfig","nrSearchSpaceConfig", ...
     "nrPDCCHConfig","nrPDCCHSpace","nrDCIEncode","nrDCIDecode", ...

@@ -10,8 +10,76 @@ fixture='lls_tdd_pusch_independent_harq_csi_fixture.yaml';
 if isPUCCH, fixture='lls_tdd_pucch_independent_harq_csi_sr_fixture.yaml'; end
 config=fullfile(root,'simulator','configs','scenarios',fixture);
 [passed,state]=testSharedPUSCHChannelArtifacts('TDD',false,false,true,true,true,false, ...
-    outputRoot,config,false,true,false,false,isPUCCH);
+    outputRoot,config,false,true,false,false,isPUCCH,2,false,true);
 assert(passed);
+% The same actually decoded attempts must carry the receive clock through
+% the runtime timeline, not just the transmit clock used for HARQ RTT.
+attempts=state.HARQTimelineTable;
+% The public completion path must supply unique transport goodput for actual
+% DL and UL decodes, separately from packet/application delivery.
+credit=state.TransportGoodputLedger;
+assert(numel(credit.Key)==height(attempts) && ...
+    sum(credit.PayloadBits)==sum(attempts.OriginalTBSBits));
+for direction=["DL","UL"]
+    rows=string(attempts.Direction)==direction;
+    stats=state.(direction+"Stats");
+    assert(stats(1).GoodBitsSum==sum(attempts.OriginalTBSBits(rows)), ...
+        'Actual receiver completions must credit the unique original TB size.');
+end
+assert(~isempty(attempts) && all(isfinite(attempts.DataDecodeAvailableAtSample)) && ...
+    all(attempts.DataDecodeAvailableAtSample>=attempts.DataReceiveSymbolEndSampleExclusive));
+for index=1:height(attempts)
+    row=table2struct(attempts(index,:));
+    clock=sixgr.truth.CoupledTruthRuntime.decodedTBDeliveryTimingRuntime( ...
+        state,row.Slot,row.FeedbackDueSlot,row);
+    assert(clock.TimingAuthority=="received_data_result_availability_sample" && ...
+        clock.DeliveryTime_s==row.DataDecodeAvailableAtSample/row.DataReceiveSampleRateHz);
+end
+% Real traffic arrival -> finalized TX reservation -> actual decoder -> SDU
+% timing. Metadata mapping must not be promoted to application-byte delivery.
+SDU=state.PacketSDULedgerTable; packets=state.PacketDeliveryLedgerTable;
+% Preserve actual measurements even if a later assertion exposes a defect.
+sixgr.util.csvWriteTable(fullfile(outputRoot,'physical_packet_sdu_delivery.csv'),SDU,'PreserveSchema',true);
+sixgr.util.csvWriteTable(fullfile(outputRoot,'physical_packet_arrivals.csv'),packets,'PreserveSchema',true);
+sixgr.util.csvWriteTable(fullfile(outputRoot,'physical_packet_harq_attempts.csv'),attempts,'PreserveSchema',true);
+assert(~isempty(SDU) && all(SDU.DeliverySuccess) && all(SDU.FirstSuccessDelivery));
+assert(all(SDU.DeliveryEvidenceMode=="CRC_CONFIRMED_PACKET_MAPPING") && ...
+    ~any(SDU.ProtocolPayloadSameWaveformTruth) && ~any(SDU.ProtocolDecodedBitExact));
+assert(~any(packets.DeliverySuccess) && ~any(packets.SameWaveformProtocolComplete));
+assert(all(packets.ProtocolReassemblyStatus=="protocol_stack_not_enabled"));
+for k=1:height(SDU)
+    match=string(attempts.TBId)==SDU.TransportBlockId(k) & ...
+        string(attempts.Direction)==SDU.Direction(k) & attempts.UEIndex==SDU.UEIndex(k);
+    assert(nnz(match)==1 && attempts.CombinedDecodeOK(match));
+    actual=attempts(match,:);
+    assert(SDU.DeliveryAvailableAtSample(k)==actual.DataDecodeAvailableAtSample && ...
+        SDU.DeliveryTime_s(k)==actual.DataDecodeAvailableAtSample/actual.DataReceiveSampleRateHz && ...
+        SDU.HARQAttemptCount(k)==1 && SDU.NDIEpoch(k)==actual.NDIEpoch);
+end
+assert(sum(SDU.PayloadBits)==sum(packets.OfferedBits) && all(packets.RemainingBits==0));
+assert(all(packets.CRCConfirmedMappedBits==packets.OfferedBits) && ...
+    all(packets.CompletedApplicationBits==0 & packets.ReservedInFlightBits==0 & ...
+    packets.UnresolvedReservedBits==0 & packets.HARQReleasedUndeliveredBits==0 & ...
+    packets.BitConservationErrorBits==0), ...
+    'Actual decoded metadata ranges must reconcile without claiming application delivery.');
+for k=1:height(packets)
+    owned=string(attempts.Direction)==packets.Direction(k) & attempts.UEIndex==packets.UEIndex(k);
+    assert(packets.HARQAttemptCount(k)==numel(unique(string(attempts.PHYGrantContextId(owned)))));
+end
+% Exercise the public live snapshot after actual physical feedback completion,
+% not only the reducer invoked by the earlier data receiver callback.
+state=sixgr.truth.CoupledTruthRuntime.writeLiveStateTables(state,outputRoot);
+localAssertLivePerformanceEvidence(state,outputRoot);
+publishedPackets=sixgr.util.csvReadTable(fullfile(outputRoot,'packet_flow','csv', ...
+    'live_application_packet_delivery_ledger.csv'));
+assert(isequal(double(publishedPackets.CRCConfirmedMappedBits),double(packets.CRCConfirmedMappedBits)) && ...
+    all(publishedPackets.BitConservationErrorBits==0 & publishedPackets.CompletedApplicationBits==0));
+try
+    sixgr.truth.CoupledTruthRuntime.decodedTBDeliveryTimingRuntime(state,6,10);
+    error('test:ExpectedFailure','Shared runtime accepted missing receive timing.');
+catch ex
+    assert(strcmp(ex.identifier,'sixgr:protocol:MissingDataDeliveryTiming'));
+end
 if isPUCCH
     T=state.ControlTrials.PUCCH;
     paired=T(T.ExpectedBitCount>1 & T.DecodedBitCount==T.ExpectedBitCount,:);
@@ -72,4 +140,52 @@ assert(all(dl.RTTStatus(usable)=="measured_independent_usable_feedback_completio
 fprintf('PHYSICAL_HARQ_PUBLICATION_PASS transport=%s logical_bits=%d folder=%s\n', ...
     transport,height(F),outputRoot);
 ok=true;
+end
+
+function localAssertLivePerformanceEvidence(state,outputRoot)
+% The counters above come from actual shared DL/UL receptions. This checks
+% their production snapshot, not another synthetic PHY success population.
+path=fullfile(outputRoot,'reports','csv','live_user_performance_snapshot.csv');
+assert(isfile(path),'test:LivePerformanceSnapshotMissing', ...
+    'The lightweight live writer must publish current performance evidence.');
+T=sixgr.util.csvReadTable(path);
+required=["UEIndex","FidelityLevel","AggregationStartSample", ...
+    "AggregationEndSampleExclusive","AggregationSampleRateHz", ...
+    "AggregationDuration_s","AggregationClockBasis", ...
+    "DL_ScheduledBits","UL_ScheduledBits", ...
+    "DL_UniqueDeliveredTBBits","UL_UniqueDeliveredTBBits"];
+assert(all(ismember(required,string(T.Properties.VariableNames))), ...
+    'test:LivePerformanceProvenanceMissing', ...
+    'Run-average rates require their actual bit numerators and sample-clock denominator.');
+fs=state.SharedWaveformStream.SampleRateHz;
+stop=state.SharedWaveformStream.Events.NextSampleIndex;
+assert(stop>0 && height(T)==state.NumUsers && ...
+    all(T.FidelityLevel=="waveform_level") && ...
+    all(T.AggregationStartSample==0) && ...
+    all(T.AggregationEndSampleExclusive==stop) && ...
+    all(T.AggregationSampleRateHz==fs) && ...
+    all(abs(T.AggregationDuration_s-stop/fs)<1e-12) && ...
+    all(T.AggregationClockBasis=="completed_shared_physical_sample_clock"), ...
+    'test:LivePerformanceClockAuthority', ...
+    'A scheduled slot end cannot substitute for the completed physical stream clock.');
+for ue=1:state.NumUsers
+    row=T(T.UEIndex==ue,:);
+    assert(height(row)==1);
+    for direction=["DL","UL"]
+        stats=state.(direction+"Stats");
+        stats=stats(ue);
+        assert(row.(direction+"_ScheduledBits")==stats.ScheduledBitsSum && ...
+            row.(direction+"_UniqueDeliveredTBBits")==stats.GoodBitsSum);
+        if stats.Frames>0
+            expected=stats.GoodBitsSum/(stop/fs)/1e6;
+            assert(abs(row.(direction+"_Goodput_Mbps")-expected)<1e-12 && ...
+                abs(row.(direction+"_Throughput_Mbps")- ...
+                stats.ScheduledBitsSum/(stop/fs)/1e6)<1e-12);
+        else
+            assert(isnan(row.(direction+"_Goodput_Mbps")) && ...
+                isnan(row.(direction+"_Throughput_Mbps")), ...
+                'An unexecuted direction must not acquire a measured zero throughput.');
+        end
+    end
+end
 end

@@ -227,6 +227,7 @@ function [rxOut, freqOffsetHz, NID2, info] = freqOffsetCorrect(rxWaveform, block
     info.OscillatorCFOEstimateHz = double(freqOffsetHz);
     % Record the correction that produced rxOut, separately from the
     % configured RF injection and SSB subcarrier-placement translation.
+    info.CFOCorrectionEnabled = true;
     info.CFOCorrectionApplied = true;
     info.CFOCorrectionApplied_Hz = double(freqOffsetHz);
     info.CFOCorrectionSampleOrigin = 0;

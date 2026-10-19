@@ -1,5 +1,6 @@
 inherits:
   - ./lls_causal_access_to_data_wiring.yaml
+  - ../control/connected_two_port_fdd.yaml
 
 meta:
   scenario_id: lls_trs_shared_scoring_fdd_fixture
