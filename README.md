@@ -25,6 +25,15 @@ with the actual MATLAB loader/builder. Local receipts are
 `logs/server_handoff_guide_refresh_20261019.log`; the original failed check receipt
 is preserved. This does not replace MATLAB PHY or full-scenario qualification.
 
+Post-handoff diagnostic repair: the core runtime now persists its original
+exception identifier/message/stack and logs the failure **before** rebuilding
+large recovery tables. Three affected MATLAB checks and nine WebGUI failure-state
+checks pass (`logs/lls_repairs/h4_failure_notice_20261019_v1/receipt.json` and
+`logs/h4_failure_status_20261019_v1.xml`). An early failure record explicitly says
+recovery is incomplete; it cannot be confused with a completed-slot save point.
+The lost exception from the earlier manually closed MATLAB process cannot be
+reconstructed by this change.
+
 The exact launcher prints and saves the source commit for each execution.
 Original local evidence stays under `logs/` and `results/`; these are ignored by
 Git and **are not downloaded by cloning GitHub**. Only source, configuration,
