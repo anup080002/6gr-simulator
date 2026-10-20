@@ -15,6 +15,9 @@ const FILES = {
  band:'simulator/configs/bands/h4_100_4ghz_tdd.yaml', array:'simulator/configs/mimo/ran1_h4_64txru_4rx.yaml',
  cdl:'simulator/configs/channels/ran1_4ghz_f2_cdlc100.yaml', agc:'simulator/configs/rf/causal_agc_burst_headroom.yaml',
  bundle:'+sixgr/+truth/runWaveformLinkBundle.m', runtime:'+sixgr/+truth/CoupledTruthRuntime.m',
+ profiler:'+sixgr/+runtime/ExecutionStageProfiler.m', capture:'+sixgr/+phy/+waveform/WaveformObservationBuffer.m',
+ matsave:'+sixgr/+util/matSave.m', livecadence:'+sixgr/+artifact/liveCSVPlotDue.m',
+ liveplots:'scripts/publish_lls_live_csv_plots.py', dlsch:'+sixgr/+pdsch/DLSCHDecoder.m',
  stream:'+sixgr/+truth/CoupledWaveformStream.m', job:'+sixgr/+truth/executeGrantPHYJob.m',
  dl:'+sixgr/+link/runDLPDSCHThroughput.m', ul:'+sixgr/+link/runULPUSCHThroughput.m',
  dltx:'+sixgr/+phy/+dl/PDSCH_Tx.m', dlrx:'+sixgr/+phy/+dl/PDSCH_Rx.m',
@@ -22,6 +25,7 @@ const FILES = {
  ssbtx:'+sixgr/+phy/+dl/SSB_Tx.m', ssbrx:'+sixgr/+phy/+dl/SSB_Rx.m', pbch:'+sixgr/+phy/+dl/PBCH_Recovery.m',
  access:'+sixgr/+link/completeCellSearchBroadcast.m', ra:'+sixgr/+phy/+ra/runFourStepRA.m',
  prachtx:'+sixgr/+phy/+ul/PRACH_Tx.m', prachrx:'+sixgr/+phy/+ul/PRACH_Rx.m',
+ prachdetector:'+sixgr/+rach/PRACHDetector.m', qcladmission:'+sixgr/+truth/qclTimingSchedulingEligibility.m',
  pdcch:'+sixgr/+phy/+dl/PDCCH_Rx.m', pdcchblind:'+sixgr/+phy/+pdcch/blindDecodePDCCH.m',
  pucch:'+sixgr/+phy/+pucch/PUCCHConfigBuilder.m', pucchrx:'+sixgr/+phy/+ul/PUCCH_Rx.m',
  uci:'+sixgr/+truth/buildScheduledHARQTransportReception.m', pucchtrial:'+sixgr/+link/runPUCCHWaveformTrial.m',
@@ -53,6 +57,10 @@ const REFS = {
  '901':['TR 38.901 v18.0.0','https://www.etsi.org/deliver/etsi_tr/138900_138999/138901/18.00.00_60/tr_138901v180000p.pdf','Channel modeling; distinguish large-scale geometry from CDL/TDL link models.'],
  '104':['TS 38.104 v18.13.0','https://www.etsi.org/deliver/etsi_ts/138100_138199/138104/18.13.00_60/ts_138104v181300p.pdf','BS RF requirements and bandwidth tables. Reference reading, not a claim that every simulator block implements this revision.'],
  '331':['TS 38.331 v18.8.0','https://www.etsi.org/deliver/etsi_ts/138300_138399/138331/18.08.00_60/ts_138331v180800p.pdf','RRC configuration signaling. A YAML object is not evidence that the UE decoded an equivalent over-the-air RRC message.'],
+ '321':['TS 38.321 v18.5.0','https://www.etsi.org/deliver/etsi_ts/138300_138399/138321/18.05.00_60/ts_138321v180500p.pdf','MAC procedures: random access, UL time alignment and DL/UL HARQ. The bounded SixGR procedure owner does not establish full MAC conformance.'],
+ '101-1':['TS 38.101-1 v18.8.0','https://www.etsi.org/deliver/etsi_ts/138100_138199/13810101/18.08.00_60/ts_13810101v180800p.pdf','UE FR1 standalone RF requirements. Do not apply BS transmitter limits to UE receiver diagnostics or assume every band/channel/modulation combination is applicable.'],
+ '141-1':['TS 38.141-1 v18.8.0','https://www.etsi.org/deliver/etsi_ts/138100_138199/13814101/18.08.00_60/ts_13814101v180800p.pdf','Conducted BS conformance tests; PRACH performance in §8.4. Applicability and exact test conditions must match before claiming conformance.'],
+ prachdetect:['MathWorks: nrPRACHDetect','https://www.mathworks.com/help/5g/ref/nrprachdetect.html','Default normalized correlation threshold depends on sequence length, actual RX columns and useful preamble repetitions. This is a receiver implementation choice, not a normative 3GPP threshold formula.'],
  snr:['MathWorks: SNR definition','https://www.mathworks.com/help/5g/ug/snr-definition-used-in-link-simulations.html','Grid versus sample noise, and limitations of nominal reference SNR.'],
  carrier:['MathWorks: nrCarrierConfig','https://www.mathworks.com/help/5g/ref/nrcarrierconfig.html','Carrier grid, numerology, cyclic prefix and frame/slot indices; bandwidth and band applicability still need their own checks.'],
  ofdminfo:['MathWorks: nrOFDMInfo','https://www.mathworks.com/help/5g/ref/nrofdminfo.html','Native FFT, sample rate, symbol and CP metadata; inspect returned values instead of guessing them.'],
@@ -67,7 +75,13 @@ const REFS = {
  pusch:['MathWorks: nrPUSCH','https://www.mathworks.com/help/5g/ref/nrpusch.html','PUSCH symbols and configured transform-precoding/codebook behavior.']
 };
 const esc = v => String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const S=(key,label,find='')=>`<a class="source-link" href="/raw?path=${encodeURIComponent(FILES[key]||key)}" data-source="${esc(FILES[key]||key)}" data-find="${esc(find)}">${esc(label||((FILES[key]||key).split('/').pop()))} ↗</a>`;
+const S=(key,label,find='')=>{
+ const path=FILES[key]||key;
+ // App files remain outside the local server's source allow-list. These two
+ // documentation links explicitly open committed main, not the working tree.
+ if(path.startsWith('apps/'))return `<a class="source-link" href="https://github.com/anup080002/6gr-simulator/blob/main/${path.split('/').map(encodeURIComponent).join('/')}" target="_blank" rel="noopener noreferrer">${esc(label||path.split('/').pop())} · committed GitHub source ↗</a>`;
+ return `<a class="source-link" href="/raw?path=${encodeURIComponent(path)}" data-source="${esc(path)}" data-find="${esc(find)}">${esc(label||path.split('/').pop())} ↗</a>`;
+};
 const R=(key,label)=>`<a href="${REFS[key][1]}" target="_blank" rel="noopener noreferrer">${esc(label||REFS[key][0])} ↗</a>`;
 const T=(heads,rows)=>`<div class="table-wrap"><table><thead><tr>${heads.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${row.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
 const E=(math,description)=>`<div class="equation">${math}<small>${description}</small></div>`;
@@ -85,7 +99,8 @@ C('start','Begin here','Follow one bit. Understand the whole link.','A source-li
 ${N('Read the evidence labels','Configured means declared in YAML. Implemented means a production path exists. Executed means that path ran for a named case. A focused pass covers its tested conditions. None alone means statistical qualification or full 3GPP conformance.')}
 <div class="toc-links"><a href="#fundamentals">01 / Learn the fundamentals<small>Complex samples, symbols, layers, channels and LLS.</small></a><a href="#architecture">02 / Follow the implementation<small>YAML → runtime → real TX/channel/RX.</small></a><a href="#configuration">03 / Explore the exact configuration<small>Resolved values and every inherited source.</small></a><a href="#comparison">04 / Compare three authorities<small>3GPP, MATLAB and SixGR—matches and differences.</small></a><a href="#configuration-map">05 / Choose configuration options<small>Dependencies, exact YAML keys and all declared rules.</small></a><a href="#run-families">06 / Choose a scenario family<small>5 / 20 / 100 / 400 MHz, sweeps, matrices and native SLS.</small></a></div>
 <h2>Suggested reading paths</h2>${T(['Your question','Read in this order'],[['“How does radio work?”','Fundamentals → grid/OFDM → TX chain → channel → RX chain.'],['“Why is the run not adapting?”','Access → CSI/SRS → UCI → ILLA/OLLA → scheduler → execution evidence.'],['“Are these measurements trustworthy?”','Power planes → measurements → HARQ/traffic → outputs → qualification.'],['“What can I configure?”','YAML walkthrough → parameter catalog → scenario catalog → dependencies → safe run recipe.'],['“What is genuinely 3GPP?”','Three-way comparison → specification library → actual source → scoped tests.']])}
-<p class="doc-note">Configuration snapshot: 16 October 2026; configuration-guide expansion: 17 October 2026. The source viewer reads your current checkout, which can change after this text was authored. The configuration explorer checks its saved YAML hashes. Online MATLAB documentation can describe a newer release than the locally observed R2026a Update 4.</p>`),
+<div class="toc-links"><a href="#algorithm-register">07 / Identify each algorithm's authority<small>3GPP structures, channel models, MATLAB and SixGR choices.</small></a><a href="#channel-playbooks">08 / Follow every channel in detail<small>Inputs → TX → channel/RF → RX → feedback → output.</small></a><a href="#worked-calculations">09 / Recompute the quantities<small>Clock, RE counts, noise, EVM, OLLA and uncertainty.</small></a><a href="#restart-flow">10 / Understand checkpoint continuation<small>Saved state, staging, old WebGUI failure and next-slot execution.</small></a></div>
+<p class="doc-note">Configuration snapshot refreshed: 20 October 2026; algorithm/flow expansion: 20 October 2026. The source viewer reads your current checkout, which can change after this text was authored. The configuration explorer checks its saved YAML hashes. Online MATLAB documentation can describe a newer release than the locally observed R2026a Update 4.</p>`),
 C('fundamentals','Begin here','The physical-layer vocabulary','Separate information, physical resources and evidence before following the code.',()=>`
 <h2>Bits become a waveform; the receiver has to infer them</h2><p>A transmitter starts with information bits. Coding introduces controlled redundancy. Modulation turns groups of coded bits into complex constellation symbols. Layer mapping distributes symbols over spatial streams, precoding maps those streams onto transmit dimensions, and OFDM places them on time/frequency resources. The propagation and RF chains distort the samples. The receiver estimates timing, channel and disturbance, forms soft bit likelihoods, decodes, and checks a CRC.</p>
 ${E('x[n] = I[n] + jQ[n] &nbsp;&nbsp; ; &nbsp;&nbsp; s<sub>RF</sub>(t) = Re{x(t)e<sup>j2πf<sub>c</sub>t</sup>}','x is a complex baseband representation. The simulation sampling rate describes x, not direct sampling of a 4 GHz real RF carrier. Absolute volts/watts require a declared calibration.')}
@@ -141,6 +156,14 @@ ${T(['Stage','What the receiver knows afterward','Evidence to inspect'],[['PSS/S
 C('prach','Channels & procedures','PRACH and timing advance','Detecting an arrival, extracting a capture and commanding timing advance are three different operations.',()=>`
 <p>PRACH is an access signal, not a payload-carrying PUSCH. The UE chooses a permitted preamble and occasion from its common configuration. The gNB searches received samples for possible preambles/delays; it must not use the transmitted preamble ID as its answer. H4 declares short format B4, configuration index 157, with a native carrier-clock occasion. The detailed validity comes from the installed PRACH table/configuration resolver, not the label “short”.</p>
 ${E('C<sub>p</sub>[τ] = |Σ<sub>n</sub> y[n] s<sub>p</sub><sup>*</sup>[n−τ]|²','A simplified correlation illustration. The production detector may normalize, combine antennas and search multiple hypotheses. A threshold is meaningful only with its exact statistic and no-signal population.')}
+<h2>Is the small PRACH threshold a 3GPP formula?</h2>
+<p><strong>No: it is the documented MathWorks receiver implementation.</strong> 3GPP specifies the PRACH signal and detection-performance tests; it does not require this correlation-threshold formula. The installed R2026a <code>nrPRACHDetect</code> source identifies its default as empirically selected for the conformance tests in TS38.141-1 §8.4. SixGR ${S('prachdetector')} calls that detector and retains its returned <code>DetectionThreshold</code>; it does not lower the value to force access success. References: ${R('prachdetect')}, ${R('104','TS38.104 §8.4')} and ${R('141-1','TS38.141-1 §8.4')}.</p>
+${E('T<sub>139</sub> = 0.1 / √(P N<sub>SYM</sub>)<br>H4 B4: P = 64, N<sub>SYM</sub> = 12 → T = 0.1 / √768 = 0.00360843918243516','Dimensionless threshold on the native normalized detector statistic, not an SNR in dB or a detection probability. P is the number of actual RX waveform columns at the gNB, not the four UE chains. B4 has 12 useful preamble symbols; this is not the separately configured repetition_count=1.')}
+${T(['Sequence length LRA','MathWorks default threshold','Qualification boundary'],[['839','0.02 / √(P N_SYM)','Long preamble receiver default.'],['139','0.1 / √(P N_SYM)','Short preamble; H4 B4 uses this branch.'],['1151','0.01 / √(P N_SYM) + 0.0005','Shared-spectrum branch; not the current H4 case.'],['571','0.02 / √(P N_SYM) + 0.001','Shared-spectrum branch; not the current H4 case.']])}
+<p>For C2, <code>N_SYM = PRACHDuration − 2</code>; otherwise it equals <code>PRACHDuration</code>. With B4 and four RX columns the same formula gives <code>0.0144337567297406</code>. Changing from four to64 actual receive branches explains the factor-of-four threshold reduction. It does <em>not</em> establish independence of spatial branches, immunity to RF impairment, or the requested false-alarm rate.</p>
+<div class="lab"><div class="lab-label">Documented receiver-threshold calculator · not a conformance simulation</div><div class="controls"><label>LRA <select id="prach-lra"><option>139</option><option>839</option><option>1151</option><option>571</option></select></label><label>Actual RX columns P <input id="prach-rx" type="number" min="1" step="1" value="64"></label><label>Useful preamble symbols N_SYM <input id="prach-symbols" type="number" min="1" step="1" value="12"></label></div><p id="prach-threshold" role="status"></p></div>
+<p>The retained H4 result reports threshold <code>0.00360843918243516</code>, correlation metric <code>0.964634721203284</code>,64 RX branches and the correct preamble0. It explicitly remains <code>single_detection_not_statistical_qualification</code>. The required false-alarm and detection performance must be evaluated with independent noise-only and signal-present occasions under the applicable standard's stated conditions. A correct implementation of this formula is a reasonable baseline, <strong>not proof of qualified64-branch CDL/RF performance</strong>. The focused ${S('tests/testPRACHThresholdPolicy.m')} checks actual native detection and threshold authority, including the H4 shape.</p>
+<p>For the applicable conducted PRACH tests, TS38.141-1 §8.4.1 defines a total noise-only false-detection probability no greater than0.1% and detection probability99% at the specified test SNRs. Wrong preamble and out-of-tolerance timing are detection errors. Those are statistical requirements, <strong>not</strong> instructions to set the correlation threshold to0.001 or0.99. Matching channel, format, antenna/test applicability and timing tolerance is mandatory before comparing results.</p>
 <h2>Why 24 timing samples can lead to a 32-sample command</h2><p>The estimator reports a delay on a receive clock. The RAR encodes a quantized timing-advance command. The UE converts that command using the appropriate numerology/time unit and applies it only from its effective time. Capture pre-roll and fixed timing offsets are separate. Consequently, estimator samples, command samples and extraction offset need not be equal.</p><p>At 122.88 MSa/s, one sample is 8.1380208 ns. A 32-sample correction is 0.2604167 μs. These are sample-to-time conversions, not a claim that every observed PRACH should yield that command. The physical propagation delay must not be inferred by subtracting timestamps expressed in different origins or windows.</p>
 ${T(['Measurement','Correct denominator / boundary'],[['Detection probability','Independent signal-present occasions, with success definition including correct preamble/timing where required.'],['Missed detection','Signal was present but the defined detection condition failed.'],['False alarm','Accepted detection in an independently generated empty/no-signal occasion.'],['Wrong preamble','A detection is not a correct detection merely because some candidate exceeded threshold.'],['Timing error','Measured delay versus independent same-execution arrival reference, on a common clock.']])}
 ${N('Single detections do not qualify false alarms','A successful access event is useful integration evidence. It cannot establish an extremely small false-alarm probability. Lowering a detector threshold to obtain attachment must be followed by independent empty-occasion qualification.',true)}${F('prachtx','prachrx','ra')}<p>Procedure reference: ${R('213','38.213 §4.2 and §8')}; signal generation: ${R('211','38.211 §6.3.3')}.</p>`),
@@ -171,6 +194,10 @@ ${E('W<sub>physical</sub> = B<sub>CRI</sub> W<sub>PMI,r</sub><br>(64×r) = (64×
 C('beam','Spatial processing','Beam sweep, refinement, TCI and QCL','A measurement recommendation is not yet an activated beam or a transmitted data grant.',()=>`
 <ol class="steps"><li><strong>SSB sweep.</strong> The UE measures four transmitted coarse candidates and selects from actual reception.</li><li><strong>Initial association.</strong> The configured SSB mapping seeds CSI resources 0/2/4/6. This mapping is cell configuration, not a geometry oracle.</li><li><strong>CSI refinement.</strong> Eight CSI-RS resources probe candidate physical beam bases. The UE derives CRI/RI/PMI/CQI and constructs a valid report.</li><li><strong>Feedback reception.</strong> The gNB independently receives the UCI. A failed UCI report cannot update adaptation just because the UE's local row exists.</li><li><strong>Pending TCI choice.</strong> The configured resource IDs map to TCI states 16…23 and codepoints 0…7. A pending state is not active.</li><li><strong>Received-control activation and grant use.</strong> Data uses the frozen mapping authorized by decoded control at the relevant effective time.</li></ol>
 <h2>QCL is an assumption about transferable properties</h2><p>Quasi-co-location tells a receiver which properties may be inferred between specified reference signals/ports. TypeA includes Doppler and delay-related properties; TypeB concerns Doppler; TypeC concerns Doppler shift and average delay; TypeD concerns spatial receive parameters. It is not a command to copy an entire perfect channel matrix. A TCI state identifies configured source relationships; the exact supported signaling profile matters.</p><p>SixGR labels the current runtime activation authority as decoded PDCCH TCI codepoint. That should be compared with the applicable higher-layer installation/activation procedure, not described as a full universal RRC/MAC-CE implementation. See ${R('214','38.214 §5.1.5')} and ${R('331')}.</p>
+<h2>Retained slot48: a source-age gap, not a missing TRS transmission</h2>
+${T(['One-based slot','Reference knowledge at the scheduling boundary','Consequence'],[['47','The last usable TRS source is27; source age47−27=20.','The configured maximum source age20 still allows admission.'],['48','Old source27 is21slots old. The replacement two-slot observation47–48 is not complete yet.','No fresh enough QCL timing reference; no new PDSCH. There were17,994,983 queued bytes and a free HARQ process.'],['49','Source47 completed at sample2949120, or24ms.','The new reference is causal; a273-PRB,5000-bit special-slot PDSCH grant was issued. Its final row was interrupted by the later slot50 failure.']])}
+<p>${S('qcladmission')} uses resource/source age, not publication or delivery age. The two-slot TRS window is resolved by ${S('+sixgr/+truth/resolveTRSObservationWindow.m')}. The20-slot age bound and20-slot TRS cadence are <strong>SixGR configuration policy, not a universal 3GPP QCL lifetime</strong>. With a two-slot observation, the maximum age just before its replacement is usable is <code>period + availability latency − 1 = 20 + 2 − 1 = 21</code>slots. Hence one scheduling boundary has no usable reference under the current20-slot bound.</p>
+<p>Do not reset the age when publishing, use source47 before its capture ends, or simply bypass QCL admission. A continuously schedulable fresh scenario needs a legal, more frequent tracking calendar or a physically justified validity/prediction policy. Changing that scientific calendar cannot be silently applied to checkpoint45. The unchanged-checkpoint repair preserves the safe deferral; ${S('tests/testQCLSchedulingSourceAge.m')} tests old, future, malformed and newly available references.</p>
 ${T(['Trace link','What must agree'],[['Measured resource → received report','Resource identity, reference slot, report configuration/epoch, decoded CRI/RI/PMI/CQI.'],['Report → pending beam','Confirmation policy, causal freshness, selected basis and pending TCI.'],['Received DCI → frozen grant','TCI codepoint, state ID, effective sample and installed configuration.'],['Frozen grant → waveform','Actual precoder dimensions/hash, layer count, power convention and DM-RS mapping.']])}
 ${N('Physical beam recovery is not enabled','The YAML explicitly leaves beam-failure recovery disabled. A recovery-time metric needs a real failure episode, candidate discovery, recovery transmission and received response. Neither a state-machine label nor a decorative beam-switch plot supplies that experiment.',true)}${F('common','array','runtime','csireport')}`),
 C('adaptation','Scheduling & feedback','CSI/SRS → ILLA/OLLA → future grants','The loop works only when feedback identity, delivery time and the quality-to-MCS mapping are all valid.',()=>`
@@ -179,7 +206,13 @@ C('adaptation','Scheduling & feedback','CSI/SRS → ILLA/OLLA → future grants'
 <p>${S('olla')} excludes retransmission/nonzero-RV feedback from first-transmission adaptation. ${S('ollamcs')} converts the dB offset through required-SINR thresholds; it does not add dB directly to an ordinal MCS index. ${S('thresholds')} identifies the threshold source. An opposite-sign “required margin” object elsewhere in the repository is not the same state variable: follow the actual caller.</p>
 <h2>Why good SINR may not produce high throughput</h2><ul><li>No causal received report yet: bootstrap decisions remain.</li><li>One higher-rank report: confirmation remains pending.</li><li>Good CSI measurement but failed UCI: the gNB has not received it.</li><li>Stale/mismatched SRS or illegal K2: UL cannot schedule.</li><li>Finite buffer, HARQ occupancy or reserved REs: offered payload/allocation is small.</li><li>Thresholds/calibration do not match the modulation/rank/channel/RF branch.</li><li>Short 50 ms horizon: access and report delays consume much of the run.</li></ul>
 ${N('Calibration is still an independent requirement','An implemented adaptation loop is not a qualified SINR-to-BLER mapping. Measured curves need sufficient independent populations, conditional HARQ retries, held-out validation and matching MCS/rank/RF coverage. Do not relabel a test-only threshold package as study calibration.')}
-<p>The physical 100 MHz component completed two 15-bit PUCCH reports at slots 19/39 in its explicitly preconnected fixture. This verifies that component's two-report path; it does not mean the full initial-access100-slot run has passed.</p>${F('illa','olla','ollamcs','thresholds','runtime')}`),
+<p>The physical 100 MHz component completed two 15-bit PUCCH reports at slots 19/39 in its explicitly preconnected fixture. This verifies that component's two-report path; it does not mean the full initial-access100-slot run has passed.</p>
+<h2>Why the retained run stayed at MCS1/rank1 through slot49</h2>
+${T(['Direction','Actual retained feedback chronology','What adaptation may legally do'],[['DL','CSI-RS source46 measured RI4, CQI8, PMI3 and CRI1. Its report is due59, with DeliveredSlot empty and CSIUCIDecodeOk=0. Earlier report occasions19/39 had no new report payload.','Slots41–49 cannot use a future decoded report. Bootstrap rank1/MCS1 is expected. A first higher-rank report59 remains provisional; a second distinct compatible report79 can confirm an increase. New grants after delivery may adapt; old frozen grants cannot.'],['UL','SRS source45 became available46, with measured RI4, WidebandCQI15 and predicted minimum-layer PUSCH SINR29.6386dB. The code requires two distinct rank confirmations.','Control46 froze the first PUSCH for50 at rank1/MCS1. A successful second SRS50 may confirm future rank/quality after completion, not rewrite this already-issued grant. Slot50 failure prevented proof of the full subsequent UL loop.']])}
+<p>The two-confirmation rule currently treats rank, precoder and its quality as one atomic decision. Quality measured for four layers must not be silently transplanted to a rank-one grant. Earlier scaling would require a separately measured/evaluated rank-one fallback candidate or an explicitly different confirmation policy, not forced MCS increments. ACKs drive OLLA, but neither a few CRC successes nor configured40dB creates missing CSI-UCI.</p>
+<p>There is positive bounded UL evidence: the earlier full-band H4 sounding component replayed two actual SRS results and accepted rank4/MCS25 without executing PUSCH. The later continuous v4 component did execute a273-PRB rank4/MCS25 PUSCH at slot15 after the same SRS/DCI history:507984TB bits, CRC pass, zero bit errors,103188 retained EVM pairs and four DMRS ports. That receipt still explicitly excludes production MAC feedback commitment, full-scenario acceptance and statistical qualification. Inspect ${S('tests/testH4100MeasuredSRSAdaptation.m')} and ${S('tests/testH4100ContinuousULFeedback.m')}. The DL/UL handoff regressions additionally reject duplicate/stale feedback; those boundary tests are not new throughput populations. See ${S('tests/testCSIRankConfirmationSchedulerHandoff.m')} and ${S('tests/testULSRSRankConfirmationSchedulerHandoff.m')}.</p>
+${N('Restart acceptance is not yet complete','The slot50 completion-batch defect and CSI timing/TX-ledger defects have focused repairs. Final acceptance still needs actual received CSI-UCI, later adapted PDSCH/PUSCH grants and their decoder outcomes, plus complete publication. The old failed run is not relabelled PASS. No rank or MCS increase is guaranteed merely by high configured SNR.',true)}
+${F('illa','olla','ollamcs','thresholds','runtime')}`),
 C('scheduler','Scheduling & feedback','Scheduling, traffic and resource ownership','A valid full-band capability does not imply a full-band grant on every slot.',()=>`
 <p>The H4 traffic owner is saturated bidirectional UDP, with an explicit empty inherited-flow list so an older finite 5 Mbps flow does not silently override full-buffer intent. Traffic load settings do not directly specify decoded goodput. The scheduler must first find a legal, eligible user and allocation.</p>
 ${E('PF<sub>u</sub> = R<sub>candidate,u</sub> / R̄<sub>u</sub>','The familiar proportional-fair ratio is an intuition for balancing instantaneous opportunity against history. SixGR SchedulerPF has additional eligibility, retransmission, resource and profile rules; inspect the actual candidate/final grant trace instead of assuming the simplest formula is the whole scheduler.')}
@@ -329,6 +362,16 @@ C('recipe','Reference & configuration','Configure and run safely, from scratch',
 if not exist logs mkdir logs
 "C:\\Program Files\\MATLAB\\R2026a\\bin\\matlab.exe" -wait -logfile "logs\\h4_100mhz_reading_example_01.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_adaptation.yaml','results','h4_100mhz_reading_example_01'); disp(out); assert(out.Ok,'Inspect retained failed acceptance evidence.');"</pre>
 ${N('Do not launch a duplicate','This is a documented command, not an instruction that the current repair gates are all complete. Check the active process and the issue ledger before execution; choose a new tag each time. Opening this guide never launches MATLAB.',true)}
+<h2>Why each slot is slow, and safe ways to reduce runtime</h2>
+<p>The retained continuation's slot-start intervals were80.92minutes for46,44.65 for47,40.50 for48 and24.87 for49. These intervals include physical processing and any publication/storage work; they are not an exclusive PHY profile. That old stage CSV stops at setup and cannot explain those costs. New scoped instrumentation records actual channel, RF, receiver pipeline, DL/UL LDPC decoding, hashing, serialization, checkpoint and publication durations. Do not turn focused tests into a claimed whole-run speedup.</p>
+<h3>Implemented lossless controls</h3><pre>output:
+  execution_stage_profile_enabled: true
+  live_csv_png_interval_slots: 5</pre>
+<p>These settings are enabled in the H4 adaptation child; generic defaults remain profiler-off and interval1. Timing is appended to <code>reports/csv/execution_stage_profile.csv</code> with session, one-based slot, sweep identity, stage, operation, scope-exit count and inclusive/exclusive seconds. Slot0 is setup. Use exclusive durations to avoid double-counting nested hashing/serialization work; scope exits include error unwinding and do not count CRC passes. The profiler holds no waveform samples and does not consume the scientific random stream.</p>
+<p>Completed observation parts now compact into one exact array, repeat reads use copy-on-write, and the immutable received-sample digest is reused. MAT publication still verifies every staged and final byte via SHA-256, but no longer creates redundant readback copies. Live charts reuse exact sealed PNG/plotted-CSV bytes only if producer hashes and all known dependencies match—including independent NMSE operands. Unknown or changed dependencies require rebuilding.</p>
+<p>Live PNGs refresh at the first slot, every fifth completed slot and final publication; explicit final export bypasses the cadence. Measurements, trial CSV writes, sample precision, channel/RF state evolution and final export populations are unchanged. These two operational options can differ at checkpoint restoration without changing scientific settings. Other settings remain subject to the strict comparison.</p>${F('profiler','capture','matsave','livecadence','liveplots','dlsch')}
+${T(['Priority','Evidence / recommendation','Scientific safeguard'],[['1: avoid paging','This laptop has11.8GiB physical RAM; the full run previously committed about20GiB. Genuine full-band64-port working arrays remain large after deduplication.','Keep physical branches, RF state and precision. More external disk space does not add RAM.'],['2: observe active I/O','E: is a USB HDD. Measure multigigabyte IQ/channel/checkpoint writes and hash rereads using the stage CSV.','One codebase; immutable hashes and lossless evidence remain. Do not move active files behind the runner.'],['3: profile the exact hot interval','The new profiler is implemented; measure real resumed slots before assigning bottleneck percentages.','Preserve zero-data-slot control activity and channel/oscillator continuity.'],['4: remove duplication, not measurements','Completed capture compaction, immutable hash reuse and direct MAT byte verification are implemented.','Exact samples and corruption guards are covered by focused tests; the full-run memory peak is not yet established.'],['5: reduce display work carefully','Live PNG cadence5 and hash-verified unchanged-chart reuse are implemented.','Every-trial measurements/CSVs and complete final plots remain.'],['6: independent episodes only','On a sufficiently provisioned host, independent SNR/seed cases can be separate jobs.','Do not parallelize causally coupled slots46–50 as independent jobs; that changes HARQ, feedback and RF/channel evolution.']])}
+<p>Every-slot checkpoints reduce lost work, but full-state serialization and hashing also cost time and disk I/O. An incremental, lossless checkpoint design would need equivalence and corruption/recovery tests. Do not trade away the requested restart safety silently. Disabling channels, reducing rank/antenna count, using proxy PHY or shortening FFT/capture support is a different experiment, not an equivalent optimization.</p>
 <h2>A small child YAML pattern</h2><pre># Example of inheritance syntax, NOT a qualified new scenario.
 inherits:
   - ./h4_100_cdlc100_connected_impaired_40db_adaptation.yaml
@@ -340,7 +383,7 @@ simulation:
   snr_sweep_offsets_db: [0]
 output:
   profile: my_h4_controlled_20db</pre><p>Even a small child needs the normal validator and matching acceptance design. To create a full sweep, use the repository's declared sweep/matrix configuration; do not assume every runner interprets the same offset list. All samples in a plot must retain their operating-point identity.</p>${F('entry','load','validate','scenario')}`),
-C('sources','Reference & configuration','Source-file atlas','Every link opens the current main-file contents. No copied PHY implementation is stored in this guide.',()=>`<p>The viewer displays exact current bytes, line numbers and SHA-256. Use its search to jump to a function or parameter. Source can change independently of documentation; compare the current hash and retained execution receipt before making a result claim.</p><div class="source-index">${Object.entries(FILES).map(([key,path])=>`<article>${S(key,path)}<div class="tiny">${esc(key)} · current working tree</div></article>`).join('')}</div>`),
+C('sources','Reference & configuration','Source-file atlas','Local links open current main files; application links explicitly open committed GitHub main. No copied PHY implementation is stored here.',()=>`<p>The local viewer displays exact current bytes, line numbers and SHA-256. Use its search to jump to a function or parameter. The two application-file links open committed GitHub main and are labelled accordingly; they are not added to the local server's allow-list. Source can change independently of documentation; compare its hash and retained execution receipt before making a result claim.</p><div class="source-index">${Object.entries(FILES).map(([key,path])=>`<article>${S(key,path)}<div class="tiny">${esc(key)} · ${path.startsWith('apps/')?'committed GitHub main (not local working tree)':'current working tree'}</div></article>`).join('')}</div>`),
 C('glossary','Reference & configuration','Glossary and mathematical notation','A quick decoding aid for the words used in the code, YAML and plots.',()=>`<dl class="glossary">${[
 ['gNB / UE','Base station / user equipment. DL runs gNB→UE; UL runs UE→gNB.'],['LLS / SLS','Waveform link-level simulation / network system-level simulation.'],['BWP / PRB / RE','Bandwidth part /12-subcarrier physical resource block /subcarrier-symbol resource element.'],['SCS / μ','Subcarrier spacing /numerology index, Δf=15·2^μkHz.'],['CP / FFT / Fs','Cyclic prefix /transform length /complex sampling rate.'],['PDSCH / PUSCH','Physical downlink/uplink shared data channel.'],['PDCCH / DCI','Physical downlink control channel /downlink control information.'],['PUCCH / UCI','Physical uplink control channel /uplink control information.'],['PSS / SSS / PBCH','Primary/secondary synchronization signal /physical broadcast channel.'],['PRACH / RAR / TA','Random-access channel /random-access response /timing advance.'],['DM-RS / PT-RS','Demodulation reference signal /phase-tracking reference signal.'],['CSI-RS / CSI-IM','CSI reference signal /interference measurement resources.'],['SRS / TRS','Sounding reference signal /tracking reference signal.'],['CRI / RI / PMI / CQI','CSI resource /rank /precoder matrix /channel quality indicators. Each needs its configuration context.'],['TCI / QCL','Transmission configuration indication /quasi-co-location assumptions.'],['TXRU / port / layer','RF transceiver dimension /reference-defined logical antenna port /data stream.'],['AoA / AoD / ZoA / ZoD','Azimuth arrival/departure and zenith arrival/departure angles.'],['MCS / Qm / R','Modulation/coding scheme index /bits per constellation symbol /target coding rate.'],['TB / TBS / G','Transport block /its payload bit size /transmitted coded capacity.'],['CRC / LDPC / RV / NDI','Error-detection checksum /data channel code /redundancy version /new-data indication.'],['HARQ / DTX','Hybrid retransmission with combining /discontinuous or absent detected transmission, interpreted by its procedure.'],['ILLA / OLLA','Inner-loop rate selection /outer-loop correction from eligible feedback.'],['CDL / TDL / UMa / O2I','Clustered/tapped delay-line fading /urban macro /outdoor-to-indoor model.'],['DAC / ADC / PA / AGC','Converters /power amplifier /automatic receiver gain control.'],['CFO / SCO / CPE / ICI','Carrier/sample frequency error /common phase error /inter-carrier interference.'],['EVM / NMSE / BLER','Vector error /normalized channel-estimation squared error /block error rate.'],['RSRP / RSSI / RSRQ','Reference power /received total power over defined support /reference quality ratio.'],['dB / dBm / dBi','Ratio logarithm /absolute power relative 1 mW /antenna gain relative isotropic.'],['H / W / G / (·)ᴴ','Channel /precoder /equalizer (or coded-bit count when scalar context says so) /conjugate transpose.'],['Truth / proxy','Actual waveform/replay-backed evidence /explicit approximation. Neither name substitutes for qualification.']].map(([a,b])=>`<dt>${a}</dt><dd>${b}</dd>`).join('')}</dl>`),
 C('references','Reference & configuration','Specification and MATLAB library','Version-pinned reading links and how to use them without overclaiming conformance.',()=>`
@@ -349,3 +392,560 @@ ${Object.entries(REFS).map(([key,ref])=>`<div class="reference-row">${R(key)}<sm
 <h2>Normative versus engineering choices</h2><p>NR specifies interfaces, signal/coding structures and applicable procedures. It does not prescribe every scheduler, interpolation kernel, MMSE realization, OLLA step, rank-confirmation hysteresis, RF impairment study mask or export format. A documented choice can be technically reasonable without being a mandated3GPP value. Conversely, a standard-looking number is not correct if applied at the wrong clock, power plane or codeword boundary.</p><p>Use the comparison chapter to identify native building blocks and our production wrappers. Use the parameter catalog to see declared options. Use actual scoped test/run evidence to decide whether a claim is demonstrated. The documentation is a learning and audit tool, not a replacement for those three authorities.</p>`)
 ];
 window.H4Guide={FILES,REFS,CHAPTERS,S,R,T,E,N,F,esc};
+
+/* Implementation-linked learning material. No simulator control or run-data mutation. */
+'use strict';
+(() => {
+const G=window.H4Guide, {CHAPTERS,FILES,S,R,T,E,N,F,esc}=G;
+Object.assign(FILES,{
+ checkpoint:'+sixgr/+runtime/SlotCheckpoint.m',
+ batch:'+sixgr/+truth/completeSharedReceiverBatch.m',
+ completionorder:'+sixgr/+truth/orderSharedReceiverCompletions.m',
+ physical:'+sixgr/+truth/SharedWaveformPhysicalRuntime.m',
+ rxevidence:'+sixgr/+link/receivedWaveformEvidence.m',
+ waveformhash:'+sixgr/+phy/+waveform/WaveformHash.m',
+ pucchquality:'+sixgr/+link/pucchReceiverStageEvidence.m',
+ pucchdecoder:'+sixgr/+phy/+pucch/PUCCHReceiver.m',
+ pucchdd:'+sixgr/+phy/+pucch/measureDecisionDirectedEVM.m',
+ srsevm:'+sixgr/+phy/+srs/measureReceivedPilotEVM.m',
+ pilotphase:'+sixgr/+phy/+rx/pilotChannelPhaseEvolution.m',
+ trsfreq:'+sixgr/+phy/+trs/estimateTRSFrequencyOffset.m',
+ trsresidual:'+sixgr/+phy/+trs/measureTRSResidualFrequency.m',
+ trsscore:'+sixgr/+phy/+trs/scoreTRSDetection.m',
+ csiprep:'+sixgr/+link/prepareCSIRSTransmission.m',
+ csifeedback:'+sixgr/+phy/+refsig/computeCSIRSFeedback.m',
+ csistate:'+sixgr/+phy/+mimo/CSIMeasurementState.m',
+ type1:'+sixgr/+phy/+mimo/TypeISinglePanelCodebook.m',
+ type2:'+sixgr/+phy/+mimo/TypeIICodebook.m',
+ pdcchprep:'+sixgr/+link/preparePDCCHTransmission.m',
+ pdcchcomplete:'+sixgr/+link/completePDCCHReception.m',
+ slotclock:'+sixgr/+phy/+frame/slotStartSample.m',
+ qualityview:'apps/lls_waveform_quality.py',
+ radioplots:'apps/lls_radio_measurement_plots.py',
+ repairreport:'docs/lls/h4_checkpoint45_repairs_20261020.md',
+ issueledger:'docs/lls/h4_100mhz_20261015_issue_status.csv'
+});
+const BASIS={
+ nr:['3GPP-defined structure / procedure','The cited NR clause defines an applicable interface, mapping or procedure. This tag is not a conformance certificate.'],
+ model:['3GPP channel-model basis','A TR 38.901 model, not a normative receiver algorithm or proof that every model option was executed.'],
+ matlab:['MathWorks implementation','A native algorithm or documented default. MATLAB implementation choices are not automatically 3GPP mandates.'],
+ engineering:['SixGR / engineering choice','Scheduling, estimation, diagnostics or numerical policy chosen by this implementation; not a uniquely prescribed 3GPP algorithm.'],
+ research:['Research / scenario assumption','Selected experiment, RF model or capability assumption. It needs its own applicability and qualification evidence.'],
+ infrastructure:['Software / evidence infrastructure','Configuration, clocks, persistence, profiling and publication. Necessary for correctness, but not an over-the-air NR feature.']
+};
+const badges=keys=>`<div class="badges method-basis">${keys.map(k=>`<span class="badge" title="${esc(BASIS[k][1])}">${esc(BASIS[k][0])}</span>`).join('')}</div>`;
+// Every entry identifies a source owner, not just an algorithm name.
+const M=(id,title,basis,refs,owners,calculation,flow,boundary,chapter)=>({id,title,basis,refs,owners,calculation,flow,boundary,chapter});
+const METHODS=[
+ M('config','YAML inheritance and execution selection',['infrastructure'],[],['load','validate','builder'],
+  'Resolved configuration = ordered inherited fragments + leaf overrides; validate before building native objects.',
+  'The public entry passes the requested scenario to the loader. The builder binds radio, PHY, RF, scheduler and output settings. Save the input sources and resolved values.',
+  'A catalog accepts declared syntax; it does not establish that all combinations have been executed. A filename is not a configuration record.','configuration'),
+ M('clock','Frame, numerology, CP and sample clock',['nr','matlab','engineering'],['211','ofdminfo'],['band','slotclock','ofdm'],
+  'Δf=15·2^μ kHz; slot duration=1 ms/2^μ for normal CP; H4 Fs=4096·30 kHz.',
+  'Use native per-symbol lengths for capture boundaries. Convert one-based report slots to zero-based absolute slots explicitly. Different resource, availability and publication times remain separate.',
+  'The FFT size and sample rate are implementation choices compatible with the configured grid, not a universal NR FFT mandate.','grid'),
+ M('allocation','Time/frequency allocation and exact RE ownership',['nr','engineering'],['214'],['scheduler','resource','dltx','ultx'],
+  'Gross time-frequency positions = 12·NPRB·Nsymbol. Count unions of actual reservation sets, not sums that double-count overlap.',
+  'Enumerate legal timing and direction, select PRBs and symbols, freeze the grant, then use actual native data/DM-RS/PT-RS indices for G and allocation audits.',
+  'A contiguous grant cannot bridge an SSB reservation. Gross positions, logical-port index cells and layer-coded capacity are different denominators.','scheduler'),
+ M('tbs','MCS, TBS, code blocks and rate matching',['nr','matlab'],['214','212','tbs'],['coding','dltx','ultx','ratematch','recover'],
+  'A payload bits → CRC/segmentation → LDPC mother-code positions → RV-selected G bits. TBS uses the applicable quantized procedure, not floor(G·R).',
+  'Validate MCS-table identity, materialize exact allocation, retain original TB on retry, and recover compatible soft positions before decoding.',
+  'Nominal code rate is not actual A/G; UCI and reservations affect coded capacity. The guide does not implement a second TBS calculator.','coding'),
+ M('mapping','Scrambling, QAM, layers and precoding',['nr','matlab'],['211','pdsch','pusch'],['dltx','ultx'],
+  'Qm=log2(M); the complex constellation and normalization come from the selected mapper. Physical samples follow layer-to-port mapping.',
+  'Encode → scramble → QAM → layers → selected precoder → exact grid → OFDM. Check that native delegation does not repeat scrambling or precoding.',
+  '64 TXRU does not imply 64 layers. Data and DM-RS must share the intended effective channel.','tx'),
+ M('ofdm','IFFT, CP, windowing and FFT',['nr','matlab','engineering'],['211','ofdm'],['ofdm','ofdmrx','noise'],
+  'Conventional IFFT uses 1/N scaling; paired FFT has no 1/N. CP samples are copies, not extra data RE.',
+  'The canonical toolbox path records actual FFT, Fs and windowing; the receiver uses the corresponding symbol clock. Transform-noise calibration checks scaling.',
+  'The separate unitary helper has different scaling. Windowing is disabled in this H4 child; teaching it does not enable it.','ofdm'),
+ M('ssb','SSB sweep, PSS/SSS and PBCH',['nr','matlab','engineering'],['211','212'],['ssbtx','ssbrx','pbch','access'],
+  'Search correlation hypotheses → timing/frequency alignment → pilot channel estimate → PBCH soft decoding / CRC.',
+  'Retain each transmitted SSB index and received beam observation separately; commit selection only after its capture and receiver result are available.',
+  'A selected SSB is an access measurement, not an activated connected-data precoder. Decision-directed PBCH EVM is not transmitter conformance EVM.','access'),
+ M('prach','PRACH sequence detection and threshold',['nr','matlab'],['211','213','prachdetect'],['prachtx','prachrx','prachdetector'],
+  'For native LRA=139 default: T=0.1/√(NRX·Nuseful). H4 B4, 64 received columns, 12 useful repetitions: T≈0.00360844.',
+  'Configure legal occasion, sequence/root and preamble; correlate received branches; retain measured detection, delay and threshold source; score a separate no-signal population.',
+  'The threshold formula is a MathWorks detector default, not a mandated 3GPP formula. Small numeric threshold does not by itself prove false detections.','prach'),
+ M('access','RAR, Msg3, Msg4 and bounded connection',['nr','engineering'],['213','321','331'],['ra','runtime','access'],
+  'Event time follows the actual resource, capture end, processing and response windows—not a hardcoded attach-by-slot number.',
+  'Received PRACH → addressed RAR/control/data → Msg3 UL → contention resolution → bounded RRC completion → connected eligibility.',
+  'This waveform-linked state owner is not full commercial MAC/RRC/network conformance. Separate configured audit identity from operational C-RNTI.','access'),
+ M('pdcch','PDCCH blind reception and DCI authority',['nr','matlab','engineering'],['211','212','213'],['pdcchprep','pdcchcomplete','pdcch','pdcchblind'],
+  'Candidate resources × configured DCI hypotheses produce decoder attempts; candidate count need not equal hypothesis count.',
+  'Receive monitored samples, estimate per-candidate channel, equalize, demodulate/decode and retain CRC separately from semantic/context acceptance.',
+  'Never create an unmeasured candidate, infer LLR from EVM, or count correlated candidate hypotheses as independent waveform trials.','pdcch'),
+ M('pdsch','PDSCH practical receive chain',['nr','matlab','engineering'],['211','214'],['dltx','dlrx','dl','dlsch'],
+  'Received DM-RS supports Hest; estimated timing precedes timing-sensitive frequency processing; equalized symbols become actual decoder LLRs.',
+  'Received control binds the frozen grant. Capture → align → FFT → estimate → equalize → demap → rate recovery/combining → LDPC/CRC → scored outcome.',
+  'No injected timing or transmitted payload may become the receiver estimate. Already aligned input must not be corrected twice.','rx'),
+ M('pusch','PUSCH, SRS-based scheduling and UCI',['nr','matlab','engineering'],['211','212','214'],['ultx','ulrx','ul','uci'],
+  'PUSCH coded capacity must accommodate its actual UL-SCH and UCI allocation; retained TB sizing survives retransmission.',
+  'Causal SRS and UL policy → received UL DCI → K2 legal target → UE TX → gNB DM-RS reception and decoding → data/control completion.',
+  'An UL opportunity is not automatically a grant. Later SRS cannot retroactively alter an already issued DCI. CP-OFDM is selected here.','uci'),
+ M('pucch','PUCCH/UCI format, detection and completion',['nr','matlab','engineering'],['211','212','213'],['pucch','pucchdecoder','pucchtrial','uci','batch'],
+  'Payload = HARQ + SR + CSI parts, with format-specific CRC/coding. Information bits are not coded bits or occupied RE.',
+  'Generate independent obligations, select legal PUCCH or verified PUSCH, receive the complete occasion and associate decoded bits with their exact owners.',
+  'A short UCI decoder can have no CRC. Format-0 sequence detection has no QAM-equalizer EVM. The completion barrier is SixGR event ordering, not a radio rule.','uci'),
+ M('csirs','CSI-RS / CSI-IM practical measurements',['nr','matlab','engineering'],['211','214'],['csiprep','csirx','csi','csifeedback','csistate'],
+  'Separate pilot-derived H/noise from selected-PMI layer SINR and from the toolbox CQI link-to-system statistic.',
+  'Generate installed resources → receive and synchronize each plane independently → estimate → immutable measurement state → report engine, without requiring a PDSCH allocation.',
+  'Pre-front-end and post-front-end are distinct observations. A local timing estimate of zero does not prove zero propagation delay or disabled timing.','referencesignals'),
+ M('codebook','RI, PMI, CRI and Type-I codebook',['nr','matlab','engineering'],['214'],['csireport','csiconfig','type1','csifeedback'],
+  'H4 Type-I component tuple → scalar scheduler index → formula-derived W; selected native and reconstructed matrices must agree.',
+  'nrRISelect(MaxSE) and nrCQIReport use received channel/disturbance. Serialize the typed report and verify that scheduler-side PMI reconstructs the same matrix.',
+  'Native nr5g.internal calls are release-pinned, not a stable public API promise. Four logical ports over two physical panels is NOT Type-I Multi-Panel reporting.','mimo'),
+ M('csiwire','Physical CSI reporting and use',['nr','engineering'],['212','214'],['csiconfig','uci','runtime'],
+  'Measured recommendation → encoded bits → physical UCI → received typed report → confirmation/filter policy → future grant.',
+  'Keep resource identity, source slot, configuration epoch, report bits, delivery time, selected rank and applied matrix separate.',
+  'A receiver RI recommendation is not the transmitted rank. No delivered report means no claim that CSI-driven adaptation has been demonstrated.','adaptation'),
+ M('beam','Beam refinement, array mapping, TCI and QCL',['nr','model','engineering','research'],['214','331','901'],['array','runtime','qcladmission'],
+  'DL H has 4×64 dimensions; physical W has 64×r. The logical CSI matrix is composed with the selected beam/port map.',
+  'SSB access selection → CSI-resource comparison → decoded report → selected TCI/codepoint → activated identity → frozen data precoder → applied evidence.',
+  'Number of beams is scenario policy. Reference-age admission is implementation policy. No physical BFR recovery time exists when that episode is disabled.','beam'),
+ M('srs','SRS despreading, rank/TPMI and sounding coverage',['nr','matlab','engineering'],['211','214'],['srstx','srsrx','srs'],
+  'Unique received RE coverage is 272/273 PRBs in H4; logical CDM-port repetitions must not count the same physical RE repeatedly.',
+  'Installed bandwidth/comb/hopping/ports → UE pilots → practical per-resource/despread channel estimate → causal UL spatial feedback.',
+  'A configured one-PRB tolerance is not literal full-carrier measurement. First observation cannot provide a cross-observation phase rate.','referencesignals'),
+ M('trs','TRS timing, common frequency and residual',['nr','matlab','engineering'],['214'],['trs','trsfreq','trsresidual','trsscore'],
+  'Post-correction frequency is measured using a different observable: CP acquisition checked with pilot phase, or pilot acquisition checked with CP pairs.',
+  'Wait for complete two-slot observation → estimate/compensate → measure residual → retain pilot pairs/scoring → publish tracking and scheduler usability separately.',
+  'The statistic can include channel phase evolution; it is not separated oscillator CFO. Same-capture observables are not independent statistical trials.','referencesignals'),
+ M('dmrs','DM-RS channel estimation and interpolation',['nr','matlab','engineering'],['211','estimate'],['estimate','dlrx','ulrx'],
+  'For separated orthogonal pilots, LS illustrates Ĥ=Y/X. CDM despreading and interpolation must precede appropriate residual/noise scoring.',
+  'Use installed pilot/port identities on the actual grid, estimate per-resource fading response, and retain interpolation/equalization provenance.',
+  'NR pilot mapping does not prescribe one interpolation kernel. Expanding a single scalar over a fading grid is not accepted channel estimation.','rx'),
+ M('ptrs','PT-RS phase tracking',['nr','engineering'],['211','214'],['dlrx','ulrx'],
+  'Pilot phase tracks an effective common rotation; correction multiplies symbols/samples by the conjugate phase factor at the implemented plane.',
+  'Use the configured density and DM-RS association, retain actual tracking attempt/correction and compare post-correction measurements.',
+  'Enabling PT-RS does not demonstrate full removal of phase-noise ICI or qualify an unspecified oscillator.','referencesignals'),
+ M('equalizer','MMSE / IRC, layer coupling and SINR',['matlab','engineering'],['mmse'],['equalize'],
+  'B=G·Heff; SINRi=|Bii|²Es/(Σj≠i|Bij|²Es+[G R Gᴴ]ii). White-noise MMSE is one covariance case.',
+  'Canonical EqualizerResult retains symbols, effective response, interference/noise output covariance, reliability and per-layer SINR.',
+  'Do not add thermal noise twice when R already includes it. A decision residual is not a direct independent inter-layer-interference estimate.','rx'),
+ M('illa','Inner-loop MCS/rank decision',['engineering'],[],['illa','thresholds','runtime'],
+  'Select eligible table rows using received quality and the installed required-SINR thresholds; retain the threshold source/version.',
+  'Bind direction, table, calibrated domain, rank capability and causal CSI/SRS; bootstrap remains explicit until qualifying feedback arrives.',
+  '3GPP MCS entries define modulation/rate—not a universal SINR-to-MCS threshold table or a requirement that MCS rise every slot.','adaptation'),
+ M('olla','Outer-loop dB margin',['engineering'],[],['olla','ollamcs'],
+  'ACK: δ←min(δmax,δ+u); NACK: δ←max(δmin,δ−d). Implied stationary target p=u/(u+d) when eligible trials and no clipping bias.',
+  'Update on eligible first-transmission received feedback. Convert dB through required-SINR spacing before selecting the adjusted MCS index.',
+  'Historical state name DeltaMCS contains a dB margin; it must not be added directly to an ordinal MCS index. Step sizes and exclusions are local policy.','adaptation'),
+ M('harq','HARQ identity, soft combining and stop rule',['nr','engineering'],['212','321'],['harq','recover','dlsch','packets'],
+  'Add compatible LLRs at the same mother-code positions, not decoded bits or arbitrary equalized symbols.',
+  'Freeze original TB/process/NDI epoch and layout; RV changes selection. CRC success and observed ACK are separate events; deliver each payload range once.',
+  'A lost ACK can cause another transmission of already decoded data. Do not count it as new payload; conditional retry calibration needs genuine preceding failures.','harq'),
+ M('cdl','CDL-C paths, arrays, polarization and mobility',['model','matlab','research'],['901','cdl'],['channel','cdl','array','stream','doppler'],
+  'Multipath is a sum of delayed, time-varying matrix responses. fD,max=v·fc/c is separate from an individual radial projected shift.',
+  'Create concrete CDL-C with selected spread, array geometry and polarization; retain continuous channel state across sample chunks and direction transitions.',
+  'Profile C and delay spread do not define geometry path loss. A configured maximum Doppler must not be overwritten with a radial shift.','channel'),
+ M('tdl','TDL profile alternatives',['model','matlab','research'],['901','tdl'],['channel'],
+  'Discrete tap powers/delays and temporal fading define a frequency-selective channel; the tap power is not the whole-link path loss.',
+  'Resolve a concrete profile such as TDL-A/C, apply its native parameters, and keep channel-estimation support per resource.',
+  'Bare TDL/CDL family names are invalid concrete profiles. TDL is an alternative family, not an additional channel silently cascaded into this CDL-C run.','channel'),
+ M('awgn','Occupied-RE AWGN and transform calibration',['matlab','engineering','research'],['snr'],['awgn','noise','stream'],
+  'σgrid²=Es·10^(−SNRref/10); σtime²=σgrid²/gFFT. gFFT is verified for the actual OFDM options.',
+  'Bind each point before sample generation, retain noise RNG and power reference, and preserve separate configured reference SNR versus measured receiver SINR.',
+  'No assumption that nominal 40 dB equals every channel SINR under fading/RF. Independent point resets and continuous within-point state are different requirements.','power'),
+ M('pathloss','UMa, shadowing, O2I and absolute power',['model','research'],['901','215'],['pathloss','channel'],
+  'Amplitude attenuation=10^(−PLdB/20); received power also depends on declared TX power, gains, channel and the measurement plane.',
+  'Choose a geometry/link-budget arm, bind power/noise units and propagation applicability, then report physical path loss separately from cluster relative power.',
+  'Path loss, shadowing and O2I are off in this controlled-SNR child. Absolute dBm cannot be recovered by renaming normalized dB.','power'),
+ M('converter','DAC/ADC operating point and clipping',['engineering','research'],[],['rf','rfstream','impaired','agc'],
+  'Quantize real and imaginary components using declared rails/step; sample RMS error=√(Σ|y−x|²/Σ|x|²).',
+  'Use a fixed declared OFDM power reference, retain applied full scale, codes, clipped-component population and exact affected intervals.',
+  'Adaptive per-burst renormalization would change sparse/full-band comparisons. Sample-domain conversion error is not modulation EVM.','rf'),
+ M('rf','PA, IQ imbalance, CFO, phase noise and AGC',['engineering','research'],[],['rf','rfstream','agc'],
+  'Rapp AM/AM, image term αx+βx*, and exp(j(2πΔf·n/Fs+φ[n])) model different distortions.',
+  'Execute explicit ordered TX/RX stages with persistent LO/filter/AGC state; record parameters, sample intervals and correction stage.',
+  'The mask is a declared sensitivity assumption, not measured hardware or a universal 7 GHz 3GPP oscillator. CPE compensation cannot remove all ICI.','rf'),
+ M('timing','Timing acquisition, CFO and physical clocks',['nr','matlab','engineering'],['213'],['dlrx','csirx','slotclock','stream'],
+  'Capture-relative lag/Fs is a local displacement. Global arrival requires the capture origin and a consistent physical delay reference.',
+  'Acquire from received samples, apply once, demodulate on the corrected clock and independently measure residual where identifiable.',
+  'Configured offset minus applied correction is audit arithmetic, not an independent residual estimator. Zero can be valid only with its estimator/status.','rx'),
+ M('phase','SRS matched-pilot phase evolution',['engineering'],[],['pilotphase','srsrx'],
+  'φi=arg Σconj(Hprevious)Hcurrent; ω̂=Σwi·Δti·φi/Σwi·Δti²; f̂=ω̂/(2π); half-range=min 1/(2Δti).',
+  'Match actual resource/port/RX coordinates within a capture or with compatible causal previous history; retain pair count, times and context.',
+  'No first-pair estimate and no phase unwrapping beyond the declared ambiguity interval. This is common phase evolution, not maximum Doppler spread.','referencesignals'),
+ M('evm','Paired and decision-directed EVM',['engineering','matlab'],[],['evm','pucchdd','srsevm','qualityview'],
+  'RMS=√(error energy/reference energy); percent=100·RMS. Keep sample count, reference plane and whether decisions or independent pairs supplied the reference.',
+  'Physical producer retains actual symbols/pilots; exporter preserves pair identity; GUI shows the exact definition and applicability.',
+  'No fabricated reference, implicit gain fit or cross-channel substitution. Format-0 sequence detection is not a QAM EVM population.','measurements'),
+ M('nmse','Independent channel-estimation NMSE',['engineering'],[],['trsscore','srs','dlrx','exports'],
+  'NMSEdB=10log10(Σ|Ĥ−Href|²/Σ|Href|²), on matching ports/REs/time/receiver clock.',
+  'Derive the reference from the same executed desired-link capture and retain scoring support separately from the practical receiver.',
+  'Perfect/scoring references may not choose the estimate, rank or decoder result. Matching one scalar does not validate the full fading grid.','measurements'),
+ M('rsrp','SS/CSI power and quality metrics',['nr','engineering'],['215'],['access','csifeedback','metrics'],
+  'Linear power average over the stated reference resources → logarithm with explicit reference unit; RSSI uses its own declared support.',
+  'Publish the measurement plane, normalization/calibration, resource and observation identity along with each value.',
+  'Normalized occupied-RE power is not dBm. RSRQ/SINR comparisons require compatible populations; selected signal power is not antenna gain.','power'),
+ M('throughput','Traffic, goodput, BLER and denominators',['engineering'],[],['packets','conserved','exports'],
+  'Scheduled PHY rate=A/Tslot; unique successful-bit goodput=Σunique delivered bits/Tobservation; BLER=failed attempts/eligible attempts.',
+  'Keep offered application traffic, scheduled payload, physical CRC success, unique delivery and first-TX/retry populations distinct.',
+  'A high per-active-slot rate is not a whole-run average. Four successes do not establish a BLER curve.','harq'),
+ M('hash','TX/RX waveform identity and hashes',['infrastructure'],[],['rxevidence','waveformhash','capture'],
+  'WaveformHash.runtimeArray serializes class, dimensions and real/imaginary values; file SHA hashes serialized file bytes instead.',
+  'Hash completed receiver input before synchronization; preserve separate TX and file digests. Cache only immutable exact samples.',
+  'A receiver panel must not use a transmitted-sample hash as RX identity. Equal samples in different file containers need not have equal file hashes.','outputs'),
+ M('completion','Same-sample receiver batch barrier',['infrastructure','engineering'],[],['batch','completionorder','runtime'],
+  'Reduce every completion at the same sample in dependency order, then re-arm new feedback once after data outcomes are committed.',
+  'The stream has already removed the completed captures from Pending. A partial callback view must not be mistaken for an uncompleted or reusable PUCCH occasion.',
+  'Retain genuine late-feedback errors and pilot-before-PUCCH ordering. A passing component check does not prove the full slot-50 run passed.','causal-flow'),
+ M('checkpoint','Checkpoint save, restore and repair lineage',['infrastructure'],[],['checkpoint','runner'],
+  'Completed-slot state + configuration/source/RNG identity + dependency-prefix hashes define the restart boundary.',
+  'Validate → stage exact prefixes → preserve interrupted attempt → switch visible run folder → restore physical/state owners → execute next slot.',
+  'A CSV at slot 49 is not a completed checkpoint. Source-repaired continuation is diagnostic, not frozen-source primary qualification.','restart-flow'),
+ M('performance','Profiling, exact buffers and live rendering',['infrastructure'],[],['profiler','capture','matsave','livecadence','liveplots'],
+  'Exclusive time=inclusive time−nested scoped time. Scope exits include failures and are not decode passes.',
+  'Keep sample fidelity and continuous channel/RF evolution; compact immutable buffers and avoid unchanged plot regeneration; throttle PNG refresh only.',
+  '100 MHz/64-port data remain large. RAM/commit/pagefile pressure differs from free output-disk space; no unmeasured speedup claim.','recipe'),
+ M('statistics','Detector, BLER/HARQ and RF qualification',['engineering','research'],['141-1'],['issueledger','repairreport'],
+  'Independent episode counts determine uncertainty; a zero-error one-sided 95% upper bound is 1−0.05^(1/N).',
+  'Freeze the design, execute H0/H1 or first-TX/conditional-retry populations, use independent validation and enforce coverage before study claims.',
+  'No candidate-count inflation, no retries after success merely to fill cells, no unqualified curve extrapolation, and no blanket RF EVM threshold.','qualification')
+];
+const methodCard=m=>`<article class="method-card" data-method="${m.id}">
+<h3>${esc(m.title)}</h3>${badges(m.basis)}
+<p><strong>Calculation / algorithm.</strong> ${esc(m.calculation)}</p>
+<p><strong>Production flow.</strong> ${esc(m.flow)}</p>
+${F(...m.owners)}<p class="tiny">${m.refs.map(k=>R(k)).join(' · ')||'No unique normative 3GPP algorithm is claimed for this implementation choice.'}</p>
+${N('Applicability and difference',esc(m.boundary))}
+<a href="#${m.chapter}">Read the detailed chapter →</a></article>`;
+const chapter=(id,title,lead,body)=>({id,group:'Exact algorithms & flow',title,lead,body});
+const PLAYBOOKS=[
+ ['frame','Frame and resource time/frequency mapping',['nr','engineering'],['band','slotclock','scheduler','resource'],[
+ ['Configure the clock','Resolve 4 GHz, 100 MHz, 30 kHz SCS, normal CP, 273 PRBs, the BWP origin and D,D,D,S,U pattern. Build native carrier objects before generating any channel.'],
+ ['Construct symbol boundaries','Read OFDM symbol/CP lengths. For this native clock a slot is 61,440 samples. Resource slot is zero-based internally; the usual live radio-slot display is one-based.'],
+ ['Find legal symbols','A full DL template uses zero-based 2–13; the special slot permits 2–9 for that template. Symbols 10–11 are guard and 12–13 UL in the 10/2/2 special slot. PUSCH full-UL template is 0–10.'],
+ ['Enumerate timing','K0/K1/K2 identify slot relationships; start/length, processing deadlines and duplex symbols determine legality inside those slots. Reject K2 targets whose allocated symbols are DL-only.'],
+ ['Reserve before selecting','Intersect SSB/control/CSI/DM-RS/PT-RS/SRS/PUCCH reservations with the relevant symbols. Do not remove entire PRBs merely because another symbol uses them unless that is the explicit allocation policy.'],
+ ['Freeze and reconcile','Store actual PRB indices, start/length, RNTI/BWP/MCS/rank/DM-RS and TB identity. Compare native transmitted index sets against the grant and export exact sets/counts.']
+ ],'Scheduler traces explain rejected timing or fragmented bandwidth; data trials establish what actually transmitted. Empty traffic at a legal UL slot needs a blocker, not an automatic grant.'],
+ ['ssb','SSB beam sweep, PSS, SSS and PBCH',['nr','matlab','engineering'],['ssbtx','ssbrx','pbch','access','stream'],[
+ ['Install the burst','Resolve SSB frequency placement, candidate positions, periodicity, cell identity and the four configured beam/physical weight mappings. Index and beam identity are different fields.'],
+ ['Generate the air signal','Build the PSS/SSS/PBCH and PBCH-DM-RS resources for each enabled SSB; apply the associated physical mapping and OFDM/RF chain. Preserve all four observations, not only the winner.'],
+ ['Observe a complete search window','The stream advances actual samples and assembles the receive capture. A long acquisition window can span several slots; its result is not usable at the earlier SSB resource time.'],
+ ['Acquire from samples','SSB_Rx searches received PSS timing/candidate hypotheses, estimates frequency according to its selected receiver branch and correlates SSS hypotheses for cell identity. Injected offsets are scoring metadata only.'],
+ ['Decode broadcast','PBCH_Recovery uses the received PBCH-DM-RS estimate, practical equalization and decoding/CRC. Retain EVM definition, channel estimate support, decoded identity and each candidate outcome.'],
+ ['Commit receiver selection','completeCellSearchBroadcast associates the measured selected resource/beam with the UE. Publish normalized power with its plane, capture boundaries, completion time and decoder evidence.'],
+ ['Continue access','The selected SSB/timing and installed or decoded broadcast configuration provide access context. A PBCH pass does not yet mean PRACH, RRC or connected CSI delivery completed.']
+ ],'Read pbch_trials.csv plus beam state transitions. Distinguish decoded parameters from preconfigured common access context; one retained burst is not acquisition probability.'],
+ ['prach','PRACH → RAR → Msg3 → Msg4 → bounded RRC',['nr','matlab','engineering'],['prachtx','prachrx','prachdetector','ra','runtime'],[
+ ['Select a legal occasion','Use PRACH format/SCS, frequency offset, root sequence, preamble index, SSB association and configured response windows. Do not invent a random access opportunity on an incompatible TDD symbol.'],
+ ['Transmit the preamble','PRACH_Tx generates the native sequence and actual time-domain preamble on the UE dimensions; shared RF/channel processing determines the gNB observation.'],
+ ['Detect independently','PRACH_Rx/PRACHDetector search allowed hypotheses using the actual received columns and normalized correlation threshold. Retain sent identity for scoring, not as a guaranteed receiver answer.'],
+ ['Separate delay meanings','Keep detected correlation lag, capture start, implementation filter delay, physical arrival reference and quantized TA distinct. A receive-window pre-roll is not negative propagation.'],
+ ['Receive the response','RAR delivery requires the applicable received PDCCH/PDSCH and matching RAPID/context within the response window; a mismatched or missed message is not accepted by changing identifiers.'],
+ ['Execute Msg3 and contention resolution','Use the issued UL allocation for Msg3 PUSCH; receive Msg4/control with the associated temporary/final identity. Preserve CRC and timing for each physical stage.'],
+ ['Complete bounded connection','Commit the bounded RRC state only from completed procedure events and the installed policy. Export access times and operational C-RNTI separately from UE/audit IDs. No attach-by-slot-35/40 shortcut.']
+ ],'PRACH threshold has its own calculator. Statistical missed/false detections require signal-present and empty realizations. A single PASS is not full RRC or PRACH qualification.'],
+ ['pdcch','PDCCH and DCI: transmitter to independent receiver',['nr','matlab','engineering'],['pdcchprep','pdcchcomplete','pdcch','pdcchblind'],[
+ ['Prepare legal control','Resolve CORESET, search space, monitoring occasion, aggregation level, CCE candidate, DCI format/length, RNTI and installed BWP. Control capacity is checked before data scheduling authority is issued.'],
+ ['Code and map','Serialize DCI with its specified identity/coding, map PDCCH and DM-RS to actual CCE/REG resources, then generate the physical control waveform.'],
+ ['Capture on the received clock','completePDCCHReception requires a complete contiguous observation, correct sampling rate and measured alignment. Its connected blind-search branch does not obtain the candidate identity/length from the TX object.'],
+ ['Search actual hypotheses','PDCCH_Rx/blindDecodePDCCH perform the configured candidate/channel/DCI hypotheses. Preserve candidate ordinal, aggregation, resource identity, decoder LLR evidence and each attempted result.'],
+ ['Separate CRC from semantics','A CRC outcome is not the same as accepting DCI fields for the installed context. A receiver exception or unattempted decode is not a measured missed command.'],
+ ['Bind execution','Only accepted received control provides the applicable grant/HARQ/BWP/TCI authority to data reception. Expected TX bits can score the outcome after decoding, not select it.'],
+ ['Publish the right plane','Store actual RX-input digest separately from TX waveform digest, sample interval, candidate measurements and independent scoring operands.']
+ ],'16 candidates and 32 DCI hypotheses can be legitimate. Qualification denominators use independent waveform episodes rather than treating every correlated hypothesis as a new trial.'],
+ ['pdsch','PDSCH: full connected DL data chain',['nr','matlab','engineering'],['runtime','dltx','dlrx','dlsch','resource','packets'],[
+ ['Admit DL','Check connected state, offered buffer, HARQ availability, legal DL resources and fresh/available QCL reference where required. DL eligibility is distinct from UL eligibility.'],
+ ['Choose and freeze','Use causal delivered CSI/OLLA, or explicit bootstrap policy. Freeze actual rank, logical-to-physical precoder, DM-RS, table/MCS, symbols/PRBs, TBS and TB/process/NDI epoch.'],
+ ['Encode and map','PDSCH_Tx materializes exact data/pilot resources and faithful sizing; TB CRC/segmentation/LDPC/RV rate matching feed scrambled QAM, layers and physical precoding. Keep G distinct from A.'],
+ ['Execute the physical link','Commit transmitter samples to the shared stream; evolve channel and RF even when other resources overlap. Capture the received data window and retain its clock and sample identity.'],
+ ['Synchronize and demodulate','PDSCH_Rx uses installed alignment or receiver-derived acquisition, avoiding double timing correction. Perform CFO handling, CP removal/FFT and practical DM-RS channel/noise estimation.'],
+ ['Equalize and decode','Compute the canonical equalizer result and actual LLRs, recover mother-code positions and combine the correct TB, then execute DL-SCH decoding and CRC. Independent references score only after practical decisions.'],
+ ['Complete data and feedback','Publish an actual trial or explicit rejected/failed disposition; reconcile unique packet delivery and queue HARQ feedback at its legal future occasion. Batch completion prevents reopening already completed PUCCH.']
+ ],'Read dl_pdsch_trials.csv, grant/exclusion traces, HARQ timeline and CSI delivery together. A selected RI or nominal SNR is not proof of the transmitted rank or BLER target.'],
+ ['pusch','PUSCH: full connected UL data chain',['nr','matlab','engineering'],['srs','runtime','ultx','ulrx','uci','batch'],[
+ ['Admit UL','Resolve UL traffic enabled/buffer, received SRS requirement and freshness, available rank/precoder/HARQ process, and next legal UL data slot. Do not remove the SRS gate just to obtain traffic.'],
+ ['Receive a legal UL grant','Enumerate configured K2/time-domain candidates from the control occasion and reject opposite-direction targets. Retain independently decoded UL DCI and frozen grant identity.'],
+ ['Bind transport capacity','PUSCH_Tx retains the original TB on retry. If UCI is selected, native allocation/multiplexing accounts for its coded bits/RE and shared-channel code rate; do not release PUCCH on an unverified plan.'],
+ ['Build UE samples','Apply scrambling, configured CP-OFDM mapping, layers and TPMI/explicit weights, DM-RS/PT-RS and the issued symbol/PRB set. UE-to-gNB dimensions differ from DL.'],
+ ['Observe at gNB','The physical owner preserves UL channel/RF/timing state and complete received samples. Received timing/TA alignment must not be replaced with injected offset truth.'],
+ ['Receive data and UCI','PUSCH_Rx estimates the DM-RS channel, equalizes and demaps; actual UL-SCH/HARQ and UCI decoding retain separate applicability/outcome evidence.'],
+ ['Commit coincident outcomes','Reduce every completed receiver at the same sample before re-arming UCI. Export the data trial and its feedback outcome; update future UL adaptation only from causal eligible evidence.']
+ ],'SRS45 and DCI46 may authorize PUSCH50 under K2=4. They do not establish that PUSCH50 executed or decoded; actual ul_pusch_trials.csv is required.'],
+ ['csirs','CSI-RS / CSI-IM: generation to immutable measurement',['nr','matlab','engineering'],['csiprep','csi','csirx','csifeedback','csistate'],[
+ ['Install resources','Resolve all eight configured resource identities, port count, density/row/CDM mapping, 273-PRB support, period/offset, scrambling and physical beam mapping. CSI-IM muted support has its own mapping.'],
+ ['Reserve and transmit','prepareCSIRSTransmission generates physical reference resources independent of a data grant. A CSI occasion must not require a fabricated PDSCH allocation.'],
+ ['Complete observations','Shared reception waits for the actual window. Pre-front-end antenna samples and post-front-end practical samples are kept as separate planes.'],
+ ['Synchronize each plane','Estimate and apply local timing/CFO using that plane’s received samples. Report capture-relative lag, search interval and sample rate; identical zero timing estimates may be valid aligned-window results.'],
+ ['Estimate spatial response','receiveCSIRSFromGrid derives practical channel and disturbance information on installed resources. CSIMeasurementState fixes resource/context/time, H/noise and provenance.'],
+ ['Calculate feedback','computeCSIRSFeedback uses the measurement and installed report/DM-RS semantics; it does not consume PDSCH decoding, DCI, HARQ state or a perfect channel to select RI/PMI/CQI/CRI.'],
+ ['Export and deliver separately','Publish csi_rs_trials.csv and measurements now; schedule/encode/deliver the report in a later UCI occasion. The measurement producer is not the scheduler-delivery authority.']
+ ],'Selected-PMI receiver SINR uses log(1+SINR) aggregation. The native CQI L2SM effective SINR is retained separately and must not be relabelled as measured wideband receiver SINR.'],
+ ['codebook','Codebook, PMI/RI/CRI, wire report and applied matrix',['nr','matlab','engineering'],['csireport','type1','type2','csiconfig','array','runtime'],[
+ ['Bind the typed configuration','Resolve codebook type, logical ports/panel dimensions, rank restrictions, reporting granularity, CSI resource list and configuration epoch. H4 uses four logical ports with Type-I Single-Panel semantics.'],
+ ['Select on received evidence','NRCSIReportEngine validates measured H and disturbance covariance, then uses the release-pinned nr5g.internal.nrRISelect(MaxSE) and nrCQIReport engines. SVD diagnostics alone are not the entire selection algorithm.'],
+ ['Preserve component identities','Retain i11/i12/i13/i2 and the scheduler scalar representation for Type-I. CRI identifies the selected installed CSI resource; RI is candidate rank; CQI is codeword quality.'],
+ ['Reconstruct and compare','TypeISinglePanelCodebook maps the tuple to a deterministic formula matrix and checks it against the selected native matrix. The inspected Type-I Frobenius tolerance is 1e−12, a numerical implementation guard.'],
+ ['Serialize and receive','CSIReportConfiguration builds the configured bit layout. Only a physically received, context-matched report may enter the scheduler’s feedback state; do not infer missing bits from the transmitter object.'],
+ ['Confirm and compose','Apply configured temporal confirmation/smoothing policy, then compose the selected logical matrix with the physical beam/port map. Four ports and 64 TXRU are not interchangeable dimensions.'],
+ ['Freeze and verify application','Issue the data grant with selected rank and exact applied matrix/hash. Record requested versus applied PMI/TPMI or explicit-matrix semantics; do not manufacture a scalar PMI when no scalar was used.']
+ ],'Type-II has coefficient fields rather than a Type-I scalar index. Its separate implementation and tolerance do not imply this H4 run selected or qualified Type-II. Beam gain and selected RSRP/SINR are different measurements.'],
+ ['beam','Beam sweep/refinement, TCI/QCL and arrays',['nr','model','engineering','research'],['array','channel','runtime','qcladmission','csireport'],[
+ ['Define physical versus logical','Keep element positions, horizontal/vertical polarization, two physical panels and 64 gNB chains separate from the four-port CSI codebook and at most four data layers. The UE has four chains.'],
+ ['Acquire a wide beam','Transmit the four SSB candidates using their actual mapped weights; select from completed received measurements, retaining every observation rather than a geometry oracle winner.'],
+ ['Refine with CSI resources','Sound the eight configured CSI/data beam resources. Compare practical channel/disturbance measurements; report resource/PMI/rank through the typed physical feedback path.'],
+ ['Bind TCI semantics','Resolve the configured state and received DCI codepoint, source RS/resource, QCL type, configuration epoch and activation time. A beam number alone is not the QCL contract.'],
+ ['Check timing availability','qclTimingSchedulingEligibility checks matching UE/cell/resource/epoch, source age, activation and AvailableAtSample against the known sample clock. Future TRS cannot satisfy an earlier grant.'],
+ ['Apply actual weights','Compose/freeze the selected matrix and verify physical precoding before mapping/transmission. Export requested/applied identity, matrix digest and measured-selection provenance.'],
+ ['Score only executed effects','AoA/AoD/ZoA/ZoD come from the channel realization; they are not all measured receiver estimates. Beam gain needs a declared comparison plane. Disabled BFR has no recovery-time episode.']
+ ],'At slot48 an old source27 has age21; max-age20 rejects it even if the next two-slot TRS started at47. Its later availability does not permit retroactive scheduling.'],
+ ['pucch','PUCCH and UCI transport ownership',['nr','matlab','engineering'],['pucch','uci','pucchtrial','pucchdecoder','pucchquality','batch'],[
+ ['Collect due obligations','Build HARQ, SR and CSI obligations from their configured timing and causal owners. Global CSI enablement does not add CSI bits to every PUCCH.'],
+ ['Determine format/resources','Use payload size, code-rate policy, duration, hopping and configured resources. Formats 0/1/2/3/4 have different detection/coding semantics; retain the selected format, not a generic label.'],
+ ['Select transport','Keep dedicated PUCCH until a verified legal PUSCH transport is committed. Freeze UCI layout and ownership; failed/rejected grants need explicit disposition.'],
+ ['Encode and transmit','The UE serializes its own typed payload. Missing-DCI negative tests may legitimately produce different TX/RX hypotheses; do not enforce agreement by copying transmitted bits.'],
+ ['Receive independently','PUCCHReceiver uses the installed receive hypothesis and actual capture. Preserve attempted detection, statistic/threshold/source, decoded bits, CRC applicability and independent bit scoring.'],
+ ['Classify measurements','Format0 is noncoherent sequence detection; channel-estimate/equalizer/QAM EVM applicability differs from DM-RS formats. Actual decoder constellation output can support decision-directed EVM where applicable.'],
+ ['Complete once','Associate results to feedback owners and commit the full same-sample batch before generating new feedback. Already encoded/completed occasions remain closed; genuine late feedback still errors.']
+ ],'DTX, CRC, detection, bit correctness, false ACK and false NACK are different fields. A metric above threshold does not by itself prove correct UCI ownership or bits.'],
+ ['srs','SRS generation, despreading, UL feedback and phase history',['nr','matlab','engineering'],['srstx','srsrx','srs','pilotphase','srsevm'],[
+ ['Resolve the native resource','Use CSRS/BSRS/BHop, comb, cyclic shifts, ports, symbol location and period/offset. H4’s native table maps 272 PRBs inside the 273-PRB carrier.'],
+ ['Transmit on four UE ports','Generate actual pilot symbols/indices and physical UE mapping; preserve port and hopping identities and use the shared UL RF/channel state.'],
+ ['Acquire the received grid','Use available received timing/frequency context, demodulate actual captured samples and retain the FFT/sample clock.'],
+ ['Separate ports and estimate','Perform actual CDM/comb/despread processing and per-resource channel/noise estimation. Other ports must not be miscounted as noise; one scalar cannot represent a fading grid.'],
+ ['Recommend future UL parameters','Derive spatial/channel evidence and RI/precoder/quality with its source and availability. Scheduler confirmation and issued grant identity remain separate; no retroactive SRS use.'],
+ ['Measure phase only when identifiable','Match actual pilot coordinates across symbols or compatible earlier observations. With one non-repeated symbol and no history, export no rate rather than inventing maximum Doppler.'],
+ ['Score and export','After reception, compare same-execution desired/received pilot REs per physical RX branch, counting shared CDM REs once. Retain phase pair times, alias range, coverage and NMSE/EVM planes.']
+ ],'SRS received-pilot error is not equalized layer EVM. A phase rate can include receiver LO and fading; it cannot identify the maximum Doppler spread by itself.'],
+ ['trs','TRS acquisition, QCL timing and independent diagnostics',['nr','matlab','engineering'],['trs','trsfreq','trsresidual','trsscore','qcladmission'],[
+ ['Build the configured burst','TRS is an installed NZP-CSI-RS tracking resource set. H4 uses a two-slot burst, 20-slot period and configured tracking symbols; retain exact resource identity.'],
+ ['Wait for the full capture','The result is not available merely because its first resource symbol was transmitted. Preserve source slot, capture bounds and actual completion sample.'],
+ ['Acquire practical timing/frequency','Use received correlation and the configured CP or pilot-phase estimator; do not obtain the answer from injected CFO/timing or independent scoring references.'],
+ ['Apply correction once','Retain estimated, applied, disabled/unavailable states and the actual corrected plane. Record whether channel/phase tracking was attempted and usable.'],
+ ['Measure the residual','measureTRSResidualFrequency deliberately changes observable: CP acquisition is checked with reference-symbol phase slope; pilot acquisition is checked with CP/tail pairs after processing.'],
+ ['Score channel/pilot quality','Retain independent same-execution pilot support for EVM/NMSE, compared sample count and scoring reference plane. No refitting merely to reduce an error metric.'],
+ ['Publish three statuses','Keep scheduler usability, tracking evidence and strict qualification PASS/FAIL separate. Update received QCL timing only with valid matching context and actual availability.']
+ ],'Different observable does not mean a new independent realization. The residual measures received common frequency, not uniquely the physical oscillator offset.'],
+ ['demodulation','DM-RS, PT-RS, equalization and soft decoding',['nr','matlab','engineering'],['dltx','ultx','estimate','equalize','dlrx','ulrx','recover','ldpc'],[
+ ['Resolve reference support','Use the actual data grant, mapping type, duration, DM-RS type/additional positions, CDM groups and transmitted ports. PT-RS density and association must match the selected modulation/layer configuration, not merely a global enabled flag.'],
+ ['Generate consistent pilot/data mapping','TX applies the intended layer/port/physical precoding to data and associated reference signals. Keep native data, DM-RS, PT-RS and reserved index sets disjoint where required; retain their different dimensional accounting.'],
+ ['Extract and separate pilots','The receiver uses its synchronized grid and installed reference configuration. Orthogonal-cover/CDM processing must separate ports before treating residual energy as noise; pilots shared by several logical ports do not create extra physical RE.'],
+ ['Estimate the fading response','channelEstimate chooses the configured practical estimation path. Use per-resource estimates and interpolation, with native nrChannelEstimate where appropriate; do not expand one scalar across a CDL/TDL grid.'],
+ ['Compute equalizer outputs','equalizeMMSE validates shape/noise/covariance, solves the selected MMSE/IRC/ZF branch and retains effective response, output covariance, residual inter-layer coupling and reliability. Do not count noise both inside and outside R.'],
+ ['Track phase at the selected plane','The receiver applies configured PT-RS/phase tracking using actual observations and reference association. Retain whether correction was performed, the phase support and residual; common phase correction does not remove arbitrary intra-symbol ICI.'],
+ ['Form actual likelihoods','Soft demapping uses equalized symbols and declared reliability/noise convention. LLR statistics come from that vector, not from an EVM-to-SINR-to-LLR label conversion.'],
+ ['Recover, combine and decode','Undo scrambling/interleaving, recover LDPC circular-buffer positions for the actual RV, combine only matching TB/process/epoch state and execute the configured iterative decoder/CRC. Save failures as physical outcomes.']
+ ],'Estimator accuracy, post-EQ SINR, EVM, LLR reliability and CRC test different parts of the chain. High scalar SINR does not prove all layers are separable or that the received grant/TB identity is correct.'],
+ ['propagation','CDL-C / TDL / AWGN physical channel',['model','matlab','engineering','research'],['channel','cdl','doppler','noise','awgn','stream'],[
+ ['Choose one explicit model','Resolve concrete CDL-C/100 ns for this child; AWGN reference and TDL alternatives are distinct configurations. Preserve the selected engine and normalization.'],
+ ['Construct dimensions/geometry','Bind physical TX/RX array orientation, polarization, element patterns and channel parameters. Logical-port precoding belongs outside the physical propagation matrix.'],
+ ['Bind mobility correctly','Configured maximum Doppler controls the fading evolution. Keep geometric radial shift separate; the Doppler owner must not overwrite the configured spread parameter.'],
+ ['Evolve continuously','Filter transmitted samples through the persistent channel state in clock order. Empty connected-data slots can still contain RS/control and must not reset channel/oscillator phase.'],
+ ['Add calibrated noise','Use occupied-RE Es/N0 or an explicitly separate absolute link-budget plane. Calibrate sample-to-grid noise gain for the actual OFDM settings, with independent noise state.'],
+ ['Retain reference only for scoring','Preserve same-execution desired-link channel/sample evidence without feeding it into practical channel estimates or feedback decisions. Archive exact clocks and dimensions.'],
+ ['Separate propagation quantities','TR38.901 path loss describes the link-budget attenuation; tap/cluster relative powers describe multipath composition. This normalized child does not apply UMa/O2I/path loss.']
+ ],'The known channel response is a simulation reference, not automatically a receiver-measured per-path loss/angle. Keep configured, generated and estimated quantities distinctly labelled.'],
+ ['rf','RF, DAC/PA, ADC/AGC and synchronization',['engineering','research'],['rf','rfstream','agc','dlrx','ulrx'],[
+ ['Bind endpoint settings','Resolve TX/RX impairment flags, parameters, sample-rate and calibration/reference plane. A flag covering any segment is not proof that every observation sample received that impairment.'],
+ ['Execute transmitter stages','Use configured DAC → IQ → element RF → PA → phase noise → CFO → timing → sample-clock processing. Retain actual branch execution and ordering.'],
+ ['Preserve the DAC operating point','Derive fixed full scale from declared OFDM normalization and physical ports/headroom. Quantify codes, clipped components and exact sample-domain error without per-burst power normalization.'],
+ ['Execute channel then receiver','RX timing/CFO/phase-noise/IQ/element-RF/sample-clock stages precede the selected AGC/ADC path. Persistent state prevents chunk-dependent oscillator discontinuity.'],
+ ['Apply causal AGC','A detected rail event can change subsequent sample gain according to policy. It cannot restore already clipped samples; retain gain interval and clipping denominator.'],
+ ['Compensate in the receiver','Timing/CFO/PT-RS compensation uses received evidence and compatible context. Estimated, applied and independently scored residual quantities are not interchangeable.'],
+ ['Interpret the diagnostics','PA backoff/gain belongs in raw transmitter-pair error unless explicitly normalized under a stated procedure. Digital error and conformance EVM have different measurement definitions.']
+ ],'The RF settings are research assumptions. No hardware qualification follows from enabling them, and no universal “all channels EVM < X” threshold is asserted.']
+];
+const playbook=p=>`<details class="playbook" data-playbook="${p[0]}" open><summary>${esc(p[1])}</summary>${badges(p[2])}${F(...p[3])}<ol class="steps">${p[4].map(([title,body])=>`<li><strong>${esc(title)}.</strong> ${esc(body)}</li>`).join('')}</ol>${N('Output and acceptance boundary',esc(p[5]))}</details>`;
+const FLOWS=[
+ ['Resource transmitted','Configured RS/control/data belongs to a resource slot. This event alone supplies no received result.','stream'],
+ ['Capture complete','All samples of the actual receive window exist; its end-exclusive sample defines observation completion.','capture'],
+ ['Receiver executed','Practical timing/channel/equalization/decoding consumes received samples. Scoring reference is not decision input.','physical'],
+ ['Same-sample batch reduced','Dependency-ordered callbacks consume every coincident completion before feedback is re-armed.','batch'],
+ ['Feedback transmitted and received','A CSI recommendation or data CRC outcome is encoded on its legal physical feedback transport and independently received.','uci'],
+ ['State admitted','Identity, epoch, availability, age, confirmation and policy determine whether the scheduler can use the delivered result.','runtime'],
+ ['Future grant frozen and executed','Selected MCS/rank/matrix are frozen with the new grant and checked against the actual TX/RX trial.','job'],
+ ['Evidence published and checkpoint committed','CSV/PNG reflect actual observations; a completed checkpoint is durable state plus dependencies, not just a last-slot display.','checkpoint']
+];
+const NEW=[
+ chapter('algorithm-register','Algorithm authority register','Search the implementation, formula, standards basis and limitations together—not a blanket “3GPP compliant” badge.',()=>`
+${N('How to read the tags','3GPP-defined means the stated structure/procedure has a cited standards basis. Non-3GPP means a MATLAB, SixGR, research or infrastructure choice; it does not automatically mean incorrect. Mixed components carry multiple labels. None of these tags implies execution or qualification.')}
+${T(['Tag','Meaning'],Object.values(BASIS))}
+<div class="controls"><label>Find method, formula or file<input id="method-search" type="search" placeholder="e.g. PRACH, CFO, codebook, checkpoint"></label><label>Authority<select id="method-basis"><option value="">All authorities</option>${Object.entries(BASIS).map(([k,v])=>`<option value="${k}">${esc(v[0])}</option>`).join('')}</select></label></div>
+<p id="method-count" aria-live="polite"></p><div id="method-list">${METHODS.map(methodCard).join('')}</div>
+${N('Coverage','This register covers the H4 chain and its documented alternative model/receiver branches, not every function in the repository. The parameter catalog lists other declared options; unexecuted alternatives are not promoted to tested support.')}
+`),
+ chapter('channel-playbooks','Exact channel-by-channel execution','Detailed procedures for frame/resources, initial access, control, data, reference signals, spatial reporting, propagation and RF.',()=>`
+<p>Each walkthrough follows the production owners linked immediately below its title. These are source-linked explanations of the selected H4 family, not executable pseudocode that bypasses configuration. Open the current file and search the named function to inspect its guards and alternate branches.</p>
+<div class="controls"><label>Find a channel or step<input id="playbook-search" type="search" placeholder="e.g. PRACH, Msg3, codebook, residual"></label></div>
+<p id="playbook-count" aria-live="polite"></p><div id="playbook-list">${PLAYBOOKS.map(playbook).join('')}</div>
+`),
+ chapter('worked-calculations','Worked calculations and units','Recompute the numbers from definitions. Examples are teaching arithmetic, not newly generated receiver measurements.',()=>`
+${badges(['nr','matlab','engineering'])}
+<h2>1. The exact H4 clock and occupied grid</h2>
+${E('K=273·12=3276; Bgrid=3276·30,000=98,280,000 Hz<br>Fs=4096·30,000=122,880,000 samples/s<br>Nslot=14·4096+352+13·288=61,440; Tslot=0.0005 s','The CP schedule is the configured native μ=1 clock. The 100 MHz RF channel width is not the occupied grid width.')}
+<p>For one-based slot 45, zero-based slot=44 and start=44·61,440=2,703,360 samples. A particular received window can begin earlier/later because it includes pre-roll, filter memory or measured alignment. Do not subtract unlike clock origins and call the result propagation delay.</p>
+<h2>2. Allocations and coded capacity</h2>
+${E('273·12·12=39,312 gross positions for symbols 2–13<br>273·12·8=26,208 gross positions for symbols 2–9<br>126·12·12=18,144 gross positions for a split-band grant','All symbol numbers here are zero-based. These are gross time-frequency positions before DM-RS/PT-RS/other reservations—not payload bits or final data RE.')}
+<p>The template leaves the initial control region outside the PDSCH symbol interval. Actual data sets come from native resource indices. A union of overlapping reservations must be counted once; logical ports and layers have separate dimensions. For data-only mapping, coded capacity scales with data symbols × Qm × layers, but UCI and exact native layout determine actual G. Call the implemented sizing path for TBS; multiplying G by nominal R is not the quantized TBS algorithm.</p>
+<h2>3. Noise, samples and receiver SINR</h2>
+${E('Es=1, SNRref=40 dB → σgrid²=10⁻⁴<br>If the measured transform validates gFFT=4096, σtime²=10⁻⁴/4096≈2.44140625·10⁻⁸','This is a conditional normalized-grid example. Use actual calibration, occupied-RE convention, port power and demodulator settings. Do not silently transplant it to a different normalization.')}
+<p>For the illustrative same-plane values −15.001 dB signal and 25.581 dB SINR, implied disturbance is −40.582 dB. That is a consistency check only: channel/RF/equalizer effects and the measurement population still matter. ${R('snr')}</p>
+<h2>4. Equalizer and CSI aggregation</h2>
+${E('B=G·Heff; γi=|Bii|²Es / (Σj≠i|Bij|²Es+[G R Gᴴ]ii)<br>γwideband=exp(mean(log(1+γRE,layer)))−1','γ is linear, not dB. First expression distinguishes desired response, residual layer coupling and output disturbance. Second is the aggregation actually recorded by NRCSIReportEngine; it is not an arithmetic average of dB.')}
+<p>${S('equalize')} retains the covariance convention. ${S('csireport')} separately retains native CQI effective-SINR metadata; it does not rename that link-to-system mapping as received SINR.</p>
+<h2>5. OLLA arithmetic, not index addition</h2>
+${E('δACK=clip(δ+u); δNACK=clip(δ−d); ptarget=u/(u+d)<br>mnew=max{m : requiredSINR(m) ≤ requiredSINR(mbase)+δ}','Example u=0.1 dB and d=0.9 dB implies a 10% first-TX target in the unclipped stationary balance. These are illustrative steps, not a declaration of the current YAML values or a 3GPP mandate.')}
+<p>If required thresholds are 0, 2 and 5 dB, base row 1 has 2 dB and a +0.5 dB margin still selects row 1. Several ACKs need not change MCS immediately. Rank confirmation is an additional independent policy. Actual threshold calibration must match the selected direction/table/domain.</p>
+<h2>6. EVM, NMSE, delay and uncertainty calculator</h2>
+<div class="lab"><div class="lab-label">Teaching calculation only · does not read or write run evidence</div>
+<div class="controls"><label>Error energy<input id="calc-error" type="number" value="0.25" min="0" step="any"></label><label>Reference energy<input id="calc-reference" type="number" value="100" min="0" step="any"></label><label>Delay samples<input id="calc-delay" type="number" value="32" step="any"></label><label>Independent zero-error trials<input id="calc-trials" type="number" value="4" min="1" step="1"></label></div><p id="calc-result" aria-live="polite"></p></div>
+${E('EVMrms=√(Ee/Er); EVM%=100·EVMrms; NMSEdB=10log10(Ee/Er)<br>delayµs=10⁶·samples/Fs; p95,upper=1−0.05^(1/N)','NMSE requires channel-error energies; EVM requires symbol/pilot-error energies. The identical ratio formula does not make their operands interchangeable. Zero NMSE energy is −∞ dB; undefined is not zero.')}
+<h2>7. SRS phase evolution and ambiguity</h2>
+${E('c=Σconj(Hprevious)Hcurrent; φ=arg(c); f̂=φ/(2πΔt)<br>unaliased interval: |f|&lt;1/(2Δt)','With a 5-slot separation at 0.5 ms/slot, Δt=2.5 ms and the simple phase-difference half-range is 200 Hz. This cannot unambiguously recover an arbitrary 400 Hz common rate without additional information.')}
+<p>The implementation matches actual pilot coordinates/context and uses weighted fitting when several pairs exist. One initial non-repeated observation supplies neither Δt nor a frequency estimate. Maximum Doppler spread is not identifiable from this common phase statistic. ${S('pilotphase')}</p>
+<h2>8. PRACH and TA</h2>
+<p>For LRA139, 64 received columns and 12 useful repetitions, the native detector default is 0.1/√768≈0.00360843918. With four columns it is ≈0.0144337567. These are normalized correlation thresholds, not dB or false-alarm probabilities. The <a href="#prach">PRACH chapter</a> gives the other native sequence-length cases and an interactive calculator. A 32-sample applied command equals 0.260416667 µs at the H4 sample rate; detected arrival and quantized TA remain different quantities.</p>
+<h2>9. Throughput and PAPR</h2>
+${E('8,976 payload bits / 0.5 ms = 17.952 Mbit/s<br>Goodput over a run = unique delivered payload / declared elapsed observation time<br>PAPRdB=10log10(max|x|² / mean|x|²)','The first calculation illustrates a per-slot PHY rate, not a sustained traffic measurement. Whole-run goodput includes its declared access/idle/retry interval. PAPR depends on whether idle zeros and which ports/windows are included.')}
+<h2>10. Storage and memory are different budgets</h2>
+<p>A dense complex-double grid with 3276 subcarriers ×14 symbols ×64 TX ×4 RX contains 11,741,184 coefficients, or 187,858,944 bytes (179.15625 MiB), before repeated symbols/captures, path/filter state and serialization. This example is not the size of every native channel object. Free E: capacity does not create physical RAM. Profile actual resident/committed memory and exclusive stage time; preserve lossless evidence rather than silently truncating arrays.</p>
+`),
+ chapter('causal-flow','The causal feedback and completion timeline','Click a stage to follow source time, result availability, physical feedback and future grant authority.',()=>`
+${badges(['engineering','infrastructure'])}
+<div class="lab"><div class="lab-label">Implementation flow · schematic, not a live run status</div><div id="causal-buttons" class="flow-buttons">${FLOWS.map((f,i)=>`<button data-causal="${i}">${i+1}. ${esc(f[0])}</button>`).join('')}</div><div id="causal-detail" class="flow-detail" aria-live="polite"></div></div>
+<h2>The slot-49/50 failure and the production repair</h2>
+<p>A completed stream batch may contain PUSCH and PUCCH at the same sample. The stream has already removed <em>all</em> those captures from Pending before callbacks run. Previously, the data callback could re-arm feedback while the coincident PUCCH completion had not yet been reduced, producing <code>LateSharedPUCCHFeedback</code>. ${S('batch')} now orders and consumes the entire batch before re-arming once. Pilot-before-PUCCH dependencies and genuine late-feedback errors remain enforced.</p>
+${T(['Event','Correct interpretation'],[['Actual PUSCH decode succeeds','Data PHY completed; all coincident control callbacks may not yet be committed.'],['PUCCH result committed','Its occasion is completed, not available for reopening.'],['Batch barrier exits','The coordinator can evaluate new obligations against the complete state.'],['Focused batch test passes','The reproduced event-ordering case passes; integrated slot50 and whole-run acceptance remain separately required.']])}
+<h2>Why rank/MCS can remain at bootstrap</h2>
+<p>A source46 CSI observation may be reported at59. That report becomes available after its actual UL capture/decode; it cannot change earlier DL symbols in59, or rewrite an already frozen grant. If policy requires two confirmations, later reports are needed. Similarly, source45 SRS can support DCI46→PUSCH50; SRS50 does not retroactively change that issued grant. Physical feedback, confirmation and actual data-trial evidence—not an RI recommendation alone—close the loop.</p>
+<h2>Why slot48 can be intentionally idle</h2>
+<p>Received QCL source27 is age21 at48 while the saved source-age limit is20. A new TRS beginning47 and ending48 is not usable before its completed result. Keep the configured guard. To eliminate this gap, separately design a justified TRS calendar/freshness policy and validate it; do not change physical checkpoint assumptions mid-continuation.</p>
+${F('qcladmission','runtime','batch','completionorder')}
+`),
+ chapter('measurement-contract','Measurement planes, missing fields and exact outputs','Know which operands were measured, which values were configured, and which procedure each PASS actually covers.',()=>`
+${badges(['nr','engineering','infrastructure'])}
+${T(['Boundary','Required evidence','Incorrect substitute'],[
+ ['Transmitter waveform','Exact channel/port, stage, sample rate, sample interval, TX digest.','Using its digest as proof of received samples.'],
+ ['Receiver input','Completed contiguous observation; ReceiverObservationSHA256 before synchronization; serialization declared.','A configured duration, decode-success flag or TX waveform hash.'],
+ ['Corrected receiver / equalized symbols','Timing/CFO applied state, DM-RS estimate, equalizer, actual symbol plane and population.','A generic waveform-executed flag with no plane.'],
+ ['Paired diagnostic EVM','Actual reference/received pairs, identities, error/reference energies and sample count.','Synthesized constellation points or gain fitting not disclosed.'],
+ ['Decision-directed EVM','Actual decoder constellation and nearest decision; modulation/applicability retained.','Independent transmitted-reference accuracy or RF-conformance EVM.'],
+ ['Channel NMSE','Same-execution independent reference, matched RX clock, precoder/ports/REs and compared count.','Hest compared with itself or a reference from another run.'],
+ ['Residual frequency','Post-processing received estimator and observable; ambiguity interval where relevant.','Injected CFO minus applied CFO described as an independent measurement.'],
+ ['RSRP / RSSI','Specified resources, linear averaging, plane, units and absolute calibration if claiming dBm.','Renaming normalized dB as dBm.'],
+ ['Beam / rank','Measured, reported, received, selected, frozen and applied identities separately.','A maximum capability or SSB winner substituted for actual data rank/beam.'],
+ ['BLER / delivery','Explicit first-TX/retry/unique-delivery population and elapsed interval.','Counts pooled across incompatible conditions or repeated payload.']
+ ])}
+<h2>Actual producer-to-display paths</h2>
+${T(['Channel','Producer / adapter','Measurement interpretation'],[
+ ['SSB/PBCH',S('pbch')+' → '+S('access'),'PBCH decision-directed QPSK EVM and same-execution channel scoring; retain each beam/observation identity.'],
+ ['PDCCH',S('pdcch')+' → '+S('pdcchcomplete'),'Actual received capture, candidate-level estimator/decoder data and independently scored channel; distinct TX/RX digests.'],
+ ['PDSCH/PUSCH',S('dlrx')+' / '+S('ulrx')+' → '+S('exports'),'Actual selected layers, resources, CRC, estimator and equalized-symbol measurements; no grant counts inferred from slot aggregates.'],
+ ['PUCCH',S('pucchdecoder')+' → '+S('pucchdd')+' → '+S('pucchquality'),'Format-specific applicability; decision-directed QPSK or π/2-BPSK only where receiver constellation exists.'],
+ ['SRS',S('srsrx')+' → '+S('srsevm')+' → '+S('srs'),'Unique received pilot REs per RX branch, desired/received paired error; not equalized-layer EVM.'],
+ ['TRS',S('trs')+' → '+S('trsresidual')+' / '+S('trsscore'),'Tracking versus strict qualification, pilot-pair EVM/NMSE and different-observable residual on the same capture.'],
+ ['Display and charts',S('qualityview')+' / '+S('radioplots')+' / '+S('evm'),'Preserve channel, observation, sweep, plane, units, source and applicable status; no cross-channel substitution.']
+ ])}
+<h2>When a blank needs implementation—and when it has no physical meaning</h2>
+<p>A required value missing despite executed samples needs its producer, adapter or exporter repaired. A normalized plane cannot provide absolute watts without calibration; a first SRS observation cannot provide cross-time phase evolution; a disabled BFR episode has no recovery time; a sequence detector has no QAM-equalized EVM. These require a changed experiment or a different meaningful metric, not a zero or an invented measurement. Explicit reason/status is essential but is not a substitute for fixing an applicable broken path.</p>
+<h2>CSV and PNG identity</h2>
+<p>Each joint curve retains every included point in one plotted CSV and one image, with sweep-point, direction, channel, observation/beam and population keys. Missing/failed points remain distinguishable from zero performance. Live rendering can run every five completed slots; primary measurement collection and final publication keep their full populations. Source and producer hashes prevent reuse of stale charts. ${S('liveplots')}</p>
+<h2>Clock fields to read together</h2>
+<p>Interpret resource absolute slot, its indexing convention, capture start/end-exclusive samples, sample rate, result availability, state-transition sample and wall-clock publication separately. Current raw tables may use channel-specific names: inspect the exact header/producer rather than assume a documentation concept is already a literal CSV column. Time elapsed waiting for Windows I/O is not a radio processing delay.</p>
+`),
+ chapter('restart-flow','Checkpoint restoration, WebGUI state and safe continuation','A durable checkpoint is more than the last visible slot. File restoration happens before resumed PHY execution.',()=>`
+${badges(['infrastructure'])}
+<ol class="steps">
+<li><strong>Locate a completed checkpoint.</strong> The receipt names the last fully committed slot, state MAT digest, original configuration/source identity and external file dependencies. Slot45 means next slot46; a partial slot49 CSV does not create a checkpoint49.</li>
+<li><strong>Validate state and compatibility.</strong> Check state checksum, MATLAB compatibility, scientific configuration and the explicit repair-source policy. A source-repaired continuation is labelled diagnostic.</li>
+<li><strong>Verify every dependency prefix.</strong> Confirm retained files still contain the checkpoint bytes. Missing or changed evidence fails restoration; do not manufacture replacements from summary counters.</li>
+<li><strong>Build a staging tree.</strong> Copy exact saved mutable prefixes and use verified same-volume immutable hardlinks where the implementation allows them. A previously failed run remains visible until the switch.</li>
+<li><strong>Preserve the interrupted attempt.</strong> Keep its extra IQ, CSVs, failure and logs in the recovery location before installing restored prefixes at the normal run path. One codebase remains; evidence histories are deliberately separate.</li>
+<li><strong>Publish the resume receipt.</strong> Record origin, repaired-source reason and narrowly allowed operational settings. The original scientific hash still owns pending grants/HARQ; it must not be rewritten as if new physics generated old samples.</li>
+<li><strong>Restore continuous owners.</strong> Reinstate scheduler, UE/control state, TB/soft buffers, pending receive windows, channel/RF/oscillator and RNG state. A process restart must not independently reseed the middle of the link.</li>
+<li><strong>Execute and checkpoint the next slot.</strong> Only now is the run advancing radio time. Save subsequent completed boundaries according to the actual applied cadence; a receipt—not a promise—establishes checkpoint49.</li>
+</ol>
+${F('checkpoint','runner','capture','stream')}
+<h2>Why the WebGUI can still show “slot50 failed”</h2>
+<p>During staging, the ordinary run folder can still contain the previous failure receipt. The dashboard reads persisted run state, not every MATLAB process. A live launcher doing file restoration is therefore not yet a newly executing slot50. Do not erase the old failure or label the run passed. Check process activity, launcher log, resume receipt and new runtime progress together. A dedicated restoration-phase overlay is not claimed implemented by this documentation.</p>
+<h2>What may change without changing the radio experiment</h2>
+<p>The reviewed operational snapshot allows checkpoint enable/cadence/retention and live-PNG cadence/profiling settings. It does not permit changes to waveform, channel, noise, thresholds, traffic, timing policy, save populations or other scientific fields. The original state/configuration remains the authority for pending execution. These are explicit allow-listed settings, not blanket permission to ignore output/config differences.</p>
+<h2>Why restoration is not instantaneous</h2>
+<p>The retained checkpoint45 design included 1,196 dependency files totalling 41.51 GiB, with large mutable CSV prefixes and immutable channel archives. Validation, copying and hashing can generate substantially more I/O than the state MAT size. Disk space, disk throughput, physical RAM and commit capacity are separate constraints. Do not start another writer simply because the radio slot has not changed.</p>
+`),
+ chapter('threshold-authority','PASS/FAIL thresholds and qualification authority','Every gate needs its value, units, source, population and applicability—not a single “3GPP threshold” for everything.',()=>`
+${badges(['nr','matlab','engineering','research'])}
+${T(['Gate','Authority and value','How to interpret it'],[
+ ['PHY CRC','Applicable coding/CRC procedure and actual decoder outcome; no dB threshold.','CRC not applicable is different from CRC pass. Separate control semantic acceptance.'],
+ ['PRACH correlation','MathWorks default formula or explicit configured override; H4 native example ≈0.00360844.','Not a normative 3GPP threshold. Freeze it before independent false-alarm/miss campaigns.'],
+ ['PUCCH detection','Format-specific installed detector/policy and recorded threshold/source.','Do not transplant an old 5 MHz threshold into H4 or infer correct bits from metric alone.'],
+ ['TRS scheduler usability','Received practical timing/frequency/channel evidence plus configured age.','Separate from strict estimator/NMSE qualification. Read trsscore and runtime policy.'],
+ ['QCL freshness','Saved H4 source-age ceiling20 slots plus actual availability and identity checks.','A SixGR scenario policy, not a universal 3GPP validity time.'],
+ ['CSI matrix reconciliation','Inspected Type-I code uses Frobenius error ≤1e−12.','Numerical identity guard, not a 3GPP RF accuracy limit. Type-II has a separately bounded representation difference.'],
+ ['OFDM transform sanity','Inspected calibration verifies NFFT noise gain within0.05 dB; otherwise records measured transform gain.','Internal numerical calibration rule; does not substitute for independent channel/BLER validation.'],
+ ['EVM / NMSE / timing tolerances','Resolved channel-specific qualification settings and declared reference plane.','No universal threshold for all channels. Digital receiver diagnostics are not conducted transmitter-conformance procedures.'],
+ ['Statistical BLER / false alarms','Declared independent trials, error count, confidence level and stopping/censoring rule.','No universal 100-slot acceptance. Correlated hypotheses do not increase the independent N.'],
+ ['Terminal acceptance','Configured required checks plus real finalization and artifact integrity.','A component PASS or recovered plot is not complete-run PASS.']
+ ])}
+<p>Inspect the current YAML/catalog and exported threshold fields for the executed numeric values; the examples above do not override them. Changing a threshold after seeing this run requires a separate disclosed experiment, not retrospective qualification. Reference procedures and scope: ${R('141-1')}, ${R('104')} and the distinct UE FR1 requirements ${R('101-1')}. The exact receiver/model choices are in the <a href="#algorithm-register">algorithm register</a>.</p>
+${N('What remains a separate acceptance task','The repaired slot49/50 integration, sustained delivered-feedback adaptation, full final measurement/plot audit and sufficient-population BLER/HARQ/detector/RF qualification still require their own evidence. Documentation and focused tests cannot create those outcomes.',true)}
+${F('trsscore','qcladmission','csireport','noise','issueledger')}
+`)
+];
+// Insert before the reference catalogue so navigation and printing remain linear.
+CHAPTERS.splice(CHAPTERS.findIndex(c=>c.id==='comparison'),0,...NEW);
+const CHAPTER_BASIS={
+ start:['nr','engineering','research'], fundamentals:['engineering'], architecture:['infrastructure','engineering'],
+ configuration:['infrastructure','research'], grid:['nr','matlab','engineering'], ofdm:['nr','matlab','engineering'],
+ tx:['nr','matlab','engineering'], coding:['nr','matlab'], rx:['matlab','engineering'],
+ access:['nr','engineering'], prach:['nr','matlab','engineering'], pdcch:['nr','matlab','engineering'],
+ uci:['nr','engineering'], referencesignals:['nr','matlab','engineering'], mimo:['nr','model','engineering'],
+ beam:['nr','engineering','research'], adaptation:['engineering'], scheduler:['nr','engineering'],
+ harq:['nr','engineering'], channel:['model','matlab','research'], power:['nr','model','engineering','research'],
+ rf:['engineering','research'], measurements:['nr','engineering'], outputs:['infrastructure'],
+ qualification:['nr','engineering','research'], comparison:['nr','model','matlab','engineering','research'],
+ 'configuration-map':['infrastructure','research'], 'run-families':['research','infrastructure'],
+ parameters:['infrastructure'], scenarios:['infrastructure'], recipe:['infrastructure'], sources:['infrastructure'],
+ glossary:['engineering'], references:['nr','model','matlab'],
+ 'algorithm-register':Object.keys(BASIS), 'channel-playbooks':Object.keys(BASIS),
+ 'worked-calculations':['nr','matlab','engineering'], 'causal-flow':['engineering','infrastructure'],
+ 'measurement-contract':['nr','engineering','infrastructure'], 'restart-flow':['infrastructure'],
+ 'threshold-authority':['nr','matlab','engineering','research']
+};
+G.chapterAuthority=id=>`${badges(CHAPTER_BASIS[id])}<p class="doc-note"><a href="#algorithm-register">Authority tags explained</a> · Labels describe the basis, not a conformance or execution result.</p>`;
+G.methods=METHODS; G.playbooks=PLAYBOOKS; G.basis=BASIS; G.chapterBasis=CHAPTER_BASIS;
+G.teachingMath={
+ quality(error,reference,delay,trials){
+   if(![error,reference,delay,trials].every(Number.isFinite)||error<0||reference<=0||!Number.isSafeInteger(trials)||trials<1)
+     return null;
+   const ratio=error/reference;
+   return {evm:Math.sqrt(ratio),percent:100*Math.sqrt(ratio),nmse:10*Math.log10(ratio),
+     delayUs:delay/122880000*1e6,upper:-Math.expm1(Math.log(.05)/trials)};
+ }
+};
+G.initMethodChapter=id=>{
+ if(id==='algorithm-register'){
+   const update=()=>{const q=document.getElementById('method-search').value.toLowerCase(),basis=document.getElementById('method-basis').value;
+     let count=0;METHODS.forEach(m=>{const el=document.querySelector(`[data-method="${m.id}"]`);
+       const show=(!basis||m.basis.includes(basis))&&`${el.textContent} ${m.owners.map(k=>FILES[k])}`.toLowerCase().includes(q);
+       el.hidden=!show;if(show)count++;});document.getElementById('method-count').textContent=`${count} of ${METHODS.length} documented methods. Tags describe authority, not acceptance.`;};
+   document.getElementById('method-search').oninput=update;document.getElementById('method-basis').onchange=update;update();
+ }
+ if(id==='channel-playbooks'){
+   const update=()=>{const q=document.getElementById('playbook-search').value.toLowerCase();let count=0;
+     document.querySelectorAll('[data-playbook]').forEach(el=>{el.hidden=!el.textContent.toLowerCase().includes(q);if(!el.hidden)count++;});
+     document.getElementById('playbook-count').textContent=`${count} of ${PLAYBOOKS.length} channel/element walkthroughs.`;};
+   document.getElementById('playbook-search').oninput=update;update();
+ }
+ if(id==='worked-calculations'){
+   const update=()=>{const ids=['calc-error','calc-reference','calc-delay','calc-trials'];
+     const raw=ids.map(k=>document.getElementById(k).value.trim());
+     const d=raw.some(v=>v==='')?null:G.teachingMath.quality(...raw.map(Number));
+     document.getElementById('calc-result').textContent=d?
+       `RMS ratio ${d.evm.toPrecision(8)}; EVM ${d.percent.toPrecision(8)}%; channel-energy NMSE ${d.nmse===-Infinity?'−∞':d.nmse.toFixed(6)} dB; delay ${d.delayUs.toFixed(9)} µs; zero-error 95% upper probability ${(100*d.upper).toFixed(6)}%. Use the correct operands for each metric.`:
+       'Enter finite values, nonnegative error energy, positive reference energy and a positive integer trial count.';};
+   ['calc-error','calc-reference','calc-delay','calc-trials'].forEach(k=>document.getElementById(k).oninput=update);update();
+ }
+ if(id==='causal-flow'){
+   const select=i=>{document.querySelectorAll('[data-causal]').forEach(b=>{const active=Number(b.dataset.causal)===i;b.classList.toggle('selected',active);b.setAttribute('aria-pressed',String(active));});
+     const f=FLOWS[i];document.getElementById('causal-detail').innerHTML=`<h3>${i+1}. ${esc(f[0])}</h3><p>${esc(f[1])}</p>${F(f[2])}`;};
+   document.querySelectorAll('[data-causal]').forEach(b=>b.onclick=()=>select(Number(b.dataset.causal)));select(0);
+ }
+};
+})();

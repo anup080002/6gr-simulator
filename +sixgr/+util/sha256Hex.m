@@ -1,6 +1,7 @@
 function hex = sha256Hex(data)
 %SHA256HEX Return a real SHA-256 hex digest for byte-like data.
 
+hashScope=sixgr.runtime.ExecutionStageProfiler.scope("hashing","SHA256_bytes"); %#ok<NASGU>
 bytes = localBytes(data);
 digest = [];
 failures = {};

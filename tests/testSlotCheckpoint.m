@@ -8,6 +8,7 @@ s=sixgr.lls6g.config.loadScenarioConfig( ...
     'simulator/configs/validation/shared_cdl_checkpoint.yaml');
 cfg=sixgr.lls6g.buildInternalConfig(s,root);
 cfg.run.rootRunFolder=root;
+cfg.run.runtimeCheckpointScenario=s.toStruct(); % Explicit component checkpoint owner.
 cfg.outputs.continuousRawIQCaptureEnabled=false; % recorder tested separately below
 multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
 state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,root,multi,struct(),10);
@@ -96,7 +97,17 @@ assert(isequal(restored.RuntimeState.TestSoftBuffer,state.TestSoftBuffer) && ...
     20*(1-2*double(retry)),'QPSK',1,2,0);
 assert(isequal(restoredTB,expectedTB) && isequal(restoredCRC,expectedCRC), ...
     'A retained LDPC/HARQ decoder must continue without resetting its soft buffer.');
-[restoredRoot,lineage]=sixgr.runtime.SlotCheckpoint.prepareResume(path,s.toStruct(),"",true);
+requested=s.toStruct();
+requested.output.live_csv_png_interval_slots=5;
+requested.output.execution_stage_profile_enabled=true;
+requested.run_control.checkpoint_every_slots=1;
+[restoredRoot,lineage]=sixgr.runtime.SlotCheckpoint.prepareResume(path,requested,"",true);
+assert(isequaln(lineage.CanonicalScenario,s.toStruct()), ...
+    'Original scientific/config identity must remain intact.');
+resumedCfg=sixgr.runtime.SlotCheckpoint.applyOperationalSettings(cfg,lineage.RequestedOperationalSettings);
+assert(resumedCfg.outputs.liveCSVPNGIntervalSlots==5 && resumedCfg.outputs.executionStageProfileEnabled && ...
+    resumedCfg.run.checkpointEverySlots==1 && isequaln(resumedCfg.meta,cfg.meta), ...
+    'Resumption must actually apply the requested operational controls.');
 assert(strcmp(restoredRoot,root) && isfolder(lineage.PreservedFailedAttempt));
 assert(string(sixgr.util.sha256File(archiveFile))==archiveHash, ...
     'Resume must preserve exact immutable receiver-evidence bytes.');

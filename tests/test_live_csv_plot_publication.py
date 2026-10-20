@@ -551,6 +551,49 @@ def test_unchanged_evm_bytes_reused_without_reducing_population(tmp_path, monkey
         live.publish(tmp_path)
 
 
+def test_unchanged_csi_chart_reused_when_only_evm_changes(tmp_path, monkeypatch):
+    from test_lls_radio_measurement_plots import control_pairs
+    path = tmp_path / live.radio.CONTROL_EVM["CSI-RS EVM"][1]
+    path.parent.mkdir(parents=True)
+    path.write_bytes(control_pairs("CSI-RS"))
+    feedback(tmp_path)
+    first = live.publish(tmp_path)
+    first_manifest = json.loads(Path(first["Manifest"]).read_text())
+    actual = live.materializer._specialized_chart_materialization
+    calls = []
+    def track(name, *args, **kwargs):
+        calls.append(name)
+        return actual(name, *args, **kwargs)
+    monkeypatch.setattr(live.materializer, "_specialized_chart_materialization", track)
+    path.write_bytes(path.read_bytes() + b"\n")
+    second = live.publish(tmp_path)
+    assert "CSI CQI timeline" not in calls and "CSI-RS EVM" in calls
+    chart = next(c for c in first_manifest["charts"] if c["name"] == "CSI CQI timeline")
+    for field in ("csv", "png"):
+        assert (Path(first["Manifest"]).parent / chart[field]).read_bytes() == (
+            Path(second["Manifest"]).parent / chart[field]).read_bytes()
+    calls.clear()
+    feedback(tmp_path, value=12)
+    live.publish(tmp_path)
+    assert "CSI CQI timeline" in calls
+
+
+def test_reuse_rechecks_independent_nmse_operands(tmp_path):
+    _, resource, _ = scored_channel_fixture(tmp_path)
+    feedback(tmp_path)
+    live.publish(tmp_path)
+    # Unchanged summary is not sufficient: tamper with its independent
+    # operand and force a new snapshot. It must be rescored/rejected.
+    original = resource.read_bytes()
+    resource.write_bytes(original + b"\n")
+    assert live.file_digest(resource) != live.digest(original)
+    feedback(tmp_path, value=12)
+    result = live.publish(tmp_path)
+    manifest = json.loads(Path(result["Manifest"]).read_text())
+    chart = next(c for c in manifest["charts"] if c["name"] == "NMSE vs SNR / SINR")
+    assert chart["status"] != "measured_checkpoint"
+
+
 def test_changed_source_cannot_publish_new_latest(tmp_path, monkeypatch):
     path = feedback(tmp_path)
     live.publish(tmp_path)

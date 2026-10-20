@@ -7,6 +7,40 @@ All MATLAB, Python, YAML, tests and documentation use the **single `main`
 checkout**. External drives hold simulation evidence, not a second codebase.
 Committing these repairs is **not** a claim of complete scenario acceptance.
 
+**Latest execution update (20 October, observed 10:01 UTC):** a repaired
+checkpoint-45 continuation has completed restoration and entered slot **46**.
+This is a dated observation, not a live completion receipt; integrated slot50,
+sustained adaptation and terminal acceptance remain pending. Its launcher is
+`logs/lls_repairs/h4_checkpoint45_resume_20261020_v2/launcher.log`.
+During restoration the WebGUI could still show the previous attempt's slot50
+failure because the visible run folder had not yet been switched. Do not
+erase that failure or mistake file restoration for completed PHY slots.
+
+**Earlier attempt:** the checkpoint-45 continuation failed at slot 50 with
+`sixgr:truth:LateSharedPUCCHFeedback`. Its recovery
+process was stopped with operator approval; IQ, logs and checkpoint 45 are
+preserved. No completed slot-49/50 checkpoint exists for this attempt.
+An actual-waveform focused test reproduced the same exception after a
+successful PUSCH decode: the coordinator re-armed feedback before reducing
+the coincident PUCCH completion, which the stream had already removed from
+its pending list. The production callback now uses
+`completeSharedReceiverBatch.m` to re-arm only after the whole completed
+batch, retaining the pilot-before-PUCCH ordering and late-feedback guards.
+All **seven affected MATLAB checks pass**, including actual separate
+PUCCH/PUSCH completion at the same sample, UCI-on-PUSCH, unselected-PUCCH
+producer rejection, and timing/configuration preflight. This is not a
+completed 100-slot integration pass. Receipt:
+`logs/lls_repairs/h4_slot50_completion_fixed_20261020_v1/receipt.json`.
+The audit/launcher Python regressions pass **145 checks**.
+
+The remaining SRS receiver-EVM producer gap is also repaired: actual
+desired/received pilot pairs are retained after reception, without fitted
+gain/phase or influence on RI/TPMI/CQI. Five affected MATLAB checks have
+passing latest receipts under `logs/lls_repairs/h4_srs_pilot_evm_20261020_v1`
+and `v2`; **301 Python radio-plot/audit/launcher checks** pass. The new SRS
+chart is a received-pilot diagnostic, not RF-conformance modulation EVM.
+Integrated 100 MHz publication remains to be verified.
+
 | Area | Implemented / verified | Still required |
 | --- | --- | --- |
 | Exact PDSCH resource accounting | Both canonical TX entry paths expose the immutable gross/data/pilot resource sets; coded TX/RX and exact allocation checks pass. | Inspect new integrated DL rows and terminal exports. Earlier missing counts are not reconstructed from throughput. |
@@ -32,11 +66,53 @@ See the [repair details](docs/lls/h4_checkpoint45_repairs_20261020.md) and
 receipts/logs and large IQ archives are local evidence, not files shipped by
 GitHub; preserve them or transfer them with the documented evidence bundle.
 
+### Detailed implementation documentation
+
+Open the local [H4 HTML field guide](http://127.0.0.1:62907/) while the
+documentation server is running. This is read-only documentation in the same
+main checkout, not another simulator or a run launcher:
+
+```cmd
+python docs\lls\h4_100mhz_guide\serve.py --port 62907
+```
+
+Run that from the repository root only if the guide is not already serving
+port 62907. On a fresh host, install Python 3.10+ and PyYAML. The guide uses
+local assets; source-viewer links read the current checkout, while the two
+application-file links explicitly open committed GitHub main.
+
+- [Exact channel-by-channel flow](http://127.0.0.1:62907/#channel-playbooks):
+  frame/time/frequency resources; SSB/PSS/SSS/PBCH; initial access/PRACH/RAR/
+  Msg3/Msg4; PDCCH; PDSCH; PUSCH; PUCCH; CSI-RS/CSI-IM; codebook/PMI/RI/CRI;
+  beam/TCI/QCL; SRS; TRS; CDL-C/TDL/AWGN; RF/converters/synchronization.
+- [Searchable algorithm authority register](http://127.0.0.1:62907/#algorithm-register):
+  each method has its calculation, production owners, standards/native
+  references and applicability limits. Tags distinguish **3GPP structure**,
+  **3GPP channel model**, **MathWorks**, **SixGR engineering**, **research
+  assumption** and **software infrastructure**. Tags do not certify conformance.
+- [Worked calculations](http://127.0.0.1:62907/#worked-calculations):
+  FFT/CP/sample clock, exact gross RE examples, noise calibration, inter-layer
+  SINR, OLLA dB mapping, EVM/NMSE, timing, phase ambiguity, goodput and uncertainty.
+- [Causal feedback flow](http://127.0.0.1:62907/#causal-flow),
+  [measurement/export planes](http://127.0.0.1:62907/#measurement-contract),
+  [checkpoint restoration](http://127.0.0.1:62907/#restart-flow) and
+  [PASS/FAIL authority](http://127.0.0.1:62907/#threshold-authority).
+
+The source-linked [guide README](docs/lls/h4_100mhz_guide/README.md) explains
+configuration catalogs, snapshot refresh and focused browser verification.
+The guide's learning calculators do not generate or overwrite measured CSVs.
+Verification: **41 chapters**, approximately **24,400 words**, **42 documented
+methods**, **15 detailed walkthroughs**, **148 verified local source links**,
+and zero browser errors. **437 focused Python checks passed**, including 22
+documentation checks. Existing MATLAB repair receipts remain scope-labelled;
+this documentation/consolidation update did not launch `testAll` or another
+MATLAB scenario.
+
 ### Fresh 100 MHz run: Windows Command Prompt
 
 Use a new tag and a committed, clean checkout. This command launches **one
 fresh 100-slot run**, then performs the handoff/adaptation audit; it does not
-start directly at slot 40. Do not launch it alongside the already active run.
+start directly at slot 40. Do not launch it alongside repair tests or another run.
 On another server, change the checkout, MATLAB executable and output paths.
 
 ```cmd
@@ -63,6 +139,32 @@ does not establish that the subsequent PUSCH decoded successfully.
 
 ### Resume and WebGUI
 
+The H4 adaptation YAML now enables diagnostic stage timing and refreshes **live
+PNGs every five completed slots**, plus the first/final publication. These
+operational options do not change the radio clock, measurements, trial CSV
+cadence, waveform precision or final export population:
+
+```yaml
+output:
+  execution_stage_profile_enabled: true
+  live_csv_png_interval_slots: 5
+```
+
+Timing is written to `<run-folder>/reports/csv/execution_stage_profile.csv`.
+It separates channel processing, RF, receiver processing, DL/UL LDPC decoding,
+hashing, serialization, checkpointing and plot publication. Use exclusive
+seconds for nested-cost attribution; inclusive seconds include child work.
+`ScopeExitCount` counts scope exits, including error unwinding—not passed PHY
+trials. Setup has slot zero; radio slots are one-based. Each process has a
+separate session identity. Profiling does not consume the scientific RNG.
+
+Completed observation buffers now retain one exact sample array and cache its
+immutable RX digest. MAT publication verifies staged/final bytes directly,
+without making extra readback copies. Unchanged live charts reuse verified PNG
+and plotted-CSV bytes only when producer and dependency hashes match. These
+are lossless implementation repairs, **not a measured whole-run speedup**.
+The full 100 MHz memory peak and post-checkpoint behavior still need observation.
+
 Use the [completed-slot checkpoint procedure](#completed-slot-restart-checkpoints)
 with the original scientific configuration and intact archive dependencies.
 After-slot-45 resumes at 46; it does not repeat initial access. The visible run
@@ -71,6 +173,21 @@ Source changes require a reviewed repair reason and remain diagnostic evidence.
 Checkpoint restoration verifies large retained files before PHY progression;
 the observed checkpoint-45 dependency set contains 1,196 files totaling 41.51 GiB.
 Do not start a second MATLAB writer because the startup log is temporarily quiet.
+
+The adaptation YAML now requests a checkpoint after **every completed slot**
+for subsequent launches/resumes. The failed continuation had loaded
+the earlier five-slot interval; editing YAML did not hot-reconfigure it or
+create an already-passed slot-49 checkpoint. More frequent saves add hashing
+and serialization time, but preserve the radio/channel/RF/RNG behavior.
+The restart binding now explicitly carries requested operational controls
+past restoration of the canonical original configuration. Previously that
+restoration discarded the new cadence. The original scientific/config hash
+still owns pending grants; applied operational settings are recorded separately
+in `meta/checkpoint_resume.json` and the internal runtime configuration.
+The updated YAML/launcher guards pass **79 Python checks**. The affected
+MATLAB timing/configuration preflight now passes, including the resolved
+every-slot checkpoint binding. This is not proof of an actually saved
+slot-49 checkpoint. No extra MATLAB process was started alongside the scenario.
 
 For the external results tree, start the GUI in a **separate Command Prompt**
 from this same checkout, only if port 62906 is not already serving it:
@@ -1777,11 +1894,12 @@ do not start a duplicate while an adaptation run is active.
 #### Completed-slot restart checkpoints
 
 The adaptation YAML enables `run_control.runtime_checkpoint_enable` with
-`checkpoint_every_slots: 5`. The default `runtime_checkpoint_keep: 3` retains
-the latest three completed save points. A failure during one-based slot 42
-can continue from the saved **end of slot 40**, executing slot 41 next;
-a failure during slot 48 can continue after slot 45. A checkpoint cannot
-be reconstructed retrospectively from an older CSV-only run.
+`checkpoint_every_slots: 1` for new launches/resumes. The default
+`runtime_checkpoint_keep: 3` retains the latest three completed save points.
+A failure during one-based slot 50 can continue from the saved **end of
+slot 49**, provided that checkpoint finished writing and passed its integrity
+checks. Older runs loaded a five-slot interval and retain only those save
+points; no checkpoint can be reconstructed retrospectively from CSVs.
 
 `meta/latest_slot_checkpoint.json` inside the result folder identifies the
 latest committed MAT checkpoint. Private state is stored alongside the run

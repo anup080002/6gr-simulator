@@ -55,6 +55,7 @@ out.ObservationEndSampleExclusive = observation.EndSampleExclusive;
 out.ObservationSampleRateHz = observation.SampleRateHz;
 out.ObservationCompletionTime_s = observation.EndSampleExclusive / observation.SampleRateHz;
 out.ObservationCoverageSource = "complete_contiguous_received_sample_buffer";
+out=sixgr.util.mergeStruct(out,sixgr.link.receivedWaveformEvidence(observation));
 gainComp=sixgr.util.structGet(out,'RuntimeChannelReplay.ReceiverGainCompensation',struct());
 out.ReceiverGainCompensation=gainComp;
 observationOut = out;

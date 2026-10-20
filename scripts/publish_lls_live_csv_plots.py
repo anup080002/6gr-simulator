@@ -201,11 +201,14 @@ def producer_hashes():
         REPO / "scripts/regenerate_lls_rasters_from_csv.py")}
 
 
-def reuse_control_evm(root, source_root, preview, sources, producers, stage):
-    """Reuse exact plotted bytes only when every EVM input/producer is unchanged.
+def reuse_unchanged_charts(root, source_root, preview, sources, producers, stage):
+    """Reuse plotted bytes only when the chart's full input closure is unchanged.
 
     A new occupancy row must not reparse a million unchanged CSI-RS pairs.
-    No sample thinning, estimator change, or reuse across a source edit.
+    Nor should a new data row redraw unchanged access/CSI charts. Charts
+    without an explicit dependency contract are rebuilt. Independent NMSE
+    operands include dynamically referenced channel-estimate CSVs.
+    No sample thinning, estimator change, or reuse across a producer edit.
     """
     latest = root / "reports/live_measurements/latest.json"
     if not io_path(latest).is_file():
@@ -226,9 +229,15 @@ def reuse_control_evm(root, source_root, preview, sources, producers, stage):
     rows, hashes = {}, {}
     for row in prior["charts"]:
         name = row["name"]
-        if name not in radio.CONTROL_EVM or row.get("status") != "measured_checkpoint":
+        if name not in radio.CHART_SOURCES or row.get("status") != "measured_checkpoint":
             continue
-        dependencies = radio.CHART_SOURCES[name]
+        dependencies = set(radio.CHART_SOURCES[name])
+        # Conservative closure: every retained complex-channel operand is
+        # included, not only the summary CSV that names it. Presence/absence
+        # changes also invalidate reuse.
+        if name in ("NMSE vs SNR / SINR", radio.TRS_NMSE_CHART):
+            dependencies.update(p for p in set(sources) | set(prior["source_sha256"])
+                                if p.startswith("channel_estimation/csv/"))
         if any(sources.get(p) != prior["source_sha256"].get(p) for p in dependencies):
             continue
         for field, extension in (("csv", ".csv"), ("png", ".png")):
@@ -346,7 +355,7 @@ def publish_snapshot(root, source_root, preview, stage):
     def open_artifact_binary(artifact_id):
         return io_path(snapshot_paths[artifact_id]).open("rb")
     fetch.open_artifact_binary = open_artifact_binary
-    reused, hashes = reuse_control_evm(root, source_root, preview, source_hashes, producers, stage)
+    reused, hashes = reuse_unchanged_charts(root, source_root, preview, source_hashes, producers, stage)
     charts = []
     for name in CHARTS:
         if name in reused:

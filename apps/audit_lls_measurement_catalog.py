@@ -396,17 +396,34 @@ def _audit_pucch_timing(identity: dict, index: int, row: dict) -> list[dict]:
             failures.append("malformed_timing_json")
             evidence = {}
     if evidence:
-        aliases = {"EstimatedTimingOffsetSamples": "TimingOffsetSamples",
-                   "AppliedTimingCorrectionSamples": "AppliedTimingCorrectionSamples",
+        source = evidence.get("TimingSource")
+        prior_prediction = source == "prior_received_UL_pilot_constant_phase_prediction"
+        aliases = {"AppliedTimingCorrectionSamples": "AppliedTimingCorrectionSamples",
                    "ReceiverInputSampleCount": "InputSampleCount",
                    "ReceiverDemodulatedSampleCount": "DemodulatedSampleCount"}
+        if not prior_prediction:
+            aliases["EstimatedTimingOffsetSamples"] = "TimingOffsetSamples"
+        else:
+            # A fresh timing estimate is deliberately absent for a predicted
+            # crop based on an earlier received pilot. Do not invent one or
+            # call the actual applied correction missing. Validate its role
+            # and causal source below; this is not estimator qualification.
+            if "TimingOffsetSamples" not in evidence or "EstimatedTimingOffsetSamples" not in row:
+                missing.append("prediction_measurement_distinction")
+            elif (evidence["TimingOffsetSamples"] is not None or
+                  str(row["EstimatedTimingOffsetSamples"]).strip().lower() != "nan"):
+                failures.append("prediction_mislabeled_as_current_timing_measurement")
+            if evidence.get("TimingValueRole") != "predicted_from_prior_measurement_not_current_timing_measurement":
+                failures.append("prediction_timing_role_mismatch")
+            used = str(row.get("TimingEstimateUsed", "")).strip().lower()
+            if used not in {"0", "false"}:
+                failures.append("prediction_claims_fresh_timing_estimate")
         for column, field in aliases.items():
             actual, expected = _finite(row.get(column)), _finite(evidence.get(field))
             if actual is None or expected is None:
                 missing.append(column)
             elif actual != expected:
                 failures.append(column + "_mismatch")
-        source = evidence.get("TimingSource")
         if not isinstance(source, str) or not source or not row.get("TimingEstimateSource"):
             missing.append("TimingSource")
         elif source != row["TimingEstimateSource"]:
@@ -438,6 +455,24 @@ def _audit_pucch_timing(identity: dict, index: int, row: dict) -> list[dict]:
                 missing.append("received_reference_causality")
             elif available > end or source_slot != target_slot or evidence.get("ReferenceAgeSlots") != 0:
                 failures.append("noncausal_or_other_slot_reference")
+        elif prior_prediction:
+            values = [_finite(evidence.get(field)) for field in (
+                "ReferenceAvailableAtSample", "ReceiverTimingAvailableAtSample",
+                "ReferenceSourceAbsoluteSlot0", "TargetAbsoluteSlot0", "ReferenceAgeSlots")]
+            available, timing_available, source_slot, target_slot, age = values
+            slot = _finite(row.get("Slot"))
+            during = evidence.get("ReferenceAvailableDuringBuffer")
+            reference = evidence.get("ReferenceSource")
+            if (any(value is None for value in (*values, start, end, slot)) or
+                    not isinstance(during, bool) or not isinstance(reference, str) or not reference):
+                missing.append("prior_received_reference_causality")
+            elif reference not in {"SRS", "PUSCH_DMRS", "PUCCH_DMRS"}:
+                failures.append("non_received_pilot_reference")
+            elif (any(value != int(value) for value in values) or
+                  available < 0 or available > end or timing_available != available or
+                  source_slot < 0 or age <= 0 or age != target_slot - source_slot or
+                  target_slot != slot - 1 or during != (available > start)):
+                failures.append("noncausal_or_mismatched_prior_reference")
     status = ("FAIL_source_reconciliation" if failures else
               "NOT_EVALUATED_missing_source_evidence" if missing else "PASS_source_reconciliation_only")
     return [{**identity, "DataRow": index, "Slot": row.get("Slot", ""),

@@ -1,6 +1,9 @@
 function row = bindPDCCHReceiverObservation(row,rx,info)
 %BINDPDCCHRECEIVEROBSERVATION Export actual blind decode and timing evidence.
 % Transmitted-bit agreement is an audit, not a receiver detection statistic.
+for name=string(fieldnames(sixgr.link.receivedWaveformEvidence())).'
+    if isfield(info,name), row.(name)=info.(name); end
+end
 candidates = sixgr.util.structGet(info,'CandidateResults',table());
 assert(istable(candidates),'sixgr:truth:InvalidPDCCHCandidateEvidence', ...
     'Receiver candidate evidence must be a table.');

@@ -11,6 +11,7 @@ arguments
     options.TimeChunkedVariables (1,:) string = strings(1,0)
 end
 
+matProfileScope=sixgr.runtime.ExecutionStageProfiler.scope("serialization","MAT_save_validate_publish"); %#ok<NASGU>
 filePath = char(filePath);
 sixgr.util.ensureDir(filePath);
 targetDir = fileparts(filePath);
@@ -142,27 +143,22 @@ localValidatePublishedBytes(filePath, sourceBytes, sourceHash, 8);
 end
 
 function localValidatePublishedBytes(publishedPath, sourceBytes, sourceHash, maxAttempts)
-% HDF5 in MATLAB R2026a on Windows cannot reopen some valid v7.3 files
-% through absolute paths beyond MAX_PATH.  Validate the bytes that are
-% actually readable from the published destination by round-tripping them
-% to a short local path. Size and SHA-256 prove byte identity with the
-% already inventoried source; repeating its expensive MAT inventory adds
-% no new payload validation. Both staging and final readbacks remain mandatory.
-verifyPath = char(string(tempname()) + ".mat");
-cleanupVerify = onCleanup(@() localDeleteIfExists(verifyPath)); %#ok<NASGU>
+% The staged source has already passed MATLAB inventory validation.
+% Stream every byte directly from each published destination and verify its
+% SHA-256. This does not ask HDF5 to reopen a long pathname and avoids two
+% full destination -> temporary-disk copies. Both complete destination
+% readbacks remain mandatory; neither mtime nor size substitutes for SHA.
 lastME = [];
 for attempt = 1:max(1, round(double(maxAttempts)))
     try
-        localDeleteIfExists(verifyPath);
-        localCopyWithRetry(publishedPath, verifyPath, "VerificationReadbackFailed");
-        verifyInfo = dir(verifyPath);
+        verifyInfo = dir(publishedPath);
         if isempty(verifyInfo) || double(verifyInfo.bytes) ~= sourceBytes
             error("sixgr:util:matSave:PublishedSizeMismatch", ...
                 "Published MAT '%s' read back %g byte(s); expected %g.", ...
                 publishedPath, localFileBytes(verifyInfo), sourceBytes);
         end
-        verifyHash = string(sixgr.util.sha256File(verifyPath));
-        if verifyHash ~= sourceHash
+        verifyHash = string(sixgr.util.sha256File(publishedPath));
+        if verifyHash ~= sourceHash || localFileBytes(dir(publishedPath))~=sourceBytes
             error("sixgr:util:matSave:PublishedHashMismatch", ...
                 "Published MAT '%s' differs from the validated serialized payload.", ...
                 publishedPath);

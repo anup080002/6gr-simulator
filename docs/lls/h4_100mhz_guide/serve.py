@@ -15,7 +15,7 @@ STATIC = {"/": ("index.html", "text/html"), "/index.html": ("index.html", "text/
           "/chapters.js": ("chapters.js", "text/javascript")}
 ALLOWED = {"+sixgr", "simulator", "tests", "docs"}
 TOP = {"run_6g_phy_lls_single.m", "run_6g_phy_lls_matrix.m", "run_sixgr.m",
-       "setup6GRSimToolkit.m", "README.md"}
+       "setup6GRSimToolkit.m", "README.md", "scripts/publish_lls_live_csv_plots.py"}
 
 
 def source_path(value: str) -> Path:

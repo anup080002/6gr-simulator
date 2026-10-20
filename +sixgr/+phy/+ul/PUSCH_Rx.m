@@ -926,6 +926,7 @@ codewordLayerMapping = localBuildPUSCHRxCodewordLayerContract( ...
     pusch, cwLLRCell, codingLayouts, eqSym);
 
 if nCodewords == 2
+    decodeProfileScope=sixgr.runtime.ExecutionStageProfiler.scope("decoding","PUSCH_two_codeword_ULSCH");
     decodeTic = tic;
     decoder = nrULSCHDecoder( ...
         "MultipleHARQProcesses", false, ...
@@ -935,6 +936,7 @@ if nCodewords == 2
         "MaximumLDPCIterationCount", maxIter);
     [tbBitsCell, crcErr] = decoder(cwLLRForULSCH, ...
         pusch.Modulation, pusch.NumLayers, rv);
+    clear decodeProfileScope
     decodeLatency_s = toc(decodeTic);
     tbBitsCell = reshape(tbBitsCell, 1, []);
     crcErr = logical(crcErr(:).');
@@ -996,6 +998,7 @@ codewordLayerMapping.TotalULSCHDemapperLLRCount = double(numel(cwLLRForULSCH));
 recLLRBatch = localEnsureLLRBatch(recLLR);
 
 % LDPC decode each code block
+decodeProfileScope=sixgr.runtime.ExecutionStageProfiler.scope("decoding","PUSCH_LDPC_code_blocks");
 C = size(recLLRBatch, 2);
 actIter = zeros(1, C);
 parity = zeros(1, C);
@@ -1076,6 +1079,7 @@ if ~useMexLDPC
     end
 end
 decodeLatency_s = toc(decodeTic);
+clear decodeProfileScope
 
 % Code block desegmentation + TB CRC check
 B = ldpcSeg.TransportBlockLenWithCRC;

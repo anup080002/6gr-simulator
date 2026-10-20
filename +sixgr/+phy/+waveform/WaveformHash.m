@@ -3,6 +3,7 @@ classdef WaveformHash
 
     methods (Static)
         function digest = runtimeArray(value)
+            hashScope=sixgr.runtime.ExecutionStageProfiler.scope("hashing","runtime_array"); %#ok<NASGU>
             % Preserve ChannelFactory's historical array serialization:
             % class header, uint64 dimensions, real doubles, imaginary doubles.
             % A fading path-gain array can exceed the Java array limit; never
@@ -36,6 +37,7 @@ classdef WaveformHash
         end
 
         function digest = bytes(value)
+            hashScope=sixgr.runtime.ExecutionStageProfiler.scope("hashing","waveform_bytes"); %#ok<NASGU>
             if isstring(value) || ischar(value)
                 value = uint8(unicode2native(char(value),"UTF-8"));
             else
@@ -47,6 +49,7 @@ classdef WaveformHash
         end
 
         function digest = file(path)
+            hashScope=sixgr.runtime.ExecutionStageProfiler.scope("hashing","waveform_file"); %#ok<NASGU>
             path = char(string(path));
             if ~isfile(path)
                 error("WAVEFORM:ArtifactMissing","Cannot hash missing file %s.",path);
@@ -67,6 +70,7 @@ classdef WaveformHash
         end
 
         function digest = numeric(value)
+            hashScope=sixgr.runtime.ExecutionStageProfiler.scope("hashing","waveform_numeric"); %#ok<NASGU>
             % Preserve the historical hash byte stream exactly:
             %   uint64 element count, all real double bytes, all imaginary
             %   double bytes.  Feed bounded pieces to Java instead of

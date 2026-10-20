@@ -78,6 +78,26 @@ function rankLab(){const update=()=>{const snr=Number($('rank-snr').value),sprea
 function harqLab(){let generation=0,attempt=0,delivered=false,done=false,history=[];const render=()=>{$('harq-lab').innerHTML=T(['Original TB identity','Attempt','RV','Outcome'],history.map((h,i)=>[`TEACHING-TB-${generation}`,i+1,[0,2,3,1][i],esc(h)]))+`<p><strong>Unique delivered bits: ${delivered?1000:0}.</strong> ${done?(delivered?'CRC success: no further attempt is allowed for this TB.':'Retry limit reached: the TB remains undelivered.'):`Attempt ${attempt+1} is pending; the original 1,000 information bits are retained.`}</p>`;$('harq-ack').disabled=done;$('harq-nack').disabled=done;};const reset=()=>{generation++;attempt=0;delivered=false;done=false;history=['Pending receiver outcome'];render();};$('harq-reset').onclick=reset;$('harq-nack').onclick=()=>{if(done)return;history[attempt]='CRC failure; NACK after declared delay';if(attempt===3)done=true;else{attempt++;history.push('Pending; same TB, compatible soft buffer');}render();};$('harq-ack').onclick=()=>{if(done)return;history[attempt]='CRC pass; one unique delivery; delayed ACK';done=true;delivered=true;render();};reset();}
 function qamLab(){const draw=()=>{const M=Number($('qam-select').value),snr=Number($('qam-snr').value),phase=Number($('qam-phase').value);$('qam-snr-value').textContent=`${snr} dB`;$('qam-phase-value').textContent=`${phase}°`;const canvas=$('qam-canvas'),ctx=canvas.getContext('2d'),w=canvas.width,h=canvas.height;ctx.fillStyle='#f1f6f1';ctx.fillRect(0,0,w,h);const scale=90,cx=w/2,cy=h/2;ctx.strokeStyle='#b8cdc1';ctx.beginPath();ctx.moveTo(0,cy);ctx.lineTo(w,cy);ctx.moveTo(cx,0);ctx.lineTo(cx,h);ctx.stroke();ctx.fillStyle='#426355';ctx.font='12px Segoe UI';ctx.fillText('Quadrature',10,19);ctx.fillText('In-phase',w-65,cy-9);let state=126;const random=()=>{state=(1664525*state+1013904223)>>>0;return(state+.5)/4294967296;};const normal=()=>Math.sqrt(-2*Math.log(random()))*Math.cos(2*Math.PI*random());const side=Math.sqrt(M),norm=Math.sqrt(2*(M-1)/3),sigma=Math.sqrt(10**(-snr/10)/2),theta=phase*Math.PI/180;let e=0,energy=0;ctx.fillStyle='#13876a88';for(let i=0;i<1600;i++){const re=(2*Math.floor(random()*side)-side+1)/norm,im=(2*Math.floor(random()*side)-side+1)/norm;const yr=re*Math.cos(theta)-im*Math.sin(theta)+sigma*normal(),yi=re*Math.sin(theta)+im*Math.cos(theta)+sigma*normal();e+=(yr-re)**2+(yi-im)**2;energy+=re*re+im*im;ctx.beginPath();ctx.arc(cx+yr*scale,cy-yi*scale,1.8,0,2*Math.PI);ctx.fill();}ctx.fillStyle='#b86713';for(let a=0;a<side;a++)for(let b=0;b<side;b++){const x=cx+(2*a-side+1)/norm*scale,y=cy-(2*b-side+1)/norm*scale;ctx.fillRect(x-1,y-1,2,2);}$('qam-readout').textContent=`Teaching samples only. ${M}-QAM (${Math.log2(M)} bits/symbol); paired raw RMS EVM ${(100*Math.sqrt(e/energy)).toFixed(2)}%. Includes uncompensated phase rotation. No standards EVM window, channel estimator, coding or hardware measurement is simulated. Orange: ideal points; green: educational samples.`;};['qam-select','qam-snr','qam-phase'].forEach(id=>$(id).oninput=draw);draw();}
 
+function prachLab() {
+  const update = () => {
+    const lra = Number($('prach-lra').value);
+    const rx = Number($('prach-rx').value);
+    const symbols = Number($('prach-symbols').value);
+    if (!Number.isSafeInteger(rx) || rx < 1 || !Number.isSafeInteger(symbols) || symbols < 1) {
+      $('prach-threshold').textContent = 'Enter positive integer RX-column and useful-symbol counts.';
+      return;
+    }
+    const coefficients = {139:[0.1,0],839:[0.02,0],1151:[0.01,0.0005],571:[0.02,0.001]};
+    const [factor,offset] = coefficients[lra];
+    const threshold = factor / Math.sqrt(rx * symbols) + offset;
+    $('prach-threshold').textContent =
+      `T = ${factor} / √(${rx} × ${symbols})${offset ? ' + '+offset : ''} = ${threshold.toPrecision(15)}. `+
+      'Dimensionless MathWorks receiver default; not a 3GPP-mandated formula or measured false-alarm probability.';
+  };
+  ['prach-lra','prach-rx','prach-symbols'].forEach(id => $(id).oninput = update);
+  update();
+}
+
 let source={lines:[],path:'',first:0,match:-1};
 function drawSource(first=0){source.first=Math.max(0,Math.min(first,Math.max(0,source.lines.length-1)));const end=Math.min(source.lines.length,source.first+240);const code=$('source-code');code.innerHTML=`<div class="source-pages"><button data-source-page="prev" ${!source.first?'disabled':''}>Previous lines</button><span>Lines ${source.first+1}–${end} of ${source.lines.length}</span><button data-source-page="next" ${end===source.lines.length?'disabled':''}>Next lines</button></div>`+source.lines.slice(source.first,end).map((line,j)=>{const i=j+source.first;return`<div id="source-line-${i}" class="source-line${i===source.match?' highlight':''}${/^\s*(%|#|\/\/)/.test(line)?' comment':''}"><span class="line-no">${i+1}</span><span class="line-text">${esc(line)||' '}</span></div>`;}).join('');code.scrollTop=0;if(source.match>=source.first&&source.match<end)requestAnimationFrame(()=>$('source-line-'+source.match)?.scrollIntoView({block:'center'}));}
 function findSource(next=false){const query=$('source-find').value.toLowerCase();if(!query)return;const start=next?source.match+1:0;let found=source.lines.findIndex((s,i)=>i>=start&&s.toLowerCase().includes(query));if(found<0&&next)found=source.lines.findIndex(s=>s.toLowerCase().includes(query));source.match=found;$('source-next').textContent=found<0?'No match':'Find next';if(found>=0)drawSource(Math.max(0,found-45));}
@@ -85,7 +105,24 @@ async function openSource(path,find=''){const dialog=$('source-dialog');if(!dial
 document.addEventListener('click',e=>{const a=e.target.closest('[data-source]');if(a){e.preventDefault();openSource(a.dataset.source,a.dataset.find||'');}const page=e.target.closest('[data-source-page]');if(page)drawSource(source.first+(page.dataset.sourcePage==='prev'?-240:240));});
 $('close-source').onclick=()=>$('source-dialog').close();$('source-dialog').addEventListener('click',e=>{if(e.target===$('source-dialog')){const r=e.target.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)e.target.close();}});
 $('source-find').onkeydown=e=>{if(e.key==='Enter')findSource(true);};$('source-find').oninput=()=>findSource();$('source-next').onclick=()=>findSource(true);
-function route(){const [anchor,query='']=location.hash.slice(1).split('?'),requested=anchor||'start',params=new URLSearchParams(query);if(requested==='content'){$('content').focus();return;}const idx=CHAPTERS.findIndex(c=>c.id===requested);if(idx<0){location.hash='start';return;}const c=CHAPTERS[idx];current=c.id;const stamp=++epoch;navigation();$('content').innerHTML=`<div class="eyebrow"><span class="chapter-number">${String(idx+1).padStart(2,'0')}</span>${esc(c.group)}</div><h1>${esc(c.title)}</h1><p class="lead">${esc(c.lead)}</p>${c.body()}`;document.title=`${c.title} · SixGR Field Guide`;$('chapter-footer').innerHTML=(idx?`<a href="#${CHAPTERS[idx-1].id}">← ${esc(CHAPTERS[idx-1].title)}</a>`:'<span>SixGR · Local field guide</span>')+(idx<CHAPTERS.length-1?`<a href="#${CHAPTERS[idx+1].id}">${esc(CHAPTERS[idx+1].title)} →</a>`:'<a href="#start">Back to the beginning ↑</a>');$('sidebar').classList.remove('open');$('menu').setAttribute('aria-expanded','false');window.scrollTo({top:0,behavior:'instant'});const labs={start:hero,architecture:flow,grid,mimo:rankLab,harq:harqLab,rf:qamLab};if(labs[c.id])labs[c.id]();if(c.id==='configuration')configExplorer(stamp);if(c.id==='parameters')parameterExplorer(stamp,params);if(c.id==='scenarios')scenarioExplorer(stamp,params);}
+function route(){
+  const [anchor,query='']=location.hash.slice(1).split('?'),requested=anchor||'start',params=new URLSearchParams(query);
+  if(requested==='content'){$('content').focus();return;}
+  const idx=CHAPTERS.findIndex(c=>c.id===requested);
+  if(idx<0){location.hash='start';return;}
+  const c=CHAPTERS[idx];current=c.id;const stamp=++epoch;navigation();
+  $('content').innerHTML=`<div class="eyebrow"><span class="chapter-number">${String(idx+1).padStart(2,'0')}</span>${esc(c.group)}</div><h1>${esc(c.title)}</h1><p class="lead">${esc(c.lead)}</p>${window.H4Guide.chapterAuthority(c.id)}${c.body()}`;
+  document.title=`${c.title} · SixGR Field Guide`;
+  $('chapter-footer').innerHTML=(idx?`<a href="#${CHAPTERS[idx-1].id}">← ${esc(CHAPTERS[idx-1].title)}</a>`:'<span>SixGR · Local field guide</span>')+(idx<CHAPTERS.length-1?`<a href="#${CHAPTERS[idx+1].id}">${esc(CHAPTERS[idx+1].title)} →</a>`:'<a href="#start">Back to the beginning ↑</a>');
+  $('sidebar').classList.remove('open');$('menu').setAttribute('aria-expanded','false');
+  window.scrollTo({top:0,behavior:'instant'});
+  const labs={start:hero,architecture:flow,grid,mimo:rankLab,harq:harqLab,rf:qamLab,prach:prachLab};
+  if(labs[c.id])labs[c.id]();
+  window.H4Guide.initMethodChapter(c.id);
+  if(c.id==='configuration')configExplorer(stamp);
+  if(c.id==='parameters')parameterExplorer(stamp,params);
+  if(c.id==='scenarios')scenarioExplorer(stamp,params);
+}
 $('search').oninput=navigation;$('menu').onclick=()=>{$('sidebar').classList.toggle('open');$('menu').setAttribute('aria-expanded',String($('sidebar').classList.contains('open')));};document.addEventListener('keydown',e=>{if(e.key==='Escape'){$('sidebar').classList.remove('open');$('menu').setAttribute('aria-expanded','false');}});
 try{document.body.classList.toggle('dark',localStorage.getItem('sixgr-guide-theme')==='dark');}catch{}
 $('theme').onclick=()=>{document.body.classList.toggle('dark');try{localStorage.setItem('sixgr-guide-theme',document.body.classList.contains('dark')?'dark':'light');}catch{}};$('print').onclick=()=>window.print();window.addEventListener('hashchange',route);route();

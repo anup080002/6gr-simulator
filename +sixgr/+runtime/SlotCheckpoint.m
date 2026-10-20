@@ -23,6 +23,17 @@ classdef SlotCheckpoint
 
         function data = scientificScenario(data)
             % Checkpoint controls change execution, not the scientific setup.
+            % These two diagnostics/display policies do not change samples,
+            % measurements, radio timing, RNG or terminal export populations.
+            % Keep every other output/scientific setting in the comparison.
+            if isfield(data,'output')
+                operational={'live_csv_png_interval_slots','execution_stage_profile_enabled'};
+                for k=1:numel(operational)
+                    if isfield(data.output,operational{k})
+                        data.output=rmfield(data.output,operational{k});
+                    end
+                end
+            end
             fields={'runtime_checkpoint_enable','runtime_checkpoint_resume_from', ...
                 'runtime_checkpoint_repair_reason','runtime_checkpoint_keep','checkpoint_every_slots'};
             for k=1:numel(fields)
@@ -51,7 +62,63 @@ classdef SlotCheckpoint
             end
         end
 
+        function settings = operationalSettings(scenario)
+            % Kept separately from the original scientific/config hash.
+            settings=struct('run_control',struct(),'output',struct());
+            for name=["runtime_checkpoint_enable","checkpoint_every_slots","runtime_checkpoint_keep"]
+                if isfield(scenario.run_control,name)
+                    settings.run_control.(name)=scenario.run_control.(name);
+                end
+            end
+            for name=["live_csv_png_interval_slots","execution_stage_profile_enabled"]
+                if isfield(scenario,'output') && isfield(scenario.output,name)
+                    settings.output.(name)=scenario.output.(name);
+                end
+            end
+        end
+
+        function cfg = applyOperationalSettings(cfg,settings)
+            % Only reviewed diagnostic/recovery controls may cross the
+            % canonical-config restoration boundary. Never copy arbitrary
+            % request output/run fields, grants, RNG or physical state.
+            assert(isstruct(settings) && isscalar(settings) && ...
+                all(ismember(fieldnames(settings),{'run_control','output'})), ...
+                'sixgr:checkpoint:InvalidOperationalSettings','Unexpected operational settings.');
+            allowed=struct('run_control',{{'runtime_checkpoint_enable','checkpoint_every_slots','runtime_checkpoint_keep'}}, ...
+                'output',{{'live_csv_png_interval_slots','execution_stage_profile_enabled'}});
+            mapping=struct('runtime_checkpoint_enable','run.runtimeCheckpointEnabled', ...
+                'checkpoint_every_slots','run.checkpointEverySlots', ...
+                'live_csv_png_interval_slots','outputs.liveCSVPNGIntervalSlots', ...
+                'execution_stage_profile_enabled','outputs.executionStageProfileEnabled');
+            scenario=cfg.run.runtimeCheckpointScenario;
+            for group=string(fieldnames(settings)).'
+                values=settings.(group);
+                assert(isstruct(values) && isscalar(values) && ...
+                    all(ismember(fieldnames(values),allowed.(group))), ...
+                    'sixgr:checkpoint:InvalidOperationalSettings','Unreviewed operational setting.');
+                for name=string(fieldnames(values)).'
+                    value=values.(name);
+                    if any(name==["runtime_checkpoint_enable","execution_stage_profile_enabled"])
+                        validateattributes(value,{'logical'},{'scalar'});
+                    elseif name=="checkpoint_every_slots"
+                        validateattributes(value,{'numeric'},{'scalar','integer','nonnegative','finite'});
+                    else
+                        validateattributes(value,{'numeric'},{'scalar','integer','positive','finite'});
+                    end
+                    scenario.(group).(name)=value;
+                    if isfield(mapping,name)
+                        cfg=sixgr.util.structSet(cfg,mapping.(name),value);
+                    end
+                end
+            end
+            assert(~cfg.run.runtimeCheckpointEnabled || cfg.run.checkpointEverySlots>=1, ...
+                'sixgr:checkpoint:InvalidOperationalSettings','Enabled checkpoints need a positive cadence.');
+            cfg.run.runtimeCheckpointScenario=scenario;
+            cfg.run.runtimeCheckpointOperationalSettings=settings;
+        end
+
         function path = write(root,payload,scenario,source)
+            checkpointScope=sixgr.runtime.ExecutionStageProfiler.scope("checkpoint","completed_slot_save"); %#ok<NASGU>
             root=localCanonical(root);
             assert(isstruct(payload) && all(isfield(payload, ...
                 {'RuntimeState','CompletedSlot','RNG'})), ...
@@ -207,6 +274,8 @@ classdef SlotCheckpoint
             receipt.RepairReason=string(repairReason);
             receipt.RequestedConfigInheritance=sixgr.util.structGet( ...
                 scenario,'config_inheritance',struct());
+            receipt.RequestedOperationalSettings= ...
+                sixgr.runtime.SlotCheckpoint.operationalSettings(scenario);
             receipt.PrimaryStudyEligible=false;
             receipt.EvidenceScope='checkpoint_continuation_requires_full_source_qualification';
         end
@@ -436,6 +505,7 @@ sixgr.util.jsonWrite(fullfile(staging,'meta','channel_archive_storage.json'),rec
 end
 
 function hash=localPrefix(path,count,destination)
+hashScope=sixgr.runtime.ExecutionStageProfiler.scope("hashing","checkpoint_prefix_readback"); %#ok<NASGU>
 assert(isfile(path),'sixgr:checkpoint:MissingArtifact','Missing checkpoint dependency: %s.',path);
 info=dir(path);
 assert(info.bytes>=count,'sixgr:checkpoint:ShortArtifact','Truncated checkpoint dependency: %s.',path);

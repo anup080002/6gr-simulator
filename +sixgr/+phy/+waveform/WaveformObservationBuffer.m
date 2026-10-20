@@ -11,6 +11,8 @@ classdef WaveformObservationBuffer < handle
     properties (Access=private)
         Parts = cell(0,1)
         SampleClass (1,1) string = ""
+        CompleteSampleHash (1,1) string = ""
+        CompleteSamples = []
     end
     methods
         function obj=WaveformObservationBuffer(startSample,endSampleExclusive,sampleRateHz,numRx)
@@ -71,8 +73,36 @@ classdef WaveformObservationBuffer < handle
                     "Only samples through %.0f have arrived; acquisition needs samples through %.0f.", ...
                     obj.ReceivedThroughSample,obj.EndSampleExclusive);
             end
+            if ~isempty(obj.CompleteSamples)
+                samples=obj.CompleteSamples;
+                return;
+            elseif numel(obj.Parts)==1
+                samples=obj.Parts{1}.Samples;
+                return;
+            end
+            scope=sixgr.runtime.ExecutionStageProfiler.scope("buffers","compact_completed_observation"); %#ok<NASGU>
             arrays=cellfun(@(part) part.Samples,obj.Parts,'UniformOutput',false);
             samples=vertcat(arrays{:});
+            % Replace the chunk owners, rather than adding a second cache.
+            % Subsequent reads share this exact immutable MATLAB value until
+            % a caller modifies its own copy. No precision conversion.
+            obj.CompleteSamples=samples;
+            obj.Parts=cell(0,1);
+        end
+
+        function digest=sampleHash(obj)
+            samples=obj.readComplete(); % Incomplete captures never get hashes.
+            if strlength(obj.CompleteSampleHash)==0
+                obj.CompleteSampleHash=sixgr.phy.waveform.WaveformHash.runtimeArray(samples);
+            end
+            digest=obj.CompleteSampleHash;
+        end
+
+        function info=storageInfo(obj)
+            info=struct('RetainedArrays',numel(obj.Parts)+double(~isempty(obj.CompleteSamples)), ...
+                'ReceivedSamples',obj.ReceivedThroughSample-obj.StartSample, ...
+                'SampleClass',obj.SampleClass,'Complete',obj.isComplete(), ...
+                'HashCached',strlength(obj.CompleteSampleHash)>0);
         end
     end
 end

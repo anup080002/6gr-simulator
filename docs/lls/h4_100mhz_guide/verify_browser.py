@@ -26,6 +26,22 @@ def main():
         for chapter in chapters:
             page.goto(args.url+'/#'+chapter['id'], wait_until='networkidle')
             assert page.locator('h1').inner_text() == chapter['title']
+            assert page.locator('.method-basis').first.locator('.badge').count() > 0
+        # Authority labels and links must be complete, not a silent default.
+        audit = page.evaluate("""() => {
+            const g=window.H4Guide, ids=new Set(g.CHAPTERS.map(c=>c.id));
+            return {
+                missing:g.CHAPTERS.filter(c=>!g.chapterBasis[c.id]?.length).map(c=>c.id),
+                methods:g.methods.length,
+                playbooks:g.playbooks.length,
+                broken:g.methods.filter(m=>!ids.has(m.chapter)||!m.owners.length||
+                    m.owners.some(k=>!g.FILES[k])||m.basis.some(k=>!g.basis[k])||
+                    m.refs.some(k=>!g.REFS[k])).map(m=>m.id),
+                unique:new Set(g.methods.map(m=>m.id)).size===g.methods.length
+            };
+        }""")
+        assert not audit['missing'] and not audit['broken'] and audit['unique'], audit
+        assert audit['methods'] >= 40 and audit['playbooks'] >= 14
         source_paths = page.evaluate("""[...new Set(window.H4Guide.CHAPTERS.flatMap(c=>{
             const d=document.createElement('div');d.innerHTML=c.body();
             return [...d.querySelectorAll('[data-source]')].map(a=>a.dataset.source);
@@ -34,6 +50,52 @@ def main():
         for path in source_paths:
             response = page.request.get(args.url+'/api/source?path='+quote(path))
             assert response.ok, (path, response.status)
+        # All generated internal chapter links must resolve.
+        broken_links = page.evaluate("""() => {
+            const g=window.H4Guide, ids=new Set(g.CHAPTERS.map(c=>c.id));
+            return g.CHAPTERS.flatMap(c=>{
+                const d=document.createElement('div');d.innerHTML=c.body();
+                return [...d.querySelectorAll('a[href^="#"]')]
+                    .map(a=>a.getAttribute('href').slice(1).split('?')[0])
+                    .filter(id=>!ids.has(id));
+            });
+        }""")
+        assert not broken_links, broken_links
+        page.goto(args.url+'/#algorithm-register', wait_until='networkidle')
+        page.locator('#method-search').fill('checkpoint')
+        assert 0 < page.locator('[data-method]:visible').count() < audit['methods']
+        page.locator('#method-search').fill('')
+        page.locator('#method-basis').select_option('model')
+        assert page.locator('[data-method="cdl"]').is_visible()
+        assert page.locator('[data-method="olla"]').is_hidden()
+        page.goto(args.url+'/#channel-playbooks', wait_until='networkidle')
+        page.locator('#playbook-search').fill('RAPID')
+        assert page.locator('[data-playbook="prach"]').is_visible()
+        assert page.locator('[data-playbook="trs"]').is_hidden()
+        page.goto(args.url+'/#worked-calculations', wait_until='networkidle')
+        expect(page.locator('#calc-result')).to_contain_text('5.0000000%')
+        expect(page.locator('#calc-result')).to_contain_text('0.260416667')
+        import math
+        calc = page.evaluate('window.H4Guide.teachingMath.quality(.25,100,32,4)')
+        assert math.isclose(calc['evm'], .05)
+        assert math.isclose(calc['nmse'], 10*math.log10(.0025))
+        assert math.isclose(calc['upper'], 1-.05**.25)
+        page.locator('#calc-reference').fill('0')
+        expect(page.locator('#calc-result')).to_contain_text('positive reference energy')
+        page.locator('#calc-reference').fill('100')
+        page.locator('#calc-error').fill('0')
+        expect(page.locator('#calc-result')).to_contain_text('−∞')
+        page.locator('#calc-trials').fill('1.5')
+        expect(page.locator('#calc-result')).to_contain_text('positive integer')
+        page.goto(args.url+'/#causal-flow', wait_until='networkidle')
+        page.locator('[data-causal="3"]').click()
+        expect(page.locator('#causal-detail')).to_contain_text('Same-sample batch reduced')
+        expect(page.locator('[data-causal="3"]')).to_have_attribute('aria-pressed','true')
+        page.goto(args.url+'/#restart-flow', wait_until='networkidle')
+        expect(page.locator('#content')).to_contain_text('previous failure receipt')
+        if args.screenshots:
+            page.goto(args.url+'/#algorithm-register', wait_until='networkidle')
+            page.screenshot(path=str(args.screenshots/'algorithm-register.png'))
         # Every parameter deep link opens the declared catalog search, not a
         # source fragment that silently falls back to the home chapter.
         page.goto(args.url+'/#configuration-map', wait_until='networkidle')
@@ -51,6 +113,9 @@ def main():
         expect(page.locator('#parameter-summary')).to_contain_text('current native core catalog')
         expect(page.locator('#parameter-table')).to_contain_text('calibrated_link_abstraction')
         page.goto(args.url+'/#scenarios?category=scenarios&q=sls_nr_tdd_21cell', wait_until='networkidle')
+        # Hash navigation starts an asynchronous inventory of every YAML. Wait
+        # for that inventory, as below, before asserting filtered contents.
+        expect(page.locator('#scenario-summary')).to_contain_text('YAML files', timeout=30000)
         expect(page.locator('#scenario-table')).to_contain_text('sls_nr_tdd_21cell_connected.yaml')
         assert page.locator('#scenario-table tbody tr').count() == 1
         page.goto(args.url+'/#configuration', wait_until='networkidle')
@@ -82,6 +147,28 @@ def main():
         before = page.locator('#rank-lab').inner_text()
         page.locator('#rank-snr').fill('0')
         assert page.locator('#rank-lab').inner_text() != before
+        page.goto(args.url+'/#prach', wait_until='networkidle')
+        expect(page.locator('#prach-threshold')).to_contain_text('0.00360843918243516')
+        expect(page.locator('#prach-threshold')).to_contain_text('not a 3GPP-mandated formula')
+        page.locator('#prach-rx').fill('4')
+        expect(page.locator('#prach-threshold')).to_contain_text('0.0144337567297406')
+        page.locator('#prach-lra').select_option('839')
+        expect(page.locator('#prach-threshold')).to_contain_text('0.00288675134594813')
+        page.locator('#prach-rx').fill('0')
+        expect(page.locator('#prach-threshold')).to_contain_text('positive integer')
+        page.goto(args.url+'/#beam', wait_until='networkidle')
+        expect(page.locator('#content')).to_contain_text('21')
+        expect(page.locator('#content')).to_contain_text('cannot be silently applied to checkpoint45')
+        page.goto(args.url+'/#adaptation', wait_until='networkidle')
+        expect(page.locator('#content')).to_contain_text('due59')
+        expect(page.locator('#content')).to_contain_text('MCS25')
+        page.goto(args.url+'/#recipe', wait_until='networkidle')
+        expect(page.locator('#content')).to_contain_text('reports/csv/execution_stage_profile.csv')
+        expect(page.locator('#content')).to_contain_text('live_csv_png_interval_slots: 5')
+        page.goto(args.url+'/#parameters?q=output.execution_stage_profile_enabled', wait_until='networkidle')
+        expect(page.locator('#parameter-table')).to_contain_text('output.execution_stage_profile_enabled')
+        page.goto(args.url+'/#parameters?q=output.live_csv_png_interval_slots', wait_until='networkidle')
+        expect(page.locator('#parameter-table')).to_contain_text('output.live_csv_png_interval_slots')
         page.goto(args.url+'/#harq', wait_until='networkidle')
         page.locator('#harq-nack').click()
         page.locator('#harq-ack').click()
@@ -111,11 +198,14 @@ def main():
         page.goto(args.url+'/#parameters?kind=core&q=phyBackend', wait_until='networkidle')
         expect(page.locator('#parameter-table')).to_contain_text('calibrated_link_abstraction')
         assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
+        page.goto(args.url+'/#worked-calculations', wait_until='networkidle')
+        assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
         if args.screenshots:
             page.screenshot(path=str(args.screenshots/'mobile.png'))
         assert not errors, errors
         print(json.dumps({'status':'PASS','chapters':len(chapters),'authored_words':word_count,
                           'source_links_verified':len(source_paths),
+                          'documented_methods':audit['methods'],'channel_playbooks':audit['playbooks'],
                           'browser_errors':errors,'scope':'documentation_only_no_simulation'}))
         browser.close()
 

@@ -9,6 +9,7 @@ switch string(name)
     case "prach_trials", file="prach_evm_samples.csv"; allowed="PRACH"; direction="UL";
     case "csi_rs_trials", file="csi_rs_evm_samples.csv"; allowed="CSI-RS"; direction="DL";
     case "trs_trials", file="trs_evm_samples.csv"; allowed="TRS"; direction="DL";
+    case "srs_trials", file="srs_evm_samples.csv"; allowed="SRS"; direction="UL";
     otherwise, return;
 end
 if isempty(trials)||~any(ismember(["ControlEVMSamplesJSON","ControlEVMSamplesMATFile"], ...
@@ -77,9 +78,9 @@ for k=1:height(trials)
             T.MeasurementClaim=repmat("raw_gain_inclusive_TX_pair_error_not_standardized_modulation_EVM",n,1);
             T.AmplitudeReferenceTreatment=repmat("pre_TX_RF_amplitude_no_PA_backoff_or_gain_removal",n,1);
         elseif string(e.MeasurementDomain)=="received_resource_elements"
-            assert(string(e.SignalName)=="TRS" && ...
+            assert(ismember(string(e.SignalName),["TRS","SRS"]) && ...
                 string(e.ReferenceSource)=="same_executed_desired_link_received_pilot_grid", ...
-                'sixgr:report:ControlEVMPairAuthority','Received-grid TRS EVM needs its independent same-execution reference.');
+                'sixgr:report:ControlEVMPairAuthority','Received-grid pilot EVM needs its independent same-execution reference.');
             T.MeasurementClaim=repmat("received_pilot_grid_pair_error_not_equalized_or_RF_conformance",n,1);
             T.AmplitudeReferenceTreatment=repmat("same_execution_desired_pilot_grid_no_gain_phase_fit",n,1);
         else

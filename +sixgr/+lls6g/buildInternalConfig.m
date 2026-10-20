@@ -306,6 +306,8 @@ cfg.outputs.liveHeavyRefreshFrameInterval = double(localGetNested(s, "output.liv
 % Self-contained legacy YAML does not implicitly opt into live rendering.
 cfg.outputs.liveCSVPNGEnabled = isfield(s.output, 'live_csv_png_enabled') && logical(s.output.live_csv_png_enabled) && ...
     cfg.outputs.saveFigures && cfg.outputs.savePNG;
+cfg.outputs.liveCSVPNGIntervalSlots = double(localGetNested(s, "output.live_csv_png_interval_slots", 1));
+cfg.outputs.executionStageProfileEnabled = logical(localGetNested(s, "output.execution_stage_profile_enabled", false));
 cfg.outputs.liveHeavyRefreshEachSweepPoint = logical(localGetNested(s, "output.live_heavy_refresh_each_sweep_point", true));
 cfg.outputs.storageBackend = char(string(localRequireNested(s, "output.backend", "output.backend")));
 cfg.outputs.persistenceMode = char(string(localGetNested(s, "output.persistence_mode", ...

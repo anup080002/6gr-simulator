@@ -553,6 +553,8 @@
     "live_publish_frame_interval": 1,
     "live_heavy_refresh_interval_frames": 4,
     "live_csv_png_enabled": true,
+    "live_csv_png_interval_slots": 1,
+    "execution_stage_profile_enabled": false,
     "live_heavy_refresh_each_sweep_point": true,
     "profiler_enabled": false,
     "profiler_top_functions": 160,

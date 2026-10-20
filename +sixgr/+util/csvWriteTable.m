@@ -5,6 +5,7 @@ function csvWriteTable(filePath, T, varargin)
 %   MirrorPaths publishes additional destinations from the same serialized
 %   bytes, with per-destination artifact registration and verified copies.
 
+csvProfileScope=sixgr.runtime.ExecutionStageProfiler.scope("serialization","CSV_table"); %#ok<NASGU>
 if ~(ischar(filePath) || (isstring(filePath) && isscalar(filePath)))
     error("sixgr:util:csvWriteTable:BadType", ...
         "filePath must be char or string scalar.");

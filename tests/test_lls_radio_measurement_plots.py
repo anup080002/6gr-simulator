@@ -562,27 +562,33 @@ def test_trs_post_correction_frequency_retains_its_measurement_domain():
     assert bad["csv_status"] == "unavailable_exact_reason"
 
 
-def test_trs_received_pilot_evm_preserves_plane_and_rejects_fitted_reference():
-    records = list(csv.DictReader(io.StringIO(control_pairs("TRS").decode())))
+@pytest.mark.parametrize("signal", ["TRS", "SRS"])
+def test_received_pilot_evm_preserves_plane_and_rejects_fitted_reference(signal):
+    records = list(csv.DictReader(io.StringIO(control_pairs(signal).decode())))
     for row in records:
         row.update(MeasurementDomain="received_resource_elements",
                    ReferencePlane="test_received_clock",
                    ReferenceSource="same_executed_desired_link_received_pilot_grid",
                    AlignmentSource="recorded_receiver_timing_and_frequency_clock_no_fit",
                    PortRole="physical_RX_branch_not_equalized_layer")
-    name = "TRS received-pilot EVM"
+    name = f"{signal} received-pilot EVM"
     source = radio.CONTROL_EVM[name][1]
     result, rows = chart(name, {source: csv_records(records)})
     assert result["source_row_count"] == 1
     assert float(rows[0]["rms_evm_pct"]) == pytest.approx(100*math.sqrt(.82/10))
     assert rows[0]["measurement_claim"] == "received_pilot_grid_pair_error_not_equalized_or_RF_conformance"
+    assert rows[0]["direction"] == ("UL" if signal == "SRS" else "DL")
+    for flag in ("GainOrPhaseFitted", "ReceiverUsesScoringReference"):
+        altered = [dict(r, **{flag: "true"}) for r in records]
+        bad, _ = chart(name, {source: csv_records(altered)})
+        assert bad["csv_status"] == "unavailable_exact_reason"
     records[0]["ReferenceSource"] = "same_sample_fitted_reference"
     bad, _ = chart(name, {source: csv_records(records)})
     assert bad["csv_status"] == "unavailable_exact_reason"
 
 
 def control_pairs(signal="PRACH"):
-    direction = "UL" if signal == "PRACH" else "DL"
+    direction = "UL" if signal in {"PRACH", "SRS"} else "DL"
     domain = "equalized_sequence_symbols" if signal == "PRACH" else "equalized_resource_elements"
     header = "SignalName,Direction,UEIndex,Slot,ObservationID,PortIndex,EVMDefinition,AlignmentSource,ReferenceSource,ReferenceReal,ReferenceImag,MeasuredReal,MeasuredImag,SampleIndex,MeasurementDomain\n"
     return (header + f"{signal},{direction},1,5,obs1,0,reference_normalized_paired_symbol_evm,receiver_timing,recorded_tx_symbols,1,0,1.1,0,0,{domain}\n" +

@@ -210,6 +210,9 @@ try
     for field=string(fieldnames(stageEvidence)).'
         trial.(field)=stageEvidence.(field);
     end
+    if received
+        trial=sixgr.util.mergeStruct(trial,sixgr.link.receivedWaveformEvidence(opt.ReceivedContext.Observation));
+    end
 catch ME
     if received, rethrow(ME); end
     trial.ReceiverDecodeFailed = true;
@@ -530,7 +533,7 @@ trial.ChannelEstimationMode = char(string(sixgr.util.structGet( ...
     rx,"ChannelEstimationMode","")));
 trial.StrictReceiverEvidenceOk = logical(rx.ReceiverUsable) && ...
     trial.ResourceExtractionAvailable && ...
-    trial.ChannelEstimateAvailable && trial.EqualizationAvailable;
+    trial.ReceiverEstimationStagesReady;
 trial.StrictOk = logical(trial.Ok) && trial.StrictReceiverEvidenceOk;
 trial.Status = localStatus(trial.Ok);
 trial.FailureReason = localFailure(trial);

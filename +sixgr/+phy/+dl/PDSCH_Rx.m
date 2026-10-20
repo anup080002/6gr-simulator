@@ -3446,6 +3446,7 @@ lineage = struct( ...
 end
 
 function [decCbs, actIter, parity, useMexLDPC, decodeLatency_s] = localDecodeLDPCCodeBlocks(recLLRBatch, bgn, maxIter, alg, cfg)
+decodeProfileScope=sixgr.runtime.ExecutionStageProfiler.scope("decoding","legacy_PDSCH_LDPC_code_blocks"); %#ok<NASGU>
 C = size(recLLRBatch, 2);
 actIter = NaN(1, C);
 parity = NaN(1, C);

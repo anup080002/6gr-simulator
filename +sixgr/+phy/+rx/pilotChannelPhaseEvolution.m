@@ -67,6 +67,9 @@ if ~isempty(pilotSymbols)
         'ContextID',string(opt.ContextID),'Dimensions',[K R P], ...
         'LastTime_s',lastTime,'AvailableAtTime_s',available, ...
         'CoordinateKeys',keys,'ChannelValues',values);
+    % The first single-symbol observation has an actual pilot clock,
+    % but not yet a phase pair, rate, or unaliasing interval.
+    out.CurrentObservationTime_s=lastTime;
 end
 dt=[]; phase=[]; weight=[];
 for i=2:numel(pilotSymbols)

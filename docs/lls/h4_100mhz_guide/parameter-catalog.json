@@ -6040,6 +6040,15 @@
           "required": false,
           "type": "boolean"
         },
+        "live_csv_png_interval_slots": {
+          "required": false,
+          "type": "integer",
+          "min": 1
+        },
+        "execution_stage_profile_enabled": {
+          "required": false,
+          "type": "boolean"
+        },
         "live_heavy_refresh_each_sweep_point": {
           "required": false,
           "type": "boolean"

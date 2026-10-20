@@ -30,6 +30,7 @@ CONTROL_EVM = {
     "SSB EVM": ("SSB", "air_interface/csv/ssb_evm_samples.csv"),
     "CSI-RS EVM": ("CSI-RS", "air_interface/csv/csi_rs_evm_samples.csv"),
     "TRS received-pilot EVM": ("TRS", "air_interface/csv/trs_evm_samples.csv"),
+    "SRS received-pilot EVM": ("SRS", "air_interface/csv/srs_evm_samples.csv"),
 }
 CSI_FIELDS = {"CSI CQI timeline": "CQI", "CSI RI timeline": "RI", "CSI CRI timeline": "CRI",
               "CSI PMI components timeline": "PMI", "CSI SINR timeline": "SINR_dB"}
@@ -416,7 +417,7 @@ def _control_evm_rows(m, name, run_id, path, samples, seen):
         if sample_index is None or sample_index < 0 or sample_index != int(sample_index) or len(_numbers(port, integers=True)) != 1:
             return _unavailable(m, name, run_id, "A nonnegative sample index and port index are required for each paired sample.", sources)
         expected_domain = "equalized_sequence_symbols" if family == "PRACH" else "equalized_resource_elements"
-        if family == "TRS":
+        if family in {"TRS", "SRS"}:
             expected_domain = "received_resource_elements"
         tx_domain = domain == "transmitter_resource_elements"
         if ((domain != expected_domain and not tx_domain) or definition != "reference_normalized_paired_symbol_evm"):
@@ -425,13 +426,15 @@ def _control_evm_rows(m, name, run_id, path, samples, seen):
                 alignment != "frozen_transmitter_OFDM_clock_no_gain_phase_or_timing_fit" or
                 m._row_text(row, "PortRole") != "physical_TX_antenna_not_equalized_RX_stream"):
             return _unavailable(m, name, run_id, "Transmitter EVM requires actual pre/post-RF samples on the frozen TX clock, not a receiver estimate.", sources)
-        if family == "TRS" and (domain != expected_domain or
+        if family in {"TRS", "SRS"} and (domain != expected_domain or
                 not m._row_text(row, "ReferencePlane") or
                 reference_source != "same_executed_desired_link_received_pilot_grid" or
                 alignment != "recorded_receiver_timing_and_frequency_clock_no_fit" or
-                m._row_text(row, "PortRole") != "physical_RX_branch_not_equalized_layer"):
-            return _unavailable(m, name, run_id, "TRS pilot error requires independently retained same-execution desired/received REs, with no fitted gain or phase.", sources)
-        if identity["direction"] != ("UL" if family == "PRACH" else "DL") or not identity["ue_index"]:
+                m._row_text(row, "PortRole") != "physical_RX_branch_not_equalized_layer" or
+                any(m._row_text(row, flag).strip().lower() in {"true", "1"}
+                    for flag in ("GainOrPhaseFitted", "ReceiverUsesScoringReference"))):
+            return _unavailable(m, name, run_id, f"{family} pilot error requires independently retained same-execution desired/received REs, with no fitted gain or phase.", sources)
+        if identity["direction"] != ("UL" if family in {"PRACH", "SRS"} else "DL") or not identity["ue_index"]:
             return _unavailable(m, name, run_id, "Control signal direction or UE identity is missing/inconsistent.", sources)
         if "decision" in reference_source.lower() or "same_sample" in reference_source.lower():
             return _unavailable(m, name, run_id, "Decision-derived or same-sample fitted references cannot establish independent control EVM.", sources)
@@ -445,8 +448,8 @@ def _control_evm_rows(m, name, run_id, path, samples, seen):
             "reference_source": reference_source, "measurement_domain": domain,
             "reference_plane": m._row_text(row, "ReferencePlane"),
             "standardized_modulation_evm_qualified": False,
-            "amplitude_reference_treatment": "pre_TX_RF_amplitude_no_PA_backoff_or_gain_removal" if tx_domain else ("same_execution_desired_pilot_grid_no_gain_phase_fit" if family == "TRS" else "retained_reference_and_receiver_equalization"),
-            "measurement_claim": "raw_gain_inclusive_TX_pair_error_not_standardized_modulation_EVM" if tx_domain else ("received_pilot_grid_pair_error_not_equalized_or_RF_conformance" if family == "TRS" else "receiver_paired_symbol_error_not_RF_conformance"),
+            "amplitude_reference_treatment": "pre_TX_RF_amplitude_no_PA_backoff_or_gain_removal" if tx_domain else ("same_execution_desired_pilot_grid_no_gain_phase_fit" if family in {"TRS", "SRS"} else "retained_reference_and_receiver_equalization"),
+            "measurement_claim": "raw_gain_inclusive_TX_pair_error_not_standardized_modulation_EVM" if tx_domain else ("received_pilot_grid_pair_error_not_equalized_or_RF_conformance" if family in {"TRS", "SRS"} else "receiver_paired_symbol_error_not_RF_conformance"),
             "sample_count": 0, "reference_energy": 0., "error_energy": 0.,
             "peak_error_power": 0., "measurement_scope": "persisted_independently_paired_control_samples"})
         ref_r, ref_i, rx_r, rx_i = values
@@ -468,7 +471,7 @@ def _control_evm_rows(m, name, run_id, path, samples, seen):
                 plane = "RX received pilots (not equalized)"
             series[f"{row['signal_name']} observation={row['observation_id']} {plane} {metric} P{row['port_index']} U{row['ue_index']} {_point_label(row)}"].append([row["slot"], row[f"{metric}_evm_pct"]])
     return _finish(m, name, run_id, rows, series, "Executed slot", "EVM (%)",
-        "Independent paired control samples. TX raw error includes configured PA backoff/gain. TRS uses actual received/desired pilot grids without a fitted gain/phase; other RX samples use their declared equalization. No conversion from SINR or pilot-fit residual. Not RF conformance EVM.", sources)
+        "Independent paired control samples. TX raw error includes configured PA backoff/gain. TRS/SRS use actual received/desired pilot grids without a fitted gain/phase; other RX samples use their declared equalization. No conversion from SINR or pilot-fit residual. Not RF conformance EVM.", sources)
 
 
 def _csi(m, name, existing, fetch, run_id):

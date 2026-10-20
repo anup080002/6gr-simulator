@@ -90,6 +90,8 @@ cleanupDeepReadback = onCleanup(@() localDelete(deepReadback)); %#ok<NASGU>
 copyfile(deepTarget, deepReadback, "f");
 deepInventory = whos("-file", deepReadback);
 assert(any(string({deepInventory.name}) == "Samples"));
+assert(sixgr.util.sha256File(deepTarget)==sixgr.util.sha256File(deepReadback), ...
+    'Direct streamed long-path verification must match the independent short-path copy.');
 % Exact complex-IQ and nested evidence round-trip using the capture wrapper
 % used by RA/RAR/UL-control writers. These are explicit persistence fixtures,
 % not fabricated PHY observations or primary simulator result tables.

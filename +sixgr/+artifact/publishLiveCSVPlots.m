@@ -1,4 +1,5 @@
 function receipt=publishLiveCSVPlots(cfg,runFolder)
+profileScope=sixgr.runtime.ExecutionStageProfiler.scope("publication","live_CSV_PNG_python"); %#ok<NASGU>
 % Runtime checkpoints use the same source-bound builders as final plots.
 % Immutable partial snapshots are not terminal qualification artifacts.
 receipt=struct('Enabled',false,'Status',"disabled_by_output_policy");

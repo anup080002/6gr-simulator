@@ -20,6 +20,12 @@ cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaMarginMinDb", -10);
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaMarginMaxDb", 10);
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.mcsTable", "qam64_table1");
 cfg = sixgr.util.structSet(cfg, "phy.csi.cqiTable", "table1");
+% This is a rank-one OLLA unit test. Do not inherit a rank-two fixed
+% baseline while supplying rank-one receiver feedback and a rank-one grant.
+cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.rankPolicy", "fixed");
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.numLayers", 1);
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.nLayers", 1);
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.maxLayers", 1);
 
 sinrEvidence = struct( ...
     "WidebandSINR_dB", 10.5, ...
@@ -103,6 +109,15 @@ assert(double(transported.OLLAAdjustedMCSBeforeCQICeiling) == double(mappedMCS) 
     double(transported.OLLATargetRequiredSINR_dB) == double(detail.TargetRequiredSINR_dB) && ...
     string(transported.OLLAThresholdSource) == string(detail.ThresholdSource), ...
     "Receiver-owned OLLA thresholds must survive the causal feedback-to-grant handoff.");
+wrongRank=feedback; wrongRank.RI=2;
+try
+    sixgr.truth.CoupledTruthRuntime.applyMeasuredFeedbackAMCToGrantRuntime( ...
+        grant,wrongRank,[],cfg,"DL");
+    error('test:MissingRankGuard','Mismatched fixed-rank quality must remain rejected.');
+catch err
+    assert(strcmp(err.identifier,'sixgr:truth:FixedRankFeedbackMismatch'), ...
+        'The production fixed-rank feedback guard must remain intact.');
+end
 
 cfgClamp = sixgr.util.structSet(cfg, "phy.linkAdaptation.ollaMarginMinDb", -2);
 cfgClamp = sixgr.util.structSet(cfgClamp, "phy.linkAdaptation.ollaMarginMaxDb", 2);

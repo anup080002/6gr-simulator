@@ -16,8 +16,24 @@ localError(@() b.append(chunk(x(4:5,:),103),2000),"WAVEFORM:ObservationSampleRat
 localError(@() b.append(chunk(x(4:5,1),103),1000),"WAVEFORM:InvalidObservationSamples");
 assert(b.ReceivedThroughSample==103 && ~b.isComplete());
 b.append(chunk(x(4:10,:),103),1000);
+assert(b.storageInfo().RetainedArrays==2);
 assert(b.isComplete() && isequal(b.readComplete(),x));
+assert(b.storageInfo().RetainedArrays==1,'Compaction must replace, not duplicate, samples.');
 assert(isequal(b.readComplete(),x),"Multiple receivers must see the same immutable samples.");
+digest=b.sampleHash();
+assert(digest==sixgr.phy.waveform.WaveformHash.runtimeArray(x) && b.storageInfo().HashCached);
+copy=b.readComplete(); copy(:)=0;
+assert(isequal(b.readComplete(),x) && b.sampleHash()==digest,'Caller edits must not corrupt received evidence.');
+for precision=["single","double"]
+    q=sixgr.phy.waveform.WaveformObservationBuffer(0,10,1000,2);
+    values=cast(x,precision);
+    q.append(chunk(values(1:4,:),0),1000);
+    q.append(chunk(values(5:end,:),4),1000);
+    assert(isequal(q.readComplete(),values) && string(class(q.readComplete()))==precision);
+    % Full state serialization retains exact compacted samples and digest.
+    restored=getArrayFromByteStream(getByteStreamFromArray(q));
+    assert(isequal(restored.readComplete(),values) && restored.sampleHash()==q.sampleHash());
+end
 fprintf('WAVEFORM_OBSERVATION_BUFFER_PASS: partial reads and missing/overlapping samples rejected.\n');
 ok=true;
 end

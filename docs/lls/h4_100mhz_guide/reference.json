@@ -1,7 +1,7 @@
 {
   "scope": "configuration_snapshot_not_simulation_result",
   "scenario": "simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_adaptation.yaml",
-  "created": "2026-10-19 07:14:05",
+  "created": "2026-10-20 14:36:52",
   "matlab": "26.1.0.3312084 (R2026a) Update 4",
   "sources": [
     {
@@ -26,7 +26,7 @@
     },
     {
       "path": "simulator/configs/defaults/global.yaml",
-      "sha256": "848e5f12e2f77317d7fb7827fba9f97b9357998ce9a0fb18c6a13466fbaf7464"
+      "sha256": "3fe845abd1ab3c5da2eaaf64ef8528bc32347e15b52ae8b64e5888977bb3fe84"
     },
     {
       "path": "simulator/configs/defaults/logging.yaml",
@@ -138,7 +138,7 @@
     },
     {
       "path": "simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_adaptation.yaml",
-      "sha256": "22c900a9b3d211a7207e97835b9ad28b82c1ed25e6facfbe7fc9a33fa3d0325e"
+      "sha256": "e078bd572ff9b1e76b668a153197c1433397690f9884c0f60ab48e37f479ec70"
     }
   ],
   "resolved": {
@@ -227,7 +227,7 @@
       "total_slots": 100,
       "warmup_slots": 0,
       "measurement_slots": 100,
-      "checkpoint_every_slots": 5,
+      "checkpoint_every_slots": 1,
       "time_profiling_enable": false
     },
     "config_inheritance": {
@@ -8207,6 +8207,8 @@
       "live_publish_frame_interval": 1,
       "live_heavy_refresh_interval_frames": 58,
       "live_csv_png_enabled": true,
+      "live_csv_png_interval_slots": 5,
+      "execution_stage_profile_enabled": true,
       "live_heavy_refresh_each_sweep_point": false,
       "profiler_enabled": false,
       "profiler_top_functions": 10000,
@@ -8929,5 +8931,5 @@
     "SlotsPerFrame": 20
   },
   "source_root": "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main",
-  "scenario_hash": "9f8ed02945f015a4af9753e705d50d3d8cfb28a118bc7fd1f54e5a32bd9e4d10"
+  "scenario_hash": "3573d4428fc7f1bab53e8f0e62f9bc30c57e9829ed5f9d3005a7b28d40a0629d"
 }

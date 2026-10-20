@@ -28,6 +28,24 @@ for profile=profiles
             fixed.ThresholdSource=="configured_fixed_nrPRACHDetect");
     end
 end
+% Exact H4 receiver shape and short-preamble duration. This is a
+% deterministic native-threshold check, not a 64-branch fading/PFA campaign.
+h4=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs','scenarios', ...
+    'h4_100_cdlc100_connected_impaired_40db_adaptation.yaml'));
+h4cfg=sixgr.lls6g.buildInternalConfig(h4,tempname);
+pc=sixgr.rach.PRACHConfig(h4cfg,'NumPRACHOccasions',1,'NumTrials',1);
+occ=sixgr.rach.mapPRACHToOccasion(pc,'OccasionIndex',1);
+tx=sixgr.rach.generatePRACHWaveform(pc,'Occasion',occ,'PreambleIndex',0);
+assert(string(tx.PRACH.Format)=="B4" && tx.PRACH.LRA==139 && ...
+    tx.PRACH.PRACHDuration==12 && pc.NumRxAntennas==64);
+w=repmat(tx.Waveform(:,1),1,pc.NumRxAntennas)/sqrt(pc.NumRxAntennas);
+d=sixgr.rach.PRACHDetector(w,pc,'Occasion',occ,'CandidatePreambles',0:63, ...
+    'DetectorBackend','toolbox_peak','DetectionThresholdMode','auto');
+documented=0.1/sqrt(size(w,2)*double(tx.PRACH.PRACHDuration));
+assert(d.Detected && d.DetectedPreambleIndex==0 && ...
+    abs(d.Threshold-documented)<1e-15 && ...
+    d.RxAntennaCount==64 && d.ThresholdCalibrationStatus=="single_detection_not_statistical_qualification");
+fprintf('H4_PRACH_DOCUMENTED_THRESHOLD_PASS format=B4 LRA=139 Nsym=12 RX=64 threshold=%.17g conformance_qualified=0\n',d.Threshold);
 fixture=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs','scenarios', ...
     'lls_causal_tdd_ra_retry_fixture.yaml'));
 cfg=sixgr.lls6g.buildInternalConfig(fixture,tempname);

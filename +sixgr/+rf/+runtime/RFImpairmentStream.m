@@ -71,6 +71,8 @@ classdef RFImpairmentStream < handle
         end
 
         function out=apply(obj,chunk,expectedEpoch)
+            rfProfileScope=sixgr.runtime.ExecutionStageProfiler.scope("RF", ...
+                string(obj.Chain.Direction)+"_"+string(obj.Chain.Endpoint)); %#ok<NASGU>
             if obj.Faulted, error('RF:FaultedStream','A failed RF stream cannot be retried.'); end
             if obj.Applying, error('RF:ReentrantStream','An RF interval is already executing.'); end
             if ~isequal(double(expectedEpoch),obj.ConfigurationEpoch)

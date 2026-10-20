@@ -136,6 +136,9 @@ for field=string(fieldnames(pilotScore)).'
     out.(field)=pilotScore.(field);
 end
 out.TRSRuntimeEvidenceUsable = false;
+out.StrictReceiverEvidenceOk = false;
+out.ChannelNMSEThreshold_dB = NaN;
+out.TRSQualificationCriteriaJSON = "";
 out.NoiseVariance = NaN;
 out.NoiseVarianceDomain = "resource_grid_pre_equalization";
 out.NoiseVarianceSource = "unavailable_no_practical_TRS_channel_estimate";
@@ -378,6 +381,9 @@ try
         out.MeasuredTrialSINRNAReason = "trs_pilot_signed_linear_ratio_nonpositive_or_unavailable";
     end
     out.TRSRuntimeEvidenceUsable = logical(runtimeEvidenceOk);
+    out.StrictReceiverEvidenceOk = logical(runtimeEvidenceOk);
+    out.ChannelNMSEThreshold_dB = double(strictCfg.ChannelNMSEThresholddB);
+    out.TRSQualificationCriteriaJSON = string(jsonencode(score.Criteria));
     out.StrictOk = logical(score.StrictOk);
     out.FailureReason = string(score.FailureReason);
     out.TrackingEstimateSource = "trs_reference_waveform_estimator";
@@ -391,6 +397,7 @@ try
     out.ObservationSampleRateHz = observation.SampleRateHz;
     out.ObservationCompletionTime_s = observation.EndSampleExclusive / observation.SampleRateHz;
     out.ObservationCoverageSource = "complete_contiguous_received_sample_buffer";
+    out=sixgr.util.mergeStruct(out,sixgr.link.receivedWaveformEvidence(observation));
     out.AirInterfaceObservation_ms = 1e3 * ...
         (observation.EndSampleExclusive-observation.StartSample) / observation.SampleRateHz;
     out.AcquisitionTime_ms = out.AirInterfaceObservation_ms;

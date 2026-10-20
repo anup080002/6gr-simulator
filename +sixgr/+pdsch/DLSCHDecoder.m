@@ -105,6 +105,8 @@ else
         "CodewordIndex", double(plan.CodewordIndex) + 1);
 end
 
+decodeProfileScope = sixgr.runtime.ExecutionStageProfiler.scope( ...
+    "decoding", "PDSCH_LDPC_code_blocks");
 decodeClock = tic;
 if useMexLDPC
     [decodedCodeBlocks,activeIterations,finalParityChecks,decoderEngine] = ...
@@ -117,6 +119,7 @@ else
     decoderEngine = "sixgr.phy.phycode.ldpcDecode";
 end
 decodeLatency = toc(decodeClock);
+clear decodeProfileScope
 if size(decodedCodeBlocks, 1) ~= double(plan.CodeBlockLength) || ...
         size(decodedCodeBlocks, 2) ~= double(plan.NumCodeBlocks)
     error("sixgr:pdsch:DLSCHDecoder:PlanMismatch", ...

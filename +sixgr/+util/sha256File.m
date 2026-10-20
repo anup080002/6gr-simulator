@@ -10,6 +10,7 @@ arguments
     filePath {mustBeTextScalar}
 end
 
+hashScope=sixgr.runtime.ExecutionStageProfiler.scope("hashing","SHA256_file"); %#ok<NASGU>
 filePath = char(filePath);
 % EXIST classifies MEX/P-code as 3/6; they are still real byte streams.
 if ~isfile(filePath)

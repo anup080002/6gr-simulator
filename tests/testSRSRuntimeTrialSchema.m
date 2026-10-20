@@ -42,6 +42,15 @@ for k=1:numel(receptions)
     end
     assert(row.NMSE_dB==out.NMSE_dB && row.MeasuredTrialSINR_dB==out.SINR_dB && ...
         row.RankEstimate==out.RankEstimate && row.WidebandCQI==out.CQI);
+    for field=string(fieldnames(sixgr.phy.srs.measureReceivedPilotEVM())).'
+        assert(isequaln(row.(field),out.(field)), ...
+            'Production SRS collector lost measured pilot EVM field: %s',field);
+    end
+    assert(isfinite(row.EVM_rms) && row.EVMSymbolCount>0);
+    assert(strlength(row.ChannelEstimateSource)>0 && ...
+        row.ChannelEstimateSource==string(out.ChannelEstimateSource));
+    assert(row.RuntimeStageWaveformsUsed && strlength(row.ReceiverObservationSHA256)==64 && ...
+        row.ReceiverObservationSHA256==out.ReceiverObservationSHA256);
     rows=[rows;row]; %#ok<AGROW>
 end
 % A missing measurement stays missing; no preceding row may fill its value.

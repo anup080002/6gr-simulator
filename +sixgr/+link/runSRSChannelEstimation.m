@@ -36,6 +36,9 @@ out.BER = NaN;
 out.BLER = NaN;
 out.Throughput_Mbps = NaN;
 out.EVM_rms = NaN;
+pilotEVM=sixgr.phy.srs.measureReceivedPilotEVM();
+for field=string(fieldnames(pilotEVM)).', out.(field)=pilotEVM.(field); end
+out.PilotEVMPairs=struct([]);
 out.Notes = "";
 out.NMSE_dB = NaN;
 out.RawChannelNMSE_dB = NaN;
@@ -280,6 +283,7 @@ try
         return;
     elseif received
         rxWave=prepared.readObservation(context.Observation,"receiver");
+        out=sixgr.util.mergeStruct(out,sixgr.link.receivedWaveformEvidence(context.Observation));
         txWaveForReference=[];
         if isfield(context,'DesiredReferenceObservation')
             txWaveForReference=prepared.readObservation(context.DesiredReferenceObservation,"receiver");
@@ -485,6 +489,8 @@ try
     out.ChannelEstimateAttempted = true;
     out.ChannelEstimateAvailable = localHasFiniteComplexData(sixgr.util.structGet(rx, "Hest", []));
     out.SRSChannelEstimateAvailable = logical(out.ChannelEstimateAvailable);
+    out.ChannelEstimateSource=string(sixgr.util.structGet(rxInfo, ...
+        'ChannelEstimation.EngineUsed',""));
     out.DetectionSuccess = logical(out.ChannelEstimateAvailable);
     out.DetectionUsable = logical(out.DetectionSuccess) && logical(out.ResourceExtractionAvailable);
 
@@ -601,6 +607,18 @@ try
                 rx.Hest,unmatchedReference,tx.SRSIndices);
             out.PreRXClockChannelNMSE_dB=unmatchedScore.dB;
         end
+        % Compare actual desired/received samples, not the fitted channel
+        % or an EVM inferred from NMSE/SINR. The reference has already been
+        % placed on the executed RX clock. CDM-port overlap is counted once
+        % on each physical RX branch; there is no gain or phase fit here.
+        evmEvidence=struct('Source',"same_executed_desired_link_received_pilot_grid", ...
+            'ReferencePlane',referenceEvidence.ReferencePlane, ...
+            'ReceiverEstimatorInput',false,'GainOrPhaseFitted',false, ...
+            'AdditionalChannelExecutions',0,'AdditionalRFExecutions',0);
+        [pilotEVM,out.PilotEVMPairs]=sixgr.phy.srs.measureReceivedPilotEVM( ...
+            rx.RxGrid,referenceRxGrid,tx.SRSIndices,double(tx.SRS.NumSRSPorts), ...
+            observedSlot0,evmEvidence);
+        for field=string(fieldnames(pilotEVM)).', out.(field)=pilotEVM.(field); end
         out.RawChannelNMSEScoring=rawScore;
         out.RawChannelNMSE_dB=rawScore.dB;
         out.ChannelNMSEScoring=phaseEquivalentScore;

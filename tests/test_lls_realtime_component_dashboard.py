@@ -1331,6 +1331,11 @@ def test_data_preview_retains_crc_and_measured_beam_fields() -> None:
             "Best measured beam": 4,
             "Best beam gain dB": 9.25,
             "Beam gap dB": 0.5,
+            "Best projection index": 4,
+            "Best projection power (dB)": 9.25,
+            "Selected projection power (dB)": 8.75,
+            "Projection gap (dB)": 0.5,
+            "Decode acceptance": "decoded CRC and channel-specific context checks; not an EVM limit",
         }
     ]
 

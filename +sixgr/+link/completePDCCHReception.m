@@ -73,5 +73,6 @@ info.ObservationEndSampleExclusive = observation.EndSampleExclusive;
 info.ObservationSampleRateHz = observation.SampleRateHz;
 info.ObservationCompletionTime_s = observation.EndSampleExclusive/observation.SampleRateHz;
 info.ObservationCoverageSource = "complete_contiguous_received_sample_buffer";
+info=sixgr.util.mergeStruct(info,sixgr.link.receivedWaveformEvidence(observation));
 info.ReceivedTimingAlignment=alignment;
 end

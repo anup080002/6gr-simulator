@@ -294,9 +294,11 @@ classdef SharedWaveformPhysicalRuntime < handle
                     requests=obj.ChannelReferenceRequests;
                     hits=find(string({requests.LinkID})==link.ID & [requests.RX]==link.RX & ...
                         [requests.Start]<stop & [requests.End]>first);
+                    channelScope=sixgr.runtime.ExecutionStageProfiler.scope("channel","apply_retained_channel_state");
                     [contribution,replay,state,reference]=sixgr.channel.ChannelFactory.applyRuntimeChannelState( ...
                         link.State,x,'OutputSampleAlignment','continuous_raw_samples', ...
                         'InputSampleDomain','materialized_channel_ports','CaptureChannelReference',~isempty(hits));
+                    clear channelScope
                     for h=hits
                         request=requests(h); bounded=reference;
                         bounded.ObservationStartSample=request.Start;

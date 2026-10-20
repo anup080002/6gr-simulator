@@ -52,6 +52,7 @@ import sixgr_sls_dashboard as sls_dashboard
 import lls_contract_materializer as contract_materializer
 from lls_sweep_report import observe_sweep
 from lls_runtime_visualization_evidence import verified_runtime_visualizations
+from lls_waveform_quality import synchronization_search_fields
 from lls_contract_aliases import (
     CONTRACT_CHART_ALIAS_PATHS,
     CONTRACT_TABLE_ALIAS_PATHS,
@@ -12084,6 +12085,7 @@ def normalize_preview_value(value: Any) -> Any:
 
 
 def summarize_control_trial_preview_rows(control_key: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    from lls_waveform_quality import waveform_quality_fields, qualification_criteria_fields
     if not rows:
         return []
     specs = CONTROL_TRIAL_PREVIEW_COLUMNS.get(control_key) or []
@@ -12103,6 +12105,8 @@ def summarize_control_trial_preview_rows(control_key: str, rows: list[dict[str, 
         for source_key, label in active_specs:
             normalized = normalize_preview_value(row.get(source_key))
             curated[label] = normalized if normalized is not None else "N/A"
+        curated.update(waveform_quality_fields(control_key, row))
+        curated.update(qualification_criteria_fields(control_key, row))
         curated_rows.append(curated)
     return curated_rows
 
@@ -12166,6 +12170,7 @@ def load_procedure_preview(
 
 
 def summarize_data_trial_preview_rows(trial_key: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    from lls_waveform_quality import waveform_quality_fields, precoding_evidence_fields, qualification_criteria_fields
     if not rows:
         return []
     specs = DATA_TRIAL_PREVIEW_COLUMNS.get(trial_key) or []
@@ -12184,6 +12189,9 @@ def summarize_data_trial_preview_rows(trial_key: str, rows: list[dict[str, Any]]
         for source_key, label in active_specs:
             normalized = normalize_preview_value(row.get(source_key))
             curated[label] = normalized if normalized is not None else "N/A"
+        curated.update(waveform_quality_fields(trial_key, row))
+        curated.update(precoding_evidence_fields(row))
+        curated.update(qualification_criteria_fields(trial_key, row))
         curated_rows.append(curated)
     return curated_rows
 
@@ -16383,6 +16391,7 @@ def build_realtime_ue_status(
                         "cfo_source": str(csi.get(prefix + "CFOSource") or ""),
                         "sample_domain": str(csi.get(prefix + "SynchronizationSampleDomain") or ""),
                         "source": str(csi.get(prefix + "SynchronizationSource") or ""),
+                        **synchronization_search_fields(csi, prefix),
                     }
                     for prefix, plane in (("Receiver", "post-front-end practical CSI"),
                                           ("PhysicalMeasurement", "pre-front-end antenna measurement"))
@@ -20962,7 +20971,7 @@ window.addEventListener('DOMContentLoaded', function () {
       ...recent(controlPreviews.prach_trials).map(row => ({Procedure:'Completed RA attempt summary',Frame:row.Frame,Slot:row.Slot,'Slot convention':'runtime source, 1-based',Endpoint:row.UE,Outcome:row.Metric,Status:row.Status})),
     ];
     const csiRows = recent(Array.isArray(dashboard.ue_status) ? dashboard.ue_status : []).map(ue => ({Slot:ue.csi_slot,UE:ue.ue_id,Cell:ue.serving_cell,'CSI-RSRP dBm':ue.csi_rsrp_dbm,'CSI-RSRP (dB re unit occupied-RE Es)':ue.csi_rsrp_normalized_db,'CSI-RSSI (dB re unit occupied-RE Es)':ue.csi_rssi_normalized_db,'CSI-RSRQ dB':ue.csi_rsrq_db,'RSRP RX branch (1-based)':ue.csi_rsrp_receive_branch,'Power unit':ue.csi_power_unit,'Power reference plane':ue.csi_power_reference_plane,'CSI-SINR dB':ue.csi_sinr_db,'SINR source':ue.csi_sinr_source,'SINR plane':ue.csi_sinr_domain,'Rank/PMI objective dB':ue.csi_scheduling_objective_db,'Objective source':ue.csi_scheduling_objective_source,Status:ue.csi_measurement_status}));
-    const csiSyncRows = recent(Array.isArray(dashboard.ue_status) ? dashboard.ue_status : []).flatMap(ue => (ue.csi_synchronization || []).map(s => ({Slot:ue.csi_slot,UE:ue.ue_id,Plane:s.plane,'Timing estimate (samples)':s.timing_samples,'Timing applied (samples)':s.timing_applied_samples,'Demodulated samples':s.demodulated_samples,'Estimated CFO (Hz)':s.estimated_cfo_hz,'Applied CFO (Hz)':s.applied_cfo_hz,'CFO status':s.cfo_status,'CFO estimator':s.cfo_source,'Sample domain':s.sample_domain,Source:s.source})));
+    const csiSyncRows = recent(Array.isArray(dashboard.ue_status) ? dashboard.ue_status : []).flatMap(ue => (ue.csi_synchronization || []).map(s => ({Slot:ue.csi_slot,UE:ue.ue_id,Plane:s.plane,'Timing estimate (samples)':s.timing_samples,'Timing applied (samples)':s.timing_applied_samples,'Search offsets (samples)':s.search_window,'Timing hypotheses':s.timing_hypotheses,'Timing search scope':s.timing_search_scope,'Demodulated samples':s.demodulated_samples,'Estimated CFO (Hz)':s.estimated_cfo_hz,'Applied CFO (Hz)':s.applied_cfo_hz,'CFO status':s.cfo_status,'CFO estimator':s.cfo_source,'Sample domain':s.sample_domain,Source:s.source})));
     const csiChannelRows = recent(Array.isArray(dashboard.ue_status) ? dashboard.ue_status : []).map(ue => ({Slot:ue.csi_slot,UE:ue.ue_id,'Independent nominal-channel NMSE dB':ue.csi_channel_nmse_db,'Pilot reconstruction residual dB':ue.csi_pilot_residual_nmse_db,'Reference plane':ue.csi_channel_nmse_reference_plane,'Compared complex values':ue.csi_channel_nmse_count,'Measured resources':ue.csi_channel_nmse_resources,Scope:ue.csi_channel_nmse_scope,'Scoring mode':ue.csi_channel_nmse_mode,'Paired resource CSV':ue.csi_channel_nmse_csv}));
     const rrcRows = recent(procedurePreviews.initial_access_lifecycle || []);
     const rrcProtocolRows = recent(procedurePreviews.rrc_connection_events || []);
@@ -20981,7 +20990,11 @@ window.addEventListener('DOMContentLoaded', function () {
     const hasRuntimeBeamValue = value => value !== null && value !== undefined && value !== '' && value !== 'N/A';
     const beamRows = recent([...(dataPreviews.dl_trials || []), ...(dataPreviews.ul_trials || [])]
       .filter(row => hasRuntimeBeamValue(row['Applied beam']) || hasRuntimeBeamValue(row['Applied spatial beam']) || hasRuntimeBeamValue(row['Applied basis PMI']) || hasRuntimeBeamValue(row['Applied TPMI']) || hasRuntimeBeamValue(row['Precoder SHA'])))
-      .map(row => ({Slot:row.Slot,UE:row.UE,Direction:row.Direction,'Beamforming applied':row['Beamforming applied'],'Explicit weights applied':row['Explicit weights applied'],'Application stage':row['Application stage'],'Applied beam':row['Applied beam'] ?? row['Applied spatial beam'],'Requested PMI/TPMI':row['Requested CSI PMI'] ?? row['Requested TPMI'],'PMI request source':row['PMI request source'],'Applied PMI/TPMI':row['Applied basis PMI'] ?? row['Applied TPMI'],'Applied PMI status':row['Applied PMI status'],'Precoder match':row['Precoder match'],'Precoder SHA':row['Precoder SHA'],'Applied beam gain dB':row['Applied beam gain dB'],'Best measured beam':row['Best measured beam'],'Best beam gain dB':row['Best beam gain dB'],'Beam gap dB':row['Beam gap dB']}));
+      .map(row => ({...row,'Applied beam':row['Applied beam'] ?? row['Applied spatial beam'],'Requested PMI/TPMI':row['Requested CSI PMI'] ?? row['Requested TPMI'],'Applied PMI/TPMI':row['Applied basis PMI'] ?? row['Applied TPMI']}));
+    const criteriaRows = [
+      ...Object.entries(controlPreviews).flatMap(([key,rows]) => recent(rows).map(row => ({...row,Channel:key.replace('_trials','')}))),
+      ...Object.entries(dataPreviews).flatMap(([key,rows]) => recent(rows).map(row => ({...row,Channel:key==='dl_trials'?'PDSCH':'PUSCH'}))),
+    ];
     const trafficRows = recent(metricRows.flatMap(row => {
       const rows = [];
       if (row.dl_goodput_mbps !== null || row.dl_offered_mbps !== null) rows.push({Slot:row.slot,UE:row.ueid,Direction:'DL','Offered Mbps':row.dl_offered_mbps,'Goodput Mbps':row.dl_goodput_mbps,MCS:row.dl_mcs,'Rank / Layers':row.dl_rank_display ?? 'unavailable',PRBs:row.dl_prbs,Symbols:row.dl_symbol_start === null ? 'unavailable' : `${row.dl_symbol_start}–${row.dl_symbol_end}`});
@@ -21007,6 +21020,8 @@ window.addEventListener('DOMContentLoaded', function () {
     ];
     const waveformQualityRows = qualitySourceRows.map(([channel,direction,row]) => ({
       Channel:channel, Direction:direction, Slot:firstValue(row,['Slot']), UE:firstValue(row,['UE']),
+      'Sweep point':firstValue(row,['Sweep point']), 'Configured SNR (dB)':firstValue(row,['Configured SNR (dB)']),
+      'SSB index / observation':firstValue(row,['SSB index','Observation ID']),
       'EVM rms':firstValue(row,['EVM rms','EVM']), 'EVM percent':firstValue(row,['EVM percent']),
       'EVM applicable':firstValue(row,['EVM applicable']), 'NMSE dB':firstValue(row,['NMSE dB']),
       'EVM reference source':firstValue(row,['EVM reference source']),
@@ -21014,12 +21029,17 @@ window.addEventListener('DOMContentLoaded', function () {
       'NMSE scoring available':firstValue(row,['NMSE scoring available']),
       'NMSE reference source':firstValue(row,['NMSE reference source']),
       'Channel estimate available':firstValue(row,['Channel estimate available']),
+      'Channel estimate applicable':firstValue(row,['Channel estimate applicable']),
       'Channel estimate source':firstValue(row,['Channel estimate source']),
       'Equalization available':firstValue(row,['Equalization available']),
+      'Equalization applicable':firstValue(row,['Equalization applicable']),
       'Observation samples':firstValue(row,['Observation start sample']) === null ? null : `${firstValue(row,['Observation start sample'])}–${firstValue(row,['Observation end sample'])}`,
+      'Observation scope':firstValue(row,['Observation scope']),
       'Sample rate (Hz)':firstValue(row,['Observation sample rate (Hz)']),
-      'Waveform executed':firstValue(row,['Runtime waveform used']),
-      'Waveform hash':firstValue(row,['Waveform hash']), Status:firstValue(row,['Status']),
+      'Waveform executed':firstValue(row,['Waveform executed','Runtime waveform used']),
+      'Waveform hash':firstValue(row,['Waveform hash']),
+      'Waveform hash plane':firstValue(row,['Waveform hash plane']),
+      'Evidence notes':firstValue(row,['Evidence notes']), Status:firstValue(row,['Status']),
     }));
     const dlSynchronizationRows = [
       ...recent(controlPreviews.pbch_trials).map(row => ({
@@ -21084,7 +21104,8 @@ window.addEventListener('DOMContentLoaded', function () {
       {id:'dl_sync', title:'DL synchronization detection and applied compensation', columns:['Stage','Slot','UE','Injected CFO (Hz)','Estimated CFO (Hz)','Estimate availability','Estimator / source','Applied CFO correction (Hz)','Correction source','Residual CFO (Hz)','Residual CFO status','Timing estimate (samples)','Applied timing correction (samples)','Residual timing error (samples)','Timing status / policy','Status'], rows:dlSynchronizationRows, sourcePath:'received SSB/PBCH + TRS + PDSCH synchronization evidence'},
       {id:'ul_sync', title:'UL synchronization detection, timing advance and compensation', columns:['Stage','Slot','UE','Frequency estimate enabled','Injected CFO (Hz)','Estimated CFO (Hz)','Estimate valid','Estimator / source','Raw timing (samples)','Propagation timing (samples)','Injected timing (samples)','Timing error (samples)','Applied timing correction (samples)','Proposed RAR TA command','TA evidence role','Timing source','Status'], rows:ulSynchronizationRows, sourcePath:'received PRACH + SRS + PUSCH synchronization evidence'},
       {id:'ssb_measurements', title:'SSB receiver measurements', columns:['Slot','Cell','SSB index','Configured SNR (dB)','SS-RSRP (dBm)','SS-RSRP (dB re unit Es)','SS-SINR (dB)','EVM','NMSE dB','Power reference plane','SS measurement status'], rows:recent(controlPreviews.pbch_trials), sourcePath:selectedPath(controlSelection.pbch_trials)},
-      {id:'waveform_quality', title:'Waveform quality by physical channel', columns:['Channel','Direction','Slot','UE','EVM rms','EVM percent','EVM applicable','EVM reference source','EVM status','NMSE dB','NMSE scoring available','NMSE reference source','Channel estimate available','Channel estimate source','Equalization available','Observation samples','Sample rate (Hz)','Waveform executed','Waveform hash','Status'], rows:waveformQualityRows, sourcePath:'exact per-channel receiver trial rows; unavailable fields are not substituted'},
+      {id:'waveform_quality', title:'Waveform quality by physical channel', columns:['Channel','Direction','Slot','UE','Sweep point','Configured SNR (dB)','SSB index / observation','EVM rms','EVM percent','EVM applicable','EVM reference source','EVM status','NMSE dB','NMSE scoring available','NMSE reference source','Channel estimate applicable','Channel estimate available','Channel estimate source','Equalization applicable','Equalization available','Observation samples','Observation scope','Sample rate (Hz)','Waveform executed','Waveform hash','Waveform hash plane','Evidence notes','Status'], rows:waveformQualityRows, sourcePath:'exact per-channel receiver trial rows; RMS EVM × 100 is percent; decision-directed and received-pilot EVM are not RF-conformance measurements; sample intervals are [start,end)'},
+      {id:'receiver_criteria', title:'Recorded receiver acceptance / qualification criteria', columns:['Channel','Slot','UE','PSS threshold','SSS threshold','Detection threshold','Detection threshold source','Minimum resource coverage','NMSE qualification limit (dB)','Decode acceptance','Receiver evidence usable','TRS runtime usable','Qualification passed','Detector qualification','Target false-alarm probability','Qualification criteria','Status'], rows:criteriaRows, sourcePath:'actual retained criteria; correlation/NMSE limits are receiver or project choices, not universal 3GPP limits; a target probability is not a measured probability; blank legacy thresholds require new producer evidence'},
       {id:'prach_rach', title:'Completed RA attempt summaries — individual Msg1 observations are shown separately', columns:['Frame','Slot','UE','Configured SNR (dB)','TX preamble (audit)','Detected preamble','Detection attempted','Preamble detected','Metric','Threshold','Peak/noise (dB)','Peaks above threshold','Missed detection','False alarm','False alarm definition','DTX','Qualification status','Status'], rows:recent(controlPreviews.prach_trials), sourcePath:selectedPath(controlSelection.prach_trials)},
       {id:'prach_timing', title:'PRACH timing / RAR timing advance', columns:['Slot','UE','Detected preamble','Raw timing (samples)','Propagation timing (samples)','PRACH sample rate (Hz)','Timing valid','Timing source','RAR TA command','TA NTA (Tc units)','TA (samples)','TA (us)','TA source','Msg3 TA applied','TA out of range'], rows:recent(controlPreviews.prach_trials), sourcePath:selectedPath(controlSelection.prach_trials)},
       {id:'prach_identity', title:'PRACH Msg1 identity / beam / timing-frequency evidence', columns:['UE','Frame','Slot in frame (0-based)','Absolute slot (0-based)','Associated SSB beam','Associated SSB measurement dB','SSB/beam authority','Msg1 beam policy','Root sequence index (RSI)','TX preamble','Strongest detected preamble','Received preamble set','Received set available','Target preamble missed','False alarm','False alarm applicability','Detection population','Detection metric','Threshold','Frequency estimate enabled','Detected frequency offset Hz','Frequency estimate valid','Frequency estimator','Raw timing samples','Propagation timing samples','Injected timing samples','Timing error samples','Timing source','RAR TA command','TA role','Timing sample rate Hz','RA-RNTI','Status'], rows:msg1Rows, sourcePath:selectedPath(procedureSelection.msg1_detection)},
@@ -21097,14 +21118,14 @@ window.addEventListener('DOMContentLoaded', function () {
       {id:'rrc_parameters', title:'RRC setup parameters decoded for the UE', columns:['UE','RNTI','Temporary C-RNTI','Final C-RNTI','RRC transaction ID','SRB1 LCID','RRC setup request decoded','RRC setup decoded','SRB1 installed','RRC setup-complete CRC','RRC setup-complete decoded','Decoded UE identity','RRC connected','RA complete'], rows:recent(controlPreviews.prach_trials), sourcePath:selectedPath(controlSelection.prach_trials)},
       {id:'initial_access', title:'Acquisition / Initial Access observations — not an attachment verdict', columns:['Procedure','Frame','Slot','Slot convention','Endpoint','Outcome','Status'], rows:initialAccessRows, sourcePath:'canonical PBCH + received Msg1 + completed RA attempt rows'},
       {id:'beam_state', title:'SSB / CSI beam-management state and TCI activation', columns:['Event #','UE','Slot','From','Event','To','Measured RS/beam','Legacy RSRP column (unit not inferred)','Measured SS-RSRP (dB re unit Es)','Measured power unit','Power reference plane','Measured SINR','Activated TCI state','Geometry oracle used','Source evidence','Selection authority'], rows:beamStateRows, sourcePath:selectedPath(procedureSelection.beam_state)},
-      {id:'beam', title:'Beam / Precoding', columns:['Slot','UE','Direction','Beamforming applied','Explicit weights applied','Application stage','Applied beam','Requested PMI/TPMI','PMI request source','Applied PMI/TPMI','Applied PMI status','Precoder match','Precoder SHA','Applied beam gain dB','Best measured beam','Best beam gain dB','Beam gap dB'], rows:beamRows, sourcePath:'canonical DL + UL trial precoder fields'},
+      {id:'beam', title:'Beam / Precoding', columns:['Slot','UE','Direction','Bootstrap grant','Beamforming applied','Explicit weights applied','Application stage','Applied beam','Requested PMI/TPMI','PMI request source','Applied PMI/TPMI','PMI basis','Applied PMI status','Precoder match','Matrix identity match','Precoder domain','Precoder SHA','CSI resource applied','TCI state ID','TCI status','Projection candidates','Best projection index','Best projection power (dB)','Selected projection power (dB)','Projection gap (dB)','Projection source'], rows:beamRows, sourcePath:'executed matrices and received control; post-hoc Hest projection scores are not antenna gain or an executed CSI beam sweep; absent scalar PMI is valid for explicit-matrix bootstrap grants'},
       {id:'pdcch', title:'Connected-mode PDCCH / DCI blind detection (RA PDCCH is shown above)', columns:['Slot','UE','Configured SNR (dB)','RNTI','CORESET ID','Search-space ID','Blind search enabled','Candidates available','Candidates attempted','Blind decodes','Selected candidate','Selected flat index','AggLevel','Decoded DCI format','DCI bits','CRC RNTI','Decode ok','CRC pass','Detection attempted','Missed detection','False alarm','False alarm definition','DTX','Status'], rows:recent(controlPreviews.pdcch_trials), sourcePath:selectedPath(controlSelection.pdcch_trials)},
       {id:'pdcch_hypotheses', title:'Connected-mode PDCCH receiver hypothesis evidence', columns:['Slot','UE','Blind decode source','Hypothesis AL vector','Hypothesis decode vector','Hypothesis SINR vector (dB)'], rows:recent(controlPreviews.pdcch_trials), sourcePath:selectedPath(controlSelection.pdcch_trials)},
       {id:'pucch', title:'Connected-mode PUCCH / UCI detection and DTX', columns:['Slot','UE','Configured SNR (dB)','Format','Bits','Detection attempted','Detection outcome','Metric','Threshold','Threshold source','Decode ok','CRC applicable','CRC outcome','DTX','Missed feedback','False ACK','False NACK','Missed SR','False SR','Status'], rows:recent(controlPreviews.pucch_trials), sourcePath:selectedPath(controlSelection.pucch_trials)},
       {id:'pdsch', title:'Connected-mode PDSCH / DL-SCH (RA Msg2/Msg4 are shown above)', columns:['Slot','UE','MCS','Modulation','MCS mode','MCS source','LA applied','Scheduler CQI used','LA MCS','Measured SINR dB','CRC pass'], rows:recent(dataPreviews.dl_trials), sourcePath:selectedPath(linkSelection.dl)},
       {id:'pusch', title:'Connected-mode PUSCH / UL-SCH (RA Msg3 is shown above)', columns:['Slot','UE','MCS','Modulation','MCS mode','MCS source','LA applied','Scheduler CQI used','LA MCS','Measured SINR dB','CRC pass'], rows:recent(dataPreviews.ul_trials), sourcePath:selectedPath(linkSelection.ul)},
       {id:'csi', title:'CSI / CSI-RS measurements and separate scheduling objective', columns:['Slot','UE','Cell','CSI-RSRP dBm','CSI-RSRP (dB re unit occupied-RE Es)','CSI-RSSI (dB re unit occupied-RE Es)','CSI-RSRQ dB','RSRP RX branch (1-based)','Power unit','Power reference plane','CSI-SINR dB','SINR source','SINR plane','Rank/PMI objective dB','Objective source','Status'], rows:csiRows, sourcePath:'air_interface/csv/csi_rs_trials.csv'},
-      {id:'csi_sync', title:'CSI-RS synchronization — independent pre/post-front-end planes', columns:['Slot','UE','Plane','Timing estimate (samples)','Timing applied (samples)','Demodulated samples','Estimated CFO (Hz)','Applied CFO (Hz)','CFO status','CFO estimator','Sample domain','Source'], rows:csiSyncRows, sourcePath:'air_interface/csv/csi_rs_trials.csv; measured estimates, not injected offsets or residuals'},
+      {id:'csi_sync', title:'CSI-RS synchronization — independent pre/post-front-end planes', columns:['Slot','UE','Plane','Timing estimate (samples)','Timing applied (samples)','Search offsets (samples)','Timing hypotheses','Timing search scope','Demodulated samples','Estimated CFO (Hz)','Applied CFO (Hz)','CFO status','CFO estimator','Sample domain','Source'], rows:csiSyncRows, sourcePath:'air_interface/csv/csi_rs_trials.csv; offsets are relative to capture start; a one-hypothesis search is fixed alignment, not timing acquisition'},
       {id:'csi_channel', title:'CSI-RS independent nominal-channel error — separate from pilot residual and RF EVM', columns:['Slot','UE','Independent nominal-channel NMSE dB','Pilot reconstruction residual dB','Reference plane','Compared complex values','Measured resources','Scope','Scoring mode','Paired resource CSV'], rows:csiChannelRows, sourcePath:'air_interface/csv/csi_rs_trials.csv; channel_estimation/csv/csirs_*.csv'},
       {id:'csi_report', title:'Received CSI-UCI / scheduler rank admission', columns:['UE','RNTI','Report source slot','CSI reference-resource slot','Reference-slot authority','Report due slot','Delivered slot','Delivery status','UCI transport','UCI decode','UCI CRC','CRI','RI','PMI','LI','CQI','CSI SINR dB','SINR wire status','Selected MCS','Modulation','Scheduler rank','Spatial decision held','Rank confirmations','Required confirmations','Rank update','MCS authority','Measurement authority','Processed'], rows:csiReportRows, sourcePath:selectedPath(procedureSelection.csi_report)},
       {id:'qcl_tci', title:'PDSCH received QCL / TCI binding', columns:['Slot','UE','QCL status','QCL type','QCL source RS','QCL source resource','QCL source slot','QCL available sample','QCL timing prior used','QCL timing prior samples','QCL DMRS delay residual','QCL measurement status','TCI state ID','TCI codepoint','TCI status','TCI initialization source'], rows:recent(dataPreviews.dl_trials), sourcePath:selectedPath(linkSelection.dl)},
@@ -21112,7 +21133,7 @@ window.addEventListener('DOMContentLoaded', function () {
       {id:'srs_phase', title:'Received SRS common-phase evolution (not maximum Doppler spread)', columns:['Slot','UE','Matched-pilot common phase rate (Hz; not Doppler spread)','Unaliased common-phase half-width (Hz)','Pilot phase pairs','Matched pilot channel values','Pilot observation separation (s)','Previous pilot time (s)','Current pilot time (s)','Pilot phase observation scope','Pilot phase history status','Pilot phase measurement status','Doppler-spread measurement status'], rows:recent(controlPreviews.srs_trials), sourcePath:selectedPath(controlSelection.srs_trials)},
       {id:'channel_angles', title:'Executed CDL channel-profile AoD / ZoD / AoA / ZoA', columns:['Direction','Path/tap','Delay s','Path power dB','AoD azimuth deg','ZoD deg','AoA azimuth deg','ZoA deg','Coordinate frame','Angle status','Source'], rows:channelAngleRows, sourcePath:selectedPath(procedureSelection.channel_angles)},
       {id:'trs', title:'TRS scheduler usability / tracking / qualification', columns:['Slot','UE','Metric','Est Doppler Hz','Scheduler usable','Tracking state','Qualification pass','Status','Update'], rows:recent(controlPreviews.trs_trials), sourcePath:selectedPath(controlSelection.trs_trials)},
-      {id:'traffic', title:'Traffic / Goodput', columns:['Slot','UE','Direction','Offered Mbps','Goodput Mbps','MCS','Rank / Layers','PRBs','Symbols'], rows:trafficRows, sourcePath:'executed PDSCH/PUSCH trial rows; rank/layers are transmitted values, not CSI RI or configured capability'},
+      {id:'traffic', title:'Traffic / Goodput', columns:['Slot','UE','Direction','Offered Mbps','Goodput Mbps','MCS','Rank / Layers','PRBs','Symbols'], rows:trafficRows, sourcePath:'executed PDSCH/PUSCH trials; symbols are zero-based inclusive allocation bounds, not all-data REs; control, DM-RS, other RS and TDD guard/UL resources are not PDSCH payload; rank/layers are transmitted values'},
     ];
     const channelTables = tableSpecs.map(spec => {
       const source = spec.sourcePath ? `<span class="source-link mono" title="${esc(spec.sourcePath)}">${esc(spec.sourcePath)}</span>` : '<span class="small">exact runtime table not published yet</span>';

@@ -42,6 +42,66 @@ def test_pucch_timing_does_not_require_csi_cfo_contract(tmp_path):
     assert "not_CFO" in rows[0]["Scope"] and path.read_bytes() == original
 
 
+def _prior_pucch_timing(row, evidence):
+    evidence.update(TimingOffsetSamples=None,
+                    TimingSource="prior_received_UL_pilot_constant_phase_prediction",
+                    TimingValueRole="predicted_from_prior_measurement_not_current_timing_measurement",
+                    ReferenceSource="SRS", ReferenceAvailableAtSample=900,
+                    ReceiverTimingAvailableAtSample=900, ReferenceAvailableDuringBuffer=False,
+                    ReferenceAgeSlots=4, ReferenceSourceAbsoluteSlot0=40, TargetAbsoluteSlot0=44)
+    row.update(EstimatedTimingOffsetSamples="NaN", TimingEstimateUsed=0,
+               TimingEstimateSource=evidence["TimingSource"])
+
+
+def test_prior_pucch_clock_is_not_a_missing_fresh_estimate(tmp_path):
+    path = _pucch_timing_archive(tmp_path, _prior_pucch_timing)
+    original = path.read_bytes()
+    result = audit_trial_values(tmp_path, arithmetic=True)[0]
+    assert result["CheckStatus"] == "PASS_source_reconciliation_only"
+    assert path.read_bytes() == original  # No retrospective measurement or relabeling.
+
+
+def test_prior_pilot_completed_inside_buffer_is_causal(tmp_path):
+    def mutate(row, evidence):
+        _prior_pucch_timing(row, evidence)
+        evidence.update(ReferenceAvailableAtSample=1100, ReceiverTimingAvailableAtSample=1100,
+                        ReferenceAvailableDuringBuffer=True)
+    _pucch_timing_archive(tmp_path, mutate)
+    assert audit_trial_values(tmp_path, arithmetic=True)[0]["CheckStatus"] == "PASS_source_reconciliation_only"
+
+
+@pytest.mark.parametrize("field,value", [
+    ("ReferenceAvailableAtSample", 1257), ("ReceiverTimingAvailableAtSample", 901),
+    ("ReferenceAgeSlots", 0), ("ReferenceAgeSlots", 3), ("ReferenceSourceAbsoluteSlot0", 45),
+    ("TargetAbsoluteSlot0", 45), ("ReferenceAvailableDuringBuffer", True),
+    ("TimingOffsetSamples", 16), ("TimingValueRole", "fresh_received_timing"),
+    ("ReferenceSource", "injected_timing_truth")])
+def test_prior_pucch_prediction_rejects_wrong_causality_or_measurement_claim(tmp_path, field, value):
+    def mutate(row, evidence):
+        _prior_pucch_timing(row, evidence)
+        evidence[field] = value
+    _pucch_timing_archive(tmp_path, mutate)
+    assert audit_trial_values(tmp_path, arithmetic=True)[0]["CheckStatus"] == "FAIL_source_reconciliation"
+
+
+@pytest.mark.parametrize("field,value", [
+    ("TimingEstimateUsed", 1), ("EstimatedTimingOffsetSamples", 16)])
+def test_prior_pucch_export_cannot_claim_fresh_measurement(tmp_path, field, value):
+    def mutate(row, evidence):
+        _prior_pucch_timing(row, evidence)
+        row[field] = value
+    _pucch_timing_archive(tmp_path, mutate)
+    assert audit_trial_values(tmp_path, arithmetic=True)[0]["CheckStatus"] == "FAIL_source_reconciliation"
+
+
+def test_prior_pucch_missing_source_remains_unverified(tmp_path):
+    def mutate(row, evidence):
+        _prior_pucch_timing(row, evidence)
+        evidence.pop("ReferenceSource")
+    _pucch_timing_archive(tmp_path, mutate)
+    assert audit_trial_values(tmp_path, arithmetic=True)[0]["CheckStatus"] == "NOT_EVALUATED_missing_source_evidence"
+
+
 @pytest.mark.parametrize("field,value", [
     ("AppliedTimingCorrectionSamples", 0), ("ReceiverDemodulatedSampleCount", 256),
     ("ReceiverInputSampleCount", 255), ("ReceiverTimingOracleUsed", 1),

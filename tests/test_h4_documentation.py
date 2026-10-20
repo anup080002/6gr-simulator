@@ -27,8 +27,41 @@ def test_source_atlas_targets_exist():
         assert guide.source_payload(p)['path'] == p
 
 
+def test_algorithm_source_owners_exist_and_are_allowlisted():
+    text = (GUIDE / 'chapters.js').read_text(encoding='utf-8')
+    atlas = text.split('Object.assign(FILES,{', 1)[1].split('\n});', 1)[0]
+    paths = re.findall(r"\w+:'([^']+)'", atlas)
+    assert len(paths) >= 25
+    for path in paths:
+        assert (ROOT / path).is_file()
+        if path.startswith('apps/'):
+            # App-source links explicitly open committed GitHub main.
+            with pytest.raises(ValueError):
+                guide.source_payload(path)
+        else:
+            assert guide.source_payload(path)['path'] == path
+
+
+def test_algorithm_script_loaded_before_navigation():
+    html = (GUIDE / 'index.html').read_text(encoding='utf-8')
+    assert html.index('chapters.js') < html.index('guide.js')
+    text = (GUIDE / 'chapters.js').read_text(encoding='utf-8')
+    assert text.index('window.H4Guide=') < text.index('G.initMethodChapter=')
+
+
+def test_detailed_guide_is_read_only_not_a_simulation_launcher():
+    text = (GUIDE / 'chapters.js').read_text(encoding='utf-8')
+    assert 'G.teachingMath=' in text
+    assert 'not a mandated 3GPP formula' in text
+    assert 'diagnostic, not frozen-source primary qualification' in text
+    assert "fetch(" not in text
+    assert 'XMLHttpRequest' not in text
+    assert 'localStorage' not in text
+
+
 @pytest.mark.parametrize('path', ['../README.md', 'docs/../README.md', '.git/config',
     'logs/run.csv', 'results/test.csv', 'C:/Windows/win.ini', '/etc/passwd',
+    'scripts/run_focused_lls_repairs.m',
     'docs/lls/h4_100mhz_guide/serve.py:stream', 'docs/lls/h4_100mhz_guide/reference.json'])
 def test_source_allow_list(path):
     with pytest.raises((ValueError, FileNotFoundError)):

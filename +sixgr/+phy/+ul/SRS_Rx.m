@@ -255,6 +255,14 @@ info.CarrierInfo = cinfo;
 info.OFDMInfo = ofdmInfo;
 info.SRSInfo = srsInfo;
 info.ChannelEstimation = estInfo;
+if ~isfield(info.ChannelEstimation,'EngineUsed') && ~isempty(Hest)
+    info.ChannelEstimation.EngineUsed="nrChannelEstimate_received_SRS_per_resource";
+    if logical(sixgr.util.structGet(estInfo,'PrimaryEstimatorFallbackUsed',false))
+        info.ChannelEstimation.EngineUsed="sixgr.phy.rx.channelEstimate_received_SRS_after_primary_failure";
+    elseif localSRSFrequencyHoppingEnabled(srs)
+        info.ChannelEstimation.EngineUsed="nrChannelEstimate_received_SRS_per_hop";
+    end
+end
 info.NoiseVariance = noiseStatus;
 info.OFDMNoiseTransform = sixgr.util.structGet(ofdmInfo, "NoiseTransform", struct());
 info.NoiseVarianceTransform = noiseTransformInfo;

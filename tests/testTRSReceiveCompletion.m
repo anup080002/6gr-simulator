@@ -7,6 +7,11 @@ cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
 [baseline,r]=sixgr.link.runTRSTracking(cfg,"SNR_dB",12);
 assert(~baseline.Crash && ~baseline.Skipped,"%s",baseline.FailureReason);
 assert(baseline.DetectionAttempted && baseline.RuntimeStageCount==5);
+criteria=jsondecode(baseline.TRSQualificationCriteriaJSON);
+assert(~criteria.StandardMandatedThresholds && criteria.RuntimeCoupled && ...
+    ~criteria.TimingErrorGateApplied && ~criteria.FrequencyErrorGateApplied && ...
+    criteria.ChannelNMSEThreshold_dB==baseline.ChannelNMSEThreshold_dB && ...
+    baseline.StrictReceiverEvidenceOk==baseline.TRSRuntimeEvidenceUsable);
 x=r.Observation.readComplete();
 p=r.Prepared;
 origin=r.Observation.StartSample;

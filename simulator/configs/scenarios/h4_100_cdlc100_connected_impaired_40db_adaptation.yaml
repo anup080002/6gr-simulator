@@ -21,9 +21,11 @@ meta:
 # are retained; they are not shortened or bypassed to force adaptation.
 run_control:
   # Completed-slot checkpoints retain PHY/protocol state, not just CSVs.
-  # A checkpoint after slot 40 continues with slot 41 (one-based runtime).
+  # Save every completed slot: after slot 49 resumes with slot 50. This is
+  # an execution/recovery policy, not a change to channel/RF or radio clocks.
+  # Already running MATLAB instances retain their loaded checkpoint cadence.
   runtime_checkpoint_enable: true
-  checkpoint_every_slots: 5
+  checkpoint_every_slots: 1
   total_slots: 100
   total_time_ms: 50
   measurement_slots: 100
@@ -42,3 +44,7 @@ random_access:
 
 output:
   profile: h4_100_cdlc100_connected_impaired_40db_adaptation
+  # Execution diagnostics/display only. Measurements and terminal exports
+  # remain complete; the first and final completed slots always publish.
+  execution_stage_profile_enabled: true
+  live_csv_png_interval_slots: 5

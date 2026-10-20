@@ -7,10 +7,25 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 from scripts.audit_lls_slot_window import audit, evaluate, load_plan
 
 PLAN = Path(__file__).resolve().parents[1] / "simulator/configs/validation/h4_100_slot40_60.yaml"
+
+
+def test_h4_checkpoint_policy_preserves_every_completed_slot_and_radio_horizon():
+    """Configuration guard, not proof of an executed checkpoint or PHY pass."""
+    plan = load_plan(PLAN)
+    root = Path(__file__).resolve().parents[1]
+    scenario = yaml.safe_load((root / plan["scenario_config"]).read_text(encoding="utf-8"))
+    control = scenario["run_control"]
+    assert control["runtime_checkpoint_enable"] is True
+    assert control["checkpoint_every_slots"] == 1
+    assert control["total_slots"] == plan["expected_horizon"] == 100
+    assert control["total_time_ms"] == 50
+    assert scenario["simulation"]["random_seed"] == 20260927
+    assert not control.get("runtime_checkpoint_resume_from")
 
 
 def fixture():

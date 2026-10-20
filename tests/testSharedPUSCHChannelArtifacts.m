@@ -408,6 +408,9 @@ if independentSharedHARQ && ~separatePUCCH
         state.TestExpectedSharedACK);
 end
 if separatePUCCH
+    assert(isfield(state,'TestCoincidentCompletionBatch') && state.TestCoincidentCompletionBatch, ...
+        'test:MissingSameDeadlineTransportCoverage', ...
+        'The regression must actually complete PUSCH and PUCCH in one callback batch.');
     assert(isempty(state.SharedPUSCHHARQDecisionAuditTable) && ...
         numel(state.SharedPUSCHHARQFeedbackReceipts)==1 && ...
         state.TestSharedHARQReceived && state.DLHarq.Stats.Tx==1 && ...
@@ -477,8 +480,23 @@ end
 end
 
 function state=localEvents(state,items)
+if state.TestIndependentCompletion
+    if state.TestSeparatePUCCH && any(string({items.Kind})=="PUSCH") && ...
+            any(string({items.Kind})=="PUCCH")
+        state.TestCoincidentCompletionBatch=true;
+        fprintf('SEPARATE_TRANSPORT_SAME_DEADLINE_BATCH sample=%d kinds=%s\n', ...
+            state.SharedWaveformStream.Events.NextSampleIndex, ...
+            strjoin(string({items.Kind}),','));
+    end
+    % Use the SAME post-batch re-arming boundary as the full coordinator.
+    state=sixgr.truth.completeSharedReceiverBatch(state,items,@localCompleteEvents);
+else
+    state=localCompleteEvents(state,sixgr.truth.orderSharedReceiverCompletions(items));
+end
+end
+
+function state=localCompleteEvents(state,items)
 owner=state.SharedWaveformStream;
-items=sixgr.truth.orderSharedReceiverCompletions(items);
 for item=items
     if item.Kind=="PUSCHReceiveOnly"
         assert(state.TestUnconsumedULCommand);

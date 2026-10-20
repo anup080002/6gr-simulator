@@ -56,6 +56,8 @@ if strlength(slotCheckpoint)>0
     executionOptions.SlotCheckpointPath=slotCheckpoint;
     executionOptions.SlotCheckpointRepairReason=string( ...
         scfg.get('run_control.runtime_checkpoint_repair_reason',''));
+    executionOptions.SlotCheckpointOperationalSettings= ...
+        checkpointLineage.RequestedOperationalSettings;
     % Preserve the exact original scientific/config identity for pending
     % received-control/HARQ bindings. Operational restart input is retained
     % separately in the lineage, not substituted for the original YAML hash.
@@ -2667,6 +2669,8 @@ cfg = sixgr.lls6g.buildInternalConfig(scfg, runFolder);
 if isfield(executionOptions,'SlotCheckpointPath')
     cfg.run.runtimeCheckpointResumeFrom=executionOptions.SlotCheckpointPath;
     cfg.run.runtimeCheckpointRepairReason=executionOptions.SlotCheckpointRepairReason;
+    cfg=sixgr.runtime.SlotCheckpoint.applyOperationalSettings( ...
+        cfg,executionOptions.SlotCheckpointOperationalSettings);
 end
 cfg.run.runTag = char(string(runTag));
 cfg.run.executionID = char(executionIdentity.ExecutionID);
