@@ -31,6 +31,7 @@ classdef CoupledWaveformStream < handle
         PDCCHResourceLedger = struct()
         CommonRAReservations = sixgr.truth.CommonRAResourceCalendar()
         PUSCHReceiveOnlyCompletions = cell(0,1)
+        PUSCHReceiveOnlyArchives = cell(0,1)
         ScheduledControlRegistrations = cell(0,1)
         UnselectedPUCCHRegistrations = cell(0,1)
         UnselectedPUCCHProducers = cell(0,1)
@@ -154,11 +155,8 @@ classdef CoupledWaveformStream < handle
                     prepared.PhysicalWaveformPlane~="physical_antenna_"+unit+"_before_shared_tx_rf"
                 error('sixgr:truth:SharedRAPreparationAuthority','RA samples need physical antenna/power authority on the shared clock.');
             end
-            first=prepared.StartTime_s*obj.SampleRateHz;
-            if ~isfinite(first)||abs(first-round(first))>8*eps(max(1,abs(first)))
-                error('sixgr:truth:SharedRAOriginOffClock','Prepared RA starts off the physical sample clock.');
-            end
-            first=round(first); samples=prepared.PhysicalWaveform;
+            first=sixgr.phy.ra.preparedStageTransmitStartSample(prepared);
+            samples=prepared.PhysicalWaveform;
             if prepared.Direction=="UL"
                 tx="ue_"+ue; rx="gnb_"+link.Cell+"_rx";
             else
@@ -682,9 +680,37 @@ classdef CoupledWaveformStream < handle
             assert(isscalar(id) && ~ismissing(id) && strlength(id)>0, ...
                 'sixgr:truth:InvalidPUSCHReceiveOnlyObservationID','Use one retained receive-only observation identity.');
             hits=find(cellfun(@(x)x.Context.ObservationID==id,obj.PUSCHReceiveOnlyCompletions));
+            if isempty(hits)
+                archived=find(cellfun(@(x)x.ObservationID==id,obj.PUSCHReceiveOnlyArchives));
+                if isscalar(archived)
+                    item=sixgr.truth.SharedReceiveOnlyEvidence.read(obj.PUSCHReceiveOnlyArchives{archived},"Item");
+                    return;
+                end
+            end
             assert(isscalar(hits),'sixgr:truth:PUSCHReceiveOnlyObservationNotCompleted', ...
                 'Only this physical owner''s completed observation can enter the receiver.');
             item=obj.PUSCHReceiveOnlyCompletions{hits};
+        end
+        function receipt=archivePUSCHReceiveOnlyCompletion(obj,id,root,result)
+            id=string(id);
+            assert(~any(cellfun(@(x)x.ObservationID==id,obj.PUSCHReceiveOnlyArchives)), ...
+                'sixgr:truth:ReceiveOnlyAlreadyArchived','A completed observation is archived once.');
+            hit=find(cellfun(@(x)x.Context.ObservationID==id,obj.PUSCHReceiveOnlyCompletions));
+            assert(isscalar(hit),'sixgr:truth:PUSCHReceiveOnlyObservationNotCompleted', ...
+                'Only the physical owner can retire its completed capture.');
+            receipt=sixgr.truth.SharedReceiveOnlyEvidence.write(root,obj.PUSCHReceiveOnlyCompletions{hit},result);
+            % Publish the verified durable owner before releasing any raw
+            % capture. Disk/validation failure leaves the original intact.
+            obj.PUSCHReceiveOnlyArchives{end+1,1}=receipt;
+            % Delete a row, preserving the N-by-1 queue shape. Linear
+            % deletion of the only cell leaves 1-by-0; the next {end+1,1}
+            % append would then create an empty phantom completion.
+            obj.PUSCHReceiveOnlyCompletions(hit,:)=[];
+        end
+        function evidence=receiveOnlyEvidenceStorage(obj)
+            evidence=struct('InMemoryCompletionCount',numel(obj.PUSCHReceiveOnlyCompletions), ...
+                'ArchivedCompletionCount',numel(obj.PUSCHReceiveOnlyArchives), ...
+                'ArchiveBytes',sum(cellfun(@(r)r.EvidenceBytes,obj.PUSCHReceiveOnlyArchives)));
         end
         function controls=readTransmittedSchedulingControls(obj)
             % Read-only gNB scheduling authority for pre-DCI joint planning.
@@ -936,6 +962,9 @@ classdef CoupledWaveformStream < handle
                 context.TransmitterPlane=tx+":tx";
                 context.ServingCell=double(link.Cell);
             end
+            if kind=="PBCH"
+                context=sixgr.truth.compactBroadcastReceiveContext(context);
+            end
             planes=[tx+":tx","ue_"+ue+"_rx:pre_rf","ue_"+ue+"_rx:post_rf"];
             for plane=planes
                 obj.Events.observe(plane,id,first,first+prepared.NumSamples);
@@ -966,6 +995,15 @@ classdef CoupledWaveformStream < handle
                         first+horizons.ObservationEndSampleExclusive(k));
                     obj.Pending(end+1)=struct('ID',id,'Kind',"SSBOccasion",'UE',ue, ...
                         'Context',occasion,'Planes',struct('ReceiverID',{},'Observation',{},'Segments',{}));
+                end
+            end
+        end
+        function compactBroadcastContexts(obj)
+            % Also migrate legacy checkpoints in memory, never rewrite their
+            % immutable state files. Equality guards preserve frozen IQ.
+            for k=1:numel(obj.Pending)
+                if any(obj.Pending(k).Kind==["PBCH","SSBOccasion"])
+                    obj.Pending(k).Context=sixgr.truth.compactBroadcastReceiveContext(obj.Pending(k).Context);
                 end
             end
         end
@@ -1000,8 +1038,12 @@ classdef CoupledWaveformStream < handle
             validateattributes(last,{'numeric'},{'scalar','real','finite','integer','>',first});
             while obj.Events.NextSampleIndex<last
                 state.CurrentSlot=state.CurrentSlot+1;
-                [state,items]=obj.advanceSlot(state,cfg,onReceived,last);
-                completed=[completed,items]; %#ok<AGROW>
+                if nargout>1
+                    [state,items]=obj.advanceSlot(state,cfg,onReceived,last);
+                    completed=[completed,items]; %#ok<AGROW>
+                else
+                    state=obj.advanceSlot(state,cfg,onReceived,last);
+                end
             end
             assert(~any(ismember(string({obj.Pending.Kind}),["PDSCH","PUSCH","PUSCHReceiveOnly"])), ...
                 'sixgr:truth:SharedDataReceiveTailNotDrained', ...
@@ -1256,7 +1298,21 @@ classdef CoupledWaveformStream < handle
                         % callback never runs after future samples have been
                         % consumed, even if its window ends within a slot.
                         state=onReceived(state,completed(previousCount+1:end));
+                        if nargout<2
+                            % The callback has consumed/exported the exact
+                            % observations. Do not pin their IQ, prepared
+                            % waveforms and full channel coefficients until
+                            % slot end when no completion output was asked
+                            % for. Explicit two-output callers keep the
+                            % original capture contract unchanged.
+                            completed=completed([]);
+                        end
                     end
+                    % These loop temporaries otherwise survive while the
+                    % next (potentially full-slot) physical interval is
+                    % allocated. Pending observations, state and requested
+                    % returned completions retain their own ownership.
+                    clear event item p d r commandContext prepared txObservation txSamples
                 end
             end
             states=obj.Physical.channelStates();

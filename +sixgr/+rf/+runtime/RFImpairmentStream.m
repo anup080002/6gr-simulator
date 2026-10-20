@@ -13,6 +13,8 @@ classdef RFImpairmentStream < handle
         NextSampleIndex (1,1) double
         Faulted (1,1) logical = false
         LastAGCTrace struct = struct()
+        EvidenceRunId (1,1) string = ""
+        EvidenceTrialId (1,1) string = "rf_stream"
     end
     properties (Access=private)
         Applying (1,1) logical = false
@@ -26,7 +28,28 @@ classdef RFImpairmentStream < handle
         DelayState = []
     end
     methods
-        function obj=RFImpairmentStream(cfg,endpoint,direction,fs,nAnt,first,epoch,useLegacy)
+        function obj=RFImpairmentStream(cfg,endpoint,direction,fs,nAnt,first,epoch,useLegacy,evidenceIdentity)
+            % Identity is reporting context, not a PHY or qualification flag.
+            % Existing callers without a run owner retain an empty RunId;
+            % the actual endpoint/sample interval still has explicit identity.
+            if nargin<9
+                evidenceIdentity=struct('RunId',"",'TrialId',"rf_stream");
+            end
+            if ~isstruct(evidenceIdentity)||~isscalar(evidenceIdentity)|| ...
+                    ~isequal(sort(string(fieldnames(evidenceIdentity))),["RunId";"TrialId"])
+                error('RF:InvalidExecutionIdentity','Supply only explicit RunId and TrialId.');
+            end
+            for name=["RunId","TrialId"]
+                value=evidenceIdentity.(name);
+                if ~(ischar(value)||isstring(value))||~isscalar(string(value))||ismissing(string(value))
+                    error('RF:InvalidExecutionIdentity','RF identity must be scalar text.');
+                end
+            end
+            if strlength(strtrim(string(evidenceIdentity.TrialId)))==0
+                error('RF:InvalidExecutionIdentity','Declare the RF execution prefix.');
+            end
+            obj.EvidenceRunId=string(evidenceIdentity.RunId);
+            obj.EvidenceTrialId=string(evidenceIdentity.TrialId);
             validateattributes(fs,{'numeric'},{'real','scalar','finite','positive'});
             validateattributes(nAnt,{'numeric'},{'real','scalar','finite','integer','positive'});
             validateattributes(first,{'numeric'},{'real','scalar','finite','integer','nonnegative'});
@@ -71,6 +94,10 @@ classdef RFImpairmentStream < handle
             try
                 obj.LastAGCTrace=struct();
                 out=sixgr.rf.applyRFImpairmentChain(x,obj.Configuration, ...
+                    'RunId',obj.EvidenceRunId, ...
+                    'TrialId',obj.EvidenceTrialId+"/"+string(obj.Chain.Endpoint)+"/"+ ...
+                        string(obj.Chain.Direction)+"/samples_"+string(obj.NextSampleIndex)+"_"+ ...
+                        string(obj.NextSampleIndex+size(x,1)), ...
                     'SampleRateHz',obj.SampleRateHz,'Endpoint',obj.Chain.Endpoint, ...
                     'Direction',obj.Chain.Direction, ...
                     'MeasurementPoint',string(obj.Chain.Endpoint)+"_output", ...

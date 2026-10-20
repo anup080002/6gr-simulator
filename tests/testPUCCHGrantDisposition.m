@@ -66,6 +66,57 @@ assert(result.AllScheduledResolved && result.StandaloneTrialCount == 2 && ...
     ['A successfully decoded physical PUCCH occasion must resolve every ' ...
      'logical HARQ-ACK grant explicitly listed in its codebook identity set.']);
 
+% Exact IDs are necessary but insufficient if independently exported UE,
+% carrier/BWP or occasion fields contradict them. Test physical and bundled
+% logical IDs, including a failed trial that must remain observed correctly.
+for field=["UEIndex","RNTI","Slot","BaseStationID","ComponentCarrier","ActiveULBWP","SweepPointIndex"]
+    goodGrants=bundledGrants; goodTrials=bundledTrials;
+    goodGrants.(field)=ones(2,1); goodTrials.(field)=1;
+    result=sixgr.truth.classifyPUCCHGrantDisposition(goodGrants,goodTrials);
+    assert(result.AllScheduledResolved && result.StandaloneTrialCount==2);
+    wrong=goodTrials; wrong.(field)=2;
+    result=sixgr.truth.classifyPUCCHGrantDisposition(goodGrants,wrong);
+    assert(result.UnresolvedCount==2 && result.StandaloneObservedCount==0, ...
+        'A matching ID must not override inconsistent %s evidence.',field);
+    wrong.(field)=NaN;
+    result=sixgr.truth.classifyPUCCHGrantDisposition(goodGrants,wrong);
+    assert(result.UnresolvedCount==2,'Unknown identity cannot credit a received occasion.');
+    result=sixgr.truth.classifyPUCCHGrantDisposition(goodGrants,bundledTrials);
+    assert(result.UnresolvedCount==2,'Missing independent identity cannot match.');
+    % A wrong-UE success must not mask a same-UE physical failure.
+    failed=goodTrials; failed.PUCCHDecodeOk=false;
+    wrong=goodTrials; wrong.(field)=2;
+    result=sixgr.truth.classifyPUCCHGrantDisposition(goodGrants,[wrong;failed]);
+    assert(result.StandaloneFailedCount==2 && result.StandaloneTrialCount==0 && ...
+        result.AllScheduledResolved);
+end
+for field=["RunUUID","ConfigHash"]
+    goodGrants=bundledGrants; goodTrials=bundledTrials;
+    goodGrants.(field)=repmat("same",2,1); goodTrials.(field)="same";
+    result=sixgr.truth.classifyPUCCHGrantDisposition(goodGrants,goodTrials);
+    assert(result.AllScheduledResolved);
+    goodTrials.(field)="other";
+    result=sixgr.truth.classifyPUCCHGrantDisposition(goodGrants,goodTrials);
+    assert(result.UnresolvedCount==2,'Never join different run/config identities.');
+    goodTrials.(field)="";
+    result=sixgr.truth.classifyPUCCHGrantDisposition(goodGrants,goodTrials);
+    assert(result.UnresolvedCount==2,'An empty identity cannot match a known run/config.');
+    goodGrants.(field)(:)="";
+    result=sixgr.truth.classifyPUCCHGrantDisposition(goodGrants,goodTrials);
+    assert(result.AllScheduledResolved,'Legacy ID-only component provenance remains readable.');
+end
+unfinalized=bundledTrials; unfinalized.FinalizedFlag=false;
+result=sixgr.truth.classifyPUCCHGrantDisposition(bundledGrants,unfinalized);
+assert(result.UnresolvedCount==2,'An unfinished receiver row is not a disposition.');
+for field=["Placeholder","PlaceholderFlag","Fallback","FallbackFlag"]
+    proxy=bundledTrials; proxy.(field)=true;
+    result=sixgr.truth.classifyPUCCHGrantDisposition(bundledGrants,proxy);
+    assert(result.UnresolvedCount==2,'Neither alias may credit nonphysical feedback.');
+end
+proxy=bundledTrials; proxy.ApproximationMode="fast_proxy";
+result=sixgr.truth.classifyPUCCHGrantDisposition(bundledGrants,proxy);
+assert(result.UnresolvedCount==2,'Proxy evidence cannot close physical feedback grants.');
+
 terminal = grants(4,:);
 terminal.RightCensored = true;
 terminal.CensorReason = "finite_runtime_horizon_reached";

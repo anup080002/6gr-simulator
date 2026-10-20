@@ -1,0 +1,37 @@
+# Bounded production-receiver checks, NOT a statistically qualified campaign.
+schema_version: 1
+profile_id: h4_100_installed_pdcch_development_v1
+research_class: optional_research_experiment
+scope: installed_single_occasion_independent_reset_not_continuous_runtime
+scenario_path: simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_adaptation.yaml
+scenario_seed_paths: [simulation.random_seed, run_control.seed, run_control.random_seed_master, run_control.random_seed_list, rf_frontend.oscillator.seed, rf_frontend.phase_noise.seed]
+ue_index: 1
+serving_cell: 1
+absolute_slot0: 40
+guard_samples: 256
+# No preceding access/tracking waveform is replayed. Do not invent alignment.
+timing_boundary: configured_nominal_radio_occasion_no_measured_alignment
+# The authored DCI starts from the installed schema's explicit minimum values;
+# only the fields below are changed. These are codec/control observations,
+# NOT evidence that the scheduled data/feedback was actually transmitted.
+dci_field_basis: installed_schema_minima_with_explicit_overrides
+cases:
+  - id: absent_connected_control
+    signal_present: false
+    channel_seed: 730100101
+    noise_seed: 730100102
+    transmitter: {}
+  - id: present_downlink_assignment
+    signal_present: true
+    channel_seed: 730100201
+    noise_seed: 730100202
+    transmitter:
+      dci_format: '1_1'
+      fields: {mcs: 10, ndi: 1, dmrs_sequence_initialization: 1}
+  - id: present_uplink_grant
+    signal_present: true
+    channel_seed: 730100301
+    noise_seed: 730100302
+    transmitter:
+      dci_format: '0_1'
+      fields: {mcs: 10, ndi: 1, dmrs_sequence_initialization: 1}

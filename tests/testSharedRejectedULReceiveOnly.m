@@ -9,6 +9,12 @@ if nargin<2, withCSI=false; end
 if nargin<3, repeatMiss=false; end
 assert(~repeatMiss || (~withHARQ && ~withCSI),'Repeated-miss fixture owns data-only UL.');
 assert(~(withHARQ && withCSI),'Combined transport ownership requires its separate physical regression.');
+if ~withHARQ && ~withCSI
+    % Keep the out-of-window negative regression mandatory, but use an
+    % explicit truncated native waveform rather than requiring an incidental
+    % noise-correlation peak from an older calibrated-channel execution.
+    assert(testPDCCHBoundedReceiveWindow());
+end
 root=fileparts(fileparts(mfilename('fullpath')));
 output=tempname(fullfile(root,'logs')); mkdir(output);
 folder=fullfile(root,'simulator','configs','scenarios');
@@ -94,7 +100,11 @@ for slot=1:double(grant.Slot)+1
     [state,~]=owner.advanceSlot(state,cfg,@receive);
 end
 assert(isfield(state,'SharedRejectedULReceiveResults') && isscalar(state.SharedRejectedULReceiveResults));
-result=state.SharedRejectedULReceiveResults{1};
+receipt=state.SharedRejectedULReceiveResults{1};
+assert(isfield(receipt,'EvidenceMATFile') && ~isfield(receipt,'Receiver') && ...
+    ~isfield(receipt,'Observation'),'test:ReceiveOnlyDataRetained', ...
+    'Historical receiver arrays must have a durable archive, not a lifetime state copy.');
+result=sixgr.truth.readSharedRejectedULReceiveResult(state,receipt.ObservationID);
 receivers=state.SharedGNBULHARQReceivers;
 assert(isscalar(receivers) && result.ULHARQReceiverStateCommitted && ...
     ~result.ULHARQStateCommitted && ...
@@ -201,6 +211,9 @@ controlObservation=state.SharedReceivedGrantControls{1}.RejectedControlObservati
 gnbControlEvidence=state.TestGNBControls;
 save(fullfile(output,'rejected_ul_receive_only.mat'),'result','audit','controlReceiver','controlInfo', ...
     'controlObservation','gnbControlEvidence','cfg','controlCfg','resolvedScenario','resolvedControlScenario','runtimeVersion','-v7.3');
+if ~withHARQ && ~withCSI
+    localArchiveGuards(owner,receipt,result,output);
+end
 fprintf('SHARED_REJECTED_UL_RECEIVE_ONLY_PASS physical_control_rejections=1 gNB_receive_only=1 UE_UL_TX=0 DL_HARQ_commits=%d root=%s\n',withHARQ,output);
 if repeatMiss
     state=repeatMissedCommand(state,cfg,controlCfg,grant,output);
@@ -230,7 +243,19 @@ for item=items
         continue;
     end
     if item.Kind=="PUSCHReceiveOnly"
+        before=state.SharedWaveformStream.receiveOnlyEvidenceStorage();
+        assert(before.InMemoryCompletionCount==1);
+        hashes=arrayfun(@(p)sixgr.phy.waveform.WaveformHash.numeric(p.Observation.readComplete()),item.Planes);
         state=sixgr.truth.completeSharedPUSCHAfterRejectedControl(state,item.Context.ObservationID);
+        after=state.SharedWaveformStream.receiveOnlyEvidenceStorage();
+        assert(after.InMemoryCompletionCount==0 && ...
+            after.ArchivedCompletionCount==before.ArchivedCompletionCount+1 && ...
+            after.ArchiveBytes>before.ArchiveBytes,'test:ReceiveOnlyDataRetained');
+        restored=state.SharedWaveformStream.readPUSCHReceiveOnlyCompletion(item.ID);
+        assert(isequaln(restored.Context,item.Context) && ...
+            isequal(arrayfun(@(p)sixgr.phy.waveform.WaveformHash.numeric( ...
+                p.Observation.readComplete()),restored.Planes),hashes), ...
+            'test:ReceiveOnlyArchiveChangedSamples','Retirement must preserve both real observation planes exactly.');
         continue;
     end
     assert(item.Kind=="PDCCH");
@@ -272,10 +297,6 @@ for item=items
     assert(isequal(window,[0 receiver.EndSampleExclusive-receiver.StartSample-p.MinimumReceiveSamples]) && ...
         timing.AppliedCorrection_samples==window(1)+peak-1 && ~info.ReceivePaddingApplied, ...
         'The selected offset must maximize actual correlation inside the complete-symbol window, without padding.');
-    if ~state.TestWithHARQ && ~state.TestWithCSI && isempty(sixgr.util.structGet(state,'SharedReceivedGrantControls',{}))
-        assert(timing.UnboundedEstimate_samples>window(2), ...
-            'test:TimingRegressionNotExercised','The original retained stimulus must reproduce its out-of-window noise peak.');
-    end
     reject(@()sixgr.phy.dl.PDCCH_Rx(receiver.readComplete(),p.ReceiverConfig, ...
         'Carrier',p.Tx.Carrier,'PDCCH',p.Tx.PDCCH,'K',numel(p.Tx.DCIBits), ...
         'TimingSearchWindowSamples',[0 window(2)+1]), ...
@@ -369,7 +390,7 @@ for slot=double(state.CurrentSlot)+1:target+1
 end
 assert(numel(state.SharedRejectedULReceiveResults)==2 && state.ULHarq.Stats.ScheduledUL==2 && ...
     state.ULHarq.Stats.Tx==0 && isempty(state.ULHarq.getDeliveryLedger()) && isempty(owner.DataTransmissions));
-second=state.SharedRejectedULReceiveResults{2};
+second=sixgr.truth.readSharedRejectedULReceiveResult(state,state.SharedRejectedULReceiveResults{2}.ObservationID);
 current=state.SharedGNBULHARQReceivers{1};
 assert(second.Receiver.ULSCHDecodeAttempted && second.ULHARQReceiverObservation.CombiningApplied && ...
     current.Attempt.ReceiverKey==prior.Attempt.ReceiverKey && ...
@@ -409,6 +430,41 @@ job.StartSlotIndex=6;
 prepared=sixgr.truth.executeGrantPHYJob(job);
 owner.queueData(1,prepared.Result.PreparedTransmission,struct('Purpose',"unreceived_UE_control_component"));
 state.DLQueueBits(1)=state.DLQueueBits(1)+g.TBSBits;
+end
+
+function localArchiveGuards(owner,receipt,result,root)
+info=whos('receipt');
+assert(info.bytes<16384,'test:ReceiveOnlyMetadataUnbounded', ...
+    'The lifetime entry must be metadata, not receiver/sample arrays.');
+bad=receipt; bad.EvidenceSHA256=repmat("0",1,64); bad.EvidenceSHA256=join(bad.EvidenceSHA256,"");
+reject(@()sixgr.truth.SharedReceiveOnlyEvidence.read(bad,"Result"), ...
+    'sixgr:util:VerifiedMATHashMismatch');
+bad=receipt; bad.Manifest.ObservationID=bad.Manifest.ObservationID+"_other";
+reject(@()sixgr.truth.SharedReceiveOnlyEvidence.read(bad,"Item"), ...
+    'sixgr:truth:ReceiveOnlyArchiveIdentity');
+bad=receipt; bad.RootFolder=fullfile(root,'not_present');
+reject(@()sixgr.truth.SharedReceiveOnlyEvidence.read(bad,"Result"), ...
+    'sixgr:truth:ReceiveOnlyArchiveMissing');
+item=owner.readPUSCHReceiveOnlyCompletion(receipt.ObservationID);
+reject(@()sixgr.truth.SharedReceiveOnlyEvidence.write(receipt.RootFolder,item,result), ...
+    'sixgr:truth:ReceiveOnlyArchiveExists');
+incomplete=result; incomplete.ULHARQReceiverStateCommitted=false;
+reject(@()sixgr.truth.SharedReceiveOnlyEvidence.write(receipt.RootFolder,item,incomplete), ...
+    'sixgr:truth:UncommittedReceiveOnlyArchive');
+reject(@()owner.archivePUSCHReceiveOnlyCompletion(receipt.ObservationID,receipt.RootFolder,result), ...
+    'sixgr:truth:ReceiveOnlyAlreadyArchived');
+% Checkpoint serialization must preserve on-demand access without embedding
+% the retired observation buffers again in the physical owner's cache.
+path=fullfile(root,'archived_owner_roundtrip.mat');
+sixgr.util.matSave(path,struct('Owner',owner),'UseArtifactStore',false,'ForceV73',true);
+saved=sixgr.util.loadVerifiedMAT(string(path),string(sixgr.util.sha256File(path)),"Owner");
+assert(isequal(saved.Owner.receiveOnlyEvidenceStorage(),owner.receiveOnlyEvidenceStorage()));
+restored=saved.Owner.readPUSCHReceiveOnlyCompletion(receipt.ObservationID);
+for k=1:numel(item.Planes)
+    assert(isequal(restored.Planes(k).Observation.readComplete(),item.Planes(k).Observation.readComplete()));
+end
+fprintf('RECEIVE_ONLY_ARCHIVE_PASS metadata_bytes=%d file_bytes=%d samples_preserved=1 corrupt_or_missing_rejected=1\n', ...
+    info.bytes,receipt.EvidenceBytes);
 end
 
 function reject(fn,id)

@@ -22,13 +22,17 @@ inventory.MissingValidationColumns = strings(n, 1);
 inventory.FeatureState = strings(n, 1);
 inventory.PlotCanBeRegeneratedFromCSV = false(n, 1);
 inventory.AuditNotes = strings(n, 1);
+% One complete bounded scan per inventory, not one full-grid table import
+% for every visual that refers to the same channel-estimate CSV.
+diagnostic=sixgr.truth.scanPHYSignalDiagnosticCSV(fullfile( ...
+    layout.ReportCSVDir,'phy_signal_diagnostic_source.csv'));
 
 for i = 1:n
     [featureEnabled, featureState] = localFeatureState(cfg, inventory.FeatureGate(i));
     inventory.FeatureState(i) = featureState;
     [sourcePath, sourceRows, missingColumns, validated] = localResolveSource( ...
         runFolder, inventory.CandidateSourceArtifacts(i), ...
-        inventory.RequiredValidationColumns(i));
+        inventory.RequiredValidationColumns(i),diagnostic);
     inventory.ResolvedSourceArtifact(i) = sourcePath;
     inventory.SourceRowCount(i) = sourceRows;
     inventory.MissingValidationColumns(i) = missingColumns;
@@ -262,7 +266,7 @@ else
 end
 end
 
-function [resolved, rowCount, missingColumns, validated] = localResolveSource(runFolder, candidateText, requiredText)
+function [resolved, rowCount, missingColumns, validated] = localResolveSource(runFolder, candidateText, requiredText,diagnostic)
 resolved = "";
 rowCount = 0;
 missingColumns = "";
@@ -279,10 +283,17 @@ for i = 1:numel(candidates)
     if exist(fullPath, "file") ~= 2
         continue;
     end
-    try
-        T = sixgr.util.csvReadTable(fullPath, "TextType", "string");
-    catch
-        continue;
+    isDiagnostic=relativePath=="reports/csv/phy_signal_diagnostic_source.csv";
+    if isDiagnostic
+        T=diagnostic.PanelSeriesCounts;
+        present=diagnostic.Columns;
+    else
+        try
+            T = sixgr.util.csvReadTable(fullPath, "TextType", "string");
+        catch
+            continue;
+        end
+        present=string(T.Properties.VariableNames);
     end
     if numel(pieces) > 1
         T = localApplySelector(T, pieces(2));
@@ -291,10 +302,9 @@ for i = 1:numel(candidates)
         continue;
     end
     resolved = relativePath;
-    rowCount = height(T);
+    if isDiagnostic, rowCount=sum(T.RowCount); else, rowCount=height(T); end
     required = split(string(requiredText), "|");
     required = required(strlength(strtrim(required)) > 0);
-    present = string(T.Properties.VariableNames);
     missing = required(~ismember(lower(required), lower(present)));
     missingColumns = strjoin(missing, "|");
     validated = ~isempty(required) && isempty(missing);

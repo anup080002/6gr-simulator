@@ -298,7 +298,8 @@ r.AggregationLevel = localValue(r0, "AggregationLevel", NaN);
 r.CCE_Index = localValue(r0, "CCE_Index", NaN);
 r.CandidateCount = localValue(r0, ["CandidateCount","Msg2PDCCHCandidatesAttempted"], NaN);
 r.PUCCH_Format = string(localValue(r0, ["PUCCHFormat","ResolvedFormat"], ""));
-r.UCI_ACK = localValue(r0, ["ObservedAck","ExpectedAck"], NaN);
+[r.UCI_ACK,r.UCI_ACKSource] = localReceivedACK(r0);
+r.UCI_ACKValid = isfinite(r.UCI_ACK);
 r.UCI_CQI = localValue(r0, "UCI_CQI", NaN);
 r.UCI_PMI = localValue(r0, "UCI_PMI", NaN);
 r.UCI_RI = localValue(r0, "UCI_RI", NaN);
@@ -314,6 +315,29 @@ r.BeamIndex = localValue(r0, ["SelectedBeamIndex","BeamIndex"], NaN);
 r.BeamSwitchFlag = NaN;
 r.SRS_NMSE_dB = localValue(r0, "SRS_NMSE_dB", NaN);
 r.TRS_TrackingState = string(localValue(r0, "TRSValidityState", ""));
+end
+
+function [ack,source]=localReceivedACK(row)
+% TX expectation and a control CRC are not received scalar HARQ evidence.
+ack=NaN; source="no_valid_received_scalar_harq_observation";
+columns=string(row.Properties.VariableNames);
+if ismember("AckObservedValid",columns)
+    valid=localValue(row,"AckObservedValid",NaN);
+    if ~isequal(valid,1), return; end
+    names=["AckObserved","ObservedAck"];
+else
+    % Retained older per-bit receiver ledgers used ObservedAck only.
+    names="ObservedAck";
+end
+for name=names
+    if ~ismember(name,columns), continue; end
+    value=localValue(row,name,NaN);
+    if isnumeric(value) && isscalar(value) && isreal(value) && ...
+            isfinite(value) && any(value==[0 1])
+        ack=value; source=name;
+    end
+    return;
+end
 end
 
 function T = localBuildNMSEVsMeasuredSINR(trialData)
@@ -719,7 +743,8 @@ end
 function vars = localControlVars()
 vars = ["EventIndex","Frame","Slot","Timestamp_ms","EventType","UEIndex","RNTI","Direction","Status","Payload_bits", ...
     "MCS","PRBStart","PRBCount","Layers","TBSBits","HARQ_ID","NDI","RV","DCI_Format","AggregationLevel","CCE_Index","CandidateCount", ...
-    "PUCCH_Format","UCI_ACK","UCI_CQI","UCI_PMI","UCI_RI","PRACH_RootSeq","PRACH_ZeroCorr","PreambleDetected","TimingAdvance_us", ...
+    "PUCCH_Format","UCI_ACK","UCI_ACKValid","UCI_ACKSource", ...
+    "UCI_CQI","UCI_PMI","UCI_RI","PRACH_RootSeq","PRACH_ZeroCorr","PreambleDetected","TimingAdvance_us", ...
     "RA_Stage","RAR_Decoded","Msg3_Pass","Msg4_Pass","BeamIndex","BeamSwitchFlag","SRS_NMSE_dB","TRS_TrackingState"];
 end
 

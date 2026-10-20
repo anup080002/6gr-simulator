@@ -173,6 +173,9 @@ out.SRSBandwidthFraction = NaN;
 out.SRSFrequencyPRBStart = NaN;
 out.SRSFrequencyPRBEnd = NaN;
 out.SRSBandwidthCoverageStatus = "";
+out.SRSCoverageGapRB = NaN;
+out.SRSCoverageToleranceRB = NaN;
+out.SRSLiteralFullCarrierCoverage = false;
 out.SRS_RSRP_dB_re_UnitOccupiedRE_Es = NaN;
 out.SRS_RSRP_dBm = NaN;
 out.SRSRSRPPerReceiveAntenna_dBm = [];
@@ -260,6 +263,9 @@ try
     out.SRSFrequencyPRBStart = double(srsCoverage.PRBStart);
     out.SRSFrequencyPRBEnd = double(srsCoverage.PRBEnd);
     out.SRSBandwidthCoverageStatus = char(string(srsCoverage.BandwidthCoverageStatus));
+    out.SRSCoverageGapRB = srsCoverage.CoverageGapRB;
+    out.SRSCoverageToleranceRB = srsCoverage.FullCarrierCoverageToleranceRB;
+    out.SRSLiteralFullCarrierCoverage = srsCoverage.LiteralFullCarrierCoverage;
     sampleRateHz = localResolveSampleRate(info, tx, cfg);
     injectedDopplerHz = localResolveInjectedDopplerHz(cfg);
     if prepareOnly

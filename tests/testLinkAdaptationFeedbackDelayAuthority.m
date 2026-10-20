@@ -11,6 +11,15 @@ cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.beamPolicy", "fixed");
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.feedbackDelaySlots", 2);
 cfg = sixgr.util.structSet(cfg, "phy.csi.feedbackDelaySlots", 2);
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.delayModel", "zero");
+% This delay/state-ownership fixture supplies rank-one CQI in both
+% directions. Do not inherit the catalog's fixed rank-four DL waveform.
+% A rank mismatch must still be rejected before scheduling any decision.
+badRank=cfg; badRank.phy.pdsch.numLayers=4; badRank.phy.pdsch.nLayers=4;
+[~,~,rejected]=sixgr.link.updateLinkAdaptationState( ...
+    badRank,struct(),"DL",10,"Phase","after","Metrics",struct('CQI',12,'RI',1));
+assert(~rejected.Scheduled && string(rejected.Reason)=="held_fixed_rank_feedback_mismatch");
+cfg.phy.pdsch.numLayers=1; cfg.phy.pdsch.nLayers=1;
+cfg.phy.pusch.numLayers=1; cfg.phy.pusch.nLayers=1;
 
 % Initial operating point must be executed from its own YAML authority;
 % configuring AMC does not make a pre-feedback transmission CQI-derived.

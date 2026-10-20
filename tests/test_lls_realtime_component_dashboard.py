@@ -577,7 +577,7 @@ def test_initial_access_renderer_includes_msg1_before_completed_ra() -> None:
               json.dumps(control) + ";\nconst procedurePreviews=" + json.dumps(procedure) +
               ";\nconst initialAccessRows = [" + block + "\nconsole.log(JSON.stringify(initialAccessRows));")
     result = subprocess.run([node, "-e", script], capture_output=True, text=True,
-                            check=True, timeout=15)
+                            encoding="utf-8", check=True, timeout=15)
     rows = json.loads(result.stdout)
     assert len(rows) == 2
     assert rows[1]["Procedure"] == "PRACH Msg1 observation (not completed RA)"
@@ -714,6 +714,158 @@ def test_ue_status_retains_distinct_dl_ul_admission() -> None:
         assert ue["ul_srs_causal_usable"] is False
         assert ue["ul_scheduling_block_reason"] == "srs_no_measurements"
         assert ue["ul_srs_causal_status"] == "no_measurements"
+
+
+def test_scheduler_admission_orders_control_knowledge_not_future_target() -> None:
+    older = dict(UEIndex=1, Direction="UL", SweepPointIndex=1,
+                 ControlSlot=41, SchedulingKnowledgeSlot=41, ScheduledDataSlot=50,
+                 QueueBytes=0, CandidateGrantCount=0)
+    newer = dict(older, ControlSlot=42, SchedulingKnowledgeSlot=42,
+                 ScheduledDataSlot=45, QueueBytes=100)
+    dl = dict(older, Direction="DL", QueueBytes=200)
+    for inputs in ([older, newer, dl], [newer, dl, older]):
+        selected = dashboard.latest_realtime_scheduler_admission(inputs)
+        assert selected["1"]["UL"] == newer
+        assert selected["1"]["DL"] == dl
+    next_point = dict(older, SweepPointIndex=2, ControlSlot=1, SchedulingKnowledgeSlot=1)
+    assert dashboard.latest_realtime_scheduler_admission([newer, next_point])["1"]["UL"] == next_point
+
+
+def test_scheduler_admission_does_not_manufacture_missing_directions() -> None:
+    row = dict(UEIndex=2, Direction="UL", QueueBytes=0,
+               AdmissionReason="no_queued_bytes_or_pending_retransmission")
+    ue = dashboard.build_realtime_ue_status({}, {}, {"scheduler_admission": [row]})[0]
+    assert ue["ue_id"] == "2" and ue["scheduler_admission"] == {"UL": row}
+    assert ue["dl_scheduling_eligible"] is None and ue["ul_scheduling_eligible"] is None
+    assert dashboard.latest_realtime_scheduler_admission([None, {}, dict(row, Direction="BAD")]) == {}
+
+
+def test_scheduler_admission_csv_is_loaded_from_canonical_producer(tmp_path: Path) -> None:
+    path = tmp_path / "scheduler_admission_trace.csv"
+    values = dict(UEIndex=1, Direction="UL", QueueBytes=0, SchedulerBufferBytes=1,
+                  HasPendingRetransmission=1, CandidateRank=4, ControlSlot=41,
+                  ScheduledDataSlot=45, SRSRequired=1, SRSCausalUsable=0,
+                  HARQNewDataProcessAvailable=0, CandidateGrantCount=0,
+                  AdmissionReason="srs_no_measurements", SchedulerDecisionReasons="")
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(values))
+        writer.writeheader(); writer.writerow(values)
+    artifact = dict(artifact_id=-1, logical_path="packet_flow/csv/scheduler_admission_trace.csv",
+                    filesystem_path=str(path), byte_size=path.stat().st_size)
+    sources = dashboard.load_realtime_ue_measurement_sources([artifact])
+    ue = dashboard.build_realtime_ue_status({}, {}, sources)[0]
+    row = ue["scheduler_admission"]["UL"]
+    for key in ("QueueBytes", "CandidateRank", "HARQNewDataProcessAvailable", "CandidateGrantCount"):
+        assert float(row[key]) == values[key]
+    assert row["AdmissionReason"] == "srs_no_measurements"
+    assert "SchedulerDecisionReasons" in row
+
+
+def test_scheduler_admission_card_renders_actual_zero_and_scopes() -> None:
+    node = shutil.which("node")
+    if node is None:
+        import playwright
+        node = str(Path(playwright.__file__).parent / "driver" /
+                   ("node.exe" if sys.platform == "win32" else "node"))
+    source = Path(dashboard.__file__).read_text(encoding="utf-8")
+    renderer = source[source.index("  function realtimeSchedulerAdmission("):
+                      source.index("  function realtimeUEStatusPanel(")]
+    record = dict(Direction="UL", QueueBytes=0, HasPendingRetransmission=1,
+                  HARQNewDataProcessAvailable=0, CandidateGrantCount=0,
+                  CandidateRank=4, ControlSlot=41, ScheduledDataSlot=45,
+                  ConfiguredSNR_dB="NaN",
+                  SlotNumbering="one_based_absolute_carrier_slot",
+                  AdmissionReason="srs_no_measurements", SchedulerDecisionReasons="")
+    ue = dict(scheduler_admission=dict(UL=record))
+    script = "const esc=x=>String(x).replaceAll('<','&lt;');\n" + renderer
+    script += "\nconsole.log(realtimeSchedulerAdmission(" + json.dumps(ue) + "));"
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True,
+                            encoding="utf-8", check=True, timeout=15)
+    html = result.stdout
+    assert "UL last observed scheduling decision" in html
+    assert "DL last observed" not in html
+    assert "Queued bytes</th><td>0</td>" in html
+    assert "Candidate rank</th><td>4</td>" in html
+    assert "Candidate grant count</th><td>0</td>" in html
+    assert "Control slot</th><td>41</td>" in html and "Target data slot</th><td>45</td>" in html
+    assert "Configured SNR (dB)</th><td>—</td>" in html
+    assert "srs_no_measurements" in html and "one_based_absolute_carrier_slot" in html
+    assert "Historical decision-time inputs" in html and "not current queue state" in html
+    assert "not required to retransmit" in html
+
+
+def test_ul_timing_loader_retains_engine_failure_and_preflight_distinction(tmp_path: Path) -> None:
+    tables = {
+        "ul_scheduler_timing": [
+            dict(DecisionSequence=1, ControlSlot=41, TimingEngineValid=1,
+                 TimingSelectedDataSlot=45, TimingSelectedK2=4, EligibleForUEScheduling=0,
+                 BlockReason="target_already_has_queued_UL_grant"),
+            dict(DecisionSequence=2, ControlSlot=42, TimingEngineValid=0,
+                 TimingSelectedDataSlot="NaN", TimingSelectedK2="NaN", EligibleForUEScheduling=0,
+                 BlockReason="timing_rejected:data_timing_rejected:target_hits_fixed_opposite_direction"),
+        ],
+        "ul_scheduler_timing_candidates": [
+            dict(DecisionSequence=1, CandidateOrdinal=1, K2=4, TargetAbsoluteSlot0Based=44,
+                 TimingValid=1, SelectedByTimingEngine=1, ReasonCode="timing_relation_valid"),
+            dict(DecisionSequence=2, CandidateOrdinal=1, K2=4, TargetAbsoluteSlot0Based=45,
+                 TimingValid=0, SelectedByTimingEngine=0, ReasonCode="target_hits_fixed_opposite_direction"),
+        ],
+    }
+    artifacts = []
+    for name, values in tables.items():
+        path = tmp_path / f"{name}.csv"
+        with path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(values[0]))
+            writer.writeheader(); writer.writerows(values)
+        artifacts.append(dict(artifact_id=-len(artifacts)-1,
+                              logical_path=f"packet_flow/csv/{name}.csv",
+                              filesystem_path=str(path), byte_size=path.stat().st_size))
+    actual = dashboard.load_realtime_ul_planning_sources(artifacts)
+    assert len(actual["ul_scheduler_timing"]) == 2
+    assert len(actual["ul_scheduler_timing_candidates"]) == 2
+    assert actual["ul_scheduler_timing"][0]["BlockReason"] == "target_already_has_queued_UL_grant"
+    assert float(actual["ul_scheduler_timing"][0]["TimingEngineValid"]) == 1
+    assert float(actual["ul_scheduler_timing"][0]["EligibleForUEScheduling"]) == 0
+    assert actual["ul_scheduler_timing_candidates"][1]["ReasonCode"] == "target_hits_fixed_opposite_direction"
+    assert dashboard.load_realtime_ul_planning_sources([]) == {
+        "ul_scheduler_timing": [], "ul_scheduler_timing_candidates": []}
+
+
+def test_ul_timing_panel_keeps_rejected_candidates_and_historical_scope() -> None:
+    node = shutil.which("node")
+    if node is None:
+        import playwright
+        node = str(Path(playwright.__file__).parent / "driver" /
+                   ("node.exe" if sys.platform == "win32" else "node"))
+    source = Path(dashboard.__file__).read_text(encoding="utf-8")
+    renderer = source[source.index("  function realtimeULPlanningPanel("):
+                      source.index("  function realtimeUEStatusPanel(")]
+    events = [dict(DecisionSequence=k, ControlSlot=k+40,
+                   TimingSelectedDataSlot="NaN", TimingSelectedK2="NaN",
+                   TimingEngineValid=0, EligibleForUEScheduling=0,
+                   EvaluatedCandidateCount=1, BlockReason=f"timing_rejected:case{k}")
+              for k in range(1, 21)]
+    candidates = [dict(DecisionSequence=k, CandidateOrdinal=1, K2=4,
+                       TargetAbsoluteSlot0Based=k+43, TargetStartSymbol0Based=0,
+                       TargetNumSymbols=11, TimingValid=0, SelectedByTimingEngine=0,
+                       ReasonCode="target_hits_fixed_opposite_direction")
+                  for k in range(1, 21)]
+    data = dict(ul_scheduler_timing=events, ul_scheduler_timing_candidates=candidates)
+    script = "const esc=x=>String(x).replaceAll('<','&lt;');\n" + renderer
+    script += "\nlet state=" + json.dumps(dict(live=dict(realtime_dashboard=data))) + ";"
+    script += "\nconsole.log(realtimeULPlanningPanel()); state={}; console.log(JSON.stringify(realtimeULPlanningPanel()));"
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True,
+                            encoding="utf-8", check=True, timeout=15)
+    html = result.stdout
+    assert "UL timing / resource preflight" in html
+    assert "Evaluated K2 candidates (12)" in html
+    assert "timing_rejected:case20</td>" in html and "timing_rejected:case9</td>" in html
+    assert "timing_rejected:case8</td>" not in html
+    assert "target_hits_fixed_opposite_direction" in html
+    assert "Target slot (0-based)" in html and "Control slot (1-based)" in html
+    assert "not a decoded DCI or transmitted PUSCH" in html
+    assert "stops at the first valid candidate" in html and "last 12 decisions" in html
+    assert html.endswith('""\n')
 
 
 def test_ue_status_does_not_infer_directional_admission_from_shared_flag() -> None:

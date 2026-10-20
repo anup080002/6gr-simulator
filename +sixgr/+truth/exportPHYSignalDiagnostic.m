@@ -34,6 +34,7 @@ for i = 1:numel(directions)
     [valid, reason] = localValidateSnapshot(snapshot, direction);
     reasons(i) = reason;
     if valid
+        localValidateGridPopulation(snapshot);
         snapshots{i} = snapshot;
         sourceT = localAppendCompatibleTable(sourceT, snapshot.SourceTable);
     else
@@ -45,7 +46,35 @@ if istable(sourceT) && ~isempty(sourceT)
     % One file carries several heterogeneous runtime panels. A column may
     % be intentionally blank outside its owning panel, so the declared
     % schema is part of the evidence contract and must survive export.
-    sixgr.util.csvWriteTable(sourcePath, sourceT, "PreserveSchema", true);
+    if sixgr.util.persistenceEnabled()
+        writer=sixgr.util.CSVTableStream(sourcePath,false);
+        writerCleanup=onCleanup(@()delete(writer)); %#ok<NASGU>
+        expectedRows=0;
+        for i=1:numel(snapshots)
+            snapshot=snapshots{i};
+            if isempty(fieldnames(snapshot)), continue; end
+            T=snapshot.SourceTable;
+            grid=sixgr.util.structGet(snapshot,'DeferredChannelGrid',struct());
+            expectedRows=expectedRows+height(T);
+            if isempty(fieldnames(grid))
+                writer.append(T);
+            else
+                split=find(string(T.Panel)=="channel_estimate",1,'last');
+                assert(~isempty(split),'sixgr:truth:PHYDiagnosticGridOrder','Retain the measured-channel panel insertion point.');
+                writer.append(T(1:split,:));
+                for txIndex=1:grid.Shape(4)
+                    for rxIndex=1:grid.Shape(3)
+                        writer.append(sixgr.link.PHYDiagnosticChannelGrid.rows(grid,rxIndex,txIndex));
+                    end
+                end
+                writer.append(T(split+1:end,:));
+                expectedRows=expectedRows+grid.RowCount;
+            end
+        end
+        assert(writer.RowsWritten==expectedRows,'sixgr:truth:PHYDiagnosticGridPopulation', ...
+            'Publish every measured coefficient and bounded panel row exactly once.');
+        writer.finish();
+    end
 else
     localDeleteIfExists(sourcePath);
 end
@@ -88,6 +117,31 @@ artifacts = struct( ...
     "ULAvailable", ~isempty(fieldnames(snapshots{2})), ...
     "DLReason", reasons(1), ...
     "ULReason", reasons(2));
+deferredRows=0;
+for i=1:numel(snapshots)
+    deferredRows=deferredRows+double(sixgr.util.structGet(snapshots{i},'DeferredChannelGrid.RowCount',0));
+end
+% The returned in-memory table is explicitly bounded when a compact grid
+% exists. The canonical single CSV always contains the complete population.
+artifacts.SourceTableComplete=deferredRows==0;
+artifacts.SourceRowCount=height(sourceT)+deferredRows;
+artifacts.DeferredChannelGridRowCount=deferredRows;
+end
+
+function localValidateGridPopulation(snapshot)
+grid=sixgr.util.structGet(snapshot,'DeferredChannelGrid',struct());
+hasGrid=isstruct(grid) && isscalar(grid) && ~isempty(fieldnames(grid));
+complete=sixgr.util.structGet(snapshot,'SourceTableComplete',true);
+assert(islogical(complete) && isscalar(complete) && complete==~hasGrid, ...
+    'sixgr:truth:PHYDiagnosticMissingDeferredGrid', ...
+    'A bounded snapshot cannot silently publish without its complete measured grid.');
+expected=height(snapshot.SourceTable);
+if hasGrid
+    sixgr.link.PHYDiagnosticChannelGrid.validate(grid,snapshot);
+    expected=expected+grid.RowCount;
+end
+assert(double(sixgr.util.structGet(snapshot,'SourceRowCount',expected))==expected, ...
+    'sixgr:truth:PHYDiagnosticGridPopulation','Retain the declared complete source population.');
 end
 
 function snapshot = localDirectionalSnapshot(diagnostics, direction)

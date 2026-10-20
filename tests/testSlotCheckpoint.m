@@ -49,6 +49,15 @@ state.TestDecoder=decoder;
 small=fullfile(root,'small.csv'); sixgr.util.writeTextFile(small,"Slot,Value"+newline+"1,7");
 large=fullfile(root,'large.bin');
 localWrite(large,uint8(mod((0:1200000)',251)),'w');
+% Explicit immutable-MAT storage probe, not PHY receiver measurements.
+archiveRelative="air_interface/mat/receive_only_observation_"+string(repmat('a',1,64))+".mat";
+archiveFile=fullfile(root,archiveRelative);
+probe=rand(RandStream('mt19937ar','Seed',719201),200000,1);
+sixgr.util.matSave(archiveFile,struct('StorageProbe',probe, ...
+    'Source',"checkpoint_storage_fixture_not_PHY_observation"), ...
+    'UseArtifactStore',false,'ForceV73',true);
+archiveInfo=dir(archiveFile); assert(archiveInfo.bytes>1024*1024);
+archiveHash=string(sixgr.util.sha256File(archiveFile));
 source=sixgr.runtime.SlotCheckpoint.sourceIdentity();
 ledgerIdentity=struct('RunId',"checkpoint_fixture",'ExecutionID',"execution_fixture", ...
     'ConfigHash',s.ConfigHash);
@@ -68,6 +77,10 @@ rec.appendBatch(nodes,{wave},replay,16,32);
 localWrite(large,uint8([8;9;10]),'a');
 sixgr.util.writeTextFile(small,"Failed attempt retained,not overwritten");
 [restored,receipt]=sixgr.runtime.SlotCheckpoint.read(path,s.toStruct(),"");
+archived=receipt.Files(replace(string({receipt.Files.Path}),'\','/')==archiveRelative);
+assert(isscalar(archived) && strlength(string(archived.Snapshot))==0 && ...
+    string(archived.SHA256)==archiveHash, ...
+    'Immutable receive-only archives need a verified dependency, not another full copy at every checkpoint.');
 assert(~receipt.SourceChanged && ~receipt.PrimaryStudyEligible);
 rs=restored.RuntimeState.SharedWaveformStream;
 assert(rs.Events.ProcessorState==rs.Physical, ...
@@ -85,6 +98,8 @@ assert(isequal(restoredTB,expectedTB) && isequal(restoredCRC,expectedCRC), ...
     'A retained LDPC/HARQ decoder must continue without resetting its soft buffer.');
 [restoredRoot,lineage]=sixgr.runtime.SlotCheckpoint.prepareResume(path,s.toStruct(),"",true);
 assert(strcmp(restoredRoot,root) && isfolder(lineage.PreservedFailedAttempt));
+assert(string(sixgr.util.sha256File(archiveFile))==archiveHash, ...
+    'Resume must preserve exact immutable receiver-evidence bytes.');
 sixgr.runtime.RuntimeCallLedger.reset();
 ledgerIdentity.PreserveExisting=true;
 sixgr.runtime.RuntimeCallLedger.configure(root,ledgerIdentity);

@@ -73,6 +73,10 @@ out.CFOCorrectionApplied_Hz = 0;
 out.CFOCorrectionSampleOrigin = NaN;
 out.CFOCorrectionSource = "not_applied";
 out.TRSFrequencyEvidenceJSON = "";
+residualFrequency=sixgr.phy.trs.measureTRSResidualFrequency();
+for field=string(fieldnames(residualFrequency)).', out.(field)=residualFrequency.(field); end
+pilotEVM=sixgr.phy.trs.summarizePilotEVM();
+for field=string(fieldnames(pilotEVM)).', out.(field)=pilotEVM.(field); end
 out.QCLAccuracy = NaN;
 out.InterpolationLoss_dB = NaN;
 out.MismatchSensitivity_dB = NaN;
@@ -238,6 +242,10 @@ try
     out.CFOCorrectionSampleOrigin = freq.CorrectionSampleOrigin;
     out.CFOCorrectionSource = freq.CorrectionSource;
     out.TRSFrequencyEvidenceJSON = string(jsonencode(table2struct(freq.Table)));
+    residualFrequency=freq.ResidualMeasurement;
+    for field=string(fieldnames(residualFrequency)).', out.(field)=residualFrequency.(field); end
+    pilotEVM=sixgr.util.structGet(ch,'IndependentPilotEVM',pilotEVM);
+    for field=string(fieldnames(pilotEVM)).', out.(field)=pilotEVM.(field); end
     out.PhysicalDoppler_Hz = double(sixgr.util.structGet(trial, "PhysicalDoppler_Hz", ...
         sixgr.util.structGet(freq, "PhysicalDoppler_Hz", NaN)));
     out.InjectedCFO_Hz = double(trial.InjectedCFO_Hz);
@@ -589,6 +597,7 @@ det = sixgr.phy.trs.detectTRSResources(rx, strictCfg, tx, "Timing", timing);
 timing = localRejectTimingIfDetectionFailed(timing, det);
 freq = sixgr.phy.trs.estimateTRSFrequencyOffset(det, strictCfg, tx, rx, cfg);
 [rx,det,freq] = localCorrectReceivedFrequency(rx,det,freq,cfg,tx,reception.Observation.StartSample);
+freq.ResidualMeasurement=sixgr.phy.trs.measureTRSResidualFrequency(det,strictCfg,tx,cfg,freq);
 ch = sixgr.phy.trs.estimateTRSChannel(rx, strictCfg, tx, det);
 references=sixgr.util.structGet(reception,'ScoringChannelReferences',{});
 if ~isempty(references) && ch.EstimateAvailable
@@ -603,7 +612,8 @@ elseif ch.EstimateAvailable && isfield(reception,'DesiredReferenceObservation') 
     ch=sixgr.phy.trs.scoreTRSChannelEstimates(ch,referenceGrids,referenceEvidence);
     ch.PreRXRFReferenceNMSE_dB=preRFScore.MeanNMSE_dB;
     ch.PreRXRFReferencePlane=preRFEvidence{1}.ReferencePlane;
-    ch.IndependentPilotScore=sixgr.phy.trs.scoreTRSPilotDisturbance(det,referenceGrids,referenceEvidence);
+    [ch.IndependentPilotScore,pairedPilots]=sixgr.phy.trs.scoreTRSPilotDisturbance(det,referenceGrids,referenceEvidence);
+    ch.IndependentPilotEVM=sixgr.phy.trs.summarizePilotEVM(pairedPilots);
 end
 if isfield(reception,'DesiredReferenceObservation') && ...
         isa(reception.DesiredReferenceObservation,'sixgr.phy.waveform.WaveformObservationBuffer')

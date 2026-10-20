@@ -1,4 +1,4 @@
-function [ok,state]=testSharedDataPhysicalQueue(mode,verifyCSIReference)
+function [ok,state]=testSharedDataPhysicalQueue(mode,verifyCSIReference,retainTailOutput)
 % Actual coded DL through the same CDL/RF/thermal-noise owner as PDCCH.
 % No access or main-scheduler qualification is claimed by this fixture.
 setup6GRSimToolkit('Verbose',false);
@@ -15,6 +15,7 @@ assert(isscalar(compact) && contains(compact, ...
     'Shared data completion must bind the frozen PHY job SNR, not a nonexistent control-context field.');
 if nargin<1, mode="TDD"; end
 if nargin<2, verifyCSIReference=false; end
+if nargin<3, retainTailOutput=true; end
 assert(any(string(mode)==["TDD","FDD"]),'test:BadDuplexFixture','Use an explicit duplex fixture.');
 fixture='lls_pdcch_shared_queue_fixture.yaml';
 if string(mode)=="FDD", fixture='lls_trs_shared_scoring_fdd_fixture.yaml'; end
@@ -90,25 +91,30 @@ owner.queueData(1,p2,struct('Purpose',"adjacent_grant_receive_tail_overlap",'Job
 assert(numel(owner.Pending)==2 && isempty(owner.DataTransmissions));
 state.DLQueueBits(1)=grant.TBSBits+g2.TBSBits; % Explicit fixture queue, not a measured application flow.
 assert(state.DLHarq.Stats.Tx==0);
-[state,~]=owner.advanceSlot(state,cfg,@localReceive);
+state=owner.advanceSlot(state,cfg,@localReceive);
 firstSlotEnd=owner.Events.NextSampleIndex;
 localReject(@()owner.drainDataReceiveTail(state,cfg,@localReceive), ...
     'sixgr:truth:ReceiveTailContainsFutureDataTX');
 assert(owner.Events.NextSampleIndex==firstSlotEnd && state.DLHarq.Stats.Tx==1, ...
     'Reject future scheduled transmissions before advancing any tail samples.');
 state.CurrentSlot=2;
-[state,~]=owner.advanceSlot(state,cfg,@localReceive);
+state=owner.advanceSlot(state,cfg,@localReceive);
 assert(owner.hasPending('PDSCH',1),'test:MissingReceiveTail', ...
     'The final coded allocation must reproduce a real receive tail beyond the scheduling horizon.');
 tailStart=owner.Events.NextSampleIndex;
 channel=owner.channelState(1,'DL');
 expectedTailEnd=p2.ReceiveEndSampleExclusive+double(channel.ChannelPadSamples);
-[state,tailCompleted]=owner.drainDataReceiveTail(state,cfg,@localReceive);
+if retainTailOutput
+    [state,tailCompleted]=owner.drainDataReceiveTail(state,cfg,@localReceive);
+    assert(all(string({tailCompleted.Kind})=="PDSCH"), ...
+        'The requested capture output must retain every completed data observation.');
+else
+    state=owner.drainDataReceiveTail(state,cfg,@localReceive);
+end
 assert(state.CurrentSlot==2 && owner.Events.NextSampleIndex==expectedTailEnd && ...
     expectedTailEnd>tailStart && ...
     state.SharedReceiveTailTable.StartSample==tailStart && ...
-    state.SharedReceiveTailTable.EndSampleExclusive==expectedTailEnd && ...
-    all(string({tailCompleted.Kind})=="PDSCH"), ...
+    state.SharedReceiveTailTable.EndSampleExclusive==expectedTailEnd, ...
     'Only actual receive-tail samples may extend physical time; no extra scheduled slot or TB.');
 [state,repeated]=owner.drainDataReceiveTail(state,cfg,@localReceive);
 assert(isempty(repeated) && owner.Events.NextSampleIndex==expectedTailEnd, ...

@@ -8,18 +8,29 @@ sixgr.util.ensureFolder(runFolder);
 scenario=sixgr.lls6g.config.loadScenarioConfig( ...
     fullfile(pwd,'simulator','configs','fixtures','lls_result_richness.yaml'));
 cfg=sixgr.lls6g.buildInternalConfig(scenario,runFolder);
+% Match the production runner's artifact ownership. Enabled applied-
+% precoder evidence must not be disabled to hide a missing fixture root.
+cfg.run.rootRunFolder=runFolder;
 cfg.outputs.saveCSV=false; cfg.outputs.saveMAT=false; cfg.outputs.saveFigures=false;
 % This test checks bounded waveform clocks, not a second full-grid export.
 cfg.outputs.phySignalDiagnosticFullChannelGrid=false;
 cfg.outputs.phySignalDiagnosticEnabled=true;
+% The fixture requests executed array/precoder exports. Install the same
+% configured arrays as the runtime before calling the independent PHY APIs;
+% do not fabricate an array after the waveform has executed.
+multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1, ...
+    'ExecutionModel','slot_coupled_truth');
+state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,runFolder,multi,struct(),1);
+state.CurrentSlot=1; state.CurrentServingIdx(:)=1;
 save(fullfile(runFolder,'configuration.mat'),'cfg');
 fprintf('PHY_WINDOW_EVIDENCE_ROOT=%s\n',runFolder);
 captured=struct(); uncaptured=struct();
 for direction=["DL","UL"]
     if direction=="DL", runner=@sixgr.link.runDLPDSCHThroughput;
     else, runner=@sixgr.link.runULPUSCHThroughput; end
-    with=runner(cfg,'NumFrames',1,'SNR_dB',30);
-    withoutCfg=cfg; withoutCfg.outputs.phySignalDiagnosticEnabled=false;
+    [bound,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,direction);
+    with=runner(bound,'NumFrames',1,'SNR_dB',30);
+    withoutCfg=bound; withoutCfg.outputs.phySignalDiagnosticEnabled=false;
     without=runner(withoutCfg,'NumFrames',1,'SNR_dB',30);
     captured.(direction)=with; uncaptured.(direction)=without;
     save(fullfile(runFolder,'physical_trials.mat'),'captured','uncaptured','-v7.3');

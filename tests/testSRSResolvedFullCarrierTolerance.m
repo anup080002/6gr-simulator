@@ -11,12 +11,22 @@ fullCoverage = struct();
 fullCoverage.OccupiedPRBCount = 272;
 fullCoverage.CarrierPRBCount = 273;
 fullCoverage.CoveragePercent = 100 * 272 / 273;
-fullCoverage.BandwidthCoverageStatus = "full_carrier";
+fullCoverage.BandwidthCoverageStatus = "within_configured_carrier_edge_tolerance";
 fullCoverage.FullCarrierCoverageToleranceRB = 1;
 fullCoverage.FullCarrierEffectiveTargetRB = 272;
 fullCoverage.FullCarrierClaimValid = true;
 assert(sixgr.phy.srs.validateSRSFullCarrierClaim(fullCoverage, fullCfg), ...
     "A 273-RB full-carrier SRS request resolved to 272 RB must pass the declared one-RB tolerance.");
+mislabel=fullCoverage; mislabel.BandwidthCoverageStatus="full_carrier";
+assert(~sixgr.phy.srs.validateSRSFullCarrierClaim(mislabel,fullCfg), ...
+    '272/273 must never be labelled literal full-carrier coverage.');
+carrier=nrCarrierConfig('NSizeGrid',273); srs=nrSRSConfig;
+coverage=sixgr.phy.srs.computeSRSCoverage(carrier,srs,(1:12:272*12).',fullCfg);
+assert(coverage.OccupiedPRBCount==272 && coverage.CoverageGapRB==1 && ...
+    ~coverage.LiteralFullCarrierCoverage && coverage.FullCarrierClaimValid && ...
+    coverage.BandwidthCoverageStatus=="within_configured_carrier_edge_tolerance");
+coverage=sixgr.phy.srs.computeSRSCoverage(carrier,srs,(1:12:273*12).',fullCfg);
+assert(coverage.LiteralFullCarrierCoverage && coverage.BandwidthCoverageStatus=="full_carrier");
 assert(sixgr.phy.srs.validateSRSConfiguredBandClaim(fullCoverage, fullCfg), ...
     "Full-carrier coverage must also satisfy the configured-band gate.");
 

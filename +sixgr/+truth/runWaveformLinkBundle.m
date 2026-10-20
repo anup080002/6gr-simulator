@@ -3871,7 +3871,7 @@ for sweepIdx = firstSweep:numel(snrGrid)
             end
         end
         if isfield(runtimeState,'SharedWaveformStream')
-            [runtimeState,~]=sixgr.truth.advanceSharedSlotWithULGrants( ...
+            runtimeState=sixgr.truth.advanceSharedSlotWithULGrants( ...
                 runtimeState,cfg,pendingULGrants,sharedDueULGrants, ...
                 @localCompleteSharedControlObservations);
             [runtimeState,dlTrials,ulTrials,dlConstT,ulConstT,dlStates,ulStates] = ...
@@ -3925,7 +3925,7 @@ for sweepIdx = firstSweep:numel(snrGrid)
     end
 end
 if isfield(runtimeState,'SharedWaveformStream')
-    [runtimeState,~]=runtimeState.SharedWaveformStream.drainDataReceiveTail( ...
+    runtimeState=runtimeState.SharedWaveformStream.drainDataReceiveTail( ...
         runtimeState,cfg,@localCompleteSharedControlObservations);
     [runtimeState,dlTrials,ulTrials,dlConstT,ulConstT,dlStates,ulStates] = ...
         localDrainSharedDataPlans(runtimeState,dlTrials,ulTrials,dlConstT,ulConstT,dlStates,ulStates);
@@ -4006,27 +4006,17 @@ end
 controlSlot = double(sixgr.util.structGet(state, "CurrentSlot", frameLocal));
 timingDecision = localResolveCoupledULTimingDecision( ...
     state, cfg, controlSlot);
-if ~logical(sixgr.util.structGet(timingDecision, "Valid", false))
+[state,opportunity]=sixgr.truth.evaluateULPlanningOpportunity( ...
+    state,cfg,timingDecision,pendingULGrants,sweepIdx,nFramesPerPoint);
+if ~opportunity.EligibleForUEScheduling
     localAppendRuntimeLog("INFO", ...
-        "Coupled UL K2 preschedule deferred: control_slot=%d reason=%s policy=no_valid_ul_occasion_from_current_dl_control_slot.", ...
+        "Coupled UL K2 preschedule deferred: control_slot=%d reason=%s evaluated_candidates=%d source=packet_flow/csv/ul_scheduler_timing.csv.", ...
         round(double(controlSlot)), ...
-        char(string(sixgr.util.structGet(timingDecision, "ReasonCode", ""))));
+        char(opportunity.BlockReason),opportunity.EvaluatedCandidateCount);
     return;
 end
 k2Slots = double(timingDecision.K2);
 dueSlot = double(timingDecision.DataAbsoluteSlot) + 1;
-sweepStartSlot = (sweepIdx - 1) * nFramesPerPoint + 1;
-sweepEndSlot = sweepIdx * nFramesPerPoint;
-if ~(isfinite(dueSlot) && dueSlot >= sweepStartSlot && dueSlot <= sweepEndSlot)
-    return;
-end
-[~, dueAllowUL] = localCoupledSlotDuplexState(cfg, dueSlot);
-if ~logical(dueAllowUL)
-    return;
-end
-if localHasPendingCoupledULGrantForSlot(pendingULGrants, dueSlot)
-    return;
-end
 
 planState = sixgr.truth.CoupledTruthRuntime.futureULPlanningView(state,dueSlot);
 decisionRowsBefore = height(sixgr.util.structGet( ...
@@ -4041,15 +4031,21 @@ uciOnPUSCHAvailable = localPUSCHUCIOnPUSCHAvailable(cfg);
 % slot. The concrete PUSCH and combined PUCCH allocations below decide
 % time overlap before any UL DCI is transmitted.
 [planState, grants, info] = sixgr.truth.CoupledTruthRuntime.scheduleDirection(planState, cfg, "UL");
+% Inactive users never reach the RR/PF candidate table. Preserve their
+% actual control-time queue/reference inputs, including no-grant attempts,
+% instead of discarding them with the future-resource planning copy.
+state.SchedulerAdmissionTable=localAppendCompatTable( ...
+    sixgr.util.structGet(state,"SchedulerAdmissionTable",table()),info.AdmissionTable);
 state = localCommitPlannedULSchedulerDecisions( ...
     state, planState, decisionRowsBefore, controlSlot, dueSlot, k2Slots);
 localAppendRuntimeLog("INFO", ...
-    "Coupled UL K2 preschedule complete: control_slot=%d due_slot=%d k2=%d active=%d granted=%d grants=%d reason=%s resource_reason=%s.", ...
+    "Coupled UL K2 preschedule complete: control_slot=%d due_slot=%d k2=%d active=%d granted=%d grants=%d reason=%s resource_reason=%s admission_details=%s.", ...
     round(double(controlSlot)), round(double(dueSlot)), round(double(k2Slots)), ...
     round(double(sixgr.util.structGet(info, "ActiveUsers", NaN))), ...
     round(double(sixgr.util.structGet(info, "GrantedUsers", NaN))), numel(grants), ...
     char(string(sixgr.util.structGet(info, "NoGrantReason", ""))), ...
-    char(string(sixgr.util.structGet(info, "ResourceUnavailableReason", ""))));
+    char(string(sixgr.util.structGet(info, "ResourceUnavailableReason", ""))), ...
+    char(string(info.NoGrantDetails)));
 if isempty(grants)
     return;
 end
@@ -4222,15 +4218,6 @@ mode = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.pusch.uciMultiplexing
 if any(mode == ["disabled","off","none","pucch_only"])
     tf = false;
 end
-end
-
-function tf = localHasPendingCoupledULGrantForSlot(pendingULGrants, dueSlot)
-tf = false;
-if ~(isstruct(pendingULGrants) && ~isempty(pendingULGrants))
-    return;
-end
-slots = arrayfun(@sixgr.truth.runtimeULGrantSlot,pendingULGrants(:));
-tf = any(abs(slots - double(dueSlot)) < 1e-9);
 end
 
 function pendingULGrants = localAppendCoupledPendingULGrants(pendingULGrants, grants)
@@ -16322,11 +16309,15 @@ for k = 1:nTrials
         r.UCICRCBitCount = double(sixgr.util.structGet(out, "UCICRCBitCount", NaN));
         r.UCICRCApplicable = logical(sixgr.util.structGet(out, "UCICRCApplicable", false));
         r.CRCApplicable = logical(sixgr.util.structGet(out, "CRCApplicable", false));
-        r.CRCOutcome = string(sixgr.util.structGet(out, "CRCOutcome", ternaryPUCCHCRCOutcome(r.CRCApplicable, ok)));
+        r.CRCOutcome = string(sixgr.util.structGet(out, "CRCOutcome", ...
+            sixgr.link.pucchCRCOutcome(r.CRCApplicable, ...
+            sixgr.util.structGet(out,"CRCPass",NaN))));
         r.UCIContentMatch = logical(sixgr.util.structGet(out, "UCIContentMatch", ok));
         r.DetectionOutcome = string(sixgr.util.structGet(out, "DetectionOutcome", "unavailable"));
         if logical(r.CRCApplicable)
-            r.CRCPass = double(ok);
+            % Trial success also includes TX-bit comparison and detection.
+            % Preserve the receiver CRC decision as its own observation.
+            r.CRCPass = double(sixgr.util.structGet(out,"CRCPass",NaN));
         else
             r.CRCPass = NaN;
         end
@@ -16663,6 +16654,9 @@ for k = 1:nTrials
         r.SRSFrequencyPRBStart = double(sixgr.util.structGet(outSRS, "SRSFrequencyPRBStart", NaN));
         r.SRSFrequencyPRBEnd = double(sixgr.util.structGet(outSRS, "SRSFrequencyPRBEnd", NaN));
         r.SRSBandwidthCoverageStatus = string(sixgr.util.structGet(outSRS, "SRSBandwidthCoverageStatus", ""));
+        r.SRSCoverageGapRB = double(sixgr.util.structGet(outSRS,'SRSCoverageGapRB',NaN));
+        r.SRSCoverageToleranceRB = double(sixgr.util.structGet(outSRS,'SRSCoverageToleranceRB',NaN));
+        r.SRSLiteralFullCarrierCoverage = logical(sixgr.util.structGet(outSRS,'SRSLiteralFullCarrierCoverage',false));
         r.SpatialSignatureToken = string(sixgr.util.structGet(outSRS, "SpatialSignatureToken", ""));
         r.SpatialSignatureSHA256 = string(sixgr.util.structGet(outSRS, "SpatialSignatureSHA256", ""));
         r.SpatialSignatureRows = double(sixgr.util.structGet(outSRS, "SpatialSignatureRows", NaN));
@@ -16785,6 +16779,10 @@ for k = 1:nTrials
         r.CRCPass = NaN;
         r.NMSE_dB = double(sixgr.util.structGet(out, "NMSE_dB", NaN));
         r.NMSEScoringAvailable = logical(sixgr.util.structGet(out,'NMSEScoringAvailable',false));
+        pilotEVM=sixgr.phy.trs.summarizePilotEVM();
+        for field=string(fieldnames(pilotEVM)).'
+            r.(field)=sixgr.util.structGet(out,field,pilotEVM.(field));
+        end
         r.NMSEReferenceSource = string(sixgr.util.structGet(out,'NMSEReferenceSource',"unavailable"));
         r.TrueChannelNMSE_dB = r.NMSE_dB;
         r.ChannelNMSEComparedComplexValues = double(sixgr.util.structGet(out,'ChannelNMSEComparedComplexValues',0));
@@ -17052,6 +17050,7 @@ row.EVMReferenceEnergy = NaN;
 row.EVMSymbolCount = NaN;
 row.EVMEnergyUnit = "sum_squared_complex_symbol_amplitude_not_joules";
 row.EVMComputationDomain = "";
+row.EVMReferencePlane = "";
 row.NMSE_dB = NaN;
 row.RawChannelNMSE_dB = NaN;
 row.ChannelNMSEGainFitted = false;
@@ -17752,6 +17751,9 @@ row.SRSBandwidthFraction = NaN;
 row.SRSFrequencyPRBStart = NaN;
 row.SRSFrequencyPRBEnd = NaN;
 row.SRSBandwidthCoverageStatus = "";
+row.SRSCoverageGapRB = NaN;
+row.SRSCoverageToleranceRB = NaN;
+row.SRSLiteralFullCarrierCoverage = false;
 row.SRS_RSRP_dBm = NaN;
 row.SRS_RSRP_dB_re_UnitOccupiedRE_Es = NaN;
 row.SRSRSRPPerReceiveAntenna_dBm = "";
@@ -17853,6 +17855,10 @@ row.RSOverheadFraction = NaN;
 row.InjectedCFO_Hz = NaN;
 row.EstimatedCFO_PreCorrection_Hz = NaN;
 row.ResidualCFO_PostCorrection_Hz = NaN;
+residualDefaults=sixgr.phy.trs.measureTRSResidualFrequency();
+for field=string(fieldnames(residualDefaults)).'
+    row.(field)=residualDefaults.(field);
+end
 row.EstimatedCFO_Hz = NaN;
 row.EstimatedCommonFrequency_Hz = NaN;
 row.EstimatedOscillatorCFO_Hz = NaN;
@@ -18108,16 +18114,6 @@ row.PDCCHGrantDCIFormat = "";
 row.GrantWorkerSafe = false;
 row.GrantSharedStateCommitMode = "";
 row.Notes = "";
-end
-
-function outcome = ternaryPUCCHCRCOutcome(crcApplicable, ok)
-if ~logical(crcApplicable)
-    outcome = "not_applicable";
-elseif logical(ok)
-    outcome = "pass";
-else
-    outcome = "fail";
-end
 end
 
 function T = localEmptyLinkTrialTable(nRows)

@@ -172,7 +172,7 @@ classdef PDCCHWaveformTrialEngine
                 candidateCodeword = nrPDCCHDecode(equalized, ...
                     kernel.NCellID, hypothesisScramblingRNTI, ...
                     gridNoiseVariance);
-                candidateCodeword = localApplyCSIWeighting( ...
+                candidateCodeword = sixgr.phy.pdcch.applyMMSECSIWeighting( ...
                     candidateCodeword, csi);
                 [decodedBits, errorFlag] = nrDCIDecode(candidateCodeword, ...
                     kernel.K, kernel.ListLength, hypothesisCRCRNTI);
@@ -447,23 +447,6 @@ else
     value = value(:,1);
     value = value(~isnan(value));
 end
-end
-
-function rxCodeword = localApplyCSIWeighting(rxCodeword, csi)
-if isempty(rxCodeword) || isempty(csi)
-    return;
-end
-reliability = max(double(real(csi(:))), 0);
-meanReliability = mean(reliability, "omitnan");
-if ~(isfinite(meanReliability) && meanReliability > 0)
-    return;
-end
-reliability = reliability/meanReliability;
-weights = repelem(reliability, 2);
-if numel(weights) < numel(rxCodeword)
-    weights = repmat(weights, ceil(numel(rxCodeword)/numel(weights)), 1);
-end
-rxCodeword = double(rxCodeword(:)) .* weights(1:numel(rxCodeword));
 end
 
 function value = localTernaryNumber(condition, ifTrue, ifFalse)

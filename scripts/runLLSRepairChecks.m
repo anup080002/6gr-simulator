@@ -24,7 +24,13 @@ for k=1:numel(testNames)
             'sixgr:repair:WrongTestSource','Test resolves outside the selected tests directory.');
         row.TestSHA256=string(sixgr.util.sha256File(row.TestSource));
         verifySourcePaths(sourceRoot);
-        assert(logical(feval(testNames{k})), 'Test did not return true.');
+        if nargout(testNames{k})==0
+            % Assertion-style tests signal failure by throwing. Requesting
+            % an output would prevent their bodies from executing at all.
+            feval(testNames{k});
+        else
+            assert(logical(feval(testNames{k})), 'Test did not return true.');
+        end
         verifySourcePaths(sourceRoot);
         assert(row.TestSHA256==string(sixgr.util.sha256File(row.TestSource)), ...
             'sixgr:repair:ChangedTestSource','Test source changed while executing.');

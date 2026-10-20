@@ -39,3 +39,30 @@ def test_presence_is_separate_from_payload_scoring(fields, bucket):
     assert exported[0]["detection_outcome"] == str(fields.get("DetectionOutcome", ""))
     if "BitErrors" in fields:
         assert float(exported[0]["bit_errors"]) == fields["BitErrors"]
+
+
+@pytest.mark.parametrize("fields,bucket,decode", [
+    ({"DetectionOutcome": "detected", "CRCPass": 1, "PUCCHDecodeOk": 0},
+     "Detected; decode failure", "0"),
+    ({"DetectionOutcome": "dtx", "DTXFlag": 1, "CRCPass": 1, "PUCCHDecodeOk": 0},
+     "DTX", "0"),
+    ({"CRCPass": 1}, "CRC pass; reception unqualified", ""),
+    ({"DetectionOutcome": "detected", "CRCPass": 0},
+     "Detected; decode failure", ""),
+    ({"DetectionOutcome": "detected", "PUCCHDecodeOk": 1, "CRCApplicable": 0},
+     "Decoded/observed", "1"),
+    ({"DetectionUsable": 1}, "Detected; decode unavailable", ""),
+])
+def test_recorded_crc_is_not_a_received_uci_outcome(fields, bucket, decode):
+    row = dict(Slot=34, UEID=1, DetectionAttempted=1)
+    row.update(fields)
+    raw = materializer._encode_dict_rows(list(row), [row])
+    path = "air_interface/csv/pucch_trials.csv"
+    out = materializer._pucch_dtx_chart_materialization(
+        "PUCCH DTX statistics", {path: {"artifact_id": 1, "logical_path": path}},
+        lambda _: raw, 1)
+    exported = next(csv.DictReader(io.StringIO(out["csv_bytes"].decode("utf-8"))))
+    assert exported["dtx_bucket"] == bucket
+    assert exported["decode_ok"] == decode
+    assert exported["crc_pass"] == str(fields.get("CRCPass", ""))
+    assert exported["crc_applicable"] == str(fields.get("CRCApplicable", ""))

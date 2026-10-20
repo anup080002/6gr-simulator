@@ -4,6 +4,9 @@ function state=completeSharedPUSCHAfterRejectedControl(state,observationID)
 % producer. UL scheduling follows the gNB receiver outcome,
 % not the UE's rejected-command flag or an invented onTx event.
 owner=state.SharedWaveformStream;
+receipts=sixgr.util.structGet(state,'SharedRejectedULReceiveResults',{});
+assert(~any(cellfun(@(x)x.ObservationID==string(observationID),receipts)), ...
+    'sixgr:truth:DuplicateRejectedULReceiveCompletion','Do not decode or publish one receive-only window twice.');
 item=owner.readPUSCHReceiveOnlyCompletion(observationID);
 windows=sixgr.util.structGet(state,'SharedRejectedULReceiveWindows',{});
 hit=find(cellfun(@(x)x.ObservationID==string(observationID),windows));
@@ -21,9 +24,6 @@ assert(isequaln(grant,item.Context.Grant) && item.UE==grant.UEIndex && ...
     all(arrayfun(@(p)p.Observation.StartSample==window.StartSample && ...
         p.Observation.EndSampleExclusive==window.EndSampleExclusive,item.Planes)), ...
     'sixgr:truth:ChangedRejectedULReceiveWindow','Control, scheduled grant and physical capture must retain one identity.');
-receipts=sixgr.util.structGet(state,'SharedRejectedULReceiveResults',{});
-assert(~any(cellfun(@(x)x.ObservationID==string(observationID),receipts)), ...
-    'sixgr:truth:DuplicateRejectedULReceiveCompletion','Do not decode or publish one receive-only window twice.');
 cfg=item.Context.Config;
 [csi,report]=sixgr.truth.resolveSharedPUSCHCSIReceiveObligation(state,cfg,grant);
 postIndex=find(endsWith(string({item.Planes.ReceiverID}),':post_rf'));
@@ -142,7 +142,6 @@ assert(applied,'sixgr:truth:ULHARQSchedulerCommitLost','The prevalidated receive
 % Feed the same actual ACK/NACK/DTX into adaptation. This internal scheduled
 % grant context is not a transmitted-TB row or a scored goodput sample.
 state=sixgr.truth.CoupledTruthRuntime.updateSchedulerAfterFeedbackRuntime(state,schedulerEvent,'UL');
-state.SharedRejectedULReceiveResults=[receipts,{result}];
 state.SharedGNBULHARQReceivers=nextUL.SharedGNBULHARQReceivers;
 state.SharedRejectedULReceiveAuditTable=next;
 state.SharedPUSCHHARQDecisionAuditTable=decisionAudit;
@@ -151,4 +150,7 @@ if ~isempty(fieldnames(producer))
     state.PUCCHGrantTraceTable=nextProducer.PUCCHGrantTraceTable;
     if isfield(nextProducer,'PendingCSITable'), state.PendingCSITable=nextProducer.PendingCSITable; end
 end
+root=sixgr.util.structGet(cfg,'run.rootRunFolder',state.RunFolder);
+receipt=owner.archivePUSCHReceiveOnlyCompletion(observationID,root,result);
+state.SharedRejectedULReceiveResults=[receipts,{receipt}];
 end

@@ -391,7 +391,7 @@ for c = 1:numel(candSymInd)
 
     % PDCCH decode -> soft bits
     rxCW = nrPDCCHDecode(eqSym, nCellID, pdcchScramblingRNTI, nVar);
-    rxCW = localApplyPDCCHCSIWeighting(rxCW, csi);
+    rxCW = sixgr.phy.pdcch.applyMMSECSIWeighting(rxCW, csi);
 
     % Reuse received REs/Hest/LLRs across independently configured payload
     % hypotheses. ExpectedDCIBits never selects a size, format or candidate.
@@ -849,39 +849,6 @@ evidence.EVMReferenceSource="nearest_QPSK_candidate_symbols_no_transmitted_paylo
 evidence.EVMErrorEnergy=sum(abs(x-ref).^2);
 evidence.EVMReferenceEnergy=sum(abs(ref).^2);
 evidence.EVMSymbolCount=numel(x);
-end
-
-function rxCW = localApplyPDCCHCSIWeighting(rxCW, csi)
-% Apply symbol reliability to PDCCH soft bits after demodulation.
-%
-% The 5G Toolbox PDCCH receiver examples weight the decoded codeword LLRs,
-% not the equalized QPSK symbols. Weighting the constellation directly
-% changes the decision geometry and can turn a high-SINR control channel
-% into random-looking DCI bits.
-if isempty(rxCW) || isempty(csi)
-    return;
-end
-llr = double(rxCW(:));
-rel = double(real(csi(:)));
-rel = rel(isfinite(rel));
-if isempty(rel)
-    return;
-end
-rel = max(rel, 0);
-meanRel = mean(rel, "omitnan");
-if ~(isfinite(meanRel) && meanRel > 0)
-    return;
-end
-rel = rel ./ meanRel;
-rel = min(max(rel, 0), 10);
-if numel(llr) == 2 * numel(rel)
-    w = repelem(rel, 2);
-elseif numel(llr) == numel(rel)
-    w = rel;
-else
-    return;
-end
-rxCW = reshape(llr .* double(w(:)), size(rxCW));
 end
 
 function y = localApplyTimingCorrection(x, timingOffset)

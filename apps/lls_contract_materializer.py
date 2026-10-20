@@ -9,9 +9,11 @@ import json
 import math
 import os
 import re
+import sqlite3
+import tempfile
 import textwrap
 from collections import Counter, defaultdict
-from contextlib import contextmanager, nullcontext
+from contextlib import closing, contextmanager, nullcontext
 from functools import lru_cache
 from itertools import chain, islice
 from pathlib import Path
@@ -30,11 +32,13 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-10-17-contract-v105-joint-receiver-constellation-evm"
+MATERIALIZER_VERSION = "2026-10-19-contract-v114-file-backed-constellation-publication"
 FILESYSTEM_CONTRACT_CACHE_PATH = (
     "artifact_generation/browser_contract_exact_source_cache.json"
 )
 MAX_PREVIEW_ROWS = 180
+# Serialization storage only; never a measurement or plotted-row limit.
+CSV_MEMORY_LIMIT_BYTES = 8 * 1024 * 1024
 MIN_EXPLANATORY_CHART_POINTS = 2
 MIN_TREND_CHART_POINTS = 3
 OPTIONAL_6G_POLICY_KEYS = (
@@ -1045,9 +1049,19 @@ def _contract_plot_lineage_row(
     image_path: str,
     source_csv_path: str,
     image_bytes: bytes,
-    source_csv_bytes: bytes,
+    source_csv_bytes,
 ) -> list[Any]:
     """Build exact raster-to-dataset lineage for one browser contract chart."""
+    if hasattr(source_csv_bytes, "read"):
+        # Existing filesystem charts need only a hash, not another complete
+        # multi-gigabyte CSV buffer. The caller owns/closes this stream.
+        digest = hashlib.sha256()
+        source_csv_bytes.seek(0)
+        while chunk := source_csv_bytes.read(1024 * 1024):
+            digest.update(chunk)
+        source_digest = digest.hexdigest()
+    else:
+        source_digest = _payload_sha256(source_csv_bytes)
     with Image.open(io.BytesIO(image_bytes)) as image:
         image.load()
         width, height = image.size
@@ -1056,7 +1070,7 @@ def _contract_plot_lineage_row(
         str(plot_id),
         str(image_path),
         str(source_csv_path),
-        hashlib.sha256(source_csv_bytes).hexdigest(),
+        source_digest,
         hashlib.sha256(image_bytes).hexdigest(),
         int(width),
         int(height),
@@ -1108,16 +1122,16 @@ def _append_filesystem_contract_alias_lineage(
         if not source_path.is_file():
             continue
         image_bytes = _windows_long_path(image_path).read_bytes()
-        source_bytes = _windows_long_path(source_path).read_bytes()
-        plot_lineage_rows.append(
-            _contract_plot_lineage_row(
-                f"contract_alias__{slugify(image_path.stem)}",
-                image_relative,
-                source_relative,
-                image_bytes,
-                source_bytes,
+        with _windows_long_path(source_path).open("rb") as source_stream:
+            plot_lineage_rows.append(
+                _contract_plot_lineage_row(
+                    f"contract_alias__{slugify(image_path.stem)}",
+                    image_relative,
+                    source_relative,
+                    image_bytes,
+                    source_stream,
+                )
             )
-        )
         already_lineaged.add(image_relative)
 
 
@@ -1320,23 +1334,127 @@ def _source_mapping_status_for_status(*statuses: str) -> str:
     return "exact"
 
 
-def _ensure_source_mapping_status_csv(data: bytes, source_mapping_status: str) -> bytes:
-    header, rows = _decode_csv(data)
-    if not header:
-        return data
+class _FileArtifactPayload:
+    """Sealed, owned temporary CSV storage; explicit alternative to bytes.
+
+    Primary artifacts are still the complete canonical CSVs. This private
+    file is released only after callers release its payload object.
+    """
+    def __init__(self, stream):
+        self.stream = stream
+        stream.seek(0, os.SEEK_END)
+        self.size = stream.tell()
+        self.digest = self._hash()
+
+    def _hash(self):
+        self.stream.seek(0)
+        digest = hashlib.sha256()
+        while chunk := self.stream.read(1024 * 1024):
+            digest.update(chunk)
+        self.stream.seek(0)
+        return digest.hexdigest()
+
+    def verify(self):
+        self.stream.seek(0, os.SEEK_END)
+        if self.stream.tell() != self.size or self._hash() != self.digest:
+            raise ValueError("Sealed CSV payload changed before publication")
+
+    def close(self):
+        self.stream.close()
+
+    def __del__(self):
+        self.close()
+
+
+def _csv_output_buffer():
+    return tempfile.SpooledTemporaryFile(max_size=CSV_MEMORY_LIMIT_BYTES, mode="w+b")
+
+
+def _finish_csv_buffer(stream):
+    stream.flush()
+    stream.seek(0, os.SEEK_END)
+    if stream.tell() > CSV_MEMORY_LIMIT_BYTES:
+        return _FileArtifactPayload(stream)
+    stream.seek(0)
+    data = stream.read()
+    stream.close()
+    return data
+
+
+def _payload_size(data):
+    return data.size if isinstance(data, _FileArtifactPayload) else len(data)
+
+
+@contextmanager
+def _payload_reader(data):
+    if isinstance(data, _FileArtifactPayload):
+        data.verify()
+        data.stream.seek(0)
+        yield data.stream
+        data.verify()
+    else:
+        with io.BytesIO(data) as stream:
+            yield stream
+
+
+def _payload_chunks(data, chunk_size=512*1024):
+    with _payload_reader(data) as stream:
+        while chunk := stream.read(chunk_size):
+            yield chunk
+
+
+def _payload_sha256(data):
+    if isinstance(data, _FileArtifactPayload):
+        data.verify()
+        return data.digest
+    return hashlib.sha256(data).hexdigest()
+
+
+def _csv_payload_fields(payload):
+    return {"csv_file": payload} if isinstance(payload, _FileArtifactPayload) else {"csv_bytes": payload}
+
+
+def _ensure_source_mapping_status_csv(data, source_mapping_status: str):
+    # This is also called on complete full-band Hest datasets. Do not undo
+    # the bounded source readers by creating a second list of every row.
     status = str(source_mapping_status or "unavailable").strip().lower()
     if status not in {"exact", "unavailable", "invalid"}:
         status = "unavailable"
+    with _csv_field_limit_for_payload(data), _payload_reader(data) as binary_source:
+        source = io.TextIOWrapper(binary_source, encoding="utf-8", errors="ignore", newline="")
+        try:
+            return _stream_source_mapping_status_csv(source, data, status)
+        finally:
+            source.detach()  # The payload owner, not this view, owns the file.
+
+
+def _stream_source_mapping_status_csv(source, original, status):
+    rows = csv.reader(source)
+    header = next(rows, [])
+    if not header:
+        return original
     lower = [str(name or "").strip().lower() for name in header]
-    if "source_mapping_status" in lower:
-        idx = lower.index("source_mapping_status")
+    idx = lower.index("source_mapping_status") if "source_mapping_status" in lower else None
+    output = _csv_output_buffer()
+    target = io.TextIOWrapper(output, encoding="utf-8", newline="")
+    try:
+        writer = csv.writer(target, lineterminator="\n")
+        writer.writerow(header if idx is not None else header + ["source_mapping_status"])
         for row in rows:
-            while len(row) <= idx:
-                row.append("")
-            if not str(row[idx] or "").strip():
-                row[idx] = status
-        return _encode_csv(header, rows)
-    return _encode_csv(header + ["source_mapping_status"], [row + [status] for row in rows])
+            if idx is None:
+                row.append(status)
+            else:
+                while len(row) <= idx:
+                    row.append("")
+                if not str(row[idx] or "").strip():
+                    row[idx] = status
+            writer.writerow(row)
+        target.flush()
+    except Exception:
+        target.close()
+        raise
+    target.detach()
+    return _finish_csv_buffer(output)
 
 
 def _finalize_chart_materialization_result(result: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -1347,8 +1465,11 @@ def _finalize_chart_materialization_result(result: dict[str, Any] | None) -> dic
     if source_mapping_status not in {"exact", "unavailable", "invalid"}:
         source_mapping_status = _source_mapping_status_for_status(out.get("csv_status", ""), out.get("image_status", ""))
     out["source_mapping_status"] = source_mapping_status
-    if "csv_bytes" in out:
-        out["csv_bytes"] = _ensure_source_mapping_status_csv(bytes(out["csv_bytes"]), source_mapping_status)
+    if "csv_bytes" in out or "csv_file" in out:
+        if "csv_bytes" in out and "csv_file" in out:
+            raise ValueError("A chart must have one complete CSV payload authority")
+        payload = out.pop("csv_file") if "csv_file" in out else out.pop("csv_bytes")
+        out.update(_csv_payload_fields(_ensure_source_mapping_status_csv(payload, source_mapping_status)))
     return out
 
 
@@ -2344,7 +2465,7 @@ def _csv_field_limit_for_payload(data: bytes):
     bound.  Restore the process-wide parser setting after either decoder.
     """
     prior_limit = csv.field_size_limit()
-    required_limit = max(prior_limit, len(data) + 1)
+    required_limit = max(prior_limit, _payload_size(data) + 1)
     if required_limit != prior_limit:
         csv.field_size_limit(required_limit)
     try:
@@ -3765,6 +3886,105 @@ def _first_available_csv_stream(existing, fetch_artifact_bytes, candidates):
             finally:
                 csv.field_size_limit(prior_limit)
     yield "", iter(())
+
+
+@contextmanager
+def _all_available_csv_streams(existing, fetch_artifact_bytes, candidates):
+    """Iterate source/rows pairs and close the active source on early return."""
+    def sources():
+        for candidate in candidates:
+            with _first_available_csv_stream(existing, fetch_artifact_bytes, [candidate]) as (path, rows):
+                if path:
+                    yield path, rows
+    with closing(sources()) as stream:
+        yield stream
+
+
+class _ConstellationSampleSpool:
+    """Exact disk-backed rows/preview index; no input population in Python RAM.
+
+    Large output CSVs transfer ownership to the file-backed artifact protocol.
+    Scratch indexes are private temporary SQLite files, deleted on close,
+    never primary evidence or approximations. Every selected row is retained.
+    """
+    def __enter__(self):
+        self.db = sqlite3.connect("")
+        self.db.execute("PRAGMA cache_size=-2048")
+        self.db.execute("PRAGMA journal_mode=OFF")
+        self.db.execute("CREATE TABLE samples (id INTEGER PRIMARY KEY, panel INTEGER, ordinal INTEGER, data TEXT)")
+        self.db.execute("CREATE UNIQUE INDEX sample_panel ON samples(panel,ordinal)")
+        self.db.execute("CREATE TABLE refs (panel INTEGER, x REAL, y REAL, first_id INTEGER, PRIMARY KEY(panel,x,y)) WITHOUT ROWID")
+        self.count = 0
+        self.panel_counts = Counter()
+        self.directions = Counter()
+        self.sources = {}
+        self.header = []
+        return self
+
+    def __exit__(self, *_):
+        self.db.close()
+
+    def append(self, row, panel):
+        ordinal = self.panel_counts[panel]
+        self.db.execute("INSERT INTO samples VALUES (?,?,?,?)", (self.count, panel, ordinal, json.dumps(row)))
+        x, y = (row.get("reference_x", row.get("ReferenceSymbolReal")),
+                row.get("reference_y", row.get("ReferenceSymbolImag")))
+        if x is not None and y is not None:
+            self.db.execute("INSERT OR IGNORE INTO refs VALUES (?,?,?,?)", (panel, x, y, self.count))
+        if not self.header:
+            self.header = list(row)
+        self.count += 1
+        self.panel_counts[panel] += 1
+        self.directions[row["direction"]] += 1
+        self.sources[row["source_table_logical_path"]] = None
+
+    def __len__(self):
+        return self.count
+
+    def __iter__(self):
+        for (data,) in self.db.execute("SELECT data FROM samples ORDER BY id"):
+            yield json.loads(data)
+
+    @staticmethod
+    def _preview_indices(length, limit):
+        count = min(length, limit)
+        return [i*(length-1)//max(count-1, 1) for i in range(count)]
+
+    def panel_preview(self, panel):
+        points = []
+        for index in self._preview_indices(self.panel_counts[panel], 450):
+            row = json.loads(self.db.execute("SELECT data FROM samples WHERE panel=? AND ordinal=?", (panel, index)).fetchone()[0])
+            points.append((row.get("x_value", row.get("EqualizedReal")),
+                           row.get("y_value", row.get("EqualizedImag")), row["direction"]))
+        count = self.db.execute("SELECT COUNT(*) FROM refs WHERE panel=?", (panel,)).fetchone()[0]
+        indices = iter(self._preview_indices(count, 256))
+        wanted = next(indices, None)
+        references = []
+        for index, (x, y) in enumerate(self.db.execute("SELECT x,y FROM refs WHERE panel=? ORDER BY first_id", (panel,))):
+            if index == wanted:
+                references.append((x, y))
+                wanted = next(indices, None)
+        return points, references
+
+    def csv_payload(self, rows=None):
+        # Use the same CSV dialect as _encode_dict_rows without first building
+        # full dict/list/Unicode/byte copies. Spilling changes storage only;
+        # callers still publish and hash the complete canonical population.
+        binary = _csv_output_buffer()
+        text = io.TextIOWrapper(binary, encoding="utf-8", newline="")
+        try:
+            writer = None
+            for row in self if rows is None else rows:
+                if writer is None:
+                    writer = csv.DictWriter(text, list(row), lineterminator="\n")
+                    writer.writeheader()
+                writer.writerow(row)
+            text.flush()
+        except Exception:
+            text.close()
+            raise
+        text.detach()
+        return _finish_csv_buffer(binary)
 
 
 def _json_object(payload: Any) -> dict[str, Any]:
@@ -5775,7 +5995,18 @@ def _pucch_dtx_chart_materialization(
         missed_flag = _row_flag(row, "MissedDetection", "MissedDetectionFlag")
         false_alarm_flag = _row_flag(row, "FalseAlarm", "FalseAlarmFlag")
         receiver_fields = {key: value for key, value in row.items() if _normalized_row_key(key) != "status"}
-        decode_ok = _row_flag(receiver_fields, "CRCPass", "DecodeSuccess", "PUCCHDecodeOk", "DetectionUsable")
+        # CRC, detector presence and completed UCI reception are distinct.
+        # Do not let a raw CRC pass override an explicit rejected reception,
+        # or manufacture a decode outcome when only detection was recorded.
+        decode_ok = _row_flag(receiver_fields, "PUCCHDecodeOk", "DecodeSuccess")
+        detection_usable = _row_flag(receiver_fields, "DetectionUsable")
+        # The generic CRCPass aliases include DecodeSuccess. Restrict this
+        # input to actual CRC columns so those aliases cannot invent CRCs.
+        crc_fields = {key: value for key, value in row.items()
+                      if _normalized_row_key(key) in {"crcpass", "crcapplicable", "ucicrcapplicable"}}
+        crc_pass = _row_flag(crc_fields, "CRCPass")
+        crc_applicable = _row_flag(crc_fields, "CRCApplicable", "UCICRCApplicable")
+        crc_failed = crc_applicable is not False and crc_pass is False
         if detection_attempted is False:
             bucket = "Detection not attempted"
         elif metric_valid is False or outcome == "unavailable":
@@ -5788,12 +6019,16 @@ def _pucch_dtx_chart_materialization(
             bucket = "DTX"
         elif outcome == "detected" and (content_match is False or (bit_errors is not None and bit_errors > 0)):
             bucket = "Detected; payload incorrect"
-        elif outcome == "detected" and decode_ok is False:
+        elif outcome == "detected" and (decode_ok is False or crc_failed):
             bucket = "Detected; decode failure"
         elif decode_ok is True or outcome in {"detected", "pass", "ok", "success", "ack", "nack"}:
             bucket = "Decoded/observed"
-        elif decode_ok is False or outcome in {"failed", "fail", "crc_fail", "decode_fail"}:
+        elif decode_ok is False or crc_failed or outcome in {"failed", "fail", "crc_fail", "decode_fail"}:
             bucket = "Decode failure"
+        elif crc_applicable is not False and crc_pass is True:
+            bucket = "CRC pass; reception unqualified"
+        elif detection_usable is True:
+            bucket = "Detected; decode unavailable"
         else:
             bucket = "Unavailable"
         counts[bucket] += 1
@@ -5813,13 +6048,15 @@ def _pucch_dtx_chart_materialization(
                 "missed_detection_flag": "" if missed_flag is None else int(bool(missed_flag)),
                 "false_alarm_flag": "" if false_alarm_flag is None else int(bool(false_alarm_flag)),
                 "decode_ok": "" if decode_ok is None else int(bool(decode_ok)),
+                "crc_applicable": "" if crc_applicable is None else int(crc_applicable),
+                "crc_pass": "" if crc_pass is None else int(crc_pass),
                 "source_table_logical_path": source_path,
             }
         )
     dataset, summary = _bar_dataset_from_named_values("PUCCH feedback bucket", "Count", [(key, float(value)) for key, value in counts.items()])
     summary.append(f"source={source_path}")
     return {
-        "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "slot", "ue_id", "dtx_bucket", "detection_outcome", "bits_compared", "bit_errors", "uci_content_match", "detection_metric_valid", "dtx_flag", "missed_detection_flag", "false_alarm_flag", "decode_ok", "source_table_logical_path"], csv_rows),
+        "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "slot", "ue_id", "dtx_bucket", "detection_outcome", "bits_compared", "bit_errors", "uci_content_match", "detection_metric_valid", "dtx_flag", "missed_detection_flag", "false_alarm_flag", "decode_ok", "crc_applicable", "crc_pass", "source_table_logical_path"], csv_rows),
         "img_bytes": _render_svg_plot(chart_name, "PUCCH DTX/miss/detect statistics from persisted PUCCH waveform trials.", dataset, summary),
         "csv_status": "specialized_runtime_pucch_dtx_dataset",
         "image_status": "generated_specialized_runtime_summary_svg",
@@ -9610,12 +9847,8 @@ def _runtime_spectral_chart(
     }:
         return None
     source_path = "reports/csv/phy_signal_diagnostic_source.csv"
-    _, source_rows = _artifact_rows_by_path(existing, fetch_artifact_bytes, source_path)
-    exact_rows = [row for row in source_rows
-                  if _row_text(row, "Panel") == "spectrum"
-                  and _row_text(row, "Status").lower() == "available"
-                  and _row_text(row, "truth_status").lower() == "real_lls_evidence"
-                  and _row_text(row, "SourceArtifact").lower() == "runtime_phy_arrays_same_trial"]
+    # Do not import millions of unrelated Hest rows to plot a bounded FFT.
+    exact_rows = list(_diagnostic_panel_rows(existing, fetch_artifact_bytes, {"spectrum"}))
     if not exact_rows:
         return None
     # Select one bounded, coherent runtime snapshot per direction. Combining
@@ -10913,6 +11146,132 @@ def _runtime_energy_summary_chart(
     }
 
 
+def _diagnostic_panel_rows(existing, fetch_artifact_bytes, panels):
+    """Visit the entire source, retaining only the requested measurement plane.
+
+    No prefix cap: a malformed final selected row must not disappear. Other
+    planes are not substitutes for the requested plane. Files close on error.
+    """
+    path = "reports/csv/phy_signal_diagnostic_source.csv"
+    with _first_available_csv_stream(existing, fetch_artifact_bytes, [path]) as (_, rows):
+        for row in rows:
+            if _row_text(row, "Panel") not in panels:
+                continue
+            for field, expected in (("Status", "available"), ("truth_status", "real_lls_evidence"),
+                                    ("SourceArtifact", "runtime_phy_arrays_same_trial")):
+                if _row_text(row, field).strip().lower() != expected:
+                    raise ValueError(f"Invalid PHY diagnostic {field} in selected measurement plane")
+            yield row
+
+
+def _runtime_hest_grid_stream(chart_name, existing, fetch_artifact_bytes, run_id):
+    """Two exact passes: choose the same snapshot/pair, then stream all CSV rows.
+
+    Working state is one raster plane plus snapshot metadata, not millions of
+    wide row dictionaries. Large complete CSVs use sealed file-backed payloads
+    through finalization, persistence and lineage; small outputs retain bytes.
+    """
+    source_path = "reports/csv/phy_signal_diagnostic_source.csv"
+    counts, pairs = Counter(), {}
+    first_hash = hashlib.sha256()
+
+    def rows():
+        for row in _diagnostic_panel_rows(existing, fetch_artifact_bytes, {"channel_estimate_grid"}):
+            if _row_text(row, "Series") == "receiver_hest_exact_tensor":
+                yield row
+
+    def fingerprint(digest, row):
+        digest.update(json.dumps(row, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
+        digest.update(b"\n")
+
+    for row in rows():
+        fingerprint(first_hash, row)
+        snapshot = _row_text(row, "SnapshotID")
+        if not snapshot:
+            raise ValueError("Hest grid requires a captured snapshot identity")
+        pair = (_row_text(row, "RxPortIndex0Based"), _row_text(row, "TxPortIndex0Based"))
+        if not all(pair):
+            raise ValueError("Hest grid requires explicit RX/TX port identities")
+        counts[snapshot] += 1
+        pairs[snapshot] = min(pairs.get(snapshot, pair), pair)
+    if not counts:
+        return None
+    snapshot = max(counts, key=counts.get)
+    raster_pair = pairs[snapshot]
+    value_field = "Phase_deg" if chart_name == "channel phase heatmap" else "Magnitude_dB"
+    # Mapping/order matches the canonical plotted CSV. Undefined phases and
+    # true zero coefficients are retained, not dropped or replaced by floors.
+    mapping = [
+        ("direction", "Direction"), ("cell_id", "CellID"), ("ue_index", "UEIndex"),
+        ("sfn", "SFN"), ("slot", "Slot"), ("subcarrier_index", "SubcarrierIndex"),
+        ("resource_block_index", "ResourceBlockIndex"), ("subcarrier_in_resource_block", "SubcarrierInResourceBlock"),
+        ("ofdm_symbol_index", "OFDMSymbolIndex"), ("rx_port_index_0based", "RxPortIndex0Based"),
+        ("tx_port_index_0based", "TxPortIndex0Based"), ("i_value", "IValue"), ("q_value", "QValue"),
+        ("magnitude_db", "Magnitude_dB"), ("phase_deg", "Phase_deg"),
+        ("wrapped_phase_rad", "WrappedPhase_rad"), ("unwrapped_phase_frequency_rad", "UnwrappedPhaseFrequency_rad"),
+        ("unwrapped_phase_time_rad", "UnwrappedPhaseTime_rad"), ("phase_delta_frequency_rad", "PhaseDeltaFrequency_rad"),
+        ("phase_delta_time_rad", "PhaseDeltaTime_rad"), ("grid_sha256", "GridSHA256"),
+    ]
+    header = ["run_id", "chart_name", "snapshot_id", *[name for name, _ in mapping],
+              "raster_color_offset", "source_table_logical_path"]
+    output = _csv_output_buffer()
+    text = io.TextIOWrapper(output, encoding="utf-8", newline="")
+    writer = csv.writer(text, lineterminator="\n")
+    writer.writerow(header)
+    coordinates, first_raster, written = {}, None, 0
+    second_hash = hashlib.sha256()
+    try:
+        for row in rows():
+            fingerprint(second_hash, row)
+            if _row_text(row, "SnapshotID") != snapshot:
+                continue
+            values = []
+            for name, source in mapping:
+                number = _row_float(row, source) if name in {"magnitude_db", "phase_deg"} else None
+                values.append(number if number is not None else _row_text(row, source))
+            writer.writerow([run_id, chart_name, snapshot, *values, 0.0, source_path])
+            written += 1
+            if (_row_text(row, "RxPortIndex0Based"), _row_text(row, "TxPortIndex0Based")) != raster_pair:
+                continue
+            x, y = _row_float(row, "SubcarrierIndex"), _row_float(row, "OFDMSymbolIndex")
+            if x is None or y is None:
+                raise ValueError("Hest raster requires measured resource coordinates")
+            if (x, y) in coordinates:
+                raise ValueError("Duplicate Hest coordinate in the selected snapshot/port plane")
+            coordinates[(x, y)] = _row_float(row, value_field)
+            if first_raster is None:
+                first_raster = row
+        if first_hash.digest() != second_hash.digest() or written != counts[snapshot]:
+            raise ValueError("PHY diagnostic source changed during two-pass materialization")
+        text.flush()
+    except Exception:
+        text.close()
+        raise
+    text.detach()
+    csv_payload = _finish_csv_buffer(output)
+    if not coordinates or not any(value is not None for value in coordinates.values()):
+        return None
+    xs = sorted({x for x, _ in coordinates})
+    ys = sorted({y for _, y in coordinates})
+    matrix = [[coordinates.get((x, y)) for x in xs] for y in ys]
+    label = "Receiver Hest phase (deg)" if value_field == "Phase_deg" else "Receiver Hest magnitude (dB)"
+    return {
+        **_csv_payload_fields(csv_payload),
+        "img_bytes": _render_heatmap_svg(
+            chart_name, f"{label} across subcarrier and OFDM symbol for one explicitly identified Rx/Tx port pair.",
+            [str(int(x)) for x in xs], [str(int(y)) for y in ys], matrix,
+            [f"snapshot={snapshot}", f"raster_rx_port={raster_pair[0]}", f"raster_tx_port={raster_pair[1]}",
+             f"direction={_row_text(first_raster, 'Direction')} slot={_row_text(first_raster, 'Slot')}",
+             f"all_port_rows_in_csv={written}", "color_offset=0", f"source={source_path}",
+             "evidence=receiver_Hest_exact_tensor"],
+            "Zero-based subcarrier index", "Zero-based OFDM symbol index", physical_color_label=label),
+        "csv_status": "specialized_runtime_exact_hest_grid_dataset",
+        "image_status": "generated_specialized_runtime_hest_heatmap_svg",
+        "source_table_path": source_path, "source_row_count": written, "source_mapping_status": "exact",
+        "note": "The raster uses one declared Rx/Tx port pair; the CSV retains the full persisted complex Hest tensor across ports, symbols, and subcarriers.",
+    }
+
+
 def _runtime_phy_signal_diagnostic_chart(
     chart_name: str,
     existing: dict[str, dict[str, Any]],
@@ -10952,19 +11311,18 @@ def _runtime_phy_signal_diagnostic_chart(
         return None
 
     source_path = "reports/csv/phy_signal_diagnostic_source.csv"
-    _header, rows = _artifact_rows_by_path(
-        existing, fetch_artifact_bytes, source_path
-    )
-    if not rows or _is_absence_placeholder_rows(rows):
-        return None
-
-    exact_rows = [
-        row for row in rows
-        if _row_text(row, "Status").strip().lower() == "available"
-        and _row_text(row, "truth_status").strip().lower() == "real_lls_evidence"
-        and _row_text(row, "SourceArtifact").strip().lower()
-        == "runtime_phy_arrays_same_trial"
-    ]
+    if chart_name in {"channel heatmap artifact links", "channel magnitude heatmap", "channel phase heatmap"}:
+        return _runtime_hest_grid_stream(chart_name, existing, fetch_artifact_bytes, run_id)
+    panel = {
+        "pre-equalization constellation": "pre_equalization_re_cloud",
+        "true H(tau) if available": "true_channel_impulse_response",
+        "channel impulse response": "true_channel_impulse_response",
+        "tap power profile": "true_channel_impulse_response",
+        "estimated Hhat(tau)": "estimated_channel_impulse_response",
+        "true H(f) if available": "true_channel_frequency_response",
+        "estimated Hhat(f)": "channel_estimate",
+    }.get(chart_name, "time_domain")
+    exact_rows = list(_diagnostic_panel_rows(existing, fetch_artifact_bytes, {panel}))
     if not exact_rows:
         return None
 
@@ -11377,132 +11735,7 @@ def _runtime_phy_signal_diagnostic_chart(
             "note": "Hhat(f) uses the receiver's persisted complex channel estimate; configured channel profile values are not substituted.",
         }
 
-    grid_rows = [
-        row for row in exact_rows
-        if _row_text(row, "Panel") == "channel_estimate_grid"
-        and _row_text(row, "Series") == "receiver_hest_exact_tensor"
-    ]
-    if not grid_rows:
-        return None
-    # Select one exact snapshot and one Rx/Tx port pair for the raster.  The
-    # derived CSV retains every persisted port row for independent replotting.
-    snapshot_counts: dict[str, int] = defaultdict(int)
-    for row in grid_rows:
-        snapshot_counts[_row_text(row, "SnapshotID")] += 1
-    snapshot_id = max(snapshot_counts, key=snapshot_counts.get)
-    selected = [row for row in grid_rows if _row_text(row, "SnapshotID") == snapshot_id]
-    port_pairs = sorted({
-        (_row_text(row, "RxPortIndex0Based"), _row_text(row, "TxPortIndex0Based"))
-        for row in selected
-    })
-    raster_pair = port_pairs[0] if port_pairs else ("0", "0")
-    raster_rows = [
-        row for row in selected
-        if (_row_text(row, "RxPortIndex0Based"), _row_text(row, "TxPortIndex0Based"))
-        == raster_pair
-    ]
-    x_values = sorted({
-        float(value) for row in raster_rows
-        if (value := _row_float(row, "SubcarrierIndex")) is not None
-    })
-    y_values = sorted({
-        float(value) for row in raster_rows
-        if (value := _row_float(row, "OFDMSymbolIndex")) is not None
-    })
-    if not x_values or not y_values:
-        return None
-    x_index = {value: index for index, value in enumerate(x_values)}
-    y_index = {value: index for index, value in enumerate(y_values)}
-    value_field = "Phase_deg" if chart_name == "channel phase heatmap" else "Magnitude_dB"
-    values_by_coordinate: dict[tuple[float, float], float] = {}
-    for row in raster_rows:
-        x_value = _row_float(row, "SubcarrierIndex")
-        y_value = _row_float(row, "OFDMSymbolIndex")
-        metric = _row_float(row, value_field)
-        if x_value is None or y_value is None or metric is None:
-            continue
-        values_by_coordinate[(float(x_value), float(y_value))] = float(metric)
-    if not values_by_coordinate:
-        return None
-    # Pass signed physical values to the renderer's labelled colour scale.
-    # Zero phase/zero dB is valid; absent coordinates are not zero samples.
-    color_offset = 0.0
-    matrix = [[None for _ in x_values] for _ in y_values]
-    for (x_value, y_value), metric in values_by_coordinate.items():
-        matrix[y_index[y_value]][x_index[x_value]] = metric
-
-    csv_rows = []
-    for row in selected:
-        magnitude_db = _row_float(row, "Magnitude_dB")
-        phase_deg = _row_float(row, "Phase_deg")
-        if magnitude_db is None or phase_deg is None:
-            continue
-        csv_rows.append({
-            "run_id": run_id,
-            "chart_name": chart_name,
-            "snapshot_id": snapshot_id,
-            "direction": _row_text(row, "Direction"),
-            "cell_id": _row_text(row, "CellID"),
-            "ue_index": _row_text(row, "UEIndex"),
-            "sfn": _row_text(row, "SFN"),
-            "slot": _row_text(row, "Slot"),
-            "subcarrier_index": _row_text(row, "SubcarrierIndex"),
-            "resource_block_index": _row_text(row, "ResourceBlockIndex"),
-            "subcarrier_in_resource_block": _row_text(row, "SubcarrierInResourceBlock"),
-            "ofdm_symbol_index": _row_text(row, "OFDMSymbolIndex"),
-            "rx_port_index_0based": _row_text(row, "RxPortIndex0Based"),
-            "tx_port_index_0based": _row_text(row, "TxPortIndex0Based"),
-            "i_value": _row_text(row, "IValue"),
-            "q_value": _row_text(row, "QValue"),
-            "magnitude_db": float(magnitude_db),
-            "phase_deg": float(phase_deg),
-            "wrapped_phase_rad": _row_text(row, "WrappedPhase_rad"),
-            "unwrapped_phase_frequency_rad": _row_text(row, "UnwrappedPhaseFrequency_rad"),
-            "unwrapped_phase_time_rad": _row_text(row, "UnwrappedPhaseTime_rad"),
-            "phase_delta_frequency_rad": _row_text(row, "PhaseDeltaFrequency_rad"),
-            "phase_delta_time_rad": _row_text(row, "PhaseDeltaTime_rad"),
-            "grid_sha256": _row_text(row, "GridSHA256"),
-            "raster_color_offset": color_offset,
-            "source_table_logical_path": source_path,
-        })
-    if not csv_rows:
-        return None
-    metric_label = "Receiver Hest phase (deg)" if value_field == "Phase_deg" else "Receiver Hest magnitude (dB)"
-    return {
-        "csv_bytes": _encode_dict_rows(
-            [
-                "run_id", "chart_name", "snapshot_id", "direction", "cell_id", "ue_index",
-                "sfn", "slot", "subcarrier_index", "resource_block_index",
-                "subcarrier_in_resource_block", "ofdm_symbol_index", "rx_port_index_0based",
-                "tx_port_index_0based", "i_value", "q_value", "magnitude_db", "phase_deg",
-                "wrapped_phase_rad", "unwrapped_phase_frequency_rad", "unwrapped_phase_time_rad",
-                "phase_delta_frequency_rad", "phase_delta_time_rad", "grid_sha256",
-                "raster_color_offset", "source_table_logical_path",
-            ], csv_rows,
-        ),
-        "img_bytes": _render_heatmap_svg(
-            chart_name,
-            f"{metric_label} across subcarrier and OFDM symbol for one explicitly identified Rx/Tx port pair.",
-            [str(int(value)) for value in x_values],
-            [str(int(value)) for value in y_values],
-            matrix,
-            [
-                f"snapshot={snapshot_id}",
-                f"raster_rx_port={raster_pair[0]}", f"raster_tx_port={raster_pair[1]}",
-                f"direction={_row_text(raster_rows[0], 'Direction')} slot={_row_text(raster_rows[0], 'Slot')}",
-                f"all_port_rows_in_csv={len(csv_rows)}", f"color_offset={color_offset:.6g}",
-                f"source={source_path}", "evidence=receiver_Hest_exact_tensor",
-            ],
-            "Zero-based subcarrier index", "Zero-based OFDM symbol index",
-            physical_color_label=metric_label,
-        ),
-        "csv_status": "specialized_runtime_exact_hest_grid_dataset",
-        "image_status": "generated_specialized_runtime_hest_heatmap_svg",
-        "source_table_path": source_path,
-        "source_row_count": len(csv_rows),
-        "source_mapping_status": "exact",
-        "note": "The raster uses one declared Rx/Tx port pair; the CSV retains the full persisted complex Hest tensor across ports, symbols, and subcarriers.",
-    }
+    return None
 
 
 def _constellation_experiment_fields(row):
@@ -11544,15 +11777,20 @@ def _runtime_constellation_chart(chart_name, existing, fetch_artifact_bytes, run
     UE, modulation and normalization. The CSV keeps every observation identity;
     display previews never become measurement or statistical populations.
     """
+    candidates = ["air_interface/csv/dl_constellation_samples.csv", "air_interface/csv/ul_constellation_samples.csv",
+        "air_interface/csv/dl_constellation_preview.csv", "air_interface/csv/ul_constellation_preview.csv",
+        "reports/csv/equalized_constellations.csv", "analytics/csv/constellation_analytics.csv"]
+    with _all_available_csv_streams(existing, fetch_artifact_bytes, candidates) as sources:
+        with _ConstellationSampleSpool() as samples:
+            return _runtime_constellation_stream(chart_name, sources, run_id, samples)
+
+
+def _runtime_constellation_stream(chart_name, sources, run_id, csv_rows):
     group_field = {"constellation per layer": "LayerIndex",
                    "constellation per codeword": "CodewordIndex"}.get(chart_name)
     pre = chart_name == "pre-equalization constellation"
     xy_chart = chart_name in {"pre-equalization constellation", "post-equalization constellation"}
-    chosen, groups, csv_rows = {}, {}, []
-    sources = _all_available_rows(existing, fetch_artifact_bytes, [
-        "air_interface/csv/dl_constellation_samples.csv", "air_interface/csv/ul_constellation_samples.csv",
-        "air_interface/csv/dl_constellation_preview.csv", "air_interface/csv/ul_constellation_preview.csv",
-        "reports/csv/equalized_constellations.csv", "analytics/csv/constellation_analytics.csv"])
+    chosen, groups = {}, {}
     for source_path, rows in sources:
         default = "DL" if "/dl_" in source_path else "UL" if "/ul_" in source_path else ""
         for source_row_index, row in enumerate(rows, 1):
@@ -11601,11 +11839,8 @@ def _runtime_constellation_chart(chart_name, existing, fetch_artifact_bytes, run
                 title += "\n" + "\n".join(textwrap.wrap(details.strip(), 39))
             if normalization:
                 title += "\n" + "\n".join(textwrap.wrap(normalization, 39))
-            panel = groups.setdefault(panel_key, {"title": title, "points": [], "references": {}})
-            panel["points"].append((x, y, direction))
+            panel = groups.setdefault(panel_key, {"title": title, "index": len(groups)})
             ref_x, ref_y = _row_float(row, "ReferenceSymbolReal"), _row_float(row, "ReferenceSymbolImag")
-            if ref_x is not None and ref_y is not None:
-                panel["references"][(ref_x, ref_y)] = None
             values = {"x_value": x, "y_value": y, "reference_x": ref_x, "reference_y": ref_y} if xy_chart else {
                 "EqualizedReal": x, "EqualizedImag": y, "ReferenceSymbolReal": ref_x, "ReferenceSymbolImag": ref_y}
             csv_rows.append({"run_id": run_id, "chart_name": chart_name, "direction": direction,
@@ -11617,7 +11852,7 @@ def _runtime_constellation_chart(chart_name, existing, fetch_artifact_bytes, run
                 "sample_index": _row_text(row, "SampleIndex"), "capture_scope": _row_text(row, "CaptureScope"),
                 "normalization": normalization, "source_table_logical_path": source_path,
                 "source_row_index": source_row_index,
-                **({group_field: int(group)} if group_field else {})})
+                **({group_field: int(group)} if group_field else {})}, panel["index"])
     if not groups:
         if xy_chart and chosen:
             raise ConstellationPlaneUnavailableError(chart_name)
@@ -11625,72 +11860,78 @@ def _runtime_constellation_chart(chart_name, existing, fetch_artifact_bytes, run
     if chart_name == "symbol decision error histogram":
         return _runtime_paired_symbol_error_histogram(csv_rows, chart_name)
 
-    def preview(values, limit):
-        count = min(len(values), limit)
-        return [values[i*(len(values)-1)//max(count-1, 1)] for i in range(count)]
-
-    panels = [(p["title"], preview(p["points"], 450), preview(list(p["references"]), 256)) for p in groups.values()]
-    counts = Counter(row["direction"] for row in csv_rows)
-    return {"csv_bytes": _encode_dict_rows(list(csv_rows[0]), csv_rows),
+    panels = [(p["title"], *csv_rows.panel_preview(p["index"])) for p in groups.values()]
+    counts = csv_rows.directions
+    return {**_csv_payload_fields(csv_rows.csv_payload()),
         "img_bytes": _render_scatter_panels_svg(chart_name,
             "Separate point / UE / modulation panels; uniform row-index preview per panel. All retained samples in CSV.",
             panels, [f"dl_rows={counts['DL']}", f"ul_rows={counts['UL']}", f"panels={len(panels)}",
-                     "Preview: up to 450 samples/panel", "256 unique references/panel", "CSV: all retained samples"]),
+                     "Preview: up to 450 samples/panel", "Preview: up to 256 unique references/panel", "CSV: all retained samples"]),
         "csv_status": "specialized_runtime_constellation_dataset",
         "image_status": "generated_specialized_runtime_constellation_svg",
-        "source_table_path": "|".join(dict.fromkeys(r["source_table_logical_path"] for r in csv_rows)),
+        "source_table_path": "|".join(csv_rows.sources),
         "source_row_count": len(csv_rows),
         "note": "Canonical captures take precedence over aliases. Raw receiver symbols are not payload fitted; exact planes and declared sweep/UE/modulation scopes remain separate. CSV retains all samples and attempt identities; images are labelled per-panel previews, not statistical populations."}
 
 
 def _runtime_paired_symbol_error_histogram(rows, chart_name):
     """Count raw received-minus-paired-transmitted errors, not nearest decisions."""
-    populations = defaultdict(list)
-    errors = []
-    for row in rows:
+    def error_of(row):
         real, imag = row["ReferenceSymbolReal"], row["ReferenceSymbolImag"]
-        paired = real is not None and imag is not None
-        error = math.hypot(row["EqualizedReal"] - real, row["EqualizedImag"] - imag) if paired else None
-        row.update(decision_error_magnitude=error, bin_index=None, bin_lower=None,
-                   bin_upper=None, bin_count=None, population_sample_count=None,
-                   value_status="available" if paired else "unavailable_paired_reference")
-        if not paired:
+        return math.hypot(row["EqualizedReal"]-real, row["EqualizedImag"]-imag) if real is not None and imag is not None else None
+
+    def label_of(row):
+        return (f"{row['direction']} U{row['ue_index']} {row['modulation']} "
+                f"{row['normalization']} " + _constellation_experiment_label(row)).strip()
+
+    populations = Counter()
+    low, high = math.inf, -math.inf
+    for row in rows:
+        error = error_of(row)
+        if error is None:
             continue
-        label = (f"{row['direction']} U{row['ue_index']} {row['modulation']} "
-                 f"{row['normalization']} " + _constellation_experiment_label(row)).strip()
-        populations[label].append(row)
-        errors.append(error)
-    if not errors:
+        populations[label_of(row)] += 1
+        low, high = min(low, error), max(high, error)
+    if not populations:
         raise ValueError("Symbol error histogram requires retained paired reference symbols")
-    low, high = min(errors), max(errors)
     count = 16 if high > low else 1
     width = (high-low)/count
+    counts = Counter()
     for row in rows:
-        # This domain also defines every zero-count bin in the image, allowing
-        # exact reconstruction from the single complete plotted CSV.
-        row.update(histogram_bin_count=count, histogram_minimum=low, histogram_maximum=high)
-    series = []
-    for label, population in populations.items():
-        counts = Counter(min(int((r["decision_error_magnitude"]-low)/width), count-1)
-                         if width else 0 for r in population)
-        for row in population:
-            index = min(int((row["decision_error_magnitude"]-low)/width), count-1) if width else 0
-            row.update(bin_index=index, bin_lower=low+index*width, bin_upper=low+(index+1)*width,
-                       bin_count=counts[index], population_sample_count=len(population))
-        series.append({"name": label, "points": [[low+(i+0.5)*width, counts[i]] for i in range(count)],
-                       "marker": "circle"})
+        error = error_of(row)
+        if error is not None:
+            index = min(int((error-low)/width), count-1) if width else 0
+            counts[label_of(row), index] += 1
+
+    def annotated_rows():
+        for row in rows:
+            error = error_of(row)
+            row.update(decision_error_magnitude=error, bin_index=None, bin_lower=None,
+                       bin_upper=None, bin_count=None, population_sample_count=None,
+                       value_status="available" if error is not None else "unavailable_paired_reference",
+                       histogram_bin_count=count, histogram_minimum=low, histogram_maximum=high)
+            if error is not None:
+                label = label_of(row)
+                index = min(int((error-low)/width), count-1) if width else 0
+                row.update(bin_index=index, bin_lower=low+index*width, bin_upper=low+(index+1)*width,
+                           bin_count=counts[label, index], population_sample_count=populations[label])
+            yield row
+
+    series = [{"name": label, "points": [[low+(i+0.5)*width, counts[label, i]] for i in range(count)],
+               "marker": "circle"} for label in populations]
     note = ("Raw receiver minus its paired transmitted symbol; not a hard-decision symbol error rate. "
             "Common equal-width bins; counts, not means. Last bin includes its upper edge. "
             "CSV retains all sample errors and bin assignments; count each bin once per population.")
-    return {"csv_bytes": _encode_dict_rows(list(rows[0]), rows),
+    paired_count = sum(populations.values())
+    return {**_csv_payload_fields(rows.csv_payload(annotated_rows())),
         "img_bytes": _render_multi_series_svg(chart_name, note, series,
-            [f"paired_samples={len(errors)}", f"unpaired_samples={len(rows)-len(errors)}", f"bins={count}"],
+            [f"paired_samples={paired_count}", f"unpaired_samples={len(rows)-paired_count}", f"bins={count}"],
             x_label="Paired symbol error magnitude (receiver units)", y_label="Sample count per bin",
             mode="scatter", evidence_shape_policy="operating_point", wrap_legend=True,
             wrap_subtitle=True, max_points_per_series=None),
         "csv_status": "specialized_runtime_symbol_error_dataset",
         "image_status": "generated_specialized_runtime_summary_svg",
-        "source_table_path": "|".join(dict.fromkeys(r["source_table_logical_path"] for r in rows)),
+        "source_table_path": "|".join(rows.sources),
         "source_row_count": len(rows), "note": note}
 
 
@@ -11736,6 +11977,16 @@ def _runtime_trial_evm_chart(existing, fetch_artifact_bytes, run_id):
 
 
 def _runtime_evm_profile_chart(chart_name, existing, fetch_artifact_bytes, run_id):
+    from lls_radio_measurement_plots import _ExactControlSampleIdentities
+    candidates = ["air_interface/csv/dl_constellation_samples.csv",
+        "air_interface/csv/ul_constellation_samples.csv", "air_interface/csv/dl_constellation_preview.csv",
+        "air_interface/csv/ul_constellation_preview.csv", "reports/csv/equalized_constellations.csv"]
+    with _all_available_csv_streams(existing, fetch_artifact_bytes, candidates) as sources:
+        with _ExactControlSampleIdentities() as coverage:
+            return _runtime_evm_profile_stream(chart_name, sources, run_id, coverage)
+
+
+def _runtime_evm_profile_stream(chart_name, sources, run_id, coverage):
     required_direction = "DL" if chart_name.startswith("PDSCH ") else "UL" if chart_name.startswith("PUSCH ") else ""
     profile_name = chart_name.removeprefix("PDSCH ").removeprefix("PUSCH ")
     axis_field = {
@@ -11743,13 +11994,6 @@ def _runtime_evm_profile_chart(chart_name, existing, fetch_artifact_bytes, run_i
         "EVM per subcarrier": "SubcarrierIndex",
         "EVM per layer": "LayerIndex",
     }[profile_name]
-    sources = _all_available_rows(existing, fetch_artifact_bytes, [
-        "air_interface/csv/dl_constellation_samples.csv",
-        "air_interface/csv/ul_constellation_samples.csv",
-        "air_interface/csv/dl_constellation_preview.csv",
-        "air_interface/csv/ul_constellation_preview.csv",
-        "reports/csv/equalized_constellations.csv",
-    ])
     # Canonical captures and report aliases can contain the same samples.
     # Choose one source per direction, without counting aliases twice.
     selected_source = {}
@@ -11811,7 +12055,8 @@ def _runtime_evm_profile_chart(chart_name, existing, fetch_artifact_bytes, run_i
             full = scope == "full_allocation_paired_symbols"
             experiment = _constellation_experiment_fields(row)
             observation_key = (direction, ue, frame, sfn, slot, cell, tb, *experiment.values())
-            observation = observations.setdefault(observation_key, {"full": full, "expected": None, "indices": set(), "resources": set()})
+            observation = observations.setdefault(observation_key, {
+                "id": len(observations), "full": full, "expected": None, "count": 0})
             if observation["full"] != full:
                 return None  # Mixed full/preview rows cannot establish coverage.
             if full:
@@ -11825,11 +12070,12 @@ def _runtime_evm_profile_chart(chart_name, existing, fetch_artifact_bytes, run_i
                     return None
                 if any(v is None or v < 1 or v != int(v) for v in resource):
                     return None
-                if observation["expected"] not in (None, count) or index in observation["indices"] or resource in observation["resources"]:
+                if (observation["expected"] not in (None, count)
+                        or not coverage.add((observation["id"], "sample", int(index)))
+                        or not coverage.add((observation["id"], "resource", tuple(map(int, resource))))):
                     return None
                 observation["expected"] = count
-                observation["indices"].add(index)
-                observation["resources"].add(resource)
+                observation["count"] += 1
             key = (*observation_key,
                    layer if axis_field != "LayerIndex" else "", codeword, normalization,
                    comparison_domain, ordering, ordering_status, sample_source, coordinate_domain, int(x_value))
@@ -11854,7 +12100,7 @@ def _runtime_evm_profile_chart(chart_name, existing, fetch_artifact_bytes, run_i
             bucket["error_energy"] += error_power
             bucket["reference_energy"] += ref_r ** 2 + ref_i ** 2
             bucket["peak_error_power"] = max(bucket["peak_error_power"], error_power)
-    if any(obs["full"] and len(obs["indices"]) != obs["expected"] for obs in observations.values()):
+    if any(obs["full"] and obs["count"] != obs["expected"] for obs in observations.values()):
         return None  # Missing rows invalidate full coverage; do not relabel as a subset.
     if not buckets:
         return None
@@ -14205,20 +14451,38 @@ def _windows_long_path(path: Path) -> Path:
     return Path("\\\\?\\" + absolute)
 
 
-def _write_file_if_possible(run_folder: str | None, logical_path: str, data: bytes) -> None:
+def _write_file_if_possible(run_folder: str | None, logical_path: str, data) -> None:
     root = str(run_folder or "").strip()
     if not root:
         return
-    target = Path(root) / Path(*str(logical_path).split("/"))
+    root_path = Path(root).resolve()
+    target = (root_path / Path(*str(logical_path).split("/"))).resolve()
+    if not target.is_relative_to(root_path):
+        raise ValueError("Contract publication escaped the run folder")
     io_target = _windows_long_path(target)
+    temporary = None
     try:
         io_target.parent.mkdir(parents=True, exist_ok=True)
-        io_target.write_bytes(data)
+        # A failed copy/hash check must leave any previous canonical file
+        # untouched. The temporary is private and on the same filesystem.
+        with tempfile.NamedTemporaryFile(mode="wb", dir=io_target.parent, delete=False) as stream:
+            temporary = Path(stream.name)
+            digest, count = hashlib.sha256(), 0
+            for chunk in _payload_chunks(data):
+                stream.write(chunk)
+                count += len(chunk)
+                digest.update(chunk)
+        if count != _payload_size(data) or digest.hexdigest() != _payload_sha256(data):
+            raise ValueError("Complete artifact bytes changed during publication")
+        os.replace(temporary, io_target)
     except OSError as exc:
         raise OSError(
             f"Cannot persist browser contract artifact {logical_path!r} "
             f"under {root!r}: {exc}"
         ) from exc
+    finally:
+        if temporary is not None and temporary.is_file():
+            temporary.unlink()
 
 
 def _remove_materializer_owned_file(run_folder: str | None, logical_path: str) -> None:
@@ -14250,7 +14514,7 @@ def _store_artifact(
     logical_path: str,
     artifact_kind: str,
     mime_type: str,
-    data: bytes,
+    data,
     metadata: dict[str, Any],
 ) -> int:
     payload = json.dumps(metadata, ensure_ascii=False, default=str)
@@ -14271,17 +14535,17 @@ def _store_artifact(
                 (run_id, logical_path, artifact_kind, mime_type, byte_size, metadata_json, created_utc)
                 VALUES (%s, %s, %s, %s, %s, %s, UTC_TIMESTAMP())
                 """,
-                (run_id, logical_path, artifact_kind, mime_type, len(data), payload),
+                (run_id, logical_path, artifact_kind, mime_type, _payload_size(data), payload),
             )
             artifact_id = int(cur.lastrowid)
             chunk_size = 512 * 1024
-            for chunk_index, start in enumerate(range(0, len(data), chunk_size), start=1):
+            for chunk_index, chunk in enumerate(_payload_chunks(data, chunk_size), start=1):
                 cur.execute(
                     """
                     INSERT INTO sim_artifact_chunks (artifact_id, chunk_index, chunk_data)
                     VALUES (%s, %s, %s)
                     """,
-                    (artifact_id, chunk_index, data[start : start + chunk_size]),
+                    (artifact_id, chunk_index, chunk),
                 )
         conn.commit()
     return artifact_id
@@ -14305,13 +14569,17 @@ def _chart_sources(chart_name: str) -> list[str]:
 
 def _artifact_metadata_json(
     artifact: dict[str, Any] | None,
-    db_connection_factory: Callable[[], Any],
+    db_connection_factory: Callable[[], Any] | None,
 ) -> str:
     if not artifact:
         return ""
     inline = str(artifact.get("metadata_json") or "").strip()
     if inline:
         return inline
+    # Filesystem inventories have real artifact IDs but no database. Absence
+    # of persisted ownership metadata is not permission to invent ownership.
+    if db_connection_factory is None:
+        return ""
     artifact_id = int(artifact.get("artifact_id") or 0)
     if artifact_id <= 0:
         return ""
@@ -14592,6 +14860,78 @@ def coverage_summary(
     }
 
 
+class _VerifiedPublicationReader(io.BufferedReader):
+    """A completed artifact must retain its bytes throughout consumption."""
+    def __init__(self, path, size, digest):
+        self.expected_size, self.expected_digest = size, digest
+        super().__init__(path.open("rb", buffering=0))
+        try:
+            self.verify()
+        except Exception:
+            super().close()
+            raise
+
+    def verify(self):
+        # Bypass BufferedReader's cached prefix: seeking within its buffer
+        # after an external in-place write can return the old bytes again.
+        self.raw.seek(0)
+        digest, count = hashlib.sha256(), 0
+        while chunk := self.raw.read(1024*1024):
+            count += len(chunk)
+            digest.update(chunk)
+        if count != self.expected_size or digest.hexdigest() != self.expected_digest:
+            raise ValueError("Published filesystem artifact changed before reuse or during read")
+        self.seek(0, os.SEEK_END)  # Invalidate the buffered view before use.
+        self.seek(0)
+
+    def close(self):
+        if self.closed:
+            return
+        try:
+            self.verify()
+        finally:
+            super().close()
+
+
+class _FilesystemPublicationIndex:
+    """Ownership of completed files, not a lifetime cache of all output bytes.
+
+    Re-read the exact published content on demand. Missing or changed files
+    fail rather than resurrecting an obsolete in-memory artifact.
+    """
+    def __init__(self):
+        self.entries = {}
+
+    def __contains__(self, artifact_id):
+        return int(artifact_id) in self.entries
+
+    def register(self, artifact_id, path, data):
+        path = _windows_long_path(Path(path))
+        digest = _payload_sha256(data)
+        size = _payload_size(data)
+        if not path.is_file() or path.stat().st_size != size:
+            raise ValueError("Filesystem publication must have a complete persisted artifact")
+        self.entries[int(artifact_id)] = (path, size, digest)
+        try:
+            with self.open(artifact_id):
+                pass
+        except Exception:
+            del self.entries[int(artifact_id)]
+            raise
+
+    def open(self, artifact_id):
+        path, size, expected = self.entries[int(artifact_id)]
+        return _VerifiedPublicationReader(path, size, expected)
+
+    def read(self, artifact_id):
+        with self.open(artifact_id) as stream:
+            data = stream.read()
+        _, size, digest = self.entries[int(artifact_id)]
+        if len(data) != size or hashlib.sha256(data).hexdigest() != digest:
+            raise ValueError("Published filesystem artifact changed during read")
+        return data
+
+
 def materialize_run_contract_artifacts(
     run_row: dict[str, Any],
     artifacts: list[dict[str, Any]],
@@ -14610,7 +14950,7 @@ def materialize_run_contract_artifacts(
     plot_lineage_rows: list[list[Any]] = []
     feature_policy = dict(feature_policy or {})
     allow_placeholder_artifacts = _run_allows_placeholder_artifacts(run_row)
-    filesystem_payloads: dict[int, bytes] = {}
+    filesystem_publications = _FilesystemPublicationIndex()
     next_filesystem_artifact_id = max(
         (int(artifact.get("artifact_id") or 0) for artifact in artifacts),
         default=0,
@@ -14619,14 +14959,14 @@ def materialize_run_contract_artifacts(
 
     def effective_fetch_artifact_bytes(artifact_id: int) -> bytes:
         artifact_id = int(artifact_id)
-        if artifact_id in filesystem_payloads:
-            return filesystem_payloads[artifact_id]
+        if artifact_id in filesystem_publications:
+            return filesystem_publications.read(artifact_id)
         return bytes(source_fetch_artifact_bytes(artifact_id))
 
     def effective_open_artifact_binary(artifact_id: int):
         artifact_id = int(artifact_id)
-        if artifact_id in filesystem_payloads:
-            return io.BytesIO(filesystem_payloads[artifact_id])
+        if artifact_id in filesystem_publications:
+            return filesystem_publications.open(artifact_id)
         opener = getattr(source_fetch_artifact_bytes, "open_artifact_binary", None)
         if callable(opener):
             return opener(artifact_id)
@@ -14656,7 +14996,13 @@ def materialize_run_contract_artifacts(
             )
         artifact_id = next_filesystem_artifact_id
         next_filesystem_artifact_id += 1
-        filesystem_payloads[artifact_id] = bytes(data)
+        if not str(run_folder or "").strip():
+            raise ValueError("Filesystem publication requires a real run folder")
+        root = Path(run_folder).resolve()
+        target = (root / Path(*str(logical_path).split("/"))).resolve()
+        if not target.is_relative_to(root):
+            raise ValueError("Filesystem publication escaped the run folder")
+        filesystem_publications.register(artifact_id, target, data)
         return artifact_id
 
     # Rebind locally so every downstream source-table/chart helper can read
@@ -14880,15 +15226,16 @@ def materialize_run_contract_artifacts(
                 manifest_rows.append([target_img, "image_png", "unavailable_no_data_attempts", source_paths, chart_name])
                 continue
             if target_csv in existing and target_img in existing:
-                plot_lineage_rows.append(
-                    _contract_plot_lineage_row(
-                        f"contract__{chart_spec.get('section_slug') or 'section'}__{slugify(chart_name)}",
-                        target_img,
-                        target_csv,
-                        fetch_artifact_bytes(int(existing[target_img]["artifact_id"])),
-                        fetch_artifact_bytes(int(existing[target_csv]["artifact_id"])),
+                with effective_open_artifact_binary(int(existing[target_csv]["artifact_id"])) as source_stream:
+                    plot_lineage_rows.append(
+                        _contract_plot_lineage_row(
+                            f"contract__{chart_spec.get('section_slug') or 'section'}__{slugify(chart_name)}",
+                            target_img,
+                            target_csv,
+                            fetch_artifact_bytes(int(existing[target_img]["artifact_id"])),
+                            source_stream,
+                        )
                     )
-                )
                 continue
             special = _finalize_chart_materialization_result(
                 _materialize_specialized_chart_or_unavailable(
@@ -14896,7 +15243,7 @@ def materialize_run_contract_artifacts(
                 )
             )
             if special is not None:
-                chart_csv_bytes = bytes(special["csv_bytes"])
+                chart_csv_bytes = special["csv_file"] if "csv_file" in special else bytes(special["csv_bytes"])
                 image_bytes = _rasterize_contract_png(
                     bytes(special["img_bytes"]),
                     source_mime_type="image/svg+xml",

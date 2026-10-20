@@ -71,7 +71,7 @@ out = struct( ...
     "ResolvedCount", double(nnz(scheduled & resolved)), ...
     "UnresolvedCount", double(nnz(scheduled & ~resolved)), ...
     "AllScheduledResolved", logical(all(~scheduled | resolved)), ...
-    "SchemaVersion", "pucch_grant_disposition_v3");
+    "SchemaVersion", "pucch_grant_disposition_v4");
 end
 
 function [observed,matched] = localMatchedStandaloneReceiverRows(grants, trials)
@@ -91,12 +91,16 @@ trialId = localString(trials, "PUCCHGrantId", repmat("", height(trials), 1));
 attempted=localLogical(trials, "DetectionAttempted", false(height(trials), 1));
 observationAvailable=localLogical(trials,"ControlObservationAvailable",true(height(trials),1));
 finalized=localLogical(trials,"FinalizedFlag",true(height(trials),1));
-placeholder=localLogical(trials,"Placeholder",false(height(trials),1));
-fallback=localLogical(trials,"Fallback",false(height(trials),1));
+placeholder=localLogical(trials,"Placeholder",false(height(trials),1)) | ...
+    localLogical(trials,"PlaceholderFlag",false(height(trials),1));
+fallback=localLogical(trials,"Fallback",false(height(trials),1)) | ...
+    localLogical(trials,"FallbackFlag",false(height(trials),1));
+mode=lower(localString(trials,"ApproximationMode",repmat("",height(trials),1)));
+approximate=~ismember(mode,["","none","not_applicable"]);
 % Identity plus a finalized non-placeholder row proves that a receiver
 % trial record exists even when observation/detection itself failed.  Such
 % a row is a failed trial disposition, never a "without trial rows" case.
-trialObserved=finalized & ~placeholder & ~fallback;
+trialObserved=finalized & ~placeholder & ~fallback & ~approximate;
 trialPass = trialObserved & attempted & observationAvailable & ...
     localLogical(trials, "DetectionUsable", false(height(trials), 1)) & ...
     localLogical(trials, "ReceiverUsable", false(height(trials), 1)) & ...
@@ -106,8 +110,6 @@ crcApplicable = localLogical(trials, "CRCApplicable", ...
     localLogical(trials, "UCICRCApplicable", false(height(trials), 1)));
 crcPass = localLogical(trials, "CRCPass", false(height(trials), 1));
 trialPass = trialPass & (~crcApplicable | crcPass);
-observedIds=localTrialIdentitySet(trials,trialId,trialObserved);
-validIds=localTrialIdentitySet(trials,trialId,trialPass);
 % One physical PUCCH occasion can carry a codebook containing several
 % logical HARQ-ACK grants.  In that case PUCCHGrantId identifies the
 % physical occasion and LogicalPUCCHGrantIdSet preserves the exact logical
@@ -115,22 +117,52 @@ validIds=localTrialIdentitySet(trials,trialId,trialPass);
 % requiring only the physical identifier incorrectly leaves every bundled
 % logical grant unresolved even after a successful waveform decode.
 grantId = localString(grants, "PUCCHGrantId", repmat("", n, 1));
-observed = strlength(grantId) > 0 & ismember(grantId, observedIds);
-matched = strlength(grantId) > 0 & ismember(grantId, validIds);
+logicalSets=localString(trials,"LogicalPUCCHGrantIdSet",repmat("",height(trials),1));
+for i=1:n
+    if ismissing(grantId(i)) || strlength(grantId(i))==0, continue; end
+    sameID=trialId==grantId(i);
+    for j=1:height(trials)
+        if ~ismissing(logicalSets(j)) && strlength(logicalSets(j))>0
+            sameID(j)=sameID(j) || any(strtrim(split(logicalSets(j),"|"))==grantId(i));
+        end
+    end
+    % Grant IDs normally encode UE/occasion identity, but the independent
+    % exported columns must agree too. Never credit another UE, BWP, sweep
+    % point or physical slot merely because a copied ID string matches.
+    same=localSameOccasion(grants(i,:),trials) & sameID;
+    observed(i)=any(same & trialObserved);
+    matched(i)=any(same & trialPass);
+end
 end
 
-function ids=localTrialIdentitySet(trials,physicalIds,rowMask)
-ids=physicalIds(rowMask & strlength(physicalIds)>0);
-trialVars=string(trials.Properties.VariableNames);
-if ismember("LogicalPUCCHGrantIdSet",trialVars)
-    logicalSets=localString(trials,"LogicalPUCCHGrantIdSet",repmat("",height(trials),1));
-    rows=find(rowMask & strlength(logicalSets)>0);
-    for rowIdx=reshape(rows,1,[])
-        tokens=strtrim(split(logicalSets(rowIdx),"|"));
-        ids=[ids;tokens(strlength(tokens)>0)]; %#ok<AGROW>
+function same=localSameOccasion(grant,trials)
+same=true(height(trials),1);
+for field=["UEIndex","RNTI","Slot","BaseStationID","ComponentCarrier","ActiveULBWP","SweepPointIndex"]
+    g=ismember(field,string(grant.Properties.VariableNames));
+    t=ismember(field,string(trials.Properties.VariableNames));
+    if ~g && ~t
+        % Legacy ID-only schemas remain readable. If either schema declares
+        % a dimension, absent/NaN identity on the other side is not a match.
+        continue;
     end
+    if ~g || ~t, same(:)=false; continue; end
+    a=str2double(string(grant.(field)));
+    b=str2double(string(trials.(field)));
+    same=same & isfinite(a) & isfinite(b) & a==fix(a) & b==fix(b) & a==b;
 end
-ids=unique(ids(strlength(ids)>0),"stable");
+for field=["RunUUID","ConfigHash"]
+    g=ismember(field,string(grant.Properties.VariableNames));
+    t=ismember(field,string(trials.Properties.VariableNames));
+    if ~g && ~t, continue; end
+    if ~g || ~t, same(:)=false; continue; end
+    a=strtrim(string(grant.(field))); b=strtrim(string(trials.(field)));
+    aEmpty=ismissing(a) | strlength(a)==0;
+    bEmpty=ismissing(b) | strlength(b)==0;
+    % Legacy component exporters can write empty run metadata on both
+    % tables. That does not override a present identity on either side;
+    % the campaign acceptance audit separately requires a known run hash.
+    same=same & ((aEmpty & bEmpty) | (~aEmpty & ~bEmpty & a==b));
+end
 end
 
 function value = localLogical(T, field, defaultValue)

@@ -60,6 +60,7 @@ csvs = [
     "reports/csv/blerber_reconciliation.csv"
     "reports/csv/access_kpi_reconciliation.csv"
     "reports/csv/scheduler_kpi_reconciliation.csv"
+    "reports/csv/scheduler_anchor_case_reconciliation.csv"
     "reports/csv/latency_reconciliation.csv"
     "reports/csv/canonical_kpi_ledger.csv"
     ];
@@ -122,7 +123,9 @@ assert(all(string(anchor.KPIFormulaVersion) == "measured_posteq_sinr_v2"), "Anch
 localAssertGateOk(tmp, "throughput_reconciliation.csv", "ThroughputReconciliationOk");
 localAssertGateOk(tmp, "blerber_reconciliation.csv", "BlerBerReconciliationOk");
 localAssertGateOk(tmp, "access_kpi_reconciliation.csv", "AccessKpiReconciliationOk");
-localAssertGateOk(tmp, "scheduler_kpi_reconciliation.csv", "SchedulerKpiReconciliationOk");
+localAssertGateOk(tmp, "scheduler_anchor_case_reconciliation.csv", "SchedulerKpiReconciliationOk");
+assert(res.Tables.SchedulerKPIReconciliation.SchedulerKpiReconciliationOk && ...
+    res.Tables.SchedulerKPIReconciliation.KPIFormulaVersion=="scheduler_transport_credit_v1");
 localAssertGateOk(tmp, "latency_reconciliation.csv", "LatencyReconciliationOk");
 localAssertGateOk(tmp, "canonical_kpi_ledger.csv", "CanonicalKpiLedgerOk");
 
@@ -194,6 +197,17 @@ fixedTrials.dl.PropagationDistance_m(:) = NaN;
 fixedTrials.ul.PropagationDistance_m(:) = NaN;
 fixedTrials.dl.FixedLinkCampaign = true(height(fixedTrials.dl), 1);
 fixedTrials.ul.FixedLinkCampaign = true(height(fixedTrials.ul), 1);
+% Declare the independent-TB hierarchy required by fixed-link accounting;
+% merely setting a campaign flag does not establish transport identity.
+for direction=["dl","ul"]
+    t=fixedTrials.(direction); n=height(t);
+    t.FixedLinkCampaignKind=repmat("fixed_link_monte_carlo",n,1);
+    t.FixedLinkTrialIndex=(1:n).';
+    for name=["FixedLinkPointIndex","FixedLinkDropIndex","FixedLinkSeedIndex","FixedLinkSeedValue"]
+        t.(name)=ones(n,1);
+    end
+    fixedTrials.(direction)=t;
+end
 sixgr.analytics.generateMeasuredSINRCurves(tmpFixed, "fixed_link_unit", ...
     "TrialData", fixedTrials, ...
     "ScenarioConfig", struct( ...
@@ -365,6 +379,10 @@ T = table( ...
     'EVM_rms','PAPR_dB','ProcedureDelay_ms', ...
     'PropagationDistance_m','LargeScaleSINR_dB','ReceiverHestSINR_dB','AppliedPathloss_dB', ...
     'AppliedShadowFading_dB','MCS','Modulation','Layers'});
+% Explicit measurement-fixture TB identity/size/exposure, not physical data.
+T.LogicalTBID="declared-sinr-fixture-tb-"+string(slot);
+T.TBSize_bits=repmat(1000,n,1);
+T.AirInterfaceTTI_ms=repmat(.5,n,1);
 end
 
 function status = localPostEqStatus(direction, n)

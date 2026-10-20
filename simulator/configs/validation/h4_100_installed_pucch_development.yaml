@@ -1,0 +1,49 @@
+# Bounded executor/resume check, NOT statistically qualified H4 evidence.
+schema_version: 1
+profile_id: h4_100_installed_pucch_development_v1
+research_class: optional_research_experiment
+stage: development
+scope: installed_single_occasion_independent_reset_not_continuous_runtime
+scenario_path: simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_adaptation.yaml
+scenario_seed_paths: [simulation.random_seed, run_control.seed, run_control.random_seed_master, run_control.random_seed_list, rf_frontend.oscillator.seed, rf_frontend.phase_noise.seed]
+episodes_per_case: 2
+# One H0/H1 pair per invocation; call the same command to continue.
+execution_batch_episodes: 2
+seed_base: 620100001
+seed_stride: 101
+noise_seed_offset: 1
+guard_samples: 256
+family_alpha: 0.05
+event_error_limit: 0.01
+development_seeds: [5101361, 5101362, 20260927]
+development_history_complete: false
+cases:
+  - id: absent_combined_17
+    signal_present: false
+    ue_index: 1
+    serving_cell: 1
+    rnti: 4660
+    absolute_slot0: 18
+    resource_id: 10
+    harq_bit_count: 2
+    sr_bit_count: 1
+    csi_requested: true
+    resource_selection_procedure: dynamic_harq_csi
+    transmitter: {}
+  - id: present_combined_17
+    signal_present: true
+    ue_index: 1
+    serving_cell: 1
+    rnti: 4660
+    absolute_slot0: 18
+    resource_id: 10
+    harq_bit_count: 2
+    sr_bit_count: 1
+    csi_requested: true
+    resource_selection_procedure: dynamic_harq_csi
+    transmitter:
+      harq_bits: [1, 0]
+      csi: {rank: 2, pmi: 0, cri: 7, cqi_cw0: 11}
+      scheduling_requests: [{id: 0, pending_positive: false, prohibit_timer_active: false}]
+      # Declared preconnected control boundary, NOT decoded DCI/access.
+      control: {k1: 1, pdsch_end_slot: 18, decoded_pri: 0, pri_field_width: 3, first_cce: 0, num_cce: 16}

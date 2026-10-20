@@ -1,9 +1,12 @@
 function p = resolveResultsRoot(inPath)
-%RESOLVERESULTSROOT Anchor campaign results under the repo-local results tree.
+%RESOLVERESULTSROOT Resolve a repository or explicitly authorized evidence root.
 %
 % Relative paths are always interpreted from the repository root, never the
 % caller's current working directory. Absolute paths are accepted when they
 % live under <repo>/results or the explicit <repo>/logs diagnostic tree.
+% An absolute production evidence directory can be explicitly authorized by
+% SIXGR_RESULTS_ROOT (also used by the WebGUI). Only that directory and its
+% descendants are admitted; relative paths retain their legacy repo meaning.
 % Regression workers may additionally opt into
 % one externally configured scratch tree through
 % SIXGR_REGRESSION_SCRATCH_ROOT; no other external path is accepted.
@@ -22,8 +25,11 @@ if localIsAbsolutePath(p)
     % Resolve dot segments before containment checks: callers may later
     % clean a run leaf, so lexical prefix matching alone is insufficient.
     p = localNormalizePath(char(java.io.File(p).getCanonicalPath()));
+    productionRoot = localProductionResultsRoot(repoRoot);
     regressionScratch = localRegressionScratchRoot();
     if localPathStartsWith(p, repoResults) || localPathStartsWith(p, repoLogs) || ...
+            (strlength(string(productionRoot)) > 0 && ...
+            localPathStartsWith(p, productionRoot)) || ...
             (strlength(string(regressionScratch)) > 0 && ...
             localPathStartsWith(p, regressionScratch))
         return;
@@ -45,6 +51,20 @@ elseif strcmpi(p, "results") || startsWith(lower(string(p)), lower("results" + f
 else
     p = localNormalizePath(fullfile(repoResults, p));
 end
+end
+
+function root = localProductionResultsRoot(repoRoot)
+root = localNormalizePath(getenv('SIXGR_RESULTS_ROOT'));
+if strlength(string(root)) == 0, return; end
+assert(localIsAbsolutePath(root),'sixgr:report:InvalidExternalResultsRoot', ...
+    'SIXGR_RESULTS_ROOT must be an absolute evidence directory.');
+rootFile = java.io.File(root).getCanonicalFile();
+root = localNormalizePath(char(rootFile.getPath()));
+% A drive root or an ancestor of the source tree is too broad an allowlist
+% for downstream run-leaf cleanup. An explicit results child is required.
+assert(~isempty(char(rootFile.getParent())) && ~localPathStartsWith(repoRoot,root), ...
+    'sixgr:report:InvalidExternalResultsRoot', ...
+    'SIXGR_RESULTS_ROOT must not be a filesystem root or contain the source checkout.');
 end
 
 function root = localRegressionScratchRoot()

@@ -26,6 +26,12 @@ pdcch = table(0, 1, 1, 4660, true, "PDCCH", 32, 4, ...
     'VariableNames', {'Frame','Slot','UEIndex','RNTI','CRCPass','Status','Payload_bits','AggregationLevel'});
 pucch = table(0, 5, 1, 4660, true, "PUCCH", 2, ...
     'VariableNames', {'Frame','Slot','UEIndex','RNTI','CRCPass','Status','Payload_bits'});
+% Transmitter expectation alone is not a received ACK observation.
+pucch.ExpectedAck=true;
+pucch=repmat(pucch,5,1);
+pucch.Slot=(5:9).';
+pucch.AckObservedValid=[false;false;true;true;false];
+pucch.AckObserved=[NaN;1;1;0;0];
 prach = table(0, 0, 1, 65520, true, "PRACH", 8, 2.5, ...
     'VariableNames', {'Frame','Slot','UEIndex','RNTI','PreambleDetected','Status','Payload_bits','TimingAdvance_us'});
 summary = table(0.5, 30, 'VariableNames', {'SlotDuration_ms','SCS_kHz'});
@@ -64,6 +70,13 @@ assert(any(perUEHeader == "TBSize_Reference"), "per_ue_slot_kpi_table dropped al
 controlHeader = localHeader(fullfile(layout.ReportCSVDir, "control_plane_timeline.csv"));
 assert(any(controlHeader == "CCE_Index"), "control_plane_timeline dropped all-blank CCE_Index column.");
 assert(any(controlHeader == "Msg4_Pass"), "control_plane_timeline dropped all-blank Msg4_Pass column.");
+control=readtable(fullfile(layout.ReportCSVDir,"control_plane_timeline.csv"), ...
+    'VariableNamingRule','preserve');
+sr=string(control.EventType)=="PUCCH";
+assert(nnz(sr)==5 && isequaln(control.UCI_ACK(sr),[NaN;NaN;1;0;NaN]) && ...
+    isequal(logical(control.UCI_ACKValid(sr)),[false;false;true;true;false]), ...
+    'test:ExpectedACKExportedAsObservation', ...
+    'Retain actual ACK/NACK only; absent invalid or codebook-level evidence is not a scalar ACK.');
 
 assert(exist(fullfile(tmp, "reports", "html", "master_dashboard.html"), "file") == 2, "Missing master dashboard.");
 ok = true;

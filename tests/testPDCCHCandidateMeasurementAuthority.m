@@ -31,6 +31,7 @@ end
 b=pdcchStrictAnchorResult();
 candidate=b.Result.ArtifactTables.pdcch_candidates;
 assert(all(candidate.LLRCount>0));
+assert(all(candidate.DecodeAttempted));
 assert(all(candidate.LLRMin<=candidate.LLRMax));
 assert(all(candidate.LLRMeanAbs>=0));
 assert(all(mod(candidate.CCEIndex,candidate.AggregationLevel)==0));
@@ -45,7 +46,8 @@ else
     error('test:MissingStrictConfig','Mini anchor must expose installed strict config.');
 end
 det=struct('Rx',struct('Ok',false),'DecodedDCI',struct(), ...
-    'Candidates',table(true,true,1,'VariableNames',{'CrcPass','SelectedCandidate','Metric'}), ...
+    'Candidates',table(true,true,1,true,'VariableNames', ...
+        {'CrcPass','SelectedCandidate','Metric','DecodeAttempted'}), ...
     'UsedOracleFields',"",'ProxyUsed',false,'Skipped',false,'ToolboxMissing',false);
 scored=sixgr.phy.pdcch.scorePDCCHDetection(det,struct(),cfg, ...
     'TrialType','false_alarm_sweep','NegativeExpected',true);

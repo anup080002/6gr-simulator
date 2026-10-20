@@ -1,0 +1,43 @@
+# Three independently seeded installed-H4 physical episodes; NOT qualification.
+# The full receiver searches both installed formats and all candidates in H0/H1.
+schema_version: 1
+profile_id: h4_100_installed_pdcch_campaign_development_v1
+research_class: optional_research_experiment
+stage: development
+scope: installed_single_occasion_independent_reset_not_continuous_runtime
+scenario_path: simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_adaptation.yaml
+scenario_seed_paths: [simulation.random_seed, run_control.seed, run_control.random_seed_master, run_control.random_seed_list, rf_frontend.oscillator.seed, rf_frontend.phase_noise.seed]
+episodes_per_case: 1
+execution_batch_episodes: 2
+seed_base: 730200001
+seed_stride: 101
+noise_seed_offset: 1
+guard_samples: 256
+family_alpha: 0.05
+event_error_limit: 0.01
+development_seeds: [20260927, 730100101, 730100102, 730100201, 730100202, 730100301, 730100302]
+development_history_complete: false
+timing_boundary: configured_nominal_radio_occasion_no_measured_alignment
+cases:
+  - id: absent_connected_control
+    signal_present: false
+    ue_index: 1
+    serving_cell: 1
+    absolute_slot0: 40
+    transmitter: {}
+  - id: present_downlink_assignment
+    signal_present: true
+    ue_index: 1
+    serving_cell: 1
+    absolute_slot0: 40
+    transmitter:
+      dci_format: '1_1'
+      fields: {mcs: 10, ndi: 1, dmrs_sequence_initialization: 1}
+  - id: present_uplink_grant
+    signal_present: true
+    ue_index: 1
+    serving_cell: 1
+    absolute_slot0: 40
+    transmitter:
+      dci_format: '0_1'
+      fields: {mcs: 10, ndi: 1, dmrs_sequence_initialization: 1}

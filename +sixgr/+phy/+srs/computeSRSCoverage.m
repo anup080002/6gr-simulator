@@ -19,8 +19,10 @@ coveragePercent = 100 * occupied / nCarrierPRB;
 fullCarrierToleranceRB = localFullCarrierToleranceRB(srsCfg, nCarrierPRB);
 fullCarrierEffectiveTargetRB = max(1, nCarrierPRB - fullCarrierToleranceRB);
 fullRequired = localFullCarrierRequired(srsCfg);
-if occupied >= nCarrierPRB || (fullRequired && occupied >= fullCarrierEffectiveTargetRB)
+if occupied == nCarrierPRB
     status = "full_carrier";
+elseif fullRequired && occupied >= fullCarrierEffectiveTargetRB
+    status = "within_configured_carrier_edge_tolerance";
 elseif occupied > 0
     status = "partial_band";
 else
@@ -42,6 +44,7 @@ coverage.CoveragePercent = double(coveragePercent);
 coverage.CoverageGapRB = double(max(0, nCarrierPRB - occupied));
 coverage.FullCarrierCoverageToleranceRB = double(fullCarrierToleranceRB);
 coverage.FullCarrierEffectiveTargetRB = double(fullCarrierEffectiveTargetRB);
+coverage.LiteralFullCarrierCoverage = occupied == nCarrierPRB;
 coverage.PRBStart = double(prbStart);
 coverage.PRBEnd = double(prbEnd);
 coverage.BandwidthCoverageStatus = string(status);

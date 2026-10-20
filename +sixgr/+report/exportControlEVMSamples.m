@@ -8,6 +8,7 @@ switch string(name)
     case "pbch_trials", file="ssb_evm_samples.csv"; allowed=["PBCH","PSS","SSS","PBCH-DMRS"]; direction="DL";
     case "prach_trials", file="prach_evm_samples.csv"; allowed="PRACH"; direction="UL";
     case "csi_rs_trials", file="csi_rs_evm_samples.csv"; allowed="CSI-RS"; direction="DL";
+    case "trs_trials", file="trs_evm_samples.csv"; allowed="TRS"; direction="DL";
     otherwise, return;
 end
 if isempty(trials)||~any(ismember(["ControlEVMSamplesJSON","ControlEVMSamplesMATFile"], ...
@@ -65,6 +66,9 @@ for k=1:height(trials)
             T.(field)=repmat(string(e.(field)),n,1);
         end
         T.PortIndex=repmat(double(e.PortIndex),n,1);
+        if isfield(e,'ReferencePlane')
+            T.ReferencePlane=repmat(string(e.ReferencePlane),n,1);
+        end
         T.ReceiverUsesScoringReference=false(n,1); T.GainOrPhaseFitted=false(n,1);
         % A pre/post-TX pair retains PA backoff and every other configured
         % gain. It is not a gain-normalized standards modulation-EVM test.
@@ -72,6 +76,12 @@ for k=1:height(trials)
         if string(e.MeasurementDomain)=="transmitter_resource_elements"
             T.MeasurementClaim=repmat("raw_gain_inclusive_TX_pair_error_not_standardized_modulation_EVM",n,1);
             T.AmplitudeReferenceTreatment=repmat("pre_TX_RF_amplitude_no_PA_backoff_or_gain_removal",n,1);
+        elseif string(e.MeasurementDomain)=="received_resource_elements"
+            assert(string(e.SignalName)=="TRS" && ...
+                string(e.ReferenceSource)=="same_executed_desired_link_received_pilot_grid", ...
+                'sixgr:report:ControlEVMPairAuthority','Received-grid TRS EVM needs its independent same-execution reference.');
+            T.MeasurementClaim=repmat("received_pilot_grid_pair_error_not_equalized_or_RF_conformance",n,1);
+            T.AmplitudeReferenceTreatment=repmat("same_execution_desired_pilot_grid_no_gain_phase_fit",n,1);
         else
             T.MeasurementClaim=repmat("receiver_paired_symbol_error_not_RF_conformance",n,1);
             T.AmplitudeReferenceTreatment=repmat("retained_reference_and_receiver_equalization",n,1);

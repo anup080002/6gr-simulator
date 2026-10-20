@@ -29,6 +29,11 @@ for hz=[-400 0 400]
         out.CFOCorrectionSampleOrigin==origin && out.EstimatedTimingOffset_samples==delay && ...
         out.NMSE_dB<-50,'Configured CP correction must run before TRS channel estimation: %s',out.FailureReason);
     assert(contains(out.CFOEstimateSource,'cyclic_prefix') && isnan(out.EstimatedOscillatorCFO_Hz));
+    assert(out.ResidualCFOEstimateAvailable && out.ResidualFrequencyUsesDifferentObservable && ...
+        abs(out.ResidualCFO_EstimatedPostCorrection_Hz)<1e-5 && ...
+        ~contains(out.ResidualCFOEstimateSource,'cyclic_prefix') && ...
+        out.EVMSymbolCount>0 && isfinite(out.EVM_rms), ...
+        'Independent post-correction TRS measurement and paired pilots must be retained.');
     raw=capture.Observation.readComplete();
     assert(isequal(raw,observed),'Reception must not mutate the original received IQ.');
     % Truth metadata and scoring have no authority over receiver decisions.
@@ -49,6 +54,19 @@ for hz=[-400 0 400]
     assert(~off.Crash && ~off.CFOCorrectionApplied && off.CFOCorrectionApplied_Hz==0 && ...
         off.EstimatedCommonFrequency_Hz==out.EstimatedCommonFrequency_Hz && ...
         isequaln(off.DetectionTable,out.DetectionTable));
+    fprintf('TRS_RESIDUAL_FREQUENCY injected=%g corrected=%.12g uncorrected=%.12g available=%d evidence=%s\n', ...
+        hz,out.ResidualCFO_EstimatedPostCorrection_Hz,off.ResidualCFO_EstimatedPostCorrection_Hz, ...
+        off.ResidualCFOEstimateAvailable,off.TRSResidualFrequencyEvidenceJSON);
+    % Uncorrected CFO creates ICI: pilot phase slope is not algebraically
+    % identical to the injected oscillator value, even without AWGN. Check
+    % exact agreement with an independent direct-Toolbox IQ calculation,
+    % plus the already configured frequency-accuracy requirement. Do not
+    % retune the receiver or subtract the injected frequency from its result.
+    expected=localPilotFrequencyOracle(observed,p.Tx,delay);
+    assert(off.ResidualCFOEstimateAvailable && ...
+        abs(off.ResidualCFO_EstimatedPostCorrection_Hz-expected)<1e-8 && ...
+        abs(off.ResidualCFO_EstimatedPostCorrection_Hz-hz)<p.StrictConfig.FrequencyToleranceHz, ...
+        'Post-correction diagnostic must match actual IQ, including uncompensated ICI.');
     if hz~=0
         assert(off.PreRXRFReferenceNMSE_dB>p.StrictConfig.ChannelNMSEThresholddB, ...
             'Uncompensated RF phase error must remain visible in its distinct pre-RX-RF comparison.');
@@ -74,4 +92,31 @@ end
 function o=localObservation(wave,origin,fs)
 o=sixgr.phy.waveform.WaveformObservationBuffer(origin,origin+size(wave,1),fs,size(wave,2));
 o.append(sixgr.phy.waveform.WaveformChunk(wave,origin),fs);
+end
+
+function hz=localPilotFrequencyOracle(observed,tx,delay)
+% Independent test calculation: no SixGR detector/frequency-estimator call.
+% The analytic fixture's known delay only positions this scoring oracle.
+correlation=0; deltas=zeros(numel(tx.GridSlots),1);
+for k=1:numel(tx.GridSlots)
+    s=tx.GridSlots(k); K=12*s.Carrier.NSizeGrid;
+    ids=double(s.Indices(:)); symbols=floor((ids-1)/K);
+    pair=unique(symbols); assert(numel(pair)==2);
+    firstSymbol=(s.Slot-tx.FirstSlot0Based)*s.Carrier.SymbolsPerSlot;
+    lengths=double(tx.OFDM.SymbolLengths(:)); cp=double(tx.OFDM.CyclicPrefixLengths(:));
+    scale=tx.SampleRateHz/(tx.OFDM.Nfft*s.Carrier.SubcarrierSpacing*1000);
+    count=round(sum(lengths(firstSymbol+(1:max(pair)+1)))*scale);
+    first=tx.SlotTable.StartSample1Based(k)+delay;
+    grid=nrOFDMDemodulate(s.Carrier,observed(first:first+count-1,:),'CyclicPrefixFraction',0.5);
+    a=find(symbols==pair(1)); b=find(symbols==pair(2));
+    [scA,ia]=sort(mod(ids(a)-1,K)+1); [scB,ib]=sort(mod(ids(b)-1,K)+1);
+    assert(isequal(scA,scB));
+    early=reshape(grid(scA,pair(1)+1,:),numel(a),[])./s.Symbols(a(ia));
+    late=reshape(grid(scB,pair(2)+1,:),numel(b),[])./s.Symbols(b(ib));
+    correlation=correlation+sum(late.*conj(early),'all');
+    at=firstSymbol+pair+1;
+    deltas(k)=(sum(lengths(at(1):at(2)-1))+0.5*(cp(at(2))-cp(at(1))))*scale/tx.SampleRateHz;
+end
+assert(max(deltas)-min(deltas)<1e-12);
+hz=angle(correlation)/(2*pi*deltas(1));
 end

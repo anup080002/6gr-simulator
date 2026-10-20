@@ -1,21 +1,148 @@
 # SixGR Foundation v2
 
+## 20 October 2026: consolidated main codebase and current H4 commands
+
+This is the current status; older dated sections below are retained as history.
+All MATLAB, Python, YAML, tests and documentation use the **single `main`
+checkout**. External drives hold simulation evidence, not a second codebase.
+Committing these repairs is **not** a claim of complete scenario acceptance.
+
+| Area | Implemented / verified | Still required |
+| --- | --- | --- |
+| Exact PDSCH resource accounting | Both canonical TX entry paths expose the immutable gross/data/pilot resource sets; coded TX/RX and exact allocation checks pass. | Inspect new integrated DL rows and terminal exports. Earlier missing counts are not reconstructed from throughput. |
+| TRS measurements | Actual desired/received pilot pairs, diagnostic EVM and a post-correction common-frequency measurement using an observable different from acquisition. Full-band correction-on/off and poisoned-reference checks pass. | New integrated observations and final CSV/PNG acceptance. Same-capture observables are not independent statistical trials; these diagnostics do not certify RF-conformance EVM or isolated oscillator CFO. |
+| Beam plots and SRS coverage | SSB series retain observation/beam identity. SRS distinguishes exact full-carrier coverage from configured edge tolerance. | Verify the resumed publications. Actual native SRS coverage remains **272/273 PRBs**, not 273 measured PRBs. |
+| Memory ownership | Redundant pending broadcast preparation owners are removed with equality guards; frozen samples, receiver clocks and required TX grids remain intact. | Whole-run memory/paging measurement; genuine 64-port arrays remain large. No precision reduction or skipped RF/channel evolution. |
+| Handoff and adaptation audit | Slots **40--60** check DL/UL handoff. Causal CSI-to-data use is checked through the unchanged **100-slot** horizon. Both are mandatory via `AllChecksPassed`. | Actual completed radio slots, received feedback and data trials. A report in slot 59 UL symbols cannot adapt earlier DL symbols; slot 60 is UL. |
+| Overall acceptance | Completed checkpoint 45 was verified; a source-repaired continuation is configured to resume at 46, retaining the interrupted attempt. | All 100 slots, connected PUSCH, sustained causal adaptation, final measurement/export audit and separate statistical qualification. A resumed repair run is not a frozen-source primary study result. |
+
+Latest affected-check evidence: **14 distinct MATLAB checks** have passing
+latest results across `logs/lls_repairs/h4_checkpoint45_measurements_20261020_v1`
+through `v4`; **254 Python publication checks** and **59 slot-window audit
+checks** pass. Earlier failed receipts remain preserved. **No `testAll` was
+run**, following the operator's affected-tests-only instruction. These checks
+do not qualify every configuration or the full scenario.
+
+Consolidation verification: **78/78 Python server-handoff and slot-window
+checks passed**. The fresh-run command above/below was checked with `--plan`
+without starting MATLAB or writing a new run. No full suite was launched.
+
+See the [repair details](docs/lls/h4_checkpoint45_repairs_20261020.md) and
+[complete issue ledger](docs/lls/h4_100mhz_20261015_issue_status.csv). Runtime
+receipts/logs and large IQ archives are local evidence, not files shipped by
+GitHub; preserve them or transfer them with the documented evidence bundle.
+
+### Fresh 100 MHz run: Windows Command Prompt
+
+Use a new tag and a committed, clean checkout. This command launches **one
+fresh 100-slot run**, then performs the handoff/adaptation audit; it does not
+start directly at slot 40. Do not launch it alongside the already active run.
+On another server, change the checkout, MATLAB executable and output paths.
+
+```cmd
+cd /d "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main"
+python scripts\run_lls_slot_window.py --config simulator/configs/validation/h4_100_slot40_60.yaml --matlab "C:\Program Files\MATLAB\R2026a\bin\matlab.exe" --results "E:\SixGRResults" --tag h4_100mhz_40db_100slots_20261020_01
+```
+
+Add `--plan` for a dry command preview. The wrapper preserves failures and
+does not automatically rerun. It requires successful scenario execution
+**and** `AllChecksPassed`; `WindowChecksPassed` alone is insufficient.
+
+- Scenario YAML: [`h4_100_cdlc100_connected_impaired_40db_adaptation.yaml`](simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_adaptation.yaml).
+- Run folder: `E:\SixGRResults\lls\h4_100_cdlc100_connected_impaired_40db_adaptation\h4_100mhz_40db_100slots_20261020_01\`.
+- Launcher logs: `logs\server\h4_100mhz_40db_100slots_20261020_01\`.
+- Additional audit: `reports\validation\slot40_60\` within that run, with source hashes, scope-labelled checks and separate post-window adaptation extracts. The primary CSVs are not replaced.
+
+The executed configuration is 4 GHz, 100 MHz, 30 kHz SCS, 273 PRBs, 64 gNB TXRU/four UE
+chains, TDD `D,D,D,S(10DL/2guard/2UL),U`, adaptive DL/UL rank up to 4 and physical
+control/feedback with configured CDL-C/RF impairments. Full-buffer traffic is
+bidirectional. PUSCH uses symbols 0--10; K2=4 maps control slot 46 to data slot 50.
+Slots 45/50/55/etc. are UL opportunities, not automatic PUSCH transmissions.
+In the retained attempt, SRS at 45 passed and UL DCI at 46 for PUSCH at 50 decoded; this
+does not establish that the subsequent PUSCH decoded successfully.
+
+### Resume and WebGUI
+
+Use the [completed-slot checkpoint procedure](#completed-slot-restart-checkpoints)
+with the original scientific configuration and intact archive dependencies.
+After-slot-45 resumes at 46; it does not repeat initial access. The visible run
+folder is restored to the checkpoint while the interrupted attempt is preserved.
+Source changes require a reviewed repair reason and remain diagnostic evidence.
+Checkpoint restoration verifies large retained files before PHY progression;
+the observed checkpoint-45 dependency set contains 1,196 files totaling 41.51 GiB.
+Do not start a second MATLAB writer because the startup log is temporarily quiet.
+
+For the external results tree, start the GUI in a **separate Command Prompt**
+from this same checkout, only if port 62906 is not already serving it:
+
+```cmd
+set "SIXGR_RESULTS_ROOT=E:\SixGRResults"
+set "SIXGR_OUTPUT_BACKEND_OVERRIDE=filesystem"
+"apps\.webgui-venv\Scripts\python.exe" apps\lls_web_dashboard.py --host 127.0.0.1 --port 62906 --server auto --threads 32 --no-browser
+```
+
+Open <http://127.0.0.1:62906/realtime> and select the intended run. This command
+requires the existing WebGUI virtual environment; see the setup section below
+for a fresh machine. The GUI reports persisted evidence: an old slot number is
+not proof that a newly started MATLAB process has already reached that slot.
+
+Other commands remain documented below: [5 MHz TDD](#5-mhz-tdd-saturated-20-db-or-eight-point-awgn-sweep),
+[20 MHz TDD](#20-mhz-n39-tdd-cdl-c-commands),
+[400 MHz research / Keysight](#400-mhz--7-ghz-research-waveform-and-keysight-package),
+and [LLS BLER/HARQ calibration](#generic-lls-blerharq-calibration-bounded-collection-not-qualification).
+The newer 4 GHz / 20 MHz / 64-TXRU / four-chain draft is distinct from the older n39
+scenario; local 20 MHz development remains paused behind 100 MHz acceptance.
+
+### 19 October: authorized local verification and external storage
+
+The operator has now authorized local 100 MHz verification. This supersedes
+the earlier server-only execution restriction below; it does not establish
+scenario acceptance. Use **one main source checkout** and keep large evidence
+under **`E:\SixGRResults`**, with launcher logs under the repository's `logs/`.
+
+The first local launch (`h4_100mhz_local_e_20261019_v1`) was stopped during
+initialization: the MATLAB results resolver silently redirected its external
+output argument to the repository's C: results tree. Its files are preserved.
+H4-170 repairs the production resolver and server launcher, not the PHY.
+Three affected MATLAB tests and 59 Python routing/window/handoff tests pass;
+these checks do not constitute a physical scenario pass. No `testAll` was run.
+
+For direct MATLAB commands, explicitly opt in to the **same absolute directory**
+passed to the runner. A drive root or a directory containing the source checkout
+is not an allowed production evidence root. Relative `results` continues to
+mean the repository's results folder; setting the environment alone does not
+silently relocate those legacy callers.
+
+```cmd
+set "SIXGR_RESULTS_ROOT=E:\SixGRResults"
+set "SIXGR_OUTPUT_BACKEND_OVERRIDE=filesystem"
+```
+
+Then pass `'E:\SixGRResults'` as the runner's output argument and assert
+`strcmpi(sixgr.report.resolveResultsRoot('E:\SixGRResults'),'E:\SixGRResults')`
+before calling it. Always use a new tag. The server/window launchers now set
+that environment binding automatically from `--results "E:\SixGRResults"`
+and reject a redirected MATLAB root before starting PHY work. Their clean-source
+guard is unchanged; local dirty-source execution is **repair validation**, not
+frozen-source study qualification. Start the WebGUI with the same environment
+so it discovers the external results tree.
+
 ## 19 October 2026: server handoff and current acceptance
 
-**Use this section first when moving execution to another machine.** All source,
+**Server handoff procedure; use the latest status above.** All source,
 YAML, tests, WebGUI and documentation belong to this repository's **`main`**
 branch. There is no separate repair codebase. Historical dated evidence below
-is retained for traceability; it does not supersede the following status.
+is retained for traceability; this dated status does not supersede newer evidence above.
 
 | Item | Current evidence / limitation |
 | --- | --- |
 | Latest H4 run | Operator interrupted MATLAB after slot-46 exports. No final completion/failure receipt was written. **Not an accepted 100-slot result.** |
-| Restart boundary | Last verified completed checkpoint: **45**, next slot **46**. A slot-46 CSV is not proof that slot 46 or the scenario finished. |
+| Restart boundary | Historical completed checkpoint: **45**, next slot **46**. A slot-46 CSV is not proof that slot 46 or the scenario finished. The first server verification must start fresh; a historical checkpoint number does not establish that its complete dependencies are currently available. |
 | Large paired-CSI export | Bounded MATLAB writer retained all 1,677,312 sample pairs; the live CSV matched its independently replayed SHA256. No sample decimation. |
 | Occupancy plot memory | Python renderer now reduces CSV records as a stream, instead of retaining the entire approximately 498 MB input as dictionaries. **217 affected Python tests pass**. The full retained-data replay completed: **23 PNGs**, all **87 source/output hashes matched**, all 1,677,312 CSI sample pairs and 810,338 executed-RE rows accounted for. This remains a partial diagnostic replay, not terminal qualification or proof of the earlier exit cause. |
 | Live radio-clock progress | Core runtime and WebGUI now separate the active one-based radio slot/frame, processed slots/symbols and DL/UL trial rows. Five distinct affected MATLAB checks and 78 Python checks pass. A processed slot is not a durable checkpoint or scenario acceptance. |
 | Duplicate RE serialization | Core exporter now serializes each carrier/native RE table once and publishes verified byte copies to the component/live destinations. **Four affected MATLAB checks and 69 Python consumer checks pass**; the retained 497,999,464-byte CSV also copied with matching SHA256. Full-run timing and live MySQL qualification remain pending. |
-| PDCCH H0/H1 qualification | Noise-only results alone can no longer qualify the detector. A YAML-driven signal-present producer, joint confidence budget and paired acceptance gate pass **nine affected MATLAB checks**, followed by **four passing hash-binding regressions**. This is AWGN component verification, **not H4 installed-channel or NR conformance qualification**. |
+| PDCCH H0/H1 qualification | Noise-only results alone can no longer qualify the detector. AWGN campaign checks pass; the installed H4 single-occasion executor now also passes one noise-only case and independently decoded DL/UL DCI cases. A core LLR-scale repair and seven related checks pass (**eight affected MATLAB tests total**). Independent resets and these small populations do **not** establish continuous H4 execution, statistical or NR conformance qualification. |
 | Server handoff utilities | **18 orchestration/packaging tests pass**, with MATLAB mocked. These verify command construction, failure handling, evidence hashes and exclusions—not a physical server run. |
 | Integrated acceptance | Connected UL, delivered CSI/UCI-driven adaptation, all 100 slots, complete terminal CSV/PNG publication and statistical qualification remain **unaccepted**. A larger server does not by itself fix or qualify these. |
 | Verification policy | Affected tests only at the operator's request. **No full `testAll` and no new scenario were launched for this handoff.** |
@@ -27,6 +154,800 @@ with the actual MATLAB loader/builder. Local receipts are
 `logs/server_handoff_final_20261019.xml` and
 `logs/server_handoff_guide_refresh_20261019.log`; the original failed check receipt
 is preserved. This does not replace MATLAB PHY or full-scenario qualification.
+
+Current work order: finish known **100 MHz repairs first**. The draft local
+20 MHz / 4 GHz / 64-TXRU / four-chain-UE configuration is paused; no 20 MHz
+scenario has been launched. The original handoff assigned full 100 MHz execution
+to the server; the later explicit local authorization is recorded above.
+
+### Targeted slot-40--60 regression (100 MHz / 4 GHz TDD)
+
+The validation policy is
+[`h4_100_slot40_60.yaml`](simulator/configs/validation/h4_100_slot40_60.yaml).
+It uses the **unchanged 100-slot production scenario**, including real initial
+access, 64 gNB TXRU/four UE chains, adaptive rank up to four, CSI/SRS/TRS,
+physical control and RF impairments. It does not create a pre-attached UE at
+slot 40, reset a channel, shorten the CSI calendar, remove the SRS guard, or
+force rank/MCS/ACK values. Slots are **one-based absolute carrier slots**;
+symbol indices remain zero-based.
+
+The production timing preflight verifies control slots **41/46/51/56** to UL
+data slots **45/50/55/60**, CSI reporting occasion **59**, and TRS observation
+start **47**. These are configured opportunities, not promises that access,
+traffic admission or physical decoding succeeds at those times.
+
+| Window check | Required evidence |
+| --- | --- |
+| Progress | Completed-radio counter reaches 60 and each slot 40--60 appears exactly once. CurrentSlot=60 alone does not pass. |
+| DL and UL | Actual shared-stream decoder rows, at least one CRC pass in each direction, matching UE/RNTI/frozen grant/TBS, legal symbol allocation, and measured DMRS-port count consistent with transmitted layers. |
+| Direction changes | Actual DL then UL and UL then DL data activity; configured K2 legality; rejected opposite-direction targets retain their blocker. |
+| CSI/adaptation | Independently received CSI-UCI, causal source/due/delivery ordering, and received CSI linked through scheduler admission to a future PDSCH trial through slot 100. This is a separate mandatory scope from the 40--60 handoff window; rank need not increase merely to pass. |
+| PUCCH / UCI | Receiver-owned HARQ/SR/CSI typed lengths, a successful PUCCH reception, and exact logical/physical feedback identities. A failed decode is not misreported as a missing trial. |
+| Grant closure | Each scheduled DL/UL grant has one real trial or explicit receive/no-decode disposition. UCI-on-PUSCH transfer requires matching actual PUSCH evidence. |
+| Missing activity | No PUSCH, no delivered CSI, or an empty/header-only file fails coverage. Window-end censoring cannot conceal feedback due inside a 100-slot run. |
+
+**Verified so far:** three affected MATLAB tests pass, including Type-2
+HARQ DAI wrap/gap guards; 40 Python audit/launcher regression cases plus 18
+existing server-handoff guards pass (**58 affected Python tests**).
+Receipts: `logs/lls_repairs/h4_slot40_60_preflight_20261019_v1/receipt.json`
+and `logs/h4_slot40_60_final_20261019_v4.xml`.
+The window audit also rejects explicitly unfinished PUCCH rows, unfinalized
+cancellation/censoring and failed UCI-on-PUSCH transfer status. Five separate
+affected RF/channel-scoring tests pass in
+`logs/lls_repairs/h4_postdecode_export_20261019_v1/receipt.json`; these cover
+actual bounded RF streams and receiver/scoring operators, not the entire
+100 MHz production export.
+The production PUCCH disposition classifier now checks UE/RNTI, occasion,
+carrier/BWP and available run/sweep identity as well as the grant ID, and
+does not credit proxy/placeholder evidence. Three affected MATLAB tests,
+including actual runtime-written grant/trial CSV schemas, pass in
+`logs/lls_repairs/h4_feedback_identity_20261019_v2/receipt.json`.
+The audit fixtures are not waveform results. **The production physical
+slot-40--60 window has not yet passed this new gate.** No `testAll` was run.
+
+The subsequent production channel-scoring repair (H4-169) also passes its
+affected checks. `pilotChannelNMSE.m` and
+`buildReceiverChannelEstimateTable.m` now score the exact compact pilot
+capture directly, without reconstructing a full channel-estimate tensor.
+The 273-PRB / 64-RX / four-port storage fixture preserves all 838,656 scored
+pilot/branch values and exact table/scoring equality; its compact capture is
+13,524,117 bytes versus 187,858,944 bytes for the discarded dense estimate.
+This is an allocation comparison, **not a whole-process peak-memory claim**.
+Eight physical DL/UL receiver cases also retain byte-identical measurement
+CSVs before/after the repair. The bounded shared SRS/DCI/PUSCH test passes
+through the production scoring exporters with real decoded data and retained
+reference-IQ/coefficient archives. It is not the full-band H4 window.
+Four existing affected checks passed in
+`logs/lls_repairs/h4_compact_scoring_20261019_v1/receipt.json`; that receipt
+also preserves an initial bookkeeping failure in the new test, subsequently
+fixed. Both new checks pass in
+`logs/lls_repairs/h4_compact_scoring_20261019_v2/receipt.json`.
+
+On the **high-capacity Windows server**, from the repository root after the
+reviewed source has been committed and transferred, this launches one fresh
+production run and audits the window even if scenario acceptance fails:
+
+```cmd
+python scripts\run_lls_slot_window.py --config simulator/configs/validation/h4_100_slot40_60.yaml --matlab "C:\Program Files\MATLAB\R2026a\bin\matlab.exe" --results results --tag h4_slot40_60_server_01
+```
+
+Use a new run tag. The existing server launcher rejects dirty source and an
+existing run/log destination. Add `--plan` to inspect the command without
+starting MATLAB or writing outputs. **A fresh launch executes slots 1--100;
+40--60 is the audited interval, not an artificial starting point.** The full
+horizon is retained so late grants and feedback are not changed by truncation.
+There is no automatic rerun on failure.
+
+Outputs stay together under
+`results/lls/h4_100_cdlc100_connected_impaired_40db_adaptation/h4_slot40_60_server_01/`.
+The additional `reports/validation/slot40_60/` contains `checks.csv`,
+`receipt.json`, source hashes and unchanged, source-labelled window rows for
+each available input table. Separate `adaptation_*` extracts retain the later
+records used by the through-slot100 causal check. These are diagnostic extracts,
+not replacement primary measurements. Launcher/MATLAB logs are in
+`logs/server/h4_slot40_60_server_01/`.
+
+To audit an already stopped/completed run without MATLAB:
+
+```cmd
+python scripts\audit_lls_slot_window.py --config simulator/configs/validation/h4_100_slot40_60.yaml --run-folder "results\lls\h4_100_cdlc100_connected_impaired_40db_adaptation\h4_slot40_60_server_01"
+```
+
+Do not repeat that command over an existing audit; use `--output` with a new
+diagnostic folder to preserve the earlier receipt. Missing evidence is reported
+as a failed check; no replacement PHY rows are generated. `WindowChecksPassed`
+and `AdaptationChecksPassed` describe their separate scopes; `AllChecksPassed`
+requires both and remains separate from full scenario acceptance and statistical
+qualification.
+
+For a retry, use the existing [completed-slot checkpoint workflow](#completed-slot-restart-checkpoints)
+with the same scientific configuration and intact IQ/archive dependencies.
+To **re-execute all of 40--60**, choose a verified checkpoint **before 40**
+(for example, after 35, resuming at 36). After-40 resumes at 41 and does not
+retest slot 40. A changed-source continuation remains repair-validation
+evidence. If no suitable checkpoint survives, a real fresh prefix is required.
+
+19 October shared-runtime memory repair (H4-157):
+
+- The production coordinator no longer requests and discards the full
+  completed-observation output. Its slot and receive-tail wrappers propagate
+  that choice to `CoupledWaveformStream.m`, which releases delivered
+  callback captures and interval temporaries before the next physical interval.
+- Explicit two-output callers still receive every requested observation.
+  Pending captures, channel/RF/noise state, HARQ, exact channel archives and
+  continuous IQ are not shortened, reset, decimated or replaced.
+- **9/9 final affected MATLAB checks pass** in
+  `logs/lls_repairs/h4_completion_lifetime_final_20261019_v2/receipt.json`.
+  The unchanged lifetime regression first failed in
+  `h4_completion_lifetime_red_20261019_v1`; both receipts are preserved.
+  The checks cover callback identity and clocks, actual narrow-grid coded
+  transmissions/channel archives, both receive-tail APIs, CSI-RS measurements
+  and continuous IQ. They do not establish decoded-data BLER or full H4 acceptance.
+- Full 100-slot MATLAB/Python memory qualification remains open. The separate
+  lifetime receive-only PUSCH capture/result cache repair is recorded below
+  under H4-158. No full scenario or `testAll` was launched; 20 MHz work remains
+  paused.
+
+19 October receive-only evidence ownership repair (H4-158):
+
+- `CoupledWaveformStream.m` and `completeSharedPUSCHAfterRejectedControl.m`
+  now archive successfully completed receive-only captures and decoder arrays
+  through `SharedReceiveOnlyEvidence.m` before releasing their live cache
+  entries. Both actual pre/post-RF sample planes, the receiver observation,
+  frozen grant, decoder result and sample clocks remain losslessly available.
+  State holds checksum-bound receipts, not another lifetime IQ/decoder copy.
+  Active receiver-owned HARQ soft buffers remain in memory.
+- Explicit on-demand reads verify the archive identity, bytes and sample hashes.
+  Missing/corrupt files and duplicate completion/archive attempts are rejected;
+  no UE transmission, TB delivery or performance row is invented. Checkpoints
+  retain verified immutable-file dependencies instead of copying every large
+  historical MAT file into each checkpoint generation.
+- **6/6 final affected MATLAB tests pass** in
+  `logs/lls_repairs/h4_receive_only_archive_20261019_v2/receipt.json`:
+  single and repeated missing-DCI reception, due HARQ, CSI, the original
+  capture API and checkpoint continuation. The repeated case retains two
+  actual captures and receiver-owned soft combining with zero UE transmissions.
+  The first archive batch exposed a cell-array row-deletion bug; its **4/5**
+  result is preserved, and the production deletion was corrected without
+  weakening the test.
+- Actual pre/post-repair receiver samples, control samples, audit tables and
+  **all 326 non-wall-clock receiver fields match exactly**. Four other fields
+  are measured `tic/toc` execution durations and legitimately differ; their
+  original values and the initial all-fields comparison are retained in
+  `physical_equivalence_with_timing_separation.json` beside the final receipt.
+  The audit CSV bytes also match. This is semantic preservation for the
+  measured fixture, not a benchmark speedup or statistical qualification.
+- A separate stale timing-test prerequisite was repaired (H4-159). A native
+  PDCCH with an explicitly authored 64-sample delay now exercises the bounded
+  `[0,16]` receive search; it does not rely on an incidental noise peak.
+  The receiver algorithm, RF/channel settings and rejection/CRC guards were
+  not changed to make that test pass.
+- Whole-run RSS, sustained adaptive DL/UL, complete terminal CSV/PNG and
+  statistical acceptance still require the fresh 100-slot server execution.
+  These focused checks do not close H4-46 or qualify the full 100 MHz scenario.
+
+19 October continuous UL handoff check (H4-160, **not yet qualified**):
+
+- `testH4100ContinuousULFeedback.m` retains the physical owner returned by
+  the actual two-occasion full-band SRS check. Its new optional delivery mode
+  calls the production SRS adaptation consumer at the first subsequent
+  canonical slot boundary, before advancing that boundary's samples.
+- The check enumerates future configured TDD/K2 opportunities, preserves
+  SRS age and rank-confirmation policy, and is intended to execute actual
+  received DCI and PUSCH without restarting channel/RF/noise state.
+  Initial DL timing and TAG remain explicitly declared component boundaries;
+  PBCH/PRACH/RRC, sustained scheduling and MAC feedback acceptance are **not**
+  claimed. A physical control/CRC failure must remain a failure.
+- The initial diagnostic was stopped with evidence preserved after static
+  review found it consumed slot 11 before attempting the legal control-11 /
+  data-15 handoff. The test now returns the live owner at the unexecuted
+  delivery boundary. The configured five-slot SRS age and K2 remain unchanged;
+  `testH4100ULPlanningTimingEvidence` passes the explicit boundary regression
+  (`logs/lls_repairs/h4_continuous_ul_preflight_20261019_v2/receipt.json`).
+- V2 physically completed both SRS receptions on the same owner. Source 5
+  was delivered at 6 (measured RI 4 / CQI 14, accepted rank still 1); source
+  10 was delivered at 11 (RI 4 / CQI 15, accepted rank 4 / MCS 25).
+  Its NMSE operands reproduce -26.879 and -26.878 dB respectively. Evidence:
+  `results/lls/h4_shared_srs_scoring/20261019_161412_975`.
+- **V2 failed before PDCCH transmission** with
+  `sixgr:truth:SharedPDCCHResourceCollision`: the new test omitted the
+  common-resource reservations which production already passes to the
+  candidate allocator. The test now passes those reservations; a new
+  allocation-only preflight checks both the original collision and legal
+  reassignment without changing aggregation level or disabling common signals.
+  This is a test-integration repair, not a claimed production decoder fix.
+  The first new preflight omitted the installed C-RNTI and failed before
+  allocation; that receipt is retained. The corrected exact-H4 preflight
+  **passes** in `logs/lls_repairs/h4_continuous_ul_preflight_20261019_v4/receipt.json`.
+  The existing shared-slot resource regression also passes in the v3 batch.
+- Continuous control/data reception remains unverified. The stopped v1
+  evidence remains in `results/lls/h4_shared_srs_scoring/20261019_160219_176`
+  with an explicit interruption receipt; the failed v2 receipt is preserved.
+  V3 completed both SRS deliveries and actually decoded the shared-stream
+  PDCCH (AL 4, all 49 DCI bits matched, 16 candidates / 32 hypotheses).
+  It prepared rank-4/MCS-25 PUSCH from that received command, without a
+  channel reset, but **failed in the post-receiver diagnostic exporter**:
+  `buildPHYSignalDiagnosticSnapshot.m` exhausted memory while concatenating
+  the full channel-grid table. No completed PUSCH trial/CRC receipt was
+  published, so a physical data pass is not claimed. The failed receipt is
+  `logs/lls_repairs/h4_continuous_ul_feedback_20261019_v3/receipt.json`;
+  completed evidence is in `results/lls/h4_shared_srs_scoring/20261019_164224_497`.
+  The process left after its terminal failure was closed; no full scenario
+  or `testAll` was started. Earlier independent-reset passes remain separate.
+
+19 October full-grid diagnostic memory repair (H4-161 / H4-162):
+
+- The core snapshot now retains a compact, checksum-bound measured tensor
+  for large grids. The core exporter expands complete RX/TX frequency-time
+  planes through the existing atomic CSV stream, preserving all coefficients,
+  phase unwrap continuity, coordinates and metadata in the same canonical CSV.
+  `SourceTableComplete=false` explicitly identifies the bounded in-memory
+  panel table; `SourceRowCount` includes every deferred coefficient row.
+- The new declared-array regression passes: **11,741,184 H4-size values**
+  retained in a **210,161,081-byte snapshot**, byte-identical small inline and
+  streamed CSVs, and corrupt-tensor rejection without overwriting the prior
+  complete CSV. This is an object-size/export regression, **not** a measured
+  whole-process memory reduction or physical scenario acceptance.
+- The MATLAB inventory now scans the complete source once in bounded blocks;
+  the availability gate checks every row, including identities and all required
+  panels. Python selects only the requested measured panel while streaming;
+  Hest heatmaps use two passes, retain every port row (including genuine zero
+  coefficients and undefined phase), and reject a source that changes between
+  passes. Publication's status-column finalizer also streams instead of
+  rebuilding a list of every plotted row.
+- **Focused results:** `testPHYDiagnosticGridStreaming`,
+  `testPHYSignalDiagnostic`, `testPHYDiagnosticCSVConsumers`, and actual DL/UL
+  `testPHYDiagnosticWaveformWindow` pass. The latter's stale fixture lacked
+  its run root and installed antennas; it now uses the production context
+  binder before waveform execution. Both directions retain identical CRC,
+  bit-error, SINR, EVM and timing/CFO metrics with capture on versus off.
+  This is a 100-MHz carrier / 24-allocated-PRB test, not full-band qualification.
+  The new reader's initial header-only failure was fixed, not suppressed.
+  Receipts are under `logs/lls_repairs/h4_diagnostic_grid_streaming_20261019_v2/`,
+  `h4_diagnostic_consumers_20261019_v1/` and `h4_diagnostic_consumers_20261019_v2/`.
+  Failed intermediate receipts remain preserved. Python publication checks:
+  **103/103 pass**, `logs/h4_diagnostic_publication_20261019_v1.xml`.
+- Further filesystem-publication repair (H4-163): completed output files now
+  have a path/size/SHA256 receipt instead of a lifetime in-memory payload copy.
+  Reuse verifies the actual bytes before and after reading. A new negative
+  test caught buffered-prefix reuse during checksum verification; verification
+  now reads the underlying descriptor. The failed intermediate receipt is
+  retained (`h4_diagnostic_publication_20261019_v3.xml`: 105 pass / 1 fail);
+  **all 10 affected filesystem/publication checks pass** after correction
+  (`logs/h4_diagnostic_publication_20261019_v4.xml`). The 24-MiB fixture retains
+  less than 1 MiB of Python index state; this is not whole-scenario RSS evidence.
+- Complete output-buffer ownership is also repaired (H4-164): large Hest
+  plotted CSVs spill to sealed private temporary files, rather than becoming
+  population-sized Python byte strings. The finalizer, atomic filesystem
+  writer, database chunk writer, publication index, live publisher and plot
+  lineage consume this explicit file-backed payload. Small outputs retain the
+  byte interface. Every row is retained; the 8-MiB spill threshold is a storage
+  boundary, **not** a sample limit. Existing chart/alias lineage hashes CSVs
+  as streams rather than loading them again. A discovered filesystem-only
+  metadata lookup bug is corrected without fabricating database provenance.
+  **Seven new focused checks pass** (`logs/h4_file_backed_publication_20261019_v4.xml`):
+  exact byte/file CSV and PNG identity, final filesystem and live publication,
+  database chunk order/completion, corrupted-payload rejection, bounded Python
+  allocation and existing-alias linkage. The initial failed integration checks
+  are preserved. The final affected publication suite, including existing-chart
+  stream reuse, completes **169/169 pass** in
+  `logs/h4_final_publication_20261019_v1.xml`. These are publication regressions,
+  not statistical PHY qualification or complete server-run acceptance.
+- WebGUI filesystem delivery is repaired (H4-165): CSV previews and logical-row
+  counts read the actual file without retaining its full byte payload. Downloads
+  use bounded chunks and the opened file's size/version, not stale index metadata.
+  A missing or changing file cannot be served as a cached success. The Waitress
+  adapter now spools large responses and releases them after consumption or
+  disconnect, instead of rebuilding a complete in-memory response. All download
+  bytes are preserved. **99 affected checks pass**, including eight new delivery,
+  memory and failure-path checks, in `logs/h4_dashboard_streaming_20261019_v3.xml`.
+  This qualifies the tested filesystem path; database-backed payload buffering
+  and full-run process memory are not covered by that claim.
+- Constellation producer output ownership is repaired too (H4-166). The six
+  exact data-constellation/error-histogram producers no longer read a complete
+  temporary CSV back into one byte buffer before finalization. Large outputs
+  use the same sealed file-backed protocol, with no sample removal or change
+  to receiver/reference pairs. **234 affected checks pass** in
+  `logs/h4_constellation_output_20261019_v2.xml`. A 50,000-row fixture retains
+  all 7,628,152 CSV bytes with 2,493,613 Python-tracked peak bytes; SQLite/native
+  allocation and whole-run RSS are separate. All six byte/file comparisons
+  preserve CSV, plot bytes and lineage. Live publication also verifies the
+  3,522 actual retained receiver pairs under both storage paths. These are
+  publication checks, not additional independent PHY trials.
+- The continuous UL v4 component has now published its **slot-15 PUSCH CRC
+  pass with zero bit errors** after the two measured SRS reports and actual
+  received DCI, without resetting the shared CDL/RF owner. It retains 273 PRBs,
+  rank 4, MCS 25, 64-QAM, rate 0.802734375, a 507,984-bit TB and 103,188 EVM
+  pairs. EVM 0.0541486182162825 closes from retained error/reference energies;
+  the decoder-noise domain/value audits pass. The final component receipt is
+  **PASS** (`logs/lls_repairs/h4_continuous_ul_feedback_20261019_v4/receipt.json`),
+  with all 16 component slots completed. This is **not** a full MAC
+  feedback or 100-slot result. Its raw job CSV precedes the production
+  coordinator's shared RF and independent channel-scoring binders; do not
+  interpret those unbound flat RF flags as evidence that RF was disabled.
+- **Still open:** full-width integrated publication and whole-process peak
+  memory. Other plot families may still construct complete datasets; this
+  repair does not establish constant memory for the entire publisher. Continuous
+  physical SRS/DCI/PUSCH component v4 has completed after these focused checks
+  (`logs/h4_continuous_ul_feedback_20261019_v4_launcher.log`); it retains
+  exact receiver inputs before decoder/export execution. That replay file is
+  not a restorable whole-channel checkpoint. Full 100-slot execution remains
+  on the server; 20 MHz is paused and `testAll` has not been started.
+
+19 October transport-publication repairs (H4-153 through H4-156):
+
+- Production `writeRFInterferenceReconciliation.m` and
+  `generateMeasuredSINRCurves.m` now share
+  `buildSchedulerKPIReconciliation.m` for numeric scheduler accounting.
+  The separate anchor-case gate is published as
+  `reports/csv/scheduler_anchor_case_reconciliation.csv`; it cannot overwrite
+  the numeric `scheduler_kpi_reconciliation.csv` schema. Connected canonical
+  acceptance requires both accounting and anchor coverage, not either alone.
+- Goodput uses the existing `TransportGoodput/v1` first-success TB ledger.
+  Retries, warmup exclusion and SINR/UE/bin slicing cannot credit the same
+  payload twice. Actual retained trial durations (or explicitly configured
+  numerology when no duration column exists) provide the denominator.
+  Missing durations, TB identity or CRC evidence do not become fabricated zeros.
+- Unknown CRCs are separate from observed failures. The scheduler CSV labels
+  its BLER as **all-attempt CRC BLER**, not initial or residual TB BLER.
+  Its goodput and the measured-SINR KPI summary are **bits / summed trial
+  exposure**, not full elapsed-run throughput. The measured-SINR distribution
+  additionally identifies its mean/percentiles as observed per-trial rate
+  statistics and exports their known/unknown populations.
+- **13/13 final affected MATLAB checks pass** in
+  `logs/lls_repairs/h4_transport_publication_20261019_v2/receipt.json`.
+  Earlier 8/8 checks and the original failing reproductions remain retained
+  under `h4_scheduler_reconciliation_20261019_v1`,
+  `h4_scheduler_reconciliation_red_20261019_v1` and
+  `h4_measured_sinr_credit_red_20261019_v1` in the same receipt directory.
+  These are explicitly declared arithmetic/publication fixtures, not new
+  physical observations or statistical populations. No historical raw output
+  was rewritten, no scenario was launched, and no `testAll` was run.
+
+Full 100-slot server execution, continuous DL/UL adaptation, complete terminal
+artifact acceptance and independent qualification remain open. These focused
+repairs do not establish that every H4 issue is closed.
+
+Latest installed-control campaign repair (19 October, H4-151/152):
+
+- PDCCH now has a YAML-driven resumable campaign using the shared
+  `+sixgr/+link/runInstalledControlReceiverCampaign.m` journal. PDCCH and PUCCH
+  retain their separate physical executors and event definitions. Resume checks
+  source, configuration, seed and retained-IQ identities; unfinished attempts
+  are preserved for inspection, not replaced by new samples.
+- Fixed a production PUCCH accounting defect: a nonbinary presence value such
+  as `2` was coerced to true. Invalid presence/independence flags now fail
+  validation before any confidence calculation. No RF or decoder threshold changed.
+- **Eight affected MATLAB checks pass**: six configuration/accounting/lock checks
+  and two physical resume checks. Four PUCCH episodes retain two H0 DTX outcomes
+  with no false acceptance and two exact 17-bit, CRC-passing H1 receptions.
+  Three PDCCH episodes retain one H0 with no false CRC/context acceptance and
+  exact DL 1_1 / UL 0_1 payload recovery. Every PDCCH waveform executes all
+  16 installed candidates and both formats (32 hypotheses), counted as **one**
+  independent trial. Repeated regression seeds are not new statistical samples.
+- Receipts: `logs/lls_repairs/h4_control_campaign_contracts_20261019_v1/receipt.json`
+  and `logs/lls_repairs/h4_control_campaign_physical_20261019_v1/receipt.json`.
+  Physical evidence: `results/lls/installed_pucch_campaign/20261019_142617_146/`
+  and `results/lls/installed_pdcch_campaign/20261019_143153_694/`.
+
+These are independent-reset **development** populations, not the continuous
+100-slot run or NR conformance qualification. All case confidence decisions
+remain inconclusive; the configured 1% error limit is an engineering target,
+not an asserted 3GPP requirement. Source/configuration changes require a new
+campaign tag. Both APIs write one joint `reports/csv/receiver_episodes.csv`,
+`qualification_status.csv`, the actual per-episode IQ/receiver/RF evidence,
+frozen inputs and `receipt.json` within their own run folder.
+
+Optional bounded PDCCH development/resume command, from the repository root
+in **Windows Command Prompt** (three episodes total, at most two per call):
+
+```bat
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -logfile "logs\h4_installed_pdcch_campaign_development.log" -batch "setup6GRSimToolkit('Verbose',false); receipt=sixgr.link.runInstalledPDCCHReceiverCampaign('simulator/configs/validation/h4_100_installed_pdcch_campaign_development.yaml','results/lls/installed_pdcch_campaign','h4_pdcch_development_v1'); disp(receipt);"
+```
+
+Repeat the identical command only on the same frozen source/configuration to
+resume or audit completion. It does not launch initial access or a full scenario.
+**100 MHz continuous execution, terminal export acceptance and independent
+statistical qualification remain open. Twenty MHz work remains paused.**
+
+19 October core receiver follow-up (H4-149): `PDCCH_Rx.m` and
+`PDCCHWaveformTrialEngine.m` incorrectly divided native MMSE reliability by
+its mean; the receiver also clipped the normalized weights. This changed the
+decoder LLR scale with common signal/noise gain. The unchanged physical-LLR
+regression reproduced an approximately **100-fold overstatement** at gain 0.1.
+Both core paths now use `applyMMSECSIWeighting.m`, retaining the absolute native
+CSI and exactly two QPSK soft bits per symbol. No noise level, RF setting or
+detector threshold was adjusted. Gains 0.1, 1 and 10 now match the independent
+native calculation with zero recorded relative error. This follows the native
+CSI weighting in the [MathWorks PDCCH receiver example](https://www.mathworks.com/help/5g/ug/downlink-control-processing-and-procedures.html);
+it is not a claim that 3GPP specifies this receiver algorithm.
+
+**Eight affected MATLAB checks pass** in
+`logs/lls_repairs/h4_pdcch_receiver_final_20261019_v2/receipt.json`.
+The YAML-driven installed H4 executor uses the actual 273-PRB / 30-kHz /
+122.88-MS/s / 64-TX / four-RX CDL/RF configuration, all 16 configured candidates
+and both DCI format hypotheses (32 attempts). Its noise-only case has no false
+CRC or context acceptance; its DL 1_1 and UL 0_1 cases recover their exact
+payloads. Transmitted bits are used only for post-reception scoring.
+The three cases retain actual receiver IQ and 44 source/config hashes under
+`results/lls/h4_installed_pdcch/20261019_131611_401`; all six before/after IQ
+array comparisons are identical (`llr_repair_replay_audit.json`).
+The input YAML is
+`simulator/configs/validation/h4_100_installed_pdcch_development.yaml`.
+These are **independent-reset control episodes**, not initial access, actual
+PUSCH execution, continuous-runtime timing qualification or statistically
+qualified detection probabilities. Repeated regression seeds are not pooled.
+No `testAll`, full 100-slot scenario or 20 MHz scenario was started.
+
+19 October measured-UL follow-up: two actual SRS occasions at source slots
+5 and 10 pass on one shared 100 MHz / 4 GHz, four-UE-TX / 64-gNB-RX
+CDL/RF clock. Both recommend RI 4 / TPMI 0; measured CQI is 14 then 15.
+The production adaptation consumer, replayed at the actual next slot
+boundaries 6 and 11, holds bootstrap rank 1 after the first observation and
+accepts rank 4 / MCS 25 only after the second. SRS causes no OLLA ACK update.
+Both channel-NMSE values (approximately -26.88 dB) independently reconcile
+with the saved error/reference energies over 417,792 compared complex values.
+The original failed diagnostic queued two pending SRS occasions at once;
+the helper now obeys the unchanged production one-pending-sounding guard.
+The failed receipt is retained, not overwritten.
+
+Retained measured feedback also passes exact future-grant construction:
+source 10, delivered/control 11, PUSCH 15, K2 4 and age 5. An independent
+physical CDL/RF PDCCH episode recovers that grant, then the UE's received-DCI
+path generates the matching **273-PRB, four-layer, 64-QAM, rate 0.802734375,
+507,984-bit** PUSCH. No scheduler grant or SRS decision is passed into the
+UE transmitter. This handoff replay does not continue the sounding channel
+history; PUSCH generation alone is not received throughput.
+
+Evidence: `logs/lls_repairs/h4_measured_srs_adaptation_20261019_v2/receipt.json`,
+`results/lls/h4_shared_srs_scoring/20261019_133551_890`, and
+`results/diagnostics/h4_measured_ul_grant/20261019_135900_118`.
+Three affected baseline timing/rank checks also pass in
+`logs/lls_repairs/h4_ul_handoff_baseline_20261019_v1/receipt.json`.
+The matching bounded data-receiver diagnostic also completes with **CRC pass
+and exact recovery of all 507,984 bits** through actual four-TX / 64-RX CDL/RF.
+The receiver acquires and applies 16 samples of timing correction and reports
+per-layer decision-residual-bounded SINR of 27.09, 28.24, 29.29 and 25.93 dB.
+Its actual IQ, RF execution, receiver output and source/input hashes are in
+`results/diagnostics/h4_measured_ul_data/20261019_140256_559/receipt.json`.
+Control and data are separate independent-reset episodes: this is not a
+continuous channel/SRS prediction-quality experiment or a throughput curve.
+The data folder's `audits/paired_measurements_v1` contains all **103,188**
+matched constellation pairs (25,797 per layer), measured DMRS/decoder fields,
+and a joint four-layer CSV/PNG. Independent CSV arithmetic reproduces the
+aggregate paired receiver-symbol EVM of **4.2373%** and each layer's EVM;
+this is not a standards-qualified transmitter RF EVM measurement. The native
+paired CSV uses layer indices 1--4; the chart CSV explicitly uses 0--3.
+Timing scoring also keeps the executed earliest arrival (8 samples) separate
+from the selected/corrected correlation peak (16 samples). Their -8-sample
+difference is an earliest-path-relative diagnostic, not an independent
+measurement of residual timing or proof of receiver failure.
+Continuous access, bidirectional data, terminal exports and statistical
+qualification remain open. The 20 MHz drafts remain paused.
+
+19 October physical-feedback follow-up (H4-03): the unchanged **40-slot
+shared CSI/UCI component passes** at 100 MHz / 4 GHz with the configured
+64x4 CDL/RF path. Actual PUCCH reports at slots 19 and 39 each recover all
+15 SR-plus-CSI bits with CRC pass. Both report RI 2 / CQI 14 / CRI 1;
+PMI changes from 20 to 18. The scheduler retains rank 1 after the first
+report and accepts rank 2 only after the second configured confirmation.
+CSI alone leaves TCI pending. Its preconnected access/TAG inputs are declared:
+**this test does not execute initial access or PDSCH/PUSCH data reception**.
+The actual received feedback then passes a separate three-grant replay with
+decoded logical-link PDCCH and real PDSCH TX: rank 2, MCS 24, PMI 18, CRI 1,
+and 126/126/273 PRBs. That replay does not continue the original shared
+channel and does not establish data BLER or delivered throughput.
+
+Evidence: `logs/lls_repairs/h4_shared_csi_uci_20261019_v1/receipt.json`,
+`results/lls/h4_shared_csi_uci/20261019_113208_842`, and
+`results/diagnostics/h4_received_csi_grant/20261019_shared_uci_verified_v1`.
+The component's `audits/completed_40slot_plot_replay` contains **12 CSV/PNG
+pairs with both observations in the same files**, retaining 282 actual-source
+CSV records. Both 69,888-value CSI channel-reference populations reconcile
+independently. These are component artifacts, not a terminal 100-slot bundle;
+connected UL, complete server execution and statistical acceptance remain open.
+
+19 October follow-up (H4-145): a core PDCCH scoring defect allowed an empty
+or skipped receiver observation to appear as a successful negative trial.
+The strict adapter, scorer and campaign CSV now retain and require actual
+candidate decode-attempt evidence; no detector threshold or PHY sample was
+changed. **Five affected MATLAB checks and 38 Python publication checks pass**.
+Three additional CSI cadence/rank-handoff/CSI-on-PUSCH checks pass, but these
+do not establish continuous H4 adaptation. Receipts are under
+`logs/lls_repairs/h4_pdcch_execution_authority_20261019_v2` and
+`logs/lls_repairs/h4_csi_handoff_20261019_v1`.
+The eight-plot AWGN component package is preserved byte-for-byte under
+`results/diagnostics/h4_pdcch_execution_authority_20261019_v2`; its
+`preservation_audit.json` identifies the original test folder. It is **not**
+an accepted 100 MHz scenario or a statistical qualification campaign.
+
+19 October follow-up (H4-146): the production channel-NMSE plotter now hashes
+the same byte stream it parses instead of fetching a full resource CSV twice.
+Its exact duplicate-coordinate index uses bounded-cache scratch storage, with
+no sample cap or decimation. **163 affected Python plot checks and 11 live
+publication checks pass**, including the original two failing regressions.
+The actual slot-6 CSI resource CSV (45,837,340 bytes / 69,888 rows) reproduces
+the retained NMSE with one source open and 393,456 Python-traced peak bytes.
+This excludes native SQLite/runtime allocations and does not prove full-run
+memory closure. Receipts: `logs/h4_nmse_stream_20261019_v2.xml` and
+`logs/h4_nmse_live_publication_20261019_v1.xml`. The unchanged physical
+40-slot CSI/UCI diagnostic is separate from this exporter verification; full
+100-slot scenario acceptance remains pending.
+
+19 October follow-up (H4-147): empty or negative-SR PUCCH occasions are now
+labelled **not applicable to payload BLER**, rather than missing a required
+measurement. A transmitted payload that was missed still counts as an error;
+a transmitted payload without decode evidence remains unresolved. **198
+affected Python checks pass**, with one unrelated large-memory check excluded.
+Replay of the actual first-report CSV changed only the applicability label on
+the three empty occasions; all metric values and PNG bytes are unchanged.
+The original replay is preserved. Receipt:
+`logs/h4_uci_bler_applicability_20261019_v1.xml`; actual-source comparison:
+`results/lls/h4_shared_csi_uci/20261019_113208_842/audits/slot19_uci_applicability_replay/receipt.json`.
+This reporting repair does not establish statistical UCI qualification or
+complete scenario acceptance.
+
+Follow-up H4-148 distinguishes **unknown transmission evidence from known
+absence**. A missing bit count no longer erases a failed explicitly prepared
+payload, and decoder acceptance alone cannot establish that a UE transmitted.
+Invalid/conflicting counts and nonbinary presence flags remain unresolved;
+`unavailable` is not interpreted as an absent transmitter. Ten new negative cases
+reproduced the old behavior; **234 affected Python checks now pass** (two
+large-memory checks excluded). The existing no-CRC test now explicitly declares
+its transmitted one-bit payload; its decode assertion is unchanged. The final
+receipt is `logs/h4_uci_bler_transmission_authority_20261019_v3.xml`.
+Actual first-report replay under `audits/slot19_uci_transmission_authority_replay`
+retains all four measurement/applicability rows and identical PNG bytes.
+
+Latest installed-context work (H4-140/141): the core
+`runIndependentPUCCHReceiverEpisode` now executes the configured H4 receiver
+with actual RF/channel samples. The signal-present case recovers all
+**2 HARQ + 1 SR + 14 CSI bits** through the 4x64 CDL/RF path; the separate
+no-transmitter case observes **DTX with no actionable ACK** through the
+64-channel receiver. Neither case uses a transmitted-layout oracle or a
+changed detector threshold. The scoring CSV separates CRC, detection,
+usable UCI, missed HARQ and false ACK; multiple bits do not become multiple
+independent waveform trials. TX references are saved only for offline scoring.
+
+The RF writer also no longer calls an arbitrary runtime interval
+`positive_rf_impairment`. Rows retain the actual episode, endpoint and sample
+interval. Before/after H0 RX and H1 TX/RX hashes and all nonidentity RF
+measurements match. **Eight distinct affected MATLAB checks have passing
+latest results** across `h4_installed_uci_executor_20261019_v3` and
+`h4_rf_identity_20261019_v1` / `v2` under `logs/lls_repairs/`.
+The `v1` RF batch contains a preserved adapter failure: a zero-output test
+was incorrectly called with an output argument. The adapter now supports
+both assertion-only and returned-value tests; that check passes unchanged in
+`v2`. No PHY assertion was relaxed and no `testAll` was launched.
+
+These are deterministic engineering checks, **not accepted statistical
+populations**. Repeated regression seeds must not be pooled as independent
+trials. A frozen matching campaign, confidence bounds, the continuous
+100-slot server execution, delivered CSI/UCI-driven DL/UL adaptation and
+complete terminal measurement/export acceptance remain pending. Twenty MHz
+work remains paused. Details and evidence paths are in
+[`docs/lls/h4_100mhz_20261015_issue_status.csv`](docs/lls/h4_100mhz_20261015_issue_status.csv).
+
+Installed PUCCH campaign wiring (H4-143/144, 19 October):
+
+- The core `sixgr.link.runInstalledPUCCHReceiverCampaign` now consumes a
+  validated YAML design and the normal H4 scenario builder. It freezes the
+  receiver obligation before constructing TX, uses the installed TDD symbol
+  calendar, and leaves unrelated flexible symbols unresolved. An illegal
+  PUCCH allocation is rejected; a different valid TX payload does not rewrite
+  the RX hypothesis.
+- Source/configuration/toolbox/seed identities, raw YAML, resolved configuration,
+  physical receiver IQ, decoder output, RF measurements and offline TX references
+  are retained. Every committed episode has checksummed evidence. Resume verifies
+  existing episodes, cannot silently replace an incomplete attempt, and counts
+  each independent waveform once rather than each HARQ bit.
+- The bounded development check executed **two H0 and two H1 episodes** with
+  distinct seeds: H0 produced DTX/no false acceptance; H1 recovered all 17 bits
+  with CRC success. Resume/idempotence and corrupt/incomplete-evidence rejection
+  passed. Retained output:
+  `results/lls/installed_pucch_campaign/20261019_105859_102/`.
+  The original launcher retains a file-lock cleanup warning. The core cleanup
+  repair subsequently passed repeated-entry/concurrent-writer checks without
+  warnings; the physical observations were not rewritten or recollected.
+- **Six final affected checks pass** in
+  `logs/lls_repairs/h4_installed_campaign_final_20261019_v1/receipt.json`.
+  This includes fresh common RAR/Msg4 CFO-availability/diagnostic checks and the
+  arrival-time reference check. Their passing component scope does not qualify
+  a new 100 MHz access prefix or independent synchronization accuracy.
+
+The four observations remain **development evidence, not qualification**.
+Both two-episode zero-error populations have a family-adjusted upper bound of
+approximately **0.8882**, so neither establishes the YAML's 1% engineering
+limit. That limit is not presented as a 3GPP conformance requirement. UCI coding
+uses the existing [TS 38.212-derived implementation](https://www.mathworks.com/help/5g/ref/nruciencode.html);
+physical [PUCCH format 2](https://www.mathworks.com/help/5g/ref/nrpucch2config.html)
+and successful decoding alone do not certify the detector or complete runtime.
+
+Optional bounded development/resume command, from the repository root in
+**Windows Command Prompt** (this is not the 100-slot scenario command):
+
+```bat
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -logfile "logs\h4_installed_pucch_development.log" -batch "setup6GRSimToolkit('Verbose',false); receipt=sixgr.link.runInstalledPUCCHReceiverCampaign('simulator/configs/validation/h4_100_installed_pucch_development.yaml','results/lls/installed_pucch_campaign','h4_installed_development_v1'); disp(receipt);"
+```
+
+The YAML requests two episodes per invocation, four total. The identical command
+resumes **only with unchanged frozen source/config/environment**, then performs
+an integrity audit without rerunning completed episodes. Use a new run tag after
+repairs; preserve the old evidence and never pool repeated seeds. Data goes under
+`results/lls/installed_pucch_campaign/h4_installed_development_v1/`, with one joint
+`reports/csv/receiver_episodes.csv`, one `qualification_status.csv`, per-episode
+physical evidence and a top-level `receipt.json`. An incomplete attempt blocks
+resume for inspection. Statistical decisions occur only at the final fixed
+sample size; this runner does not automatically grant detector/NR conformance
+or continuous-runtime acceptance. The full scenario, wider UCI/PDCCH populations,
+BLER/HARQ qualification and complete terminal plots remain separate work.
+
+Additional core receiver/adaptation repairs (19 October, H4-132 through
+H4-135):
+
+- `PUCCHReceiver` and `runPUCCHWaveformTrial` now derive HARQ observations
+  from the independent typed receiver schema and decoded HARQ field. The
+  first CSI/SR bit is not an ACK; a multi-bit codebook retains all its bits
+  instead of becoming one scalar ACK. Invalid CRC/DTX cannot become a valid
+  observation. Live/final receiver-stage exports retain the validity and
+  bit-count fields. No detector threshold, PHY decision or DCI/DAI mapping
+  was changed.
+- The strict format-0 SR case previously transmitted HARQ despite its name.
+  It now uses an installed typed SR resource/occasion and physically decodes
+  SR, with zero HARQ bits. Its CSV retains the SR counts and decoded vector.
+  This is a **component** check, not installed H4 statistical qualification.
+- Both link-adaptation entry points now honor `AckObservedValid=false`.
+  They cannot rescue it using a colocated CRC or legacy ACK alias. Actual
+  CSI-only waveform feedback leaves OLLA unchanged; valid first-TX ACK/NACK,
+  retransmission exclusion and delayed application remain tested. The old
+  code reproduced one erroneous update in both entry points before repair.
+- `TR38901Plus` accepts explicit `pathlossEnabled=false` with model `none`
+  as disabled, not as a measured 38.901 result. Active `none`, unknown models
+  and strict ABG remain rejected. The actual H4 `nrPathLoss` configuration,
+  independent UMa formula comparison and waveform loss operator pass unchanged.
+
+Receipts: `logs/lls_repairs/h4_pucch_ack_evidence_20261019_v2/` (**5/5**),
+`logs/lls_repairs/h4_pucch_sr_identity_20261019_v1/` (**3/3**),
+`logs/lls_repairs/h4_olla_validity_20261019_v1/` (**4 pass / 1 fixture fail**),
+and `logs/lls_repairs/h4_olla_validity_20261019_v2/` (**the failed test passes**).
+The delay test now explicitly declares the rank-one feedback it supplies and
+adds a rank-mismatch rejection check; no production rank guard was relaxed.
+Earlier red reproductions and failures are preserved. These bounded checks
+do not establish 100-slot connected-UL/adaptation or final export acceptance.
+
+The related report-consumer repair (H4-136) removes the `ExpectedAck`
+substitution from `control_plane_timeline.csv`. Its ACK column now requires
+an actual received scalar observation, respects explicit validity, and
+retains `UCI_ACKValid`/`UCI_ACKSource`. The complete analysis/CSV/Python-plot
+regression passes in
+`logs/lls_repairs/h4_control_ack_export_20261019_v2/receipt.json`.
+The original expectation-as-observation failure and the first patch's omitted
+column-registration failure are both preserved. Across these receiver,
+adaptation, pathloss and analysis checks, **16 distinct affected MATLAB tests
+have passing latest results**; this is not a full-suite or scenario pass.
+Remaining acceptance includes the complete 100-slot server execution,
+connected DL/UL and physically delivered CSI/HARQ-driven adaptation, terminal
+CSV/PNG/hash reconciliation, whole-run memory profiling, and installed-context
+H0/H1 and BLER statistical qualification. The last items require matching
+production campaign contexts and independent populations, not more generic
+component tests. **20 MHz remains paused.**
+
+Further 100 MHz checks pass in
+`logs/lls_repairs/h4_fullband_control_mapping_20261019_v1/receipt.json`
+(**3/3**): installed-frequency DL/UL PDCCH decoding and wrong-frequency
+rejection, 18 combined-UCI layouts with nine AWGN waveforms, and nine actual
+273-PRB DL/UL transmissions covering ranks 1/2/4 and the declared CSI/SRS
+feedback boundary. These are not full-channel, RF or connected adaptation
+qualification. `testH4100ImpairedCombinedUCI` also **passes** its separately
+labelled, single-occasion 4x64 CDL/RF receiver check: independent reception of
+2 HARQ + 1 SR + 14 CSI bits, CRC pass and exact bit recovery. Its recorded
+detector threshold remains 0.2. Actual inputs/outputs and RF measurements are
+in `results/lls/h4_impaired_combined_uci/20261019_100050_793/`, with receipt
+`logs/lls_repairs/h4_impaired_combined_uci_20261019_v2/receipt.json`.
+The physical episode begins at zero and explicitly translates to the radio
+occasion's slot identity; preceding shared-clock history is **not** claimed.
+The first diagnostic mistakenly requested 18 preceding idle slots, was
+stopped before reception, and remains preserved as incomplete. Production
+channel continuity was not changed. This one episode is not H0/H1 statistics.
+
+H4-137 corrects another core report path: the standalone PUCCH collector
+must copy the **receiver CRC**, not overall trial success, into `CRCPass`.
+Both standalone and connected missing-outcome labels now use the recorded
+CRC value only. A missing CRC is not inferred from ACK or downstream decode
+success. The production-block regression passes in
+`logs/lls_repairs/h4_pucch_crc_export_20261019_v1/receipt.json`; the runtime
+grant/trial CSV regression also passes in
+`logs/lls_repairs/h4_pucch_runtime_export_20261019_v1/receipt.json`.
+The first broader strict control-export check stalled after CSV/JSON/binary
+output and before its PNGs; that attempt is preserved as incomplete. An
+isolated retry **passes** in
+`logs/lls_repairs/h4_strict_control_export_20261019_v2/receipt.json`:
+21 PDCCH trials, seven PUCCH trials, seven valid PNGs and **40/40 artifact
+hashes matched**. This bounded component design does not collect the full
+H0/H1 qualification populations. Its saved MATLAB profile records 41 seconds
+in PDCCH figure generation during the successful 109-second check; it does
+not establish why the earlier attempt stalled. Both minimal renderer probes
+also passed. No graphics-code repair or whole-run performance closure is
+claimed. The original CRC failure and initial test-harness selector failure
+are preserved. No detector threshold or overall acceptance assertion
+changed. **Eight distinct checks now have passing latest results in this
+round**, including the subsequent receiver-only check below.
+
+The H4-137 follow-up also preserves actual recorded CRC results when a
+separate detection decision is unusable. It does not relax DTX or authorize
+feedback from CRC alone. The shared receiver-only check still observes
+**DTX for both absent transmissions**. Final CRC-contract and actual runtime
+CSV checks pass in
+`logs/lls_repairs/h4_pucch_crc_dtx_20261019_v2/receipt.json`.
+The first extension accidentally removed a variable still used by the
+separate detection column; the adjacent export regression caught it, the
+variable was restored, and that failure is preserved in the `v1` receipt.
+
+H4-139 fixes the corresponding Python plot consumer: raw CRC no longer
+overrides an explicit failed UCI reception. The plotted CSV retains separate
+`crc_applicable`, `crc_pass` and `decode_ok` fields; CRC-only and detection-only
+evidence cannot invent a completed UCI outcome. **177 affected Python checks
+pass**, including six new negative cases that first failed on the original
+code: `logs/h4_pucch_crc_plot_20261019_v1.xml`. These are publication checks,
+not additional PHY trials. Historical run files were not rewritten.
+
+Additional data-publication repair (H4-131 / H4-130, 19 October): constellation
+and data-EVM readers now stream their CSV inputs and use exact disk-backed
+indexes instead of retaining every sample as Python objects. No samples,
+sweep identities or duplicate-coverage checks were removed. **146 affected
+plus 239 adjacent Python checks pass**, and the MATLAB production-publisher
+test passes with all **3,522 retained receiver pairs** and an actual PNG.
+Frozen-source comparison preserves plotted CSV bytes for nine chart types;
+the only intentional SVG change is labelling the reference-point limit
+“up to 256”, not presenting it as a measured count. Complete output CSV bytes
+still scale with population; whole-run memory and terminal acceptance are
+not established by these checks. Receipts:
+`logs/h4_data_plot_stream_20261019_v2.xml`,
+`logs/h4_data_plot_adjacent_20261019_v1.xml`, and
+`logs/lls_repairs/h4_data_publication_20261019_v2/receipt.json`.
+The first MATLAB assertion incorrectly assumed homogeneous manifest entries;
+its failed receipt is preserved, and the corrected test accepts the actual
+JSON cell-array representation without weakening sample/PNG checks.
+
+Additional admission diagnostics (H4-91, 19 October): the core scheduler now
+records each UE's actual input **before** discarding inactive users and retains
+it when future-UL planning returns to the current control slot. The live and
+final writer publish `packet_flow/csv/scheduler_admission_trace.csv`; WebGUI
+UE cards expose its last DL/UL decision separately. Actual queued bytes remain
+separate from retransmission demand; candidate rank, causal SRS, new-data HARQ
+availability, sweep identity and decision/target/knowledge clocks are retained.
+These are historical scheduling inputs, **not proof of received DCI or completed
+data**, and do not relax any SRS, duplex or HARQ gate. Five affected MATLAB tests
+and **73 Python checks pass**. The new test is registered in `testAll` but that
+suite was **not run**. Receipts:
+`logs/lls_repairs/h4_admission_detail_20261019_v1/receipt.json` (two existing
+tests pass; original new-test setup failure preserved),
+`logs/lls_repairs/h4_admission_detail_20261019_v2/receipt.json` (three pass), and
+`logs/h4_admission_web_final_20261019_v4.xml`.
+The earlier retained run directory
+is currently absent locally, so its measurements have not been recreated or
+retrospectively certified. **20 MHz development remains paused.**
+
+The related K2/resource-preflight gap is now repaired in
+`+sixgr/+truth/evaluateULPlanningOpportunity.m` and wired into the shared
+runtime before future-slot/UE scheduling. It retains actual evaluated timing
+candidates and reports out-of-sweep, opposite-direction and already-queued
+deferrals without changing K2, SRS or HARQ policy. The installed H4 100 MHz
+configuration verifies control slot **41 → data slot 45 at K2=4** and rejects
+slot **42 → DL-only slot 46**. The live/final artifacts are:
+
+- `packet_flow/csv/ul_scheduler_timing.csv` — actual preflight decisions;
+- `packet_flow/csv/ul_scheduler_timing_candidates.csv` — evaluated candidates,
+  including rejected timing and exact processing/TA tick evidence.
+
+The WebGUI's **UL timing / resource preflight** panel shows the last twelve
+decisions; the CSVs retain every recorded decision across sweep points.
+Untested K2 options are not invented, and timing eligibility is not a decoded
+DCI, final grant or PHY success. **Five affected MATLAB tests and 75 Python
+checks pass** (`logs/lls_repairs/h4_ul_timing_20261019_v1/receipt.json` and
+`logs/h4_ul_timing_web_20261019_v1.xml`). Complete 100-slot server execution,
+connected UL/CSI-driven adaptation, terminal acceptance and matching statistical
+qualification remain unaccepted; no local full scenario or testAll was started.
 
 Post-handoff diagnostic repair: the core runtime now persists its original
 exception identifier/message/stack and logs the failure **before** rebuilding

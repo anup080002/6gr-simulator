@@ -443,6 +443,9 @@ methods(Static)
         state.DLSchedulers = sixgr.truth.CoupledTruthRuntime.createSchedulers(cfgMob, nCells, "DL", state.DLHarq);
         state.ULSchedulers = sixgr.truth.CoupledTruthRuntime.createSchedulers(cfgMob, nCells, "UL", state.ULHarq);
         state.SchedulerDecisionTable = table();
+        state.SchedulerAdmissionTable = table();
+        state.ULPlanningOpportunityTable = table();
+        state.ULPlanningTimingCandidateTable = table();
         state.SchedulerResourceExclusionTable = table();
         state.DLGrantTraceTable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptyGrantRow(), 0, 1));
         state.ULGrantTraceTable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptyGrantRow(), 0, 1));
@@ -2259,6 +2262,9 @@ methods(Static)
             "ControlGatingSummaryTable", sixgr.truth.CoupledTruthRuntime.buildControlSummaryTable(state), ...
             "ControlGatingStateTable", sixgr.truth.CoupledTruthRuntime.buildControlStateTable(state), ...
             "SchedulerDecisionTable", sixgr.util.structGet(state, "SchedulerDecisionTable", table()), ...
+            "SchedulerAdmissionTable", sixgr.util.structGet(state, "SchedulerAdmissionTable", table()), ...
+            "ULPlanningOpportunityTable", sixgr.util.structGet(state, "ULPlanningOpportunityTable", table()), ...
+            "ULPlanningTimingCandidateTable", sixgr.util.structGet(state, "ULPlanningTimingCandidateTable", table()), ...
             "SchedulerResourceExclusionTable", sixgr.util.structGet(state, "SchedulerResourceExclusionTable", table()));
     end
 
@@ -3063,7 +3069,9 @@ methods(Static, Access=private)
         grants = repmat(struct(), 0, 1);
         info = struct("Direction", char(direction), "ActiveUsers", 0, ...
             "GrantedUsers", 0, "GrantCount", 0, "QueueBits", 0, ...
-            "SchedulerDecisionRows", 0, "NoGrantReason", "");
+            "SchedulerDecisionRows", 0, "NoGrantReason", "", ...
+            "NoGrantDetails", "", "AdmissionTable", table());
+        admissionRowsBefore=height(sixgr.util.structGet(state,"SchedulerAdmissionTable",table()));
         decisionRowsBefore = height(sixgr.util.structGet( ...
             state, "SchedulerDecisionTable", table()));
         slotDLAllowed = logical(sixgr.util.structGet(state, "CurrentSlotDLAllowed", true));
@@ -3099,6 +3107,9 @@ methods(Static, Access=private)
             for ii = 1:numel(ueCell)
                 ueIdx = double(ueCell(ii));
                 [state, ueState] = sixgr.truth.CoupledTruthRuntime.buildSchedulerUEState(state, cfg, ueIdx, direction, cellId);
+                admission=sixgr.truth.schedulerAdmissionEvidence(state,cfg,ueState,direction);
+                state.SchedulerAdmissionTable=sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
+                    sixgr.util.structGet(state,"SchedulerAdmissionTable",table()),struct2table(admission));
                 if ~logical(ueState.Active)
                     continue;
                 end
@@ -3460,6 +3471,26 @@ methods(Static, Access=private)
                 info.NoGrantReason = "scheduler_produced_no_decision_rows";
             else
                 info.NoGrantReason = "scheduler_selected_no_executable_grant";
+            end
+        end
+        admissions=sixgr.util.structGet(state,"SchedulerAdmissionTable",table());
+        if height(admissions)>admissionRowsBefore
+            fresh=admissions(admissionRowsBefore+1:end,:);
+            decisions=sixgr.util.structGet(state,"SchedulerDecisionTable",table());
+            decisions=decisions(min(decisionRowsBefore,height(decisions))+1:end,:);
+            for ai=1:height(fresh)
+                fresh.CandidateGrantCount(ai)=sum(grantedUsers==fresh.UEIndex(ai));
+                if ~isempty(decisions) && all(ismember({'RNTI','RejectionReason'},decisions.Properties.VariableNames))
+                    rejectedReasons=string(decisions.RejectionReason(double(decisions.RNTI)==fresh.RNTI(ai)));
+                    rejectedReasons=rejectedReasons(~ismissing(rejectedReasons)&strlength(strtrim(rejectedReasons))>0);
+                    fresh.SchedulerDecisionReasons(ai)=join(unique(rejectedReasons,'stable'),"|");
+                end
+            end
+            state.SchedulerAdmissionTable(admissionRowsBefore+1:end,:)=fresh;
+            info.AdmissionTable=fresh;
+            if nGrant==0
+                info.NoGrantDetails=join("UE"+string(fresh.UEIndex)+":"+fresh.AdmissionReason+ ...
+                    ":"+fresh.SchedulerDecisionReasons,";");
             end
         end
         state = sixgr.truth.CoupledTruthRuntime.recordSlotTraceSchedule(state, direction, info);
@@ -4077,6 +4108,7 @@ methods(Static, Access=private)
         % Reconcile from the actual lifecycle, then publish through one owner.
         state = sixgr.truth.publishPacketDeliveryLedgers(state, runFolder);
         schedulerDecisionT = sixgr.util.structGet(state, "SchedulerDecisionTable", table());
+        sixgr.truth.CoupledTruthRuntime.writeSchedulerAdmissionTable(state,layout);
         resourceExclusionT=sixgr.util.structGet(state,"SchedulerResourceExclusionTable",table());
         if istable(resourceExclusionT) && ~isempty(resourceExclusionT)
             sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, ...
@@ -4161,6 +4193,7 @@ methods(Static, Access=private)
         % poll sees either the preceding snapshot or this complete one.
         layout = sixgr.report.resultLayout(runFolder);
         state = sixgr.truth.publishPacketDeliveryLedgers(state, runFolder);
+        sixgr.truth.CoupledTruthRuntime.writeSchedulerAdmissionTable(state,layout);
         state.UserPerformanceTable=sixgr.truth.CoupledTruthRuntime.buildUserPerformanceTable(state);
         sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, ...
             "live_user_performance_snapshot.csv"),state.UserPerformanceTable, ...
@@ -4217,6 +4250,19 @@ methods(Static, Access=private)
             "live_control_gating_state.csv"), controlGatingStateT, ...
             "PreserveSchema", true);
         state.RunFolder = string(runFolder);
+    end
+
+    function writeSchedulerAdmissionTable(state,layout)
+        specs={ 'SchedulerAdmissionTable','scheduler_admission_trace.csv'; ...
+            'ULPlanningOpportunityTable','ul_scheduler_timing.csv'; ...
+            'ULPlanningTimingCandidateTable','ul_scheduler_timing_candidates.csv' };
+        for k=1:size(specs,1)
+            T=sixgr.util.structGet(state,specs{k,1},table());
+            if ~isempty(T)
+                sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, ...
+                    specs{k,2}),T,"PreserveSchema",true);
+            end
+        end
     end
 
     function T = annotateControlReferenceTrialTable(state, signalName, T)
@@ -5909,7 +5955,8 @@ methods(Static, Access=private)
             state, "LastSuccessfulSRSSlotByUE", ueIdx, NaN));
         srsCausal = struct("Usable", false, "AgeSlots", NaN, ...
             "Status", "not_applicable_for_dl_scheduler", "MeasurementId", "");
-        if direction == "UL"
+        if direction == "UL" || ...
+                sixgr.truth.CoupledTruthRuntime.srsGatingActiveForDirection(state,direction)
             srsCausal = sixgr.truth.CoupledTruthRuntime.consumeReferenceSignalMeasurementImpl( ...
                 state, "SRS", "UE", ueIdx, state.CurrentSlot, ...
                 max(0, round(double(sixgr.util.structGet( ...
@@ -5928,7 +5975,8 @@ methods(Static, Access=private)
             feedback.TargetCodeRate = NaN;
             feedback.RI = 1;
         end
-        schedulingEligible = sixgr.truth.CoupledTruthRuntime.resolveSchedulingEligibilityForDirection(state, ueIdx, direction);
+        [schedulingEligible,schedulingBlockReason,srsRequired] = ...
+            sixgr.truth.CoupledTruthRuntime.resolveSchedulingEligibilityForDirection(state, ueIdx, direction);
         schedulerUsesCQITable = sixgr.truth.CoupledTruthRuntime.schedulerUsesCQITableForDirection(state.CfgMobility, direction);
         feedbackValid = logical(sixgr.util.structGet(feedback, "Valid", false));
         feedbackMCSIndex = double(sixgr.util.structGet(feedback, "MCSIndex", NaN));
@@ -5980,6 +6028,10 @@ methods(Static, Access=private)
                 double(state.SchedulingOpportunitiesBlockedByGatingCount(ueIdx)) + 1;
         end
         ueState.Active = logical(hasTrafficDemand && schedulingEligible);
+        ueState.HasTrafficDemand=hasTrafficDemand;
+        ueState.HasPendingRetransmission=hasRetx;
+        ueState.SchedulingBlockReason=string(schedulingBlockReason);
+        ueState.SRSRequired=logical(srsRequired);
         ueState.UEIndex = double(ueIdx);
         ueState.ServingCell = double(servingCell);
         ueState.RNTI = double(rnti);
@@ -19147,7 +19199,10 @@ methods(Static, Access=private)
         decodeOk = logical(sixgr.util.structGet(observed, "DecodeOk", false));
         detectionUsable = logical(sixgr.util.structGet(trial, "DetectionUsable", true));
         crcApplicable = logical(sixgr.util.structGet(trial, "CRCApplicable", uciCrcBitCount > 0));
-        if crcApplicable && detectionUsable
+        % Preserve an executed decoder's CRC even if its separate detector
+        % decision makes the occasion unusable. DTX/ReceiverUsable and the
+        % feedback-consumption gates remain independent from this raw result.
+        if crcApplicable
             crcPassValue = double(sixgr.util.structGet(trial,'CRCPass',NaN));
         else
             crcPassValue = NaN;
@@ -19156,8 +19211,7 @@ methods(Static, Access=private)
             (double(sixgr.util.structGet(trial, "BitErrors", 1)) == 0 && ...
             double(sixgr.util.structGet(trial, "BitsCompared", 0)) == numel(sixgr.util.structGet(trial, "ExpectedBits", int8(1))))));
         crcOutcome = string(sixgr.util.structGet(trial, "CRCOutcome", ...
-            sixgr.truth.CoupledTruthRuntime.ternaryString(crcApplicable, ...
-            sixgr.truth.CoupledTruthRuntime.ternaryString(decodeOk, "pass", "fail"), "not_applicable")));
+            sixgr.link.pucchCRCOutcome(crcApplicable,crcPassValue)));
         detectionOutcome = string(sixgr.util.structGet(trial, "DetectionOutcome", ...
             "unavailable"));
         status = string(sixgr.util.structGet(trial, "Status", ...

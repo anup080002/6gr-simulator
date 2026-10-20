@@ -141,7 +141,14 @@ def atomic_write(path, payload):
     fd, name = tempfile.mkstemp(prefix=".live-", dir=path.parent)
     try:
         with os.fdopen(fd, "wb") as stream:
-            stream.write(payload)
+            count, value = 0, hashlib.sha256()
+            for chunk in materializer._payload_chunks(payload):
+                stream.write(chunk)
+                count += len(chunk)
+                value.update(chunk)
+        if (count != materializer._payload_size(payload)
+                or value.hexdigest() != materializer._payload_sha256(payload)):
+            raise ValueError("Live artifact changed during publication")
         os.replace(name, path)
     finally:
         if os.path.exists(name):
@@ -363,9 +370,10 @@ def publish_snapshot(root, source_root, preview, stage):
                           + caption + ' — partial measured evidence; not final qualification</text></svg>')
         png = materializer._rasterize_contract_png(svg.encode(), source_mime_type="image/svg+xml")
         stem = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
-        for logical, data in ((f"csv/{stem}.csv", result["csv_bytes"]), (f"image/{stem}.png", png)):
+        csv_payload = result["csv_file"] if "csv_file" in result else result["csv_bytes"]
+        for logical, data in ((f"csv/{stem}.csv", csv_payload), (f"image/{stem}.png", png)):
             atomic_write(stage / logical, data)
-            hashes[logical] = digest(data)
+            hashes[logical] = materializer._payload_sha256(data)
         row.update(status="measured_checkpoint", csv=f"csv/{stem}.csv", png=f"image/{stem}.png")
         charts.append(row)
     # Preserve the exact input bytes. Later source updates cannot invalidate

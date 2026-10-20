@@ -1,9 +1,15 @@
-function ok=testH4100SharedSRSScoring()
-% One actual H4 UL SRS occasion through the shared CDL-C/RF sample clock.
+function [ok,receptions,folder,state]=testH4100SharedSRSScoring(scenarioPath,occasionCount,deliverFeedback)
+% Actual H4 UL SRS occasions through the shared CDL-C/RF sample clock.
 % Declared preconnected clock/TAG inputs are not evidence of acquired access.
 setup6GRSimToolkit('Verbose',false);
-source=sixgr.lls6g.config.loadScenarioConfig( ...
-    'simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_short.yaml');
+if nargin<1
+    scenarioPath='simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_short.yaml';
+end
+if nargin<2, occasionCount=1; end
+if nargin<3, deliverFeedback=false; end
+validateattributes(deliverFeedback,{'logical'},{'scalar'});
+validateattributes(occasionCount,{'numeric'},{'scalar','integer','positive','<=',2});
+source=sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
 prior=rng; cleanup=onCleanup(@()rng(prior)); %#ok<NASGU>
 rng(double(source.get('simulation.random_seed')),'twister');
 folder=fullfile(pwd,'results','lls','h4_shared_srs_scoring', ...
@@ -48,20 +54,83 @@ assert(p.NumPhysicalTransmitAntennas==4 && p.NumReceiveAntennas==64 && ...
     pending.SRSOccupiedPRBCount==272, ...
     'Exercise the actual H4 wideband sounding allocation, not direct-TX defaults.');
 owner.queueUplinkControl(1,p,struct('Config',ul,'Arguments',{args},'ServingCell',1));
-scope=struct('Scope',"one_shared_H4_SRS_occasion_declared_access_TAG_boundary", ...
+period=double(cfg.phy.srs.period_slots);
+lastSourceSlot=firstSlot+(occasionCount-1)*period;
+if occasionCount>1
+    % A second configured periodic transmission, not a replayed measurement
+    % or a duplicated rank-confirmation event. The physical owner is shared.
+    nextUL=sixgr.phy.grid.applyRuntimeCarrierTimeline(ul,lastSourceSlot);
+    nextUL.lls6g.userContext.RuntimeSlotStartTime_s=(lastSourceSlot-1)*sixgr.time.slotDurationSec(cfg);
+    nextArgs={'SlotIndex',lastSourceSlot,'TrialIndex',2,'SNR_dB',40,'TimingAdvanceSamples',0};
+    next=sixgr.link.runSRSChannelEstimation(nextUL,nextArgs{:},'PrepareOnly',true);
+end
+scope=struct('Scope',"shared_H4_SRS_occasions_declared_access_TAG_boundary", ...
+    'PhysicalOccasionCount',occasionCount, ...
     'AccessExecuted',false,'ScenarioAccepted',false,'StatisticallyQualified',false, ...
     'SourceScenario',string(source.ConfigPath));
 save(fullfile(folder,'configuration.mat'),'cfg','scope');
 fprintf('H4_SHARED_SRS_SCORING_ROOT=%s\n',folder);
-seen=false;
-for slot=1:firstSlot+1
+seen=0; receptions=cell(occasionCount,1); delivered=false(occasionCount,1);
+feedbackRows=table();
+for slot=1:lastSourceSlot+1
     state.CurrentSlot=slot;
+    if deliverFeedback
+        % Deliver actual completed measurements at their first subsequent
+        % canonical boundary, while the same physical owner is still live.
+        % This is not the retrospective consumer replay in the older test.
+        for k=1:seen
+            if delivered(k), continue; end
+            actual=receptions{k}; now=(slot-1)*state.SlotDuration_s;
+            if actual.ReceiverConsumedAtSample/actual.SampleRateHz>now, continue; end
+            row=actual.Output; row.Slot=actual.SourceSlot; row.ServingCell=1;
+            row.ObservationStartSample=actual.ObservationStartSample;
+            row.ObservationEndSampleExclusive=actual.ObservationEndSampleExclusive;
+            row.ObservationSampleRateHz=actual.SampleRateHz;
+            row.ObservationCompletionTime_s=actual.ObservationEndSampleExclusive/actual.SampleRateHz;
+            row.ObservationCoverageSource="complete_contiguous_received_sample_buffer";
+            row.ObservationDeliverySlot=slot; row.ObservationDeliveryTime_s=now;
+            row.ObservationDeliverySource="canonical_slot_start_after_complete_received_window";
+            state=sixgr.truth.CoupledTruthRuntime.updateLatestULFeedbackFromSRSTrialRuntime( ...
+                state,1,row,actual.SourceSlot);
+            feedback=state.LatestULFeedback(1); la=state.ULLinkAdaptationState{1};
+            value=table(actual.SourceSlot,slot,row.RIEstimate,row.TPMIEstimate, ...
+                row.CQI,la.SchedulerAcceptedRank,feedback.Valid,feedback.MCSIndex, ...
+                owner.Events.NextSampleIndex,false,false,'VariableNames', ...
+                {'SRSSourceSlot','DeliveredSlot','MeasuredRI','MeasuredTPMI','MeasuredCQI', ...
+                 'AcceptedRank','FeedbackValid','MCS','PhysicalClockAtDelivery', ...
+                 'ScenarioAccepted','StatisticallyQualified'});
+            feedbackRows=[feedbackRows;value]; %#ok<AGROW>
+            sixgr.util.csvWriteTable(fullfile(folder,'causal_srs_adaptation.csv'), ...
+                feedbackRows,'PreserveSchema',true);
+            assert(la.OLLAUpdateCount==0,'SRS must not manufacture HARQ feedback.');
+            delivered(k)=true;
+        end
+        if all(delivered)
+            % The last result is available at this START boundary. Return
+            % the still-live owner before consuming this slot so the caller
+            % can prepare control for it. Advancing it here would silently
+            % lose the first causal K2 opportunity, not improve causality.
+            carrier=sixgr.phy.grid.makeCarrier(cfg);
+            expected=sixgr.phy.frame.slotStartSample(carrier,slot-1,fs);
+            assert(owner.Events.NextSampleIndex==expected && ...
+                owner.Physical.NextSampleIndex==expected, ...
+                'test:H4SRSDeliveryBoundary','Feedback handoff must be at the unexecuted slot boundary.');
+            fprintf('H4_SRS_HANDOFF_BEFORE_SLOT=%d sample=%g\n',slot,expected);
+            break;
+        end
+    end
     current=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,slot);
     [state,items]=owner.advanceSlot(state,current);
-    fprintf('H4_SHARED_SRS_SCORING_SLOT=%d/%d\n',slot,firstSlot+1);
+    fprintf('H4_SHARED_SRS_SCORING_SLOT=%d/%d\n',slot,lastSourceSlot+1);
     for item=items
-        assert(item.Kind=="SRS" && ~seen,'Only the queued SRS receiver may complete.');
-        seen=true; c=item.Context; p=c.Prepared;
+        assert(item.Kind=="SRS" && seen<occasionCount,'Only the queued SRS receivers may complete.');
+        seen=seen+1; c=item.Context; p=c.Prepared;
+        ul=c.Config; args=c.Arguments;
+        evidenceFolder=folder;
+        if occasionCount>1
+            evidenceFolder=fullfile(folder,sprintf('source_slot_%d',c.Arguments{2}));
+            mkdir(evidenceFolder);
+        end
         [~,pre,tx,replay,received]=sixgr.truth.sharedObservationEvidence(item.Planes,p);
         [desired,referenceEvidence]=sixgr.truth.sharedLinkScoringObservation( ...
             item.Planes,p,c.DesiredReferencePlane);
@@ -70,16 +139,24 @@ for slot=1:firstSlot+1
             'DesiredReferenceEvidence',referenceEvidence, ...
             'ChannelState',owner.directionalChannelState(1,'UL'));
         receivedWaveform=received.readComplete(); referenceWaveform=desired.readComplete();
-        save(fullfile(folder,'received.mat'),'p','ul','args','replay','receivedWaveform', ...
+        save(fullfile(evidenceFolder,'received.mat'),'p','ul','args','replay','receivedWaveform', ...
             'referenceWaveform','referenceEvidence','scope','input','-v7.3');
         before=owner.Events.NextSampleIndex;
         [state,out,capture]=sixgr.truth.receiveSharedSRSMeasurement(state,item,input);
-        assert(isnan(out.PilotCommonPhaseRate_Hz) && out.PilotPhasePairCount==0 && ...
-            isnan(out.EstimatedDopplerHz) && isnan(out.InjectedDoppler_Hz) && ...
-            ~isempty(state.SRSPilotPhaseHistoryByUE{1}));
+        if seen==1
+            assert(isnan(out.PilotCommonPhaseRate_Hz) && out.PilotPhasePairCount==0 && ...
+                isnan(out.EstimatedDopplerHz) && isnan(out.InjectedDoppler_Hz));
+        end
+        assert(~isempty(state.SRSPilotPhaseHistoryByUE{1}));
+        receptions{seen}=struct('Config',c.Config,'Output',out, ...
+            'SourceSlot',double(c.Arguments{2}), ...
+            'ObservationStartSample',received.StartSample, ...
+            'ObservationEndSampleExclusive',received.EndSampleExclusive, ...
+            'SampleRateHz',received.SampleRateHz, ...
+            'ReceiverConsumedAtSample',double(owner.Events.NextSampleIndex));
         % Preserve completed physical receiver evidence before testing its
         % CSV schema. Publication failures must not lose the receiver result.
-        save(fullfile(folder,'result.mat'),'out','capture','scope','-v7.3');
+        save(fullfile(evidenceFolder,'result.mat'),'out','capture','scope','-v7.3');
         row=table(slot,out.Ok,out.NMSE_dB,out.TrueChannelNMSE_dB,out.RawChannelNMSE_dB, ...
             out.SRSOccupiedPRBCount,out.NoiseVariance,out.RIEstimate,out.TPMIEstimate, ...
             string(out.NoiseVarSource),string(out.NMSEReferenceSource),false,false, ...
@@ -93,7 +170,7 @@ for slot=1:firstSlot+1
             row.ChannelNMSEReferenceEnergy==out.ChannelNMSEScoring.ReferenceEnergy && ...
             row.RawChannelNMSEErrorEnergy==out.RawChannelNMSEScoring.ErrorEnergy && ...
             row.RawChannelNMSEReferenceEnergy==out.RawChannelNMSEScoring.ReferenceEnergy);
-        sixgr.util.csvWriteTable(fullfile(folder,'srs_result.csv'),row,'PreserveSchema',true);
+        sixgr.util.csvWriteTable(fullfile(evidenceFolder,'srs_result.csv'),row,'PreserveSchema',true);
         disp(row(:,1:11));
         assert(before==owner.Events.NextSampleIndex, ...
             'Scoring must not execute another channel/RF interval.');
@@ -107,9 +184,18 @@ for slot=1:firstSlot+1
         assert(out.Ok,'sixgr:test:H4SharedSRSQualificationFailed', ...
             'Exact impaired H4 SRS failed: %s; NMSE=%g dB. Evidence: %s', ...
             out.FailureReason,out.NMSE_dB,folder);
+        if occasionCount>1 && seen==1
+            % Respect the production one-pending-sounding ownership rule.
+            % Queue the next configured occasion only after this reception.
+            assert(~owner.hasPending('SRS',1));
+            owner.queueUplinkControl(1,next.PreparedTransmission, ...
+                struct('Config',nextUL,'Arguments',{nextArgs},'ServingCell',1));
+        end
     end
 end
-assert(seen && ~owner.hasPending('SRS',1));
+assert(seen==occasionCount && ~owner.hasPending('SRS',1));
+if deliverFeedback, assert(all(delivered),'Every complete sounding must reach its actual delivery boundary.'); end
+save(fullfile(folder,'receptions.mat'),'receptions','scope','-v7.3');
 fprintf('H4_SHARED_SRS_SCORING_PASS evidence=%s\n',folder);
 ok=true;
 end

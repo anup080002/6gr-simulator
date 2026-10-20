@@ -1,0 +1,14 @@
+schema_version: 1
+required_fields: [schema_version, profile_id, research_class, stage, scope, scenario_path, scenario_seed_paths, episodes_per_case, execution_batch_episodes, seed_base, seed_stride, noise_seed_offset, guard_samples, family_alpha, event_error_limit, development_seeds, development_history_complete, cases]
+case_fields: [id, signal_present, ue_index, serving_cell, rnti, absolute_slot0, resource_id, harq_bit_count, sr_bit_count, csi_requested, resource_selection_procedure, transmitter]
+transmitter_fields: [harq_bits, csi, scheduling_requests, control]
+control_fields: [k1, pdsch_end_slot, decoded_pri, pri_field_width, first_cce, num_cce]
+csi_fields: [rank, pmi, cri, cqi_cw0]
+sr_fields: [id, pending_positive, prohibit_timer_active]
+stages: [development, frozen_qualification]
+research_classes: [optional_research_experiment]
+scopes: [installed_single_occasion_independent_reset_not_continuous_runtime]
+resource_procedures: [dynamic_harq_csi, configured_csi]
+# Fixed sample, final-only decision. Partial results cannot qualify a case.
+decision_design: fixed_sample_bonferroni_two_direction
+

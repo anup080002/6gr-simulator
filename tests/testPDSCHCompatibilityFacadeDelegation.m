@@ -26,6 +26,19 @@ assert(logical(tx.StrictSchedulingOwnership) ...
     && string(tx.SchedulingOwnership) ...
     == "immutable_pdsch_scheduling_assignment");
 assert(string(tx.Source) == "explicit_pdsch_dlsch_production_chain");
+sets = sixgr.phy.resource.summarizeResourceSets(tx.ResourceAccounting);
+plan = fixture.ResourcePlan;
+assert(sets.ResourceSetAccountingStatus == "available_exact_channel_resource_sets");
+assert(sets.GrossAllocationRE == 12*numel(plan.PRBSet)*plan.SymbolAllocation(2));
+assert(sets.MappedDataBaseRE == plan.ExactDataRECount);
+assert(isequal(tx.ResourceAccounting.Indices.DataBase, plan.DataIndices+1));
+pilotUnion = union([plan.DMRSIndicesPerPort{:}], [plan.PTRSIndicesPerPort{:}]);
+assert(sets.PilotOccupiedBaseRE == numel(pilotUnion));
+metrics = sixgr.link.deriveModulationTrackingMetrics(tx,struct(),cfg,"DL");
+exported = sixgr.link.modulationDiagnosticsExport(metrics);
+assert(exported.GrossAllocationRE==sets.GrossAllocationRE && ...
+    exported.MappedDataBaseRE==sets.MappedDataBaseRE && ...
+    exported.PilotOccupiedBaseRE==sets.PilotOccupiedBaseRE);
 assert(tx.IntegrationBinding.Status == "PASS");
 assert(tx.IntegrationBinding.AssignmentId == assignment.AssignmentId);
 assert(tx.IntegrationBinding.PrecoderBinding.PrecoderBundleDigest ...

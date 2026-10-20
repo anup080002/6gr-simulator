@@ -106,25 +106,6 @@ end
 end
 
 function [known, ack] = localAck(feedback)
-known = false;
-ack = false;
-valid = sixgr.util.structGet(feedback, "AckObservedValid", []);
-observed = sixgr.util.structGet(feedback, "AckObserved", []);
-if ~isempty(valid) && logical(valid) && ~isempty(observed) && ...
-        isscalar(observed) && isfinite(double(observed))
-    known = true;
-    ack = logical(observed);
-    return;
-end
-candidates = ["ObservedAck","Ack","CombinedDecodeOK", ...
-    "CurrentDecodeOK","CRCPass"];
-for i = 1:numel(candidates)
-    raw = sixgr.util.structGet(feedback, candidates(i), []);
-    if ~isempty(raw) && (isnumeric(raw) || islogical(raw)) && ...
-            isscalar(raw) && isfinite(double(raw))
-        known = true;
-        ack = logical(raw);
-        return;
-    end
-end
+[known,ack]=sixgr.link.resolveHARQFeedbackObservation(feedback, ...
+    ["ObservedAck","Ack","CombinedDecodeOK","CurrentDecodeOK","CRCPass"]);
 end

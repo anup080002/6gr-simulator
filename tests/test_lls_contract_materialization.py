@@ -1713,11 +1713,13 @@ def main() -> None:
     assert [float(row["occupancy_value"]) for row in pbch_projection_rows] == [1, 1]
 
     pucch_dtx_csv = materializer._encode_csv(  # noqa: SLF001
-        ["Slot", "UEID", "CRCPass", "DetectionAttempted", "BitsCompared", "DTXFlag", "MissedDetection", "FalseAlarmFlag"],
+        # Explicit completed UCI outcome: a CRC alone is not reception
+        # success. This fixture still proves zero paired bits is not DTX.
+        ["Slot", "UEID", "CRCPass", "DetectionAttempted", "BitsCompared", "DTXFlag", "MissedDetection", "FalseAlarmFlag", "PUCCHDecodeOk"],
         [
-            [1, 7, 1, 1, 0, 0, 0, 0],
-            [2, 7, 0, 1, 0, 1, 0, 0],
-            [3, 7, 0, 1, 0, 0, 1, 0],
+            [1, 7, 1, 1, 0, 0, 0, 0, 1],
+            [2, 7, 0, 1, 0, 1, 0, 0, 0],
+            [3, 7, 0, 1, 0, 0, 1, 0, 0],
         ],
     )
     existing = {

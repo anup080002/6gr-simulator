@@ -199,6 +199,25 @@ def test_repeated_identities_across_eight_points_remain_joint_and_separate(famil
     assert duplicate["csv_status"] == "unavailable_exact_reason"
 
 
+def test_control_evm_keeps_same_slot_beam_observation_identities(monkeypatch):
+    base = list(csv.DictReader(io.StringIO(control_pairs("PBCH").decode())))
+    rows = [dict(row, ObservationID=f"received_SSB_{beam}",
+                 SweepPointIndex=point, ConfiguredSNR_dB=snr)
+            for point, snr in enumerate([40, 30, 20, 10, 0, -10, -20, -30], 1)
+            for beam in range(4) for row in base]
+    captured = []
+    original = m._render_multi_series_svg
+    def render(*args, **kwargs):
+        captured.extend(args[2]); return original(*args, **kwargs)
+    monkeypatch.setattr(m, "_render_multi_series_svg", render)
+    result, output = chart("SSB EVM", {"air_interface/csv/ssb_evm_samples.csv": csv_records(rows)})
+    assert result["csv_status"] == "specialized_runtime_radio_measurement_dataset"
+    assert len(output) == 32
+    assert len(captured) == 64  # RMS/peak, four beams, eight operating points.
+    assert len({s["name"] for s in captured}) == 64
+    assert all("observation=received_SSB_" in s["name"] for s in captured)
+
+
 def test_radio_plot_preserves_all_samples_and_full_measurement_labels():
     # Go beyond the old 180-point preview and eight-series legend defaults.
     series = {f"DL UE 1 point {i} port 3000 reference RE power ratio independent measurement":
@@ -528,6 +547,40 @@ def test_control_evm_uses_paired_energy_and_peak(name, signal):
     assert b"EVM (%)" in result["img_bytes"]
 
 
+def test_trs_post_correction_frequency_retains_its_measurement_domain():
+    raw = dict(Direction="DL", Slot=47, UEIndex=1, ConfiguredSNR_dB=40,
+               ResidualCFOEstimateAvailable=True, ResidualCFO_EstimatedPostCorrection_Hz=7.25,
+               ResidualCFOEstimateRole="received_common_frequency_not_separated_oscillator",
+               ResidualCFOEstimateSource="trs_reference_phase_slope_frequency_estimator_after_receiver_frequency_processing",
+               ResidualFrequencyUsesDifferentObservable=True, CFOCorrectionApplied=True,
+               CFOCorrectionApplied_Hz=400, TRSResidualFrequencyEvidenceJSON='[{"FromSlot":46}]')
+    result, rows = chart(radio.TRS_FREQUENCY_CHART, {radio.TRS_TRIALS: csv_records([raw])})
+    assert result["source_row_count"] == 1
+    assert float(rows[0]["post_correction_common_frequency_hz"]) == 7.25
+    raw["ResidualFrequencyUsesDifferentObservable"] = False
+    bad, _ = chart(radio.TRS_FREQUENCY_CHART, {radio.TRS_TRIALS: csv_records([raw])})
+    assert bad["csv_status"] == "unavailable_exact_reason"
+
+
+def test_trs_received_pilot_evm_preserves_plane_and_rejects_fitted_reference():
+    records = list(csv.DictReader(io.StringIO(control_pairs("TRS").decode())))
+    for row in records:
+        row.update(MeasurementDomain="received_resource_elements",
+                   ReferencePlane="test_received_clock",
+                   ReferenceSource="same_executed_desired_link_received_pilot_grid",
+                   AlignmentSource="recorded_receiver_timing_and_frequency_clock_no_fit",
+                   PortRole="physical_RX_branch_not_equalized_layer")
+    name = "TRS received-pilot EVM"
+    source = radio.CONTROL_EVM[name][1]
+    result, rows = chart(name, {source: csv_records(records)})
+    assert result["source_row_count"] == 1
+    assert float(rows[0]["rms_evm_pct"]) == pytest.approx(100*math.sqrt(.82/10))
+    assert rows[0]["measurement_claim"] == "received_pilot_grid_pair_error_not_equalized_or_RF_conformance"
+    records[0]["ReferenceSource"] = "same_sample_fitted_reference"
+    bad, _ = chart(name, {source: csv_records(records)})
+    assert bad["csv_status"] == "unavailable_exact_reason"
+
+
 def control_pairs(signal="PRACH"):
     direction = "UL" if signal == "PRACH" else "DL"
     domain = "equalized_sequence_symbols" if signal == "PRACH" else "equalized_resource_elements"
@@ -840,7 +893,7 @@ def test_radio_measurement_rejects_approximation_labels(field, value):
 
 def test_pucch_no_crc_does_not_mean_failed_uci_block():
     result, rows = chart("PUCCH BLER vs measured SINR", {"air_interface/csv/pucch_trials.csv":
-        b"Slot,UEIndex,Format,PostEqSINR_dB,CRCPass,PUCCHDecodeOk\n5,1,0,20,NaN,1\n"})
+        b"Slot,UEIndex,Format,PostEqSINR_dB,CRCPass,PUCCHDecodeOk,ExpectedBitCount,PUCCHTransmissionPrepared\n5,1,0,20,NaN,1,1,1\n"})
     assert rows[0]["metric_value"] == "0" and rows[0]["metric_source_field"] == "uci_block_error"
     assert result["csv_status"] != "unavailable_exact_reason"
 
@@ -856,6 +909,56 @@ def test_negative_sr_dtx_and_missing_tx_payload_are_not_uci_block_errors():
     assert len(rows) == 4  # Retain every attempted reception in the CSV.
     assert all(row["metric_value"] == "" and row["block_error_population_status"] ==
                "not_a_transmitted_payload_block" for row in rows[:2])
+    assert all(row["value_status"] == "not_applicable_no_transmitted_payload" for row in rows[:2])
     assert rows[2]["metric_value"] == "0" and rows[3]["metric_value"] == "1"
+    assert rows[2]["value_status"] == rows[3]["value_status"] == "available"
     assert rows[3]["block_error_population_status"] == "observed_payload_decode", (
         "A missed real transmission must remain an error; DTX alone cannot remove it.")
+
+
+def test_transmitted_uci_without_decode_evidence_stays_unresolved():
+    payload = (b"Slot,UEIndex,Format,PostEqSINR_dB,PUCCHDecodeOk,ExpectedBitCount,PUCCHTransmissionPrepared\n"
+               b"19,1,2,30,1,15,1\n"
+               b"39,1,2,30,,15,1\n")
+    _, rows = chart("PUCCH BLER vs measured SINR", {"air_interface/csv/pucch_trials.csv": payload})
+    assert rows[1]["metric_value"] == ""
+    assert rows[1]["block_error_population_status"] == "decode_outcome_unavailable"
+    assert rows[1]["value_status"] == "required_measurement_unavailable"
+
+
+@pytest.mark.parametrize("count,prepared,expected_population,expected_metric", [
+    ("NaN", "1", "observed_payload_decode", "1"),
+    ("NaN", "", "transmission_evidence_unavailable", ""),
+    ("", "", "transmission_evidence_unavailable", ""),
+    ("15", "", "observed_payload_decode", "1"),
+    ("0", "", "not_a_transmitted_payload_block", ""),
+    ("15", "0", "not_a_transmitted_payload_block", ""),
+    ("0", "1", "conflicting_transmission_evidence", ""),
+    ("-1", "1", "invalid_transmission_evidence", ""),
+    ("1.5", "1", "invalid_transmission_evidence", ""),
+    ("NaN", "unavailable", "transmission_evidence_unavailable", ""),
+    ("NaN", "2", "invalid_transmission_evidence", ""),
+    ("15", "-1", "invalid_transmission_evidence", ""),
+    ("NaN", "true", "observed_payload_decode", "1"),
+    ("NaN", "false", "not_a_transmitted_payload_block", ""),
+])
+def test_uci_bler_requires_positive_or_explicitly_absent_transmission_evidence(
+        count, prepared, expected_population, expected_metric):
+    payload = ("Slot,UEIndex,Format,PostEqSINR_dB,PUCCHDecodeOk,ExpectedBitCount,PUCCHTransmissionPrepared\n"
+               "19,1,2,30,1,15,1\n"
+               f"39,1,2,2,0,{count},{prepared}\n").encode()
+    _, rows = chart("PUCCH BLER vs measured SINR", {"air_interface/csv/pucch_trials.csv": payload})
+    assert rows[1]["block_error_population_status"] == expected_population
+    assert rows[1]["metric_value"] == expected_metric
+    if expected_population.endswith("_evidence") or expected_population == "transmission_evidence_unavailable":
+        assert rows[1]["value_status"] == "required_measurement_unavailable"
+
+
+def test_uci_decode_alone_does_not_prove_a_transmitted_block():
+    payload = (b"Slot,UEIndex,Format,PostEqSINR_dB,PUCCHDecodeOk\n19,1,2,30,1\n")
+    result, rows = chart("PUCCH BLER vs measured SINR", {"air_interface/csv/pucch_trials.csv": payload})
+    # With no observed payload population there is no numerical BLER chart.
+    # The reason artifact is not a fabricated primary performance row.
+    assert result["csv_status"] == "unavailable_exact_reason"
+    assert "transmission_evidence_unavailable=1" in result["note"]
+    assert "metric_value" not in rows[0]

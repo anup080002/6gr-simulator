@@ -15,7 +15,16 @@ e=struct('Source',"same_executed_desired_link_waveform_post_decode_TRS_pilot_rat
     'ReceiverEstimatorInput',false,'GainOrPhaseFitted',false,'AdditionalChannelExecutions',0, ...
     'AdditionalRFExecutions',0,'ReferencePlane',"declared_test_receiver_clock");
 det=struct('SlotDetections',d);
-s=sixgr.phy.trs.scoreTRSPilotDisturbance(det,{ref},{e});
+[s,pairs]=sixgr.phy.trs.scoreTRSPilotDisturbance(det,{ref},{e});
+evm=sixgr.phy.trs.summarizePilotEVM(pairs);
+assert(evm.EVMSymbolCount==6 && abs(evm.EVMErrorEnergy-0.15)<1e-12 && ...
+    abs(evm.EVMReferenceEnergy-16.5)<1e-12 && abs(evm.EVM_rms-sqrt(0.15/16.5))<1e-12);
+root=tempname; mkdir(root);
+row=struct2table(evm); row.Slot=8; row.UEIndex=1; row.Direction="DL";
+path=sixgr.report.exportControlEVMSamples(fullfile(root,'trs_trials.csv'),row);
+published=readtable(path,'TextType','string');
+assert(height(published)==6 && all(published.SignalName=="TRS") && ...
+    all(published.MeasurementDomain=="received_resource_elements"));
 assert(s.IndependentPilotComparedComplexValues==6 && s.IndependentPilotSNDRAvailable);
 assert(abs(s.IndependentPilotSignalEnergy-16.5)<1e-12 && ...
     abs(s.IndependentPilotDisturbanceEnergy-0.15)<1e-12 && ...

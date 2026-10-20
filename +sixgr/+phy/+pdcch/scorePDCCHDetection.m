@@ -11,6 +11,12 @@ addParameter(p, "GrantMustBeValid", true, @(x) islogical(x) || isnumeric(x));
 parse(p, det, tx, strictCfg, varargin{:});
 opt = p.Results;
 
+% The absence of a decoded command is a measured rejection only after the
+% receiver actually ran. In particular an empty/skipped H0 observation is
+% not a zero-event waveform trial. Validate before either positive or
+% negative scoring, so the campaign cannot add it to a binomial population.
+localRequireMeasuredTrial(det);
+
 trialType = string(opt.TrialType);
 negativeExpected = logical(opt.NegativeExpected);
 rxOk = logical(sixgr.util.structGet(det.Rx, "Ok", false));
@@ -93,6 +99,42 @@ if ~score.StrictOk && strlength(score.ControlResourceFailureReason) > 0 && ~nega
     parts = parts(strlength(strtrim(parts)) > 0);
     score.FailureReason = strjoin(parts, "|");
 end
+end
+
+function localRequireMeasuredTrial(det)
+id='sixgr:phy:pdcch:UnmeasuredScoringTrial';
+required={'Rx','Candidates','UsedOracleFields','ProxyUsed','Skipped','ToolboxMissing'};
+assert(isscalar(det) && all(isfield(det,required)),id, ...
+    'PDCCH scoring requires explicit completed receiver evidence, not missing-field defaults.');
+for name=["ProxyUsed","Skipped","ToolboxMissing"]
+    value=det.(name);
+    assert(localBinary(value) && isscalar(value) && ~logical(value),id, ...
+        'Skipped, proxy or unavailable PDCCH execution cannot be scored as a physical trial.');
+end
+oracle=det.UsedOracleFields;
+assert(((ischar(oracle) && (isrow(oracle)||isempty(oracle))) || ...
+    (isstring(oracle) && isscalar(oracle))) && ...
+    ~ismissing(string(oracle)) && strlength(strtrim(string(oracle)))==0,id, ...
+    'A strict measured PDCCH trial must explicitly exclude receiver-oracle inputs.');
+assert(isstruct(det.Rx) && isscalar(det.Rx) && isfield(det.Rx,'Ok') && ...
+    localBinary(det.Rx.Ok) && isscalar(det.Rx.Ok),id, ...
+    'Receiver acceptance must be a known binary outcome.');
+c=det.Candidates;
+assert(istable(c) && ~isempty(c) && ...
+    all(ismember(["DecodeAttempted","CrcPass","SelectedCandidate"],string(c.Properties.VariableNames))), ...
+    id,'No completed PDCCH candidate decisions were retained.');
+for name=["DecodeAttempted","CrcPass","SelectedCandidate"]
+    value=c.(name);
+    assert(localBinary(value) && isequal(size(value),[height(c) 1]),id, ...
+        'Candidate %s must retain one actual binary decision per hypothesis.',name);
+end
+assert(all(c.DecodeAttempted),id, ...
+    'An unattempted candidate is not a measured CRC failure or a successful H0 rejection.');
+end
+
+function tf=localBinary(value)
+tf=(islogical(value)||isnumeric(value)) && isreal(value) && ...
+    all(isfinite(value(:))) && all(value(:)==0 | value(:)==1);
 end
 
 function [valid, reason] = localControlResourceValidity(strictCfg, det)

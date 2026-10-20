@@ -22,6 +22,11 @@ for ii = 1:numel(requiredCsv)
     T = readtable(p, "FileType", "text", "Delimiter", ",", ...
         "ReadVariableNames", true, "VariableNamingRule", "preserve");
     assert(height(T) > 0, "Strict PDCCH CSV artifact must not be empty: " + requiredCsv(ii));
+    if requiredCsv(ii)=="control/csv/pdcch_candidates.csv"
+        assert(ismember('DecodeAttempted',T.Properties.VariableNames) && ...
+            all(T.DecodeAttempted==1), ...
+            'Candidate execution evidence must survive the production CSV writer.');
+    end
 end
 figDir = fullfile(runFolder, "reports", "figures");
 requiredFigures = [

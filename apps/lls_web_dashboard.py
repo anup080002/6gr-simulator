@@ -17,6 +17,7 @@ import socket
 import secrets
 import subprocess
 import sys
+import tempfile
 import textwrap
 import threading
 import urllib.parse
@@ -6093,6 +6094,38 @@ def artifact_etag(meta: dict[str, Any]) -> str:
     return f'W/"artifact-{artifact_id}-{byte_size}-{created}"'
 
 
+def _send_artifact_stream(handler, meta, stream, length, etag, download, verify=lambda: None):
+    """Deliver every byte in bounded chunks; no global artifact-byte cache."""
+    if str(handler.headers.get("If-None-Match") or "").strip() == etag:
+        handler.send_response(HTTPStatus.NOT_MODIFIED)
+        handler.send_header("ETag", etag)
+        handler.send_header("Cache-Control", "private, max-age=0, must-revalidate")
+        handler.end_headers()
+        return
+    handler.send_response(HTTPStatus.OK)
+    handler.send_header("Content-Type", str(meta.get("mime_type") or "application/octet-stream"))
+    filename = Path(str(meta.get("logical_path") or meta["artifact_id"])).name
+    disposition = "attachment" if download else "inline"
+    handler.send_header("Content-Disposition", f'{disposition}; filename="{filename}"')
+    handler.send_header("Content-Length", str(length))
+    handler.send_header("ETag", etag)
+    handler.send_header("Cache-Control", "private, max-age=0, must-revalidate")
+    handler._artifact_response_started = True
+    handler.end_headers()
+    if getattr(handler, "command", "GET") == "HEAD":
+        handler._artifact_response_started = False
+        return
+    remaining = length
+    while remaining:
+        chunk = stream.read(min(remaining, 1024*1024))
+        if not chunk:
+            raise OSError("Artifact truncated during download")
+        verify()
+        handler.wfile.write(chunk)
+        remaining -= len(chunk)
+    handler._artifact_response_started = False
+
+
 LIVE_ATOMIC_ARTIFACT_BASENAMES = {
     "live_control_gating_state.csv",
     "live_control_gating_summary.csv",
@@ -7097,7 +7130,7 @@ def build_table_preview_payload(artifact_id: int) -> dict[str, Any] | None:
     meta = fetch_artifact_meta(artifact_id)
     if meta is None:
         return None
-    header, rows = load_cached_csv_preview(int(artifact_id), MAX_TABLE_PREVIEW_ROWS)
+    header, rows = load_artifact_csv_preview(meta, MAX_TABLE_PREVIEW_ROWS)
     return {
         "meta": meta,
         "header": header,
@@ -7109,11 +7142,26 @@ def build_table_preview_payload(artifact_id: int) -> dict[str, Any] | None:
 
 @lru_cache(maxsize=512)
 def load_cached_csv_preview(artifact_id: int, max_rows: int) -> tuple[list[str], list[list[str]]]:
+    meta = filesystem_artifact_by_id(int(artifact_id)) if is_filesystem_virtual_artifact_id(artifact_id) else None
+    if meta and str(meta.get("filesystem_path") or "").strip():
+        return load_artifact_csv_preview(meta, max_rows)
     return parse_csv_bytes(fetch_artifact_bytes(int(artifact_id)), max_rows=max_rows)
+
+
+def _count_filesystem_csv_data_rows(path) -> int:
+    path = _windows_extended_path(path)
+    with path.open("r", encoding="utf-8-sig", errors="replace", newline="") as source:
+        with csv_field_limit_for_payload(os.fstat(source.fileno()).st_size):
+            rows = csv.reader(source)
+            next(rows, None)
+            return sum(1 for _ in rows)
 
 
 @lru_cache(maxsize=512)
 def count_cached_csv_data_rows(artifact_id: int) -> int:
+    meta = filesystem_artifact_by_id(int(artifact_id)) if is_filesystem_virtual_artifact_id(artifact_id) else None
+    if meta and str(meta.get("filesystem_path") or "").strip():
+        return _count_filesystem_csv_data_rows(meta["filesystem_path"])
     raw = fetch_artifact_bytes(int(artifact_id))
     text = raw.decode("utf-8", errors="replace")
     with csv_field_limit_for_payload(len(raw)):
@@ -8116,6 +8164,9 @@ def result_artifact_display_priority(section: str, logical_path: str) -> int:
             "reports/csv/harq_outputs.csv",
         ],
         "scheduler": [
+            "packet_flow/csv/ul_scheduler_timing.csv",
+            "packet_flow/csv/ul_scheduler_timing_candidates.csv",
+            "packet_flow/csv/scheduler_admission_trace.csv",
             "packet_flow/csv/live_dl_scheduler_grants.csv",
             "packet_flow/csv/live_ul_scheduler_grants.csv",
             "packet_flow/csv/live_pucch_grants.csv",
@@ -10893,15 +10944,7 @@ def count_csv_data_rows(artifacts: list[dict[str, Any]], logical_path: str) -> i
     filesystem_path = str(art.get("filesystem_path") or "").strip()
     if filesystem_path:
         try:
-            return max(
-                0,
-                len(
-                    parse_csv_bytes(
-                        _windows_extended_path(filesystem_path).read_bytes(),
-                        max_rows=None,
-                    )[1]
-                ),
-            )
+            return _count_filesystem_csv_data_rows(filesystem_path)
         except OSError:
             return 0
     artifact_id = int(art.get("artifact_id") or 0)
@@ -11505,6 +11548,9 @@ CONTROL_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("SRSFrequencyPRBStart", "SRS first PRB"),
         ("SRSFrequencyPRBEnd", "SRS last PRB"),
         ("SRSBandwidthCoverageStatus", "SRS bandwidth coverage"),
+        ("SRSCoverageGapRB", "Unsounded carrier PRBs"),
+        ("SRSCoverageToleranceRB", "Configured edge tolerance (PRBs)"),
+        ("SRSLiteralFullCarrierCoverage", "Every carrier PRB sounded"),
         ("AppliedBeamIndexSet", "Applied SRS beam"),
         ("AppliedPrecoderPMI", "Applied SRS PMI"),
         ("Status", "Status"),
@@ -11516,7 +11562,16 @@ CONTROL_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("UEIndex", "UE"),
         ("ServingCell", "Cell"),
         ("DetectionMetric", "Metric"),
-        ("EVM_rms", "EVM rms"),
+        ("EVM_rms", "Received-pilot EVM ratio (not RF conformance)"),
+        ("EVMValueStatus", "EVM measurement scope"),
+        ("EVMReferenceSource", "Paired EVM reference"),
+        ("EVMReferencePlane", "Paired EVM reference plane"),
+        ("EVMSymbolCount", "Paired complex pilot samples"),
+        ("ResidualCFO_EstimatedPostCorrection_Hz", "Measured post-correction common frequency (Hz)"),
+        ("ResidualCFOEstimateSource", "Post-correction estimator"),
+        ("ResidualCFOEstimateRole", "Frequency measurement domain"),
+        ("ResidualFrequencyUsesDifferentObservable", "Different observable from acquisition"),
+        ("ResidualFrequencyStatus", "Post-correction measurement status"),
         ("NMSE_dB", "NMSE dB"),
         ("NMSEScoringAvailable", "NMSE scoring available"),
         ("NMSEReferenceSource", "NMSE reference source"),
@@ -15948,11 +16003,23 @@ def build_realtime_component_dashboard(
     return rows
 
 
+def load_realtime_ul_planning_sources(artifacts: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "ul_scheduler_timing": load_first_available_csv_rows(
+            artifacts, ["packet_flow/csv/ul_scheduler_timing.csv"], max_rows=50000),
+        "ul_scheduler_timing_candidates": load_first_available_csv_rows(
+            artifacts, ["packet_flow/csv/ul_scheduler_timing_candidates.csv"], max_rows=50000),
+    }
+
+
 def load_realtime_ue_measurement_sources(
     artifacts: list[dict[str, Any]],
 ) -> dict[str, list[dict[str, Any]]]:
     """Load only canonical runtime producers used by the UE measurement card."""
     return {
+        "scheduler_admission": load_first_available_csv_rows(
+            artifacts, ["packet_flow/csv/scheduler_admission_trace.csv"], max_rows=50000
+        ),
         "cell_paths": load_first_available_csv_rows(
             artifacts, ["reports/csv/live_cell_measurement_trace.csv"], max_rows=50000
         ),
@@ -16005,6 +16072,31 @@ def latest_realtime_measurement_by_ue(
             continue
         if ue_id not in latest or realtime_measurement_order(row) >= realtime_measurement_order(latest[ue_id]):
             latest[ue_id] = row
+    return latest
+
+
+def latest_realtime_scheduler_admission(
+    rows: list[dict[str, Any]],
+) -> dict[str, dict[str, dict[str, Any]]]:
+    """Last observed scheduling input per UE/direction, not a live grant.
+
+    Order by sweep/knowledge/control/data clocks, never by data slot alone:
+    a K2 target may be in the future of the current scheduler decision.
+    """
+    latest: dict[str, dict[str, dict[str, Any]]] = {}
+    def order(row: dict[str, Any]) -> tuple[float, ...]:
+        return tuple(coerce_numeric(row.get(key)) or 0.0 for key in (
+            "SweepPointIndex", "SchedulingKnowledgeSlot", "ControlSlot", "ScheduledDataSlot"))
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        uid = realtime_measurement_ue_id(row)
+        direction = str(row.get("Direction") or "").upper()
+        if not uid or direction not in {"DL", "UL"}:
+            continue
+        previous = latest.setdefault(uid, {}).get(direction)
+        if previous is None or order(row) >= order(previous):
+            latest[uid][direction] = row
     return latest
 
 
@@ -16121,13 +16213,14 @@ def build_realtime_ue_status(
         if ue_text and ue_text.lower() != "nan":
             control_by_ue[ue_text] = row
     measurement_sources = measurement_sources if isinstance(measurement_sources, dict) else {}
+    admission_by_ue = latest_realtime_scheduler_admission(measurement_sources.get("scheduler_admission", []))
     serving_by_ue = latest_realtime_measurement_by_ue(measurement_sources.get("serving", []))
     csi_by_ue = latest_realtime_measurement_by_ue(measurement_sources.get("csi", []))
     ssb_by_ue = latest_realtime_selected_ssb_by_ue(measurement_sources.get("ssb", []))
     ul_by_ue = latest_realtime_measurement_by_ue(measurement_sources.get("ul", []))
     dl_by_ue = latest_realtime_measurement_by_ue(measurement_sources.get("dl", []))
     pathloss_by_ue = realtime_pathloss_rows_by_ue(measurement_sources.get("cell_paths", []))
-    measured_ue_ids = set(serving_by_ue) | set(csi_by_ue) | set(ssb_by_ue) | set(ul_by_ue) | set(dl_by_ue) | set(pathloss_by_ue)
+    measured_ue_ids = set(serving_by_ue) | set(csi_by_ue) | set(ssb_by_ue) | set(ul_by_ue) | set(dl_by_ue) | set(pathloss_by_ue) | set(admission_by_ue)
     ue_ids = sorted(set(str(key) for key in summaries) | set(control_by_ue) | measured_ue_ids, key=lambda value: (coerce_numeric(value) is None, coerce_numeric(value) or 0, value))
     rows: list[dict[str, Any]] = []
     for ue_id in ue_ids:
@@ -16227,6 +16320,7 @@ def build_realtime_ue_status(
                 "ul_srs_causal_usable": admission_flag("ULSRSCausalUsable"),
                 "ul_srs_causal_status": str(control.get("ULSRSCausalStatus") or ""),
                 "scheduling_eligibility_scope": str(control.get("SchedulingEligibilityScope") or ""),
+                "scheduler_admission": admission_by_ue.get(ue_id, {}),
                 "access_state": first_present_value(control, ["AccessState", "CellAcquisitionState"], "unavailable"),
                 "pdcch_state": first_present_value(control, ["LastPDCCHStatus"], "unavailable"),
                 "srs_state": first_present_value(control, ["SRSValidityState"], "unavailable"),
@@ -18268,6 +18362,7 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
             runtime_preview_artifacts(artifacts, runtime_context),
         ),
         "runtime_visualizations": [build_artifact_descriptor(item) for item in runtime_visualizations],
+        **load_realtime_ul_planning_sources(artifacts),
         "ue_status": build_realtime_ue_status(
             metric_explorer,
             runtime_context,
@@ -21037,14 +21132,37 @@ window.addEventListener('DOMContentLoaded', function () {
     if (absoluteDBm !== null && absoluteDBm !== undefined && absoluteDBm !== '' && Number.isFinite(Number(absoluteDBm))) return realtimeValue(absoluteDBm, ' dBm');
     return realtimeMeasuredValue(normalizedDB, ' dB re unit Es', 2, 'Reference power not published');
   }
+  function realtimeSchedulerAdmission(ue) {
+    const records = ue.scheduler_admission || {};
+    const fields = [['Sweep point','SweepPointIndex'],['Configured SNR (dB)','ConfiguredSNR_dB'],['Control slot','ControlSlot'],['Target data slot','ScheduledDataSlot'],['Knowledge slot','SchedulingKnowledgeSlot'],['Clock convention','SlotNumbering'],['Queued bytes','QueueBytes'],['Pending retransmission','HasPendingRetransmission'],['Traffic direction configured','TrafficDirectionConfigured'],['SRS required','SRSRequired'],['Causal SRS usable','SRSCausalUsable'],['SRS status','SRSCausalStatus'],['Candidate rank','CandidateRank'],['Rank authority','RankAuthority'],['New-data HARQ process available','HARQNewDataProcessAvailable'],['HARQ policy/source','HARQStateSource'],['Admission reason','AdmissionReason'],['Scheduler rejection reasons','SchedulerDecisionReasons'],['Candidate grant count','CandidateGrantCount']];
+    return ['DL','UL'].filter(direction => records[direction]).map(direction => {
+      const row = records[direction];
+      const present = value => value !== null && value !== undefined && !['','nan','<missing>'].includes(String(value).trim().toLowerCase());
+      const body = fields.map(([label,key]) => `<tr><th>${esc(label)}</th><td>${esc(present(row[key]) ? row[key] : '—')}</td></tr>`).join('');
+      return `<details><summary>${esc(direction)} last observed scheduling decision</summary><p class="mini-note">Historical decision-time inputs, not current queue state or proof of received DCI/data. No future traffic is included. A free new-data HARQ process is not required to retransmit an existing TB.</p><div class="table-wrap"><table><tbody>${body}</tbody></table></div><p class="mini-note">Source: packet_flow/csv/scheduler_admission_trace.csv</p></details>`;
+    }).join('');
+  }
+  function realtimeULPlanningPanel() {
+    const dashboard = (state.live || {}).realtime_dashboard || {};
+    const all = Array.isArray(dashboard.ul_scheduler_timing) ? dashboard.ul_scheduler_timing : [];
+    if (!all.length) return '';
+    const events = all.slice(-12).reverse();
+    const ids = new Set(events.map(row => String(row.DecisionSequence)));
+    const candidates = (Array.isArray(dashboard.ul_scheduler_timing_candidates) ? dashboard.ul_scheduler_timing_candidates : []).filter(row => ids.has(String(row.DecisionSequence)));
+    const fields = [['Decision','DecisionSequence'],['Sweep','SweepPointIndex'],['Control slot (1-based)','ControlSlot'],['Timing-selected data slot (1-based)','TimingSelectedDataSlot'],['Selected K2','TimingSelectedK2'],['Evaluated candidates','EvaluatedCandidateCount'],['Timing engine valid','TimingEngineValid'],['May enter UE scheduling','EligibleForUEScheduling'],['Blocker','BlockReason']];
+    const candidateFields = [['Decision','DecisionSequence'],['Attempt','CandidateOrdinal'],['K2','K2'],['Target slot (0-based)','TargetAbsoluteSlot0Based'],['Start symbol (0-based)','TargetStartSymbol0Based'],['Symbols','TargetNumSymbols'],['Timing valid','TimingValid'],['Selected by timing engine','SelectedByTimingEngine'],['Reason','ReasonCode']];
+    const text = value => value === null || value === undefined || ['','nan','<missing>'].includes(String(value).trim().toLowerCase()) ? '—' : value;
+    const table = (items, cols) => `<div class="table-wrap"><table><thead><tr>${cols.map(([label]) => `<th>${esc(label)}</th>`).join('')}</tr></thead><tbody>${items.map(row => `<tr>${cols.map(([,key]) => `<td>${esc(text(row[key]))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+    return `<section class="panel"><h3>UL timing / resource preflight</h3><p class="mini-note">Actual control-time decisions before UE queue, SRS and HARQ admission. Timing eligibility is not a decoded DCI or transmitted PUSCH. Only evaluated configured K2 candidates are listed; the timing engine stops at the first valid candidate.</p>${table(events,fields)}<details><summary>Evaluated K2 candidates (${candidates.length})</summary>${candidates.length ? table(candidates,candidateFields) : '<p>No candidate was evaluated for these decisions.</p>'}</details><p class="mini-note">Source: packet_flow/csv/ul_scheduler_timing.csv and ul_scheduler_timing_candidates.csv. Complete records remain in the CSVs; this panel shows the last 12 decisions.</p></section>`;
+  }
   function realtimeUEStatusPanel() {
     const dashboard = ((state.live || {}).realtime_dashboard || {});
     const items = Array.isArray(dashboard.ue_status) ? dashboard.ue_status : [];
-    if (!items.length) return `<section class="panel"><h3>UE Status</h3>${unavailable('No per-UE performance/control evidence is available for the selected run.')}</section>`;
+    if (!items.length) return realtimeULPlanningPanel() + `<section class="panel"><h3>UE Status</h3>${unavailable('No per-UE performance/control evidence is available for the selected run.')}</section>`;
     const cards = items.map(ue => {
       const badgeClass = ue.health === 'blocked' ? 'bad' : (ue.health === 'attention' ? 'warn' : 'good');
       const admissionFlag = value => value === true ? 'yes' : (value === false ? 'no' : '—');
-      const admissionDetails = `<div class="mini-note">DL gate: ${esc(ue.dl_scheduling_block_reason || (ue.dl_scheduling_eligible === true ? 'eligible' : 'reason not published'))} · UL gate: ${esc(ue.ul_scheduling_block_reason || (ue.ul_scheduling_eligible === true ? 'eligible' : 'reason not published'))}<br>UL SRS required: ${esc(admissionFlag(ue.ul_srs_required))} · causal SRS usable: ${esc(admissionFlag(ue.ul_srs_causal_usable))} · ${esc(ue.ul_srs_causal_status || 'causal status not published')}<br>Eligibility is an access/reference gate, not proof of a grant, queued traffic, free HARQ or legal data resources.</div>`;
+      const admissionDetails = `<div class="mini-note">DL gate: ${esc(ue.dl_scheduling_block_reason || (ue.dl_scheduling_eligible === true ? 'eligible' : 'reason not published'))} · UL gate: ${esc(ue.ul_scheduling_block_reason || (ue.ul_scheduling_eligible === true ? 'eligible' : 'reason not published'))}<br>UL SRS required: ${esc(admissionFlag(ue.ul_srs_required))} · causal SRS usable: ${esc(admissionFlag(ue.ul_srs_causal_usable))} · ${esc(ue.ul_srs_causal_status || 'causal status not published')}<br>Eligibility is an access/reference gate, not proof of a grant, queued traffic, free HARQ or legal data resources.</div>` + realtimeSchedulerAdmission(ue);
       const pathRows = (Array.isArray(ue.pathloss_paths) ? ue.pathloss_paths : []).map(path => `<tr><td>${esc(realtimeValue(path.candidate_rank,'',0))}</td><td>${esc(realtimeValue(path.cell_id,'',0))}</td><td>${esc(realtimeValue(path.pathloss_db,' dB'))}</td><td>${esc(realtimeValue(path.rsrp_dbm,' dBm'))}</td><td>${esc(realtimeValue(path.beam_index,'',0))}</td><td>${esc(String(path.status || 'unavailable').replaceAll('_',' '))}</td></tr>`).join('');
       let ssRelative = ue.ss_rsrp_relative_db === null || ue.ss_rsrp_relative_db === undefined ? '' : ` · normalized SS/PBCH grid power ${realtimeValue(ue.ss_rsrp_relative_db,' dB')}`;
       const csiRelative = ue.csi_rsrp_normalized_db === null || ue.csi_rsrp_normalized_db === undefined ? '' : ` · CSI-RSRP ${realtimeValue(ue.csi_rsrp_normalized_db,' dB re unit occupied-RE Es')}`;
@@ -21054,7 +21172,7 @@ window.addEventListener('DOMContentLoaded', function () {
       ssRelative += `${ssOperatingPoint}${ssDelta}${ssChannelGain}. The SS delta includes the instantaneous fading, precoder, and receive-branch realization; it is not labelled as array gain.`;
       return `<article class="ue-status-card ${esc(ue.health || '')}"><div class="toolbar" style="justify-content:space-between;margin-bottom:7px"><h4>UE ${esc(ue.ue_id)}</h4><span class="badge ${badgeClass}">${esc(String(ue.health || 'unavailable').replaceAll('_',' '))}</span></div><div class="ue-status-metrics"><span>Cell <strong>${esc(realtimeValue(ue.serving_cell, '', 0))}</strong></span><span>DL eligible <strong>${esc(admissionFlag(ue.dl_scheduling_eligible))}</strong></span><span>UL eligible <strong>${esc(admissionFlag(ue.ul_scheduling_eligible))}</strong></span><span>Serving RSRP <strong>${esc(realtimeMeasuredValue(ue.serving_rsrp_dbm, ' dBm', 2, ue.serving_rsrp_missing_reason))}</strong></span><span>UE PHR <strong>${esc(realtimeMeasuredValue(ue.ue_phr_db, ' dB', 2, ue.phr_missing_reason))}</strong></span><span>SS-RSRP <strong>${esc(realtimePowerValue(ue.ss_rsrp_dbm, ue.ss_rsrp_normalized_db))}</strong></span><span>SS-SINR <strong>${esc(realtimeValue(ue.ss_sinr_db, ' dB'))}</strong></span><span>CSI-RSRP <strong>${esc(realtimePowerValue(ue.csi_rsrp_dbm, ue.csi_rsrp_normalized_db))}</strong></span><span>CSI-SINR <strong>${esc(realtimeValue(ue.csi_sinr_db, ' dB'))}</strong></span><span>DL SINR <strong>${esc(realtimeMeasuredValue(ue.dl_sinr_db, ' dB', 2, ue.dl_missing_reason))}</strong></span><span>UL SINR <strong>${esc(realtimeMeasuredValue(ue.ul_sinr_db, ' dB', 2, ue.ul_missing_reason))}</strong></span><span>DL BLER <strong>${esc(realtimeMeasuredValue(ue.dl_bler, '', 3, ue.dl_missing_reason))}</strong></span><span>UL BLER <strong>${esc(realtimeMeasuredValue(ue.ul_bler, '', 3, ue.ul_missing_reason))}</strong></span><span>DL rate <strong>${esc(realtimeMeasuredValue(ue.dl_throughput_mbps, ' Mbps', 2, ue.dl_missing_reason))}</strong></span><span>UL rate <strong>${esc(realtimeMeasuredValue(ue.ul_throughput_mbps, ' Mbps', 2, ue.ul_missing_reason))}</strong></span></div><div class="small" style="margin-top:8px">Access: ${esc(ue.access_state)} · PDCCH: ${esc(ue.pdcch_state)} · SRS/CSI/TRS: ${esc(ue.srs_state)}/${esc(ue.csi_state)}/${esc(ue.trs_state)}</div>${admissionDetails}<div class="mini-note">CSI: ${esc(String(ue.csi_measurement_status || 'not published').replaceAll('_',' '))}${esc(csiRelative)} · PBCH-DMRS SINR ${esc(realtimeValue(ue.pbch_dmrs_sinr_db,' dB'))}${esc(ssRelative)}</div><details style="margin-top:8px"><summary>Cell-link loss evidence (${(ue.pathloss_paths || []).length}) · ${esc(String(ue.pathloss_status || 'unavailable').replaceAll('_',' '))}</summary><div class="table-wrap"><table><thead><tr><th>Candidate order</th><th>Cell</th><th>Pathloss</th><th>RSRP</th><th>Beam</th><th>Status</th></tr></thead><tbody>${pathRows || '<tr><td colspan="6">No cell-link loss rows were published.</td></tr>'}</tbody></table></div><p class="mini-note">Cell candidates are not MIMO ranks or individual CDL propagation rays. Disabled fixed-SNR path loss is not a measured zero-dB loss.</p></details><div class="mini-note">Last slots PDCCH ${esc(realtimeValue(ue.last_pdcch_slot,'',0))} · PUCCH ${esc(realtimeValue(ue.last_pucch_slot,'',0))} · SRS ${esc(realtimeValue(ue.last_srs_slot,'',0))} · TRS ${esc(realtimeValue(ue.last_trs_slot,'',0))}</div></article>`;
     }).join('');
-    return `<section class="panel"><h3>UE Status</h3><p class="subtle">Control eligibility and measured performance remain source-labeled; abstraction-level summaries are not presented as waveform truth.</p><div class="ue-status-grid">${cards}</div></section>`;
+    return realtimeULPlanningPanel() + `<section class="panel"><h3>UE Status</h3><p class="subtle">Control eligibility and measured performance remain source-labeled; abstraction-level summaries are not presented as waveform truth.</p><div class="ue-status-grid">${cards}</div></section>`;
   }
   function realtimeLogPanel() {
     const live = state.live || {};
@@ -26525,6 +26643,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.wfile.write(raw)
 
     def respond_error(self, status: HTTPStatus | int, message: str) -> None:
+        if getattr(self, "_artifact_response_started", False):
+            # A socket response cannot retract its sent headers. Close the
+            # incomplete transfer instead of appending an error page to CSV.
+            self.close_connection = True
+            self.log_message("Artifact transfer aborted after headers: %s", message)
+            return
         try:
             code = int(status)
         except Exception:
@@ -26557,29 +26681,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
         meta = fetch_artifact_meta(artifact_id)
         if meta is None:
             raise KeyError(f"Artifact {artifact_id} was not found.")
-        payload = fetch_artifact_bytes(artifact_id)
-        mime_type = str(meta.get("mime_type") or "application/octet-stream")
-        filename = Path(str(meta.get("logical_path") or artifact_id)).name
-        disposition = "attachment" if download else "inline"
-        etag = artifact_etag(meta)
-        if_none_match = str(self.headers.get("If-None-Match") or "").strip()
-        if if_none_match and if_none_match == etag:
-            self.send_response(HTTPStatus.NOT_MODIFIED)
-            self.send_header("ETag", etag)
-            # Require revalidation so deleted/re-materialized artifact ids do
-            # not stay pinned forever in browser caches, while still allowing
-            # fast 304 responses through the in-process byte cache.
-            self.send_header("Cache-Control", "private, max-age=0, must-revalidate")
-            self.end_headers()
+        filesystem_path = str(meta.get("filesystem_path") or "").strip()
+        if filesystem_path:
+            # Open before considering 304: a deleted artifact cannot be
+            # resurrected from old metadata or the process-wide byte cache.
+            with _windows_extended_path(filesystem_path).open("rb") as stream:
+                before = os.fstat(stream.fileno())
+                identity = lambda s: (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
+                def verify():
+                    if identity(os.fstat(stream.fileno())) != identity(before):
+                        raise OSError("Artifact changed during download; retry the published version")
+                etag = 'W/"file-' + str(artifact_id) + '-' + '-'.join(map(str, identity(before))) + '"'
+                _send_artifact_stream(self, meta, stream, before.st_size, etag, download, verify)
             return
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", mime_type)
-        self.send_header("Content-Disposition", f'{disposition}; filename="{filename}"')
-        self.send_header("Content-Length", str(len(payload)))
-        self.send_header("ETag", etag)
-        self.send_header("Cache-Control", "private, max-age=0, must-revalidate")
-        self.end_headers()
-        self.wfile.write(payload)
+        payload = fetch_artifact_bytes(artifact_id)
+        with io.BytesIO(payload) as stream:
+            _send_artifact_stream(self, meta, stream, len(payload), artifact_etag(meta), download)
 
     def redirect(self, location: str) -> None:
         self.send_response(HTTPStatus.SEE_OTHER)
@@ -26684,6 +26801,25 @@ def resolve_server_backend(requested_backend: str) -> str:
         return "threading"
 
 
+class _WSGIResponseBody:
+    """Own the bounded spooled response until consumption or disconnect."""
+    def __init__(self, stream):
+        self.stream = stream
+        stream.seek(0)
+    def __iter__(self):
+        return self
+    def __next__(self):
+        if self.stream.closed:
+            raise StopIteration
+        chunk = self.stream.read(1024*1024)
+        if chunk:
+            return chunk
+        self.close()
+        raise StopIteration
+    def close(self):
+        self.stream.close()
+
+
 class DashboardWSGIHandler(DashboardHandler):
     def __init__(self, environ: dict[str, Any], start_response: Any) -> None:
         self.environ = environ
@@ -26709,7 +26845,9 @@ class DashboardWSGIHandler(DashboardHandler):
                 content_length = 0
             body = environ.get("wsgi.input").read(content_length) if content_length > 0 else b""
         self.rfile = io.BytesIO(body)
-        self.wfile = io.BytesIO()
+        # Chunked artifact writes must not be reassembled into one BytesIO
+        # by the Waitress adapter. Spilling changes storage, never content.
+        self.wfile = tempfile.SpooledTemporaryFile(max_size=1024*1024, mode="w+b")
         self.headers = email.message.Message()
         if environ.get("CONTENT_TYPE"):
             self.headers["Content-Type"] = str(environ.get("CONTENT_TYPE"))
@@ -26746,7 +26884,7 @@ class DashboardWSGIHandler(DashboardHandler):
         detail = message or explain or HTTPStatus(int(code)).phrase
         self.respond_error(int(code), str(detail))
 
-    def dispatch(self) -> list[bytes]:
+    def dispatch(self):
         try:
             if self.command == "POST":
                 self.do_POST()
@@ -26755,18 +26893,30 @@ class DashboardWSGIHandler(DashboardHandler):
             else:
                 self.do_GET()
         except Exception as exc:  # pragma: no cover
+            # No HTTP body has been returned yet. Discard only this private
+            # failed response, not a user's artifact or prior publication.
+            self.wfile.seek(0)
+            self.wfile.truncate(0)
+            self._response_headers.clear()
+            self._artifact_response_started = False
             self.handle_exception(exc)
-        payload = self.wfile.getvalue()
+        self.wfile.seek(0, os.SEEK_END)
+        length = self.wfile.tell()
         headers = list(self._response_headers)
         if not any(key.lower() == "content-length" for key, _ in headers):
-            headers.append(("Content-Length", str(len(payload))))
-        self._start_response(self._status_line, headers)
+            headers.append(("Content-Length", str(length)))
+        try:
+            self._start_response(self._status_line, headers)
+        except Exception:
+            self.wfile.close()
+            raise
         if self.command == "HEAD":
+            self.wfile.close()
             return [b""]
-        return [payload]
+        return _WSGIResponseBody(self.wfile)
 
 
-def dashboard_wsgi_app(environ: dict[str, Any], start_response: Any) -> list[bytes]:
+def dashboard_wsgi_app(environ: dict[str, Any], start_response: Any):
     handler = DashboardWSGIHandler(environ, start_response)
     return handler.dispatch()
 

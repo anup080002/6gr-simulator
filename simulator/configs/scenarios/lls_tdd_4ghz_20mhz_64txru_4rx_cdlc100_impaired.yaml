@@ -1,0 +1,73 @@
+inherits:
+  - ./h4_100_cdlc100_connected_impaired_40db_adaptation.yaml
+  - ../bands/n77_20mhz_30khz_tdd.yaml
+
+meta:
+  scenario_id: lls_tdd_4ghz_20mhz_64txru_4rx_cdlc100_impaired
+  description: >
+    Local 20 MHz TDD companion to the server's 100 MHz connected run.
+    Nominal 4 GHz, 51 PRBs, 30 kHz SCS, normal CP, 1024 FFT and 30.72 MSa/s;
+    two-panel 64-TXRU gNB and four-chain UE with measured adaptive DL/UL rank
+    up to four. Retains physical access, four SSB and eight CSI-RS beams,
+    TCI/QCL, CSI/SRS, ILLA/OLLA, HARQ, CDL-C/100 ns and declared RF treatment.
+    100 slots include access; no attachment deadline or forced rank increase.
+    Configured 40 dB is normalized occupied-RE Es/N0, not measured SINR/dBm.
+    RF impairment values are study assumptions, not 3GPP conformance limits.
+  purpose: Local full-chain integration and measurement verification at 20 MHz.
+  research_class: optional_research_experiment
+  maturity_tag: experimental
+  scenario_group: connected_tdd_bandwidth_validation
+  tags: [lls, truth, tdd, fr1, 4ghz, 20mhz, cdl-c, adaptive_rank, no_proxy]
+
+# Inherit the parent's symbol clock and event-based access/feedback timing.
+# Shrinking the BWP must not leave 273-RB scheduler or reference resources.
+system:
+  scheduler:
+    maxPRBAllocationPerUE: 51
+scheduler:
+  max_prbs_per_grant: 51
+
+initial_access:
+  ssb:
+    # FR1 Point-A reference is 15 kHz. NCRBSSB=31 puts the 20-PRB
+    # SS/PBCH block at carrier PRB 15.5; reserved PRBs are 15:35.
+    # CORESET0 index 0 begins at carrier PRB 15 and spans 24 PRBs.
+    n_crb_ssb: 31
+    k_ssb: 0
+
+control:
+  # The inherited 48-PRB dedicated CORESET fits only after relocation.
+  # Keep the exact candidate counts and AL policy; no detection changes.
+  coreset_rb_start: 0
+
+reference_signals:
+  csi_rs_resource_num_rbs: [51, 51, 51, 51, 51, 51, 51, 51]
+  csi_im:
+    # Configured frequency occupation is a multiple of four CRBs; its
+    # intersection with the 51-PRB active carrier is measured explicitly.
+    num_rbs: 52
+  srs:
+    # TS 38.211 Table 6.4.1.4.3-1: C_SRS=13/B_SRS=0 occupies 48 PRBs.
+    # Do not pretend 51 PRBs are sounded. Keep the three unsounded PRBs
+    # visible in the coverage result and declare the intended tolerance.
+    c_srs: 13
+    b_srs: 0
+    num_rb: 51
+    expected_num_rb: 51
+    expected_bandwidth_coverage_percent: 94.11764705882354
+    full_carrier_coverage_tolerance_rb: 3
+  trs:
+    num_rb: 51
+
+random_access:
+  msg2_pdsch:
+    prb_start: 15
+  msg4_pdsch:
+    prb_start: 15
+
+# Keep the integer receiver-clock impairment at one sample. At the new
+# rate it represents 32.552 ns (not the parent's 8.138 ns). No unsupported
+# fractional-delay approximation is inserted to preserve a physical delay.
+output:
+  profile: lls_tdd_4ghz_20mhz_64txru_4rx_cdlc100_impaired
+  phy_signal_diagnostic_fft_length: 1024

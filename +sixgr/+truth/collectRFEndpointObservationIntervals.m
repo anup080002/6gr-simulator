@@ -14,12 +14,12 @@ for domain=["DL","UL","PBCH","PRACH","PDCCH","PUCCH","SRS","CSIRS","TRS"]
         for endpoint=["TX","RX"]
             prefix="Tx"; if endpoint=="RX", prefix="Rx"; end
             field=prefix+"RFEndpointMetadataAuditJSON";
-            value=localText(T,i,field);
-            if ~localPresent(value)
+            auditJSON=localText(T,i,field);
+            if ~localPresent(auditJSON)
                 coverage(end+1,:)={domain,i,endpoint,"MISSING","no_retained_endpoint_audit"}; %#ok<AGROW>
                 continue;
             end
-            audit=jsondecode(value);
+            audit=jsondecode(auditJSON);
             if ~isfield(audit,'Contract') || string(audit.Contract)~="shared_rf_endpoint_observation/v2"
                 coverage(end+1,:)={domain,i,endpoint,"LEGACY","no_self_contained_execution_clock_contract"}; %#ok<AGROW>
                 continue;
@@ -27,11 +27,11 @@ for domain=["DL","UL","PBCH","PRACH","PDCCH","PUCCH","SRS","CSIRS","TRS"]
             localValidate(audit,endpoint);
             scope=localScope(T,i);
             if isfield(scope,'ExecutionID') && isfield(scope,'ConfigHash')
-                key=char(scope.ExecutionID); value=char(scope.ConfigHash);
-                assert(~isKey(executionConfigs,key) || strcmp(executionConfigs(key),value), ...
+                key=char(scope.ExecutionID); configurationHash=char(scope.ConfigHash);
+                assert(~isKey(executionConfigs,key) || strcmp(executionConfigs(key),configurationHash), ...
                     'sixgr:truth:RFIntervalExecutionConfigMismatch', ...
                     'One immutable execution cannot claim different configuration hashes.');
-                executionConfigs(key)=value;
+                executionConfigs(key)=configurationHash;
             end
             scopeJSON=string(jsonencode(scope));
             for k=1:numel(audit.StageCountIntervals)
@@ -47,7 +47,7 @@ for domain=["DL","UL","PBCH","PRACH","PDCCH","PUCCH","SRS","CSIRS","TRS"]
                 r.Duration_s=(r.EndSampleExclusive-r.StartSample)/r.SampleRateHz;
                 r.SourceTable=domain; r.SourceRow=i;
                 r.SourceAuditField=field; r.SourceAuditSHA256=string( ...
-                    sixgr.util.sha256Hex(uint8(unicode2native(char(value),'UTF-8'))));
+                    sixgr.util.sha256Hex(uint8(unicode2native(char(auditJSON),'UTF-8'))));
                 observations=[observations;struct2table(r)]; %#ok<AGROW>
             end
             coverage(end+1,:)={domain,i,endpoint,"BOUND","actual_completed_endpoint_observation"}; %#ok<AGROW>

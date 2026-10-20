@@ -42,13 +42,17 @@ dlRaw = localTableField(trialData, ["dl","DL"]);
 ulRaw = localTableField(trialData, ["ul","UL"]);
 dlSourceArtifact = localPrimaryTrialArtifact(dlRaw, "DL");
 ulSourceArtifact = localPrimaryTrialArtifact(ulRaw, "UL");
-dl = localFilterMeasuredTrials(dlRaw);
-ul = localFilterMeasuredTrials(ulRaw);
 
 scenarioCfg = opt.ScenarioConfig;
 if isempty(scenarioCfg)
     scenarioCfg = struct();
 end
+accountingCfg=scenarioCfg;
+if isstruct(cfg), accountingCfg=sixgr.util.mergeStruct(accountingCfg,cfg); end
+% Bind unique delivery before SINR/UE/bin slicing. A successful reception
+% without usable SINR must not be re-credited to a later duplicate in a bin.
+dl = localFilterMeasuredTrials(localBindTransportCredit(dlRaw,accountingCfg));
+ul = localFilterMeasuredTrials(localBindTransportCredit(ulRaw,accountingCfg));
 
 bandwidthHz = localBandwidthHz(cfg, scenarioCfg);
 slotDuration_s = localSlotDurationSeconds(cfg, scenarioCfg);
@@ -79,6 +83,7 @@ paths.ThroughputReconciliation = fullfile(layout.ReportCSVDir, "throughput_recon
 paths.BlerBerReconciliation = fullfile(layout.ReportCSVDir, "blerber_reconciliation.csv");
 paths.AccessKPIReconciliation = fullfile(layout.ReportCSVDir, "access_kpi_reconciliation.csv");
 paths.SchedulerKPIReconciliation = fullfile(layout.ReportCSVDir, "scheduler_kpi_reconciliation.csv");
+paths.SchedulerAnchorCaseReconciliation = fullfile(layout.ReportCSVDir, "scheduler_anchor_case_reconciliation.csv");
 paths.LatencyReconciliation = fullfile(layout.ReportCSVDir, "latency_reconciliation.csv");
 paths.CanonicalKPILedger = fullfile(layout.ReportCSVDir, "canonical_kpi_ledger.csv");
 
@@ -99,7 +104,7 @@ if logical(opt.UpdateAnchorKPIs)
     anchorKPIs = localUpdateLinkAnchorKPIs(layout, summary, kpiSummary, trialData);
 end
 gateTables = localWriteKPIReconciliationGates(layout, kpiSummary, anchorKPIs, ...
-    trialData, slotDuration_s, scenarioCfg);
+    trialData, slotDuration_s, scenarioCfg, cfg);
 
 % Browser chart datasets/images are producer-owned. A measured-SINR
 % reduction must never relabel an existing SNR axis or copy its raster.
@@ -118,6 +123,7 @@ tables = struct( ...
     "BlerBerReconciliation", gateTables.BlerBer, ...
     "AccessKPIReconciliation", gateTables.Access, ...
     "SchedulerKPIReconciliation", gateTables.Scheduler, ...
+    "SchedulerAnchorCaseReconciliation", gateTables.SchedulerAnchor, ...
     "LatencyReconciliation", gateTables.Latency, ...
     "CanonicalKPILedger", gateTables.CanonicalLedger);
 
@@ -252,6 +258,26 @@ mask = mask & isfinite(sinr);
 T = T(mask, :);
 end
 
+function T=localBindTransportCredit(T,cfg)
+if ~istable(T)||height(T)==0, T=table(); return; end
+mask=true(height(T),1);
+for name=["FinalizedFlag","FallbackFlag"]
+    if ~localHasColumn(T,name), continue; end
+    flag=sixgr.kpi.readCRCObservations(table(T.(name),'VariableNames',{'CRCPass'}));
+    if name=="FinalizedFlag", mask=mask & flag==1; else, mask=mask & flag==0; end
+end
+if localHasColumn(T,"Status"), mask=mask & upper(strtrim(string(T.Status)))~="CRASH"; end
+T=T(mask,:);
+T.CRCPass=sixgr.kpi.readCRCObservations(T);
+if ~localHasColumn(T,"UniqueDeliveredTBBits")
+    T=sixgr.kpi.creditTransportGoodput(T);
+end
+T.GoodBits=sixgr.kpi.transportGoodputBits(T);
+[T.AnalysisTrialExposure_s,basis]=sixgr.kpi.resolveTrialExposureSeconds(T,cfg);
+T.AnalysisTrialExposureBasis=repmat(basis,height(T),1);
+T.Goodput_Mbps=T.GoodBits./T.AnalysisTrialExposure_s/1e6;
+end
+
 function bins = localBuildSINRBins(sinrValues, nBins)
 sinrValues = double(sinrValues(:));
 sinrValues = sinrValues(isfinite(sinrValues));
@@ -345,6 +371,9 @@ row = struct( ...
     "Goodput_Mbps_p5", localPercentile(goodput, 5), ...
     "Goodput_Mbps_p50", localPercentile(goodput, 50), ...
     "Goodput_Mbps_p95", localPercentile(goodput, 95), ...
+    "GoodputDefinition", "observed_per_trial_rates_from_unique_TB_credit_not_aggregate_elapsed_run_rate", ...
+    "GoodputObservedTrialCount", nnz(isfinite(goodput)), ...
+    "GoodputUnknownTrialCount", nnz(~isfinite(goodput)), ...
     "OfferedThroughput_Mbps_mean", localMeanFinite(offered), ...
     "SpectralEfficiency_bps_Hz_mean", localSafeDivide(localMeanFinite(goodput) * 1e6, double(bandwidthHz)), ...
     "SpectralEfficiencyDefinition", "goodput_over_channel_bandwidth_same_time_basis", ...
@@ -452,6 +481,9 @@ row = struct( ...
     "Throughput_Mbps_mean", localMeanFinite(throughput), ...
     "OfferedThroughput_Mbps_mean", localMeanFinite(offered), ...
     "Goodput_Mbps_mean", localMeanFinite(goodput), ...
+    "GoodputDefinition", "observed_per_trial_rates_from_unique_TB_credit_not_aggregate_elapsed_run_rate", ...
+    "GoodputObservedTrialCount", nnz(isfinite(goodput)), ...
+    "GoodputUnknownTrialCount", nnz(~isfinite(goodput)), ...
     "SpectralEfficiency_mean_bps_Hz", localSafeDivide(localMeanFinite(goodput) * 1e6, bandwidthHz), ...
     "SpectralEfficiencyDefinition", "goodput_over_channel_bandwidth_same_time_basis", ...
     "MCS_dominant", localModeNumeric(T, ["MCS","MCSIndex"]), ...
@@ -468,23 +500,23 @@ berEvidence=localBEREvidence(T);
 n = height(T);
 sinr = localNumericFirst(T, "PostEqSINR_dB", NaN(n, 1));
 crc = localCRC(T);
-goodBits = localGoodBits(T, crc);
+goodBits = sixgr.kpi.transportGoodputBits(T);
 scheduledBits = localNumericFirst(T, ...
-    ["TBSize_bits","TBSBits","TBS","ScheduledBits","BitsCompared"], NaN(n, 1));
+    ["TBSize_bits","TBSBits","TBS","ScheduledBits"], NaN(n, 1));
 offeredBits = localNumericFirst(T, "OfferedBits", NaN(n, 1));
 dist = localNumericFirst(T, "PropagationDistance_m", NaN(n, 1));
-radioDuration_s = max(0, n) * double(slotDuration_s);
+radioDuration_s = sum(T.AnalysisTrialExposure_s);
 goodputMbps = localSafeDivide(sum(goodBits), radioDuration_s) / 1e6;
-throughputMbps = localSafeDivide(sum(scheduledBits(isfinite(scheduledBits)), "omitnan"), radioDuration_s) / 1e6;
-offeredMbps = localSafeDivide(sum(offeredBits(isfinite(offeredBits)), "omitnan"), radioDuration_s) / 1e6;
+throughputMbps = localSafeDivide(sum(scheduledBits), radioDuration_s) / 1e6;
+offeredMbps = localSafeDivide(sum(offeredBits), radioDuration_s) / 1e6;
 % Goodput already contains its radio-time denominator. Dividing again by a
 % TDD duty fraction inflates SE (formerly 5x for UL and 1.25x for DL), and
 % falsely applies the same pattern to every numerology and scenario. These
 % conditional trial statistics are not a full measurement-window capacity.
 se = localSafeDivide(goodputMbps * 1e6, bandwidthHz);
 formulaGoodput = localSafeDivide(sum(goodBits), radioDuration_s) / 1e6;
-formulaThroughput = localSafeDivide(sum(scheduledBits(isfinite(scheduledBits)), "omitnan"), radioDuration_s) / 1e6;
-formulaOffered = localSafeDivide(sum(offeredBits(isfinite(offeredBits)), "omitnan"), radioDuration_s) / 1e6;
+formulaThroughput = localSafeDivide(sum(scheduledBits), radioDuration_s) / 1e6;
+formulaOffered = localSafeDivide(sum(offeredBits), radioDuration_s) / 1e6;
 reconPass = isfinite(goodputMbps) && isfinite(throughputMbps) && isfinite(offeredMbps) && ...
     abs(goodputMbps - formulaGoodput) < 0.01 && ...
     abs(throughputMbps - formulaThroughput) < 0.01 && ...
@@ -519,6 +551,8 @@ row = struct( ...
     "BERUnavailableTrialCount", berEvidence.UnavailableTrialCount, ...
     "Throughput_Mbps", throughputMbps, ...
     "Goodput_Mbps", goodputMbps, ...
+    "GoodputDefinition", "unique_first_crc_success_TB_payload_over_summed_trial_exposure_not_elapsed_run_time", ...
+    "DurationBasis", strjoin(unique(T.AnalysisTrialExposureBasis),"|"), ...
     "OfferedThroughput_Mbps", offeredMbps, ...
     "SpectralEfficiency_bps_Hz", se, ...
     "SpectralEfficiencyDefinition", "goodput_over_channel_bandwidth_same_time_basis", ...
@@ -832,7 +866,7 @@ notes = replace(notes, "deferred_to_primary_raw_trials", "runtime_measured_poste
 anchor.Notes = notes;
 end
 
-function gates = localWriteKPIReconciliationGates(layout, kpiSummary, anchor, trialData, slotDuration_s, scenarioCfg)
+function gates = localWriteKPIReconciliationGates(layout, kpiSummary, anchor, trialData, slotDuration_s, scenarioCfg, cfg)
 if ~(istable(anchor) && height(anchor) > 0)
     anchorPath = fullfile(layout.AirInterfaceCSVDir, "link_anchor_kpis.csv");
     if exist(anchorPath, "file") == 2
@@ -848,20 +882,34 @@ blerBer = localBlerBerReconciliationTable(kpiSummary);
 applicability = localKPIReconciliationApplicability(scenarioCfg);
 access = localAnchorGateTable(anchor, "AccessKpiReconciliationOk", ...
     ["CellSearch_MIB_SIB1","PRACH_Detection"], applicability.Access, applicability.Authority);
-scheduler = localAnchorGateTable(anchor, "SchedulerKpiReconciliationOk", ...
+schedulerAnchor = localAnchorGateTable(anchor, "SchedulerKpiReconciliationOk", ...
     ["DL_PDSCH_Throughput","UL_PUSCH_Throughput"], applicability.Scheduler, applicability.Authority);
+% Numeric scheduler accounting and anchor-case coverage are different claims.
+% Never let publication order replace actual bit/time/CRC evidence with an
+% anchor-only schema. Use unfiltered raw trials, not measured-SINR subsets.
+accountingCfg=scenarioCfg;
+if isstruct(cfg)
+    accountingCfg=sixgr.util.mergeStruct(accountingCfg,cfg);
+end
+scheduler=sixgr.analytics.buildSchedulerKPIReconciliation( ...
+    localTableField(trialData,["dl","DL"]),localTableField(trialData,["ul","UL"]),accountingCfg);
 latency = localLatencyReconciliationTable(trialData, slotDuration_s);
-canonical = localCanonicalLedgerTable(throughput, blerBer, access, scheduler, latency, applicability);
+% Both claims must pass for connected-mode canonical reconciliation.
+schedulerGate=schedulerAnchor;
+schedulerGate.SchedulerKpiReconciliationOk = ...
+    schedulerAnchor.SchedulerKpiReconciliationOk && scheduler.SchedulerKpiReconciliationOk;
+canonical = localCanonicalLedgerTable(throughput, blerBer, access, schedulerGate, latency, applicability);
 
 sixgr.analytics.writeAnalysisTable(fullfile(layout.ReportCSVDir, "throughput_reconciliation.csv"), throughput);
 sixgr.analytics.writeAnalysisTable(fullfile(layout.ReportCSVDir, "blerber_reconciliation.csv"), blerBer);
 sixgr.analytics.writeAnalysisTable(fullfile(layout.ReportCSVDir, "access_kpi_reconciliation.csv"), access);
 sixgr.analytics.writeAnalysisTable(fullfile(layout.ReportCSVDir, "scheduler_kpi_reconciliation.csv"), scheduler);
+sixgr.analytics.writeAnalysisTable(fullfile(layout.ReportCSVDir, "scheduler_anchor_case_reconciliation.csv"), schedulerAnchor);
 sixgr.analytics.writeAnalysisTable(fullfile(layout.ReportCSVDir, "latency_reconciliation.csv"), latency);
 sixgr.analytics.writeAnalysisTable(fullfile(layout.ReportCSVDir, "canonical_kpi_ledger.csv"), canonical);
 
 gates = struct("Throughput", throughput, "BlerBer", blerBer, "Access", access, ...
-    "Scheduler", scheduler, "Latency", latency, "CanonicalLedger", canonical);
+    "Scheduler", scheduler, "SchedulerAnchor", schedulerAnchor, "Latency", latency, "CanonicalLedger", canonical);
 end
 
 function T = localThroughputReconciliationTable(kpiSummary)
@@ -1309,18 +1357,11 @@ function crc = localCRC(T)
 crc = sixgr.kpi.readCRCObservations(T);
 end
 
-function bits = localGoodBits(T, crc)
-n = height(T);
-bits = localNumericFirst(T, ["GoodBits","GoodputBits","DeliveredBits"], NaN(n, 1));
-missing = ~isfinite(bits);
-tb = localNumericFirst(T, ["TBSize_bits","TBSBits","TBS","ScheduledBits"], NaN(n, 1));
-bits(missing & crc==1 & isfinite(tb)) = tb(missing & crc==1 & isfinite(tb));
-bits(crc==0) = 0;
-end
-
 function mbps = localRowBitrateMbps(T, bitNames, slotDuration_s)
 bits = localNumericFirst(T, bitNames, NaN(height(T), 1));
-mbps = bits ./ max(double(slotDuration_s), eps) / 1e6;
+% Prepared analytics tables carry the actual per-trial exposure. Never
+% replace absent/invalid duration with a numerology guess.
+mbps = bits ./ T.AnalysisTrialExposure_s / 1e6;
 end
 
 function tf = localHasColumn(T, name)
@@ -1566,13 +1607,14 @@ function vars = localThroughputCurveVars()
 vars = ["Direction","UEIndex","RNTI","PostEqSINR_dB_BinCenter","PostEqSINR_dB_BinMin","PostEqSINR_dB_BinMax", ...
     "Throughput_Mbps_mean","Throughput_Mbps_p5","Throughput_Mbps_p50","Throughput_Mbps_p95", ...
     "Goodput_Mbps_mean","Goodput_Mbps_p5","Goodput_Mbps_p50","Goodput_Mbps_p95", ...
-    "OfferedThroughput_Mbps_mean","SpectralEfficiency_bps_Hz_mean","TrialCount","SourceArtifact","SpectralEfficiencyDefinition"];
+    "OfferedThroughput_Mbps_mean","SpectralEfficiency_bps_Hz_mean","TrialCount","SourceArtifact","SpectralEfficiencyDefinition", ...
+    "GoodputDefinition","GoodputObservedTrialCount","GoodputUnknownTrialCount"];
 end
 
 function types = localThroughputCurveTypes()
 types = ["string","double","double","double","double","double", ...
     "double","double","double","double","double","double","double","double", ...
-    "double","double","double","string","string"];
+    "double","double","double","string","string","string","double","double"];
 end
 
 function vars = localDistributionVars()
@@ -1602,12 +1644,13 @@ vars = ["Direction","UEIndex","RNTI","N_Trials","SINR_min_dB","SINR_p5_dB","SINR
     "Goodput_Mbps_mean","SpectralEfficiency_mean_bps_Hz", ...
     "MCS_dominant","Modulation_dominant","Rank_dominant","Distance_min_m","Distance_max_m", ...
     "KPIFormulaVersion","SourceArtifact","SpectralEfficiencyDefinition", ...
-    "CRCObservedTrialCount","CRCUnknownTrialCount","BERObservedTrialCount","BERUnavailableTrialCount"];
+    "CRCObservedTrialCount","CRCUnknownTrialCount","BERObservedTrialCount","BERUnavailableTrialCount", ...
+    "GoodputDefinition","GoodputObservedTrialCount","GoodputUnknownTrialCount"];
 end
 
 function types = localMeasuredSummaryTypes()
 types = ["string","string","double","double","double","double","double","double","double","double","double", ...
-    "double","double","double","double","double","double","double","string","double","double","double","string","string","string","double","double","double","double"];
+    "double","double","double","double","double","double","double","string","double","double","double","string","string","string","double","double","double","double","string","double","double"];
 end
 
 function vars = localKPISummaryVars()
@@ -1616,10 +1659,11 @@ vars = ["RunId","Direction","UEIndex","RNTI","KPIFormulaVersion","KPIReconciliat
     "Throughput_Mbps","Goodput_Mbps","OfferedThroughput_Mbps","SpectralEfficiency_bps_Hz", ...
     "RadioDuration_s","TrialCount","MCS_dominant","Rank_dominant", ...
     "DistanceRange_m","StrictOk","Status","FailureReason","SourceArtifact","SpectralEfficiencyDefinition", ...
-    "CRCObservedTrialCount","CRCUnknownTrialCount","BERObservedTrialCount","BERUnavailableTrialCount"];
+    "CRCObservedTrialCount","CRCUnknownTrialCount","BERObservedTrialCount","BERUnavailableTrialCount", ...
+    "GoodputDefinition","DurationBasis"];
 end
 
 function types = localKPISummaryTypes()
 types = ["string","string","string","double","string","logical","double","double","double","double","double", ...
-    "double","double","double","double","double","double","double","double","string","logical","string","string","string","string","double","double","double","double"];
+    "double","double","double","double","double","double","double","double","string","logical","string","string","string","string","double","double","double","double","string","string"];
 end

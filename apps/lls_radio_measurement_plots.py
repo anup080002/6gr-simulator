@@ -6,23 +6,30 @@ grant just because their values happen to agree.
 """
 from __future__ import annotations
 
+import csv
 import html
 import hashlib
+import io
 import json
 import math
 import re
 import sqlite3
 from collections import defaultdict
+from contextlib import contextmanager
 
 TRIALS = ("air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv")
 FEEDBACK = "air_interface/csv/csi_feedback_reports.csv"
 RECEIVED_CSI = "air_interface/csv/received_csi_reports.csv"
 CSI_OBLIGATIONS = "control/csv/configured_csi_report_obligations.csv"
 CSI_TRIALS = "air_interface/csv/csi_rs_trials.csv"
+TRS_TRIALS = "air_interface/csv/trs_trials.csv"
+TRS_NMSE_CHART = "TRS channel NMSE timeline"
+TRS_FREQUENCY_CHART = "TRS post-correction common frequency"
 CONTROL_EVM = {
     "PRACH EVM": ("PRACH", "air_interface/csv/prach_evm_samples.csv"),
     "SSB EVM": ("SSB", "air_interface/csv/ssb_evm_samples.csv"),
     "CSI-RS EVM": ("CSI-RS", "air_interface/csv/csi_rs_evm_samples.csv"),
+    "TRS received-pilot EVM": ("TRS", "air_interface/csv/trs_evm_samples.csv"),
 }
 CSI_FIELDS = {"CSI CQI timeline": "CQI", "CSI RI timeline": "RI", "CSI CRI timeline": "CRI",
               "CSI PMI components timeline": "PMI", "CSI SINR timeline": "SINR_dB"}
@@ -37,7 +44,7 @@ PRECODER_CHARTS = {"reported versus applied PMI", "precoder ports and layers", "
 CHARTS = tuple(CONTROL_EVM) + tuple(CSI_FIELDS) + tuple(CSI_POWER_FIELDS) + tuple(DATA_POWER_CHARTS) + (SSB_POWER_CHART,) + tuple(sorted(PRECODER_CHARTS)) + (
     "measured_sinr_vs_slot", "clipping event histogram",
     "throughput vs SNR", "PDSCH BLER vs measured SINR", "PUSCH BLER vs measured SINR",
-    "PUCCH BLER vs measured SINR", "CSI-RS pilot residual", "NMSE vs SNR / SINR",
+    "PUCCH BLER vs measured SINR", "CSI-RS pilot residual", "NMSE vs SNR / SINR", TRS_NMSE_CHART, TRS_FREQUENCY_CHART,
 )
 CHART_SOURCES = {name: (path, "air_interface/csv/control_evm_samples.csv")
                  for name, (_, path) in CONTROL_EVM.items()}
@@ -49,13 +56,15 @@ CHART_SOURCES.update(DATA_POWER_CHARTS)
 CHART_SOURCES.update({name: TRIALS + (RECEIVED_CSI, CSI_OBLIGATIONS, FEEDBACK) for name in PRECODER_CHARTS})
 CHART_SOURCES["measured_sinr_vs_slot"] = TRIALS
 CHART_SOURCES["clipping event histogram"] = TRIALS
+CHART_SOURCES[TRS_NMSE_CHART] = (TRS_TRIALS,)
+CHART_SOURCES[TRS_FREQUENCY_CHART] = (TRS_TRIALS,)
 CHART_SOURCES.update({"throughput vs SNR": TRIALS, "NMSE vs SNR / SINR": TRIALS + ("air_interface/csv/srs_trials.csv", CSI_TRIALS),
     "PDSCH BLER vs measured SINR": TRIALS[:1], "PUSCH BLER vs measured SINR": TRIALS[1:],
     "PUCCH BLER vs measured SINR": ("air_interface/csv/pucch_trials.csv",),
     "CSI-RS pilot residual": ("air_interface/csv/csi_rs_trials.csv",)})
 SOURCE_PATHS = TRIALS + (RECEIVED_CSI, CSI_OBLIGATIONS, FEEDBACK, "air_interface/csv/pucch_trials.csv",
     "air_interface/csv/csi_rs_trials.csv", "air_interface/csv/pbch_trials.csv",
-    "air_interface/csv/prach_trials.csv", "air_interface/csv/control_evm_samples.csv",
+    "air_interface/csv/prach_trials.csv", TRS_TRIALS, "air_interface/csv/control_evm_samples.csv",
     "beamforming/csv/precoder_evidence.csv") + tuple(path for _, path in CONTROL_EVM.values())
 
 
@@ -220,6 +229,92 @@ def _measured_sinr(m, row):
     return m._measured_sinr_evidence(row)
 
 
+def _trs_frequency_timeline(m, name, existing, fetch, run_id):
+    rows, series = [], defaultdict(list)
+    for path, trials in m._all_available_rows(existing, fetch, (TRS_TRIALS,)):
+        for index, raw in enumerate(trials, 1):
+            if m._row_flag(raw, "ResidualCFOEstimateAvailable") is not True:
+                continue
+            identity = _identity(m, raw, path, index)
+            value = m._row_float(raw, "ResidualCFO_EstimatedPostCorrection_Hz")
+            role = m._row_text(raw, "ResidualCFOEstimateRole")
+            source = m._row_text(raw, "ResidualCFOEstimateSource")
+            evidence = m._row_text(raw, "TRSResidualFrequencyEvidenceJSON")
+            if (value is None or identity["slot"] is None or not source or not evidence or
+                    m._row_flag(raw, "ResidualFrequencyUsesDifferentObservable") is not True or
+                    role != "received_common_frequency_not_separated_oscillator"):
+                raise ValueError("Post-correction TRS frequency needs its independently measured observable and explicit domain.")
+            record = {**identity, "post_correction_common_frequency_hz": value,
+                      "measurement_role": role, "estimator_source": source,
+                      "correction_applied": m._row_flag(raw, "CFOCorrectionApplied"),
+                      "applied_correction_hz": m._row_float(raw, "CFOCorrectionApplied_Hz"),
+                      "estimator_evidence_json": evidence}
+            rows.append(record)
+            series[f"TRS U{identity['ue_index']} {_point_label(identity)} {source}"].append([identity["slot"], value])
+    return _finish(m, name, run_id, rows, series, "TRS resource slot (one-based runtime)",
+                   "Post-correction common frequency (Hz)",
+                   "Different received observable from acquisition, on the same capture. Includes channel phase evolution; not separated oscillator CFO or estimate minus applied correction.", [TRS_TRIALS])
+
+
+def _trs_nmse_timeline(m, name, existing, fetch, run_id):
+    """Publish actual scored TRS observations without inventing a SINR axis.
+
+    This reconciles retained aggregate operands, not the underlying complex
+    samples. It neither qualifies tracking statistically nor substitutes the
+    different CSI-RS reference plane for TRS.
+    """
+    rows, series = [], defaultdict(list)
+    seen = set()
+    for path, trials in m._all_available_rows(existing, fetch, (TRS_TRIALS,)):
+        for index, raw in enumerate(trials, 1):
+            identity = _identity(m, raw, path, index)
+            if m._row_flag(raw, "NMSEScoringAvailable") is not True:
+                continue
+            source = m._row_text(raw, "NMSEReferenceSource")
+            plane = m._row_text(raw, "ChannelNMSEReferencePlane")
+            error = m._row_float(raw, "ChannelNMSEErrorEnergy")
+            energy = m._row_float(raw, "ChannelNMSEReferenceEnergy")
+            count = m._row_float(raw, "ChannelNMSEComparedComplexValues")
+            pilots = m._row_float(raw, "ChannelNMSEPilotResourceCount")
+            nmse = m._row_float(raw, "NMSE_dB")
+            if (not source or not plane or any(token in (source + plane).lower()
+                    for token in ("proxy", "fallback", "synthetic", "unavailable"))
+                    or m._row_flag(raw, "ChannelNMSEReferenceUsedByReceiver") is not False
+                    or m._row_flag(raw, "ChannelNMSEGainOrPhaseFitted") is not False
+                    or error is None or error < 0 or energy is None or energy <= 0
+                    or count is None or count <= 0 or count != int(count)
+                    or pilots is None or pilots <= 0 or pilots != int(pilots) or pilots > count
+                    or identity["slot"] is None):
+                raise ValueError("TRS NMSE requires actual independent scoring source, plane and populations.")
+            expected = 10 * math.log10(error / energy) if error else -math.inf
+            # _row_float intentionally excludes nonfinite values; zero NMSE
+            # is represented as -Inf dB, never an artificial finite floor.
+            if expected == -math.inf and m._row_text(raw, "NMSE_dB").lower() in {"-inf", "-infinity"}:
+                nmse = -math.inf
+            if nmse is None or not math.isclose(nmse, expected, rel_tol=1e-10, abs_tol=1e-10):
+                raise ValueError("TRS NMSE disagrees with retained independent scoring energies.")
+            key = (_point_key(identity), identity["slot"], plane)
+            if key in seen:
+                raise ValueError("Duplicate TRS scoring identity in one sweep point.")
+            seen.add(key)
+            rows.append({**identity, "nmse_db": nmse, "nmse_linear": error / energy,
+                "error_energy": error, "reference_energy": energy,
+                "compared_complex_values": int(count), "pilot_resource_count": int(pilots),
+                "reference_source": source, "reference_plane": plane,
+                "qualification_mode": m._row_text(raw, "ChannelNMSEQualificationMode"),
+                "scheduler_usable": m._row_flag(raw, "TRSRuntimeEvidenceUsable"),
+                "strict_qualification_pass": m._row_flag(raw, "StrictOk"),
+                "verification_scope": "retained_aggregate_arithmetic_not_complex_sample_or_statistical_qualification"})
+    linear = any(row["nmse_db"] == -math.inf for row in rows)
+    for row in rows:
+        label = f"TRS U{row['ue_index']} {_point_label(row)} {row['reference_plane']}"
+        series[label].append([row["slot"], row["nmse_linear"] if linear else row["nmse_db"]])
+    return _finish(m, name, run_id, rows, series, "TRS resource slot (one-based runtime)",
+        "Channel NMSE (linear ratio)" if linear else "Channel NMSE (dB)",
+        "Measured TRS channel scores with retained energy/count reconciliation. Each sweep point and reference plane is separate. Scheduler usability is not qualification PASS; no SINR or residual CFO is inferred.",
+        [TRS_TRIALS])
+
+
 def _data_sinr_timeline(m, name, existing, fetch, run_id):
     """Preserve receiver observations across directions and sweep restarts."""
     rows, series, sources = [], defaultdict(list), []
@@ -321,6 +416,8 @@ def _control_evm_rows(m, name, run_id, path, samples, seen):
         if sample_index is None or sample_index < 0 or sample_index != int(sample_index) or len(_numbers(port, integers=True)) != 1:
             return _unavailable(m, name, run_id, "A nonnegative sample index and port index are required for each paired sample.", sources)
         expected_domain = "equalized_sequence_symbols" if family == "PRACH" else "equalized_resource_elements"
+        if family == "TRS":
+            expected_domain = "received_resource_elements"
         tx_domain = domain == "transmitter_resource_elements"
         if ((domain != expected_domain and not tx_domain) or definition != "reference_normalized_paired_symbol_evm"):
             return _unavailable(m, name, run_id, f"Control EVM requires {expected_domain} and the reference_normalized_paired_symbol_evm definition.", sources)
@@ -328,6 +425,12 @@ def _control_evm_rows(m, name, run_id, path, samples, seen):
                 alignment != "frozen_transmitter_OFDM_clock_no_gain_phase_or_timing_fit" or
                 m._row_text(row, "PortRole") != "physical_TX_antenna_not_equalized_RX_stream"):
             return _unavailable(m, name, run_id, "Transmitter EVM requires actual pre/post-RF samples on the frozen TX clock, not a receiver estimate.", sources)
+        if family == "TRS" and (domain != expected_domain or
+                not m._row_text(row, "ReferencePlane") or
+                reference_source != "same_executed_desired_link_received_pilot_grid" or
+                alignment != "recorded_receiver_timing_and_frequency_clock_no_fit" or
+                m._row_text(row, "PortRole") != "physical_RX_branch_not_equalized_layer"):
+            return _unavailable(m, name, run_id, "TRS pilot error requires independently retained same-execution desired/received REs, with no fitted gain or phase.", sources)
         if identity["direction"] != ("UL" if family == "PRACH" else "DL") or not identity["ue_index"]:
             return _unavailable(m, name, run_id, "Control signal direction or UE identity is missing/inconsistent.", sources)
         if "decision" in reference_source.lower() or "same_sample" in reference_source.lower():
@@ -340,9 +443,10 @@ def _control_evm_rows(m, name, run_id, path, samples, seen):
         bucket = buckets.setdefault(key, {**identity, "signal_name": signal, "observation_id": observation,
             "port_index": port, "evm_definition": definition, "alignment_source": alignment,
             "reference_source": reference_source, "measurement_domain": domain,
+            "reference_plane": m._row_text(row, "ReferencePlane"),
             "standardized_modulation_evm_qualified": False,
-            "amplitude_reference_treatment": "pre_TX_RF_amplitude_no_PA_backoff_or_gain_removal" if tx_domain else "retained_reference_and_receiver_equalization",
-            "measurement_claim": "raw_gain_inclusive_TX_pair_error_not_standardized_modulation_EVM" if tx_domain else "receiver_paired_symbol_error_not_RF_conformance",
+            "amplitude_reference_treatment": "pre_TX_RF_amplitude_no_PA_backoff_or_gain_removal" if tx_domain else ("same_execution_desired_pilot_grid_no_gain_phase_fit" if family == "TRS" else "retained_reference_and_receiver_equalization"),
+            "measurement_claim": "raw_gain_inclusive_TX_pair_error_not_standardized_modulation_EVM" if tx_domain else ("received_pilot_grid_pair_error_not_equalized_or_RF_conformance" if family == "TRS" else "receiver_paired_symbol_error_not_RF_conformance"),
             "sample_count": 0, "reference_energy": 0., "error_energy": 0.,
             "peak_error_power": 0., "measurement_scope": "persisted_independently_paired_control_samples"})
         ref_r, ref_i, rx_r, rx_i = values
@@ -360,9 +464,11 @@ def _control_evm_rows(m, name, run_id, path, samples, seen):
         rows.append(row)
         for metric in ("rms", "peak"):
             plane = "TX RF raw gain-inclusive" if row["measurement_domain"] == "transmitter_resource_elements" else "RX equalized"
-            series[f"{row['signal_name']} {plane} {metric} P{row['port_index']} U{row['ue_index']} {_point_label(row)}"].append([row["slot"], row[f"{metric}_evm_pct"]])
+            if row["measurement_domain"] == "received_resource_elements":
+                plane = "RX received pilots (not equalized)"
+            series[f"{row['signal_name']} observation={row['observation_id']} {plane} {metric} P{row['port_index']} U{row['ue_index']} {_point_label(row)}"].append([row["slot"], row[f"{metric}_evm_pct"]])
     return _finish(m, name, run_id, rows, series, "Executed slot", "EVM (%)",
-        "Independent paired control samples. TX raw error includes configured PA backoff/gain; no gain normalization or standardized modulation-EVM claim. RX uses its declared equalization. No conversion from SINR or pilot-fit residual. Not RF conformance EVM.", sources)
+        "Independent paired control samples. TX raw error includes configured PA backoff/gain. TRS uses actual received/desired pilot grids without a fitted gain/phase; other RX samples use their declared equalization. No conversion from SINR or pilot-fit residual. Not RF conformance EVM.", sources)
 
 
 def _csi(m, name, existing, fetch, run_id):
@@ -628,6 +734,66 @@ def _matrix_checks_svg(rows, max_rows):
     return ''.join(parts).encode('utf-8')
 
 
+class _ChannelCSVHashReader(io.RawIOBase):
+    """Hash the exact bounded byte chunks consumed by the CSV decoder."""
+
+    def __init__(self, source):
+        super().__init__()
+        self.source = source
+        self.digest = hashlib.sha256()
+        self.eof = False
+
+    def readable(self):
+        return True
+
+    def readinto(self, buffer):
+        chunk = self.source.read(len(buffer))
+        if not chunk:
+            self.eof = True
+            return 0
+        self.digest.update(chunk)
+        buffer[:len(chunk)] = chunk
+        return len(chunk)
+
+
+@contextmanager
+def _verified_channel_csv_rows(fetch, artifact_id, expected_hash):
+    """One source handle for both arithmetic and content-hash validation.
+
+    Local callers stream; legacy/remote byte callbacks are fetched once.
+    A result cannot leave this context before every parsed byte is hashed.
+    """
+    opener = getattr(fetch, "open_artifact_binary", None)
+    source = opener(artifact_id) if callable(opener) else io.BytesIO(fetch(artifact_id))
+    with source:
+        source.seek(0, io.SEEK_END)
+        size = source.tell()
+        source.seek(0)
+        previous_limit = csv.field_size_limit()
+        csv.field_size_limit(max(previous_limit, size + 1))
+        try:
+            hashed = _ChannelCSVHashReader(source)
+            with io.TextIOWrapper(io.BufferedReader(hashed), encoding="utf-8-sig", newline="") as text:
+                reader = csv.DictReader(text, strict=True)
+                names = reader.fieldnames or []
+                if not names or len(names) != len(set(names)):
+                    raise ValueError("Invalid channel NMSE resource CSV header")
+
+                def rows():
+                    for sample in reader:
+                        if None in sample or any(value is None for value in sample.values()):
+                            raise ValueError("Invalid channel NMSE resource CSV row width")
+                        yield sample
+
+                yield rows()
+                if not hashed.eof:
+                    raise ValueError("Channel NMSE resource stream was not fully consumed")
+                if hashed.digest.hexdigest() != expected_hash:
+                    raise ValueError("Channel NMSE resource hash mismatch")
+        finally:
+            csv.field_size_limit(previous_limit)
+
+
 def _scored_data_channel_nmse(m, row, existing, fetch):
     """Reconcile the displayed value to independently scored pilot resources."""
     path = m._row_text(row, "ChannelEstimateResourcesCSV").replace("\\", "/")
@@ -658,38 +824,41 @@ def _scored_data_channel_nmse(m, row, existing, fetch):
     artifact = existing.get(path)
     if artifact is None:
         raise ValueError("Missing scored channel NMSE resources")
-    payload = fetch(int(artifact["artifact_id"]))
-    if hashlib.sha256(payload).hexdigest() != m._row_text(row, "ChannelEstimateResourcesCSVSHA256"):
-        raise ValueError("Channel NMSE resource hash mismatch")
-    _, samples = m._artifact_rows_by_path(existing, fetch, path)
-    if len(samples) != int(count):
-        raise ValueError("Channel NMSE resource count mismatch")
     error_energy = reference_energy = 0.0
-    coordinates = set()
-    for sample in samples:
-        if (m._row_text(sample, identity_field) != observation
-                or m._row_text(sample, "ChannelReferenceSource") != source
-                or m._row_text(sample, "ChannelReferencePlane") != plane
-                or m._row_flag(sample, "ReferenceUsedByReceiver") is not False
-                or m._row_flag(sample, "GainOrPhaseFitted") is not False):
-            raise ValueError("Channel NMSE reference identity mismatch")
-        coordinate = tuple(m._row_float(sample, key) for key in
-            ("SubcarrierIndex0", "SymbolIndex0", "RxBranchIndex0", "ReferencePortIndex0"))
-        if csi:
-            coordinate = (m._row_float(sample, "ResourceID"),) + coordinate
-        if any(v is None or v < 0 or int(v) != v for v in coordinate) or coordinate in coordinates:
-            raise ValueError("Invalid or repeated channel NMSE resource coordinate")
-        coordinates.add(coordinate)
-        values = [m._row_float(sample, key) for key in
-            ("HReal", "HImag", "ReferenceHReal", "ReferenceHImag", "ChannelErrorEnergy", "ReferenceChannelEnergy")]
-        if any(v is None for v in values):
-            raise ValueError("Missing channel NMSE complex values")
-        hr, hi, rr, ri, err, ref = values
-        if not math.isclose(err, (hr-rr)**2+(hi-ri)**2, rel_tol=1e-10, abs_tol=1e-25) or not math.isclose(
-                ref, rr**2+ri**2, rel_tol=1e-10, abs_tol=1e-25):
-            raise ValueError("Channel NMSE energy disagrees with retained complex channels")
-        error_energy += err
-        reference_energy += ref
+    actual_count = 0
+    with _verified_channel_csv_rows(fetch, int(artifact["artifact_id"]),
+            m._row_text(row, "ChannelEstimateResourcesCSVSHA256")) as samples, \
+            _ExactControlSampleIdentities() as coordinates:
+        for sample in samples:
+            actual_count += 1
+            if (m._row_text(sample, identity_field) != observation
+                    or m._row_text(sample, "ChannelReferenceSource") != source
+                    or m._row_text(sample, "ChannelReferencePlane") != plane
+                    or m._row_flag(sample, "ReferenceUsedByReceiver") is not False
+                    or m._row_flag(sample, "GainOrPhaseFitted") is not False):
+                raise ValueError("Channel NMSE reference identity mismatch")
+            coordinate = tuple(m._row_float(sample, key) for key in
+                ("SubcarrierIndex0", "SymbolIndex0", "RxBranchIndex0", "ReferencePortIndex0"))
+            if csi:
+                coordinate = (m._row_float(sample, "ResourceID"),) + coordinate
+            if any(v is None or v < 0 or int(v) != v for v in coordinate):
+                raise ValueError("Invalid or repeated channel NMSE resource coordinate")
+            # One fixed group keeps the index's in-memory group dictionary
+            # constant-sized; complete integer tuples live in scratch SQLite.
+            if not coordinates.add(("channel_nmse", tuple(int(v) for v in coordinate))):
+                raise ValueError("Invalid or repeated channel NMSE resource coordinate")
+            values = [m._row_float(sample, key) for key in
+                ("HReal", "HImag", "ReferenceHReal", "ReferenceHImag", "ChannelErrorEnergy", "ReferenceChannelEnergy")]
+            if any(v is None for v in values):
+                raise ValueError("Missing channel NMSE complex values")
+            hr, hi, rr, ri, err, ref = values
+            if not math.isclose(err, (hr-rr)**2+(hi-ri)**2, rel_tol=1e-10, abs_tol=1e-25) or not math.isclose(
+                    ref, rr**2+ri**2, rel_tol=1e-10, abs_tol=1e-25):
+                raise ValueError("Channel NMSE energy disagrees with retained complex channels")
+            error_energy += err
+            reference_energy += ref
+    if actual_count != int(count):
+        raise ValueError("Channel NMSE resource count mismatch")
     if error_energy < 0 or reference_energy <= 0:
         raise ValueError("Channel NMSE requires nonnegative error and positive reference energy")
     independently_reduced = -math.inf if error_energy == 0 else 10*math.log10(error_energy/reference_energy)
@@ -746,17 +915,35 @@ def _relationships(m, name, existing, fetch, run_id):
                     decoded = m._row_flag(row, "PUCCHDecodeOk", "DecodeSuccess", "DecodeOK")
                     y_field, y = "uci_block_error", None if decoded is None else int(not decoded)
                     count = m._row_float(row, "ExpectedBitCount", "PUCCHExpectedBitCount")
-                    has_count = any(key in row for key in ("ExpectedBitCount", "PUCCHExpectedBitCount"))
-                    no_payload = (m._row_flag(row, "PUCCHTransmissionPrepared") is False or
-                                  (has_count and (count is None or count <= 0)))
-                    if no_payload:
-                        # A correctly quiet negative-SR occasion is not a
-                        # failed UCI block. Receiver-only false-alarm/DTX
-                        # trials belong to their own declared population.
+                    # Presence is a binary producer fact, not a generic
+                    # PASS/FAIL display status. "unavailable" is unknown;
+                    # arbitrary nonzero numbers must not become true.
+                    presence_number = m._row_float(row, "PUCCHTransmissionPrepared")
+                    presence_text = m._row_text(row, "PUCCHTransmissionPrepared").lower()
+                    prepared, invalid_presence = None, False
+                    if presence_number in (0, 1):
+                        prepared = bool(presence_number)
+                    elif presence_text in ("true", "yes", "false", "no"):
+                        prepared = presence_text in ("true", "yes")
+                    elif presence_text not in ("", "nan", "<missing>", "missing", "unavailable"):
+                        invalid_presence = True
+                    population = "decode_outcome_unavailable" if decoded is None else "observed_payload_decode"
+                    if invalid_presence or (count is not None and (count < 0 or count != int(count))):
+                        population = "invalid_transmission_evidence"
+                    elif prepared is True and count == 0:
+                        population = "conflicting_transmission_evidence"
+                    elif prepared is False or count == 0:
+                        # Receiver-only false-alarm/DTX trials and quiet SR
+                        # occasions belong to a different population. An
+                        # expected RX layout does not prove UE transmission.
+                        population = "not_a_transmitted_payload_block"
+                    elif prepared is not True and count is None:
+                        # Missing is not zero. Decoder acceptance alone can
+                        # be a false alarm and must not establish TX presence.
+                        population = "transmission_evidence_unavailable"
+                    if population != "observed_payload_decode":
                         y = None
-                    record["block_error_population_status"] = (
-                        "not_a_transmitted_payload_block" if no_payload else
-                        "decode_outcome_unavailable" if decoded is None else "observed_payload_decode")
+                    record["block_error_population_status"] = population
             elif name == "CSI-RS pilot residual":
                 x, x_field, x_source = m._row_float(row, "Slot", "CSIMeasurementSlot"), "Slot", "runtime_csi_rs_observation"
                 y_field, y = "PilotResidualNMSE_dB", m._row_float(row, "PilotResidualNMSE_dB")
@@ -783,6 +970,11 @@ def _relationships(m, name, existing, fetch, run_id):
                 "crc_pass": m._row_text(row, "CRCPass"),
                 "noise_operating_mode": m._row_text(row, "NoiseOperatingMode"),
                 "value_status": "available" if x is not None and y is not None else "required_measurement_unavailable"})
+            if record.get("block_error_population_status") == "not_a_transmitted_payload_block":
+                # An observed empty/SR-negative occasion is not missing a
+                # required block measurement. Do not manufacture a BLER value
+                # or promote this applicability label into a decode PASS.
+                record["value_status"] = "not_applicable_no_transmitted_payload"
             is_sinr_axis = name != "throughput vs SNR" and name != "CSI-RS pilot residual"
             if is_sinr_axis:
                 record.update({"x_value_status": sinr_evidence["status"],
@@ -813,6 +1005,12 @@ def _relationships(m, name, existing, fetch, run_id):
              "CSI-RS pilot residual": "Measured residual on channel-estimation pilots. This is neither independent channel NMSE nor CSI-RS EVM.",
              "NMSE vs SNR / SINR": "Independent channel-reference scoring, not pilot-fit residual or noise/gain. Data-channel and CSI-RS values reconcile to hashed complex pilot resources. Different signals/reference planes remain separate series; CSI nominal-channel scores include RF-induced estimate error. Exact zero uses a linear plot axis."}
     note = notes.get(name, "Individual measured block-error outcomes (0/1), not a fitted BLER curve or an independent Monte Carlo sweep. MCS/rank/format retained per trial.")
+    if name == "PUCCH BLER vs measured SINR" and rows and not series:
+        populations = defaultdict(int)
+        for row in rows:
+            populations[row["block_error_population_status"]] += 1
+        note += " No plottable UCI-block/SINR pairs. Observed population states: " + "; ".join(
+            f"{state}={count}" for state, count in sorted(populations.items())) + "."
     limited_count = sum(row.get("x_is_limited", False) and row["value_status"] == "available" for row in rows)
     limit_summary = [f"Limited SINR values: {limited_count}", "Limited values are not raw estimates"] if limited_count else []
     return _finish(m, name, run_id, rows, series,
@@ -1255,6 +1453,10 @@ def radio_measurement_chart(name, existing, fetch, run_id):
     # initialized, and there is one renderer/persistence authority.
     import lls_contract_materializer as m
     try:
+        if name == TRS_FREQUENCY_CHART:
+            return _trs_frequency_timeline(m, name, existing, fetch, run_id)
+        if name == TRS_NMSE_CHART:
+            return _trs_nmse_timeline(m, name, existing, fetch, run_id)
         if name == "measured_sinr_vs_slot":
             return _data_sinr_timeline(m, name, existing, fetch, run_id)
         if name in CONTROL_EVM:

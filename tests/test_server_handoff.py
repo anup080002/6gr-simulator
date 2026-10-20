@@ -40,6 +40,9 @@ def launcher(tmp_path, monkeypatch):
 
     monkeypatch.setattr(launch, "git", git)
     monkeypatch.setattr(launch.shutil, "which", lambda _: "C:/Program Files/MATLAB/bin/matlab.exe")
+    # platform.platform() may itself run Windows `ver`; isolate that OS probe
+    # from the mock which intentionally captures only launcher subprocesses.
+    monkeypatch.setattr(launch.platform, "platform", lambda: "Windows-test-fixture")
     calls = []
 
     def run(command, **kwargs):
@@ -90,6 +93,7 @@ def test_terminal_pass_requires_receipt_exit_and_frozen_source(launcher, monkeyp
     def run(command, **kwargs):
         if "-batch" in command:
             assert kwargs["cwd"] == root and kwargs["env"]["SIXGR_OUTPUT_BACKEND_OVERRIDE"] == "filesystem"
+            assert kwargs["env"]["SIXGR_RESULTS_ROOT"] == str(root / "results")
             assert "shell" not in kwargs and "-wait" in command
             if ok is not None:
                 (log / "scenario_receipt.json").write_text(json.dumps({"Ok": ok, "RunFolder": "fixture"}), encoding="utf-8")
@@ -124,6 +128,23 @@ def test_batch_has_freshness_checks_and_literal_quoting(tmp_path):
     assert "assert(~isfolder(target)" in command
     assert command.index("assert(~isfolder(target)") < command.index("out=run_6g_phy_lls_single")
     assert "assert(out.Ok" in command and "rethrow(err)" in command
+    assert "sixgr.report.resolveResultsRoot" in command
+    assert command.index("sixgr:server:OutputRootMismatch") < command.index("out=run_6g_phy_lls_single")
+
+
+def test_external_results_root_bound_to_matlab_process(launcher):
+    root, args, _, calls = launcher
+    external = root.parent / "external evidence"
+    args.results = str(external)
+    # Mocked engine deliberately writes no final receipt: this is not a PHY pass.
+    assert launch.execute(args) == 1
+    command, settings = next((command, settings) for command, settings in calls if "-batch" in command)
+    assert settings["env"]["SIXGR_RESULTS_ROOT"] == str(external)
+    assert launch.literal(external) in command[-1]
+    saved = json.loads((root / "logs/server/server_01/launcher.json").read_text())
+    assert saved["results_root"] == str(external)
+    assert saved["status"] == "failed_or_incomplete"
+    assert external.is_dir() and not (root / "results").exists()
 
 
 def evidence_tree(tmp_path):

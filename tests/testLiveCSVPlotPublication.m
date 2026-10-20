@@ -33,6 +33,34 @@ manifest=jsondecode(fileread(receipt.Manifest));
 assert(~manifest.terminal_qualification);
 second=sixgr.artifact.publishLiveCSVPlots(cfg,root);
 assert(string(second.Status)=="unchanged_verified_snapshot");
+% Exercise MATLAB -> production Python -> complete CSV/PNG with a retained
+% receiver capture, not only a small feedback table. This is publication
+% replay, not a new radio trial or H4 end-to-end qualification.
+repo=fileparts(fileparts(mfilename('fullpath')));
+capture=fullfile(repo,'docs','lls','evidence_20260913', ...
+    'ul_constellation_handoff_01','air_interface','csv','ul_constellation_samples.csv');
+sourceHash=sixgr.util.sha256File(capture);
+copyfile(capture,fullfile(root,'air_interface','csv','ul_constellation_samples.csv'));
+third=sixgr.artifact.publishLiveCSVPlots(cfg,root);
+manifest=jsondecode(fileread(third.Manifest));
+charts=manifest.charts;
+% Available entries have CSV/PNG fields; unavailable entries do not.
+% MATLAB therefore legitimately decodes this heterogeneous array as cells.
+if ~iscell(charts), charts=num2cell(charts); end
+selected=find(cellfun(@(entry)string(entry.name)=="post-equalization constellation",charts));
+assert(isscalar(selected));
+chart=charts{selected};
+assert(chart.source_row_count==3522 && ...
+    string(chart.status)=="measured_checkpoint" && ~manifest.terminal_qualification);
+source=readtable(capture,'TextType','string','VariableNamingRule','preserve');
+plotted=readtable(fullfile(fileparts(third.Manifest),chart.csv), ...
+    'TextType','string','VariableNamingRule','preserve');
+assert(height(plotted)==height(source) && ...
+    isequal(double(plotted.x_value),double(source.RawEqualizedReal)) && ...
+    isequal(double(plotted.y_value),double(source.RawEqualizedImag)), ...
+    'Streaming publication must retain every raw receiver sample exactly.');
+imageInfo=imfinfo(fullfile(fileparts(third.Manifest),chart.png));
+assert(strcmpi(imageInfo.Format,'png') && sourceHash==sixgr.util.sha256File(capture));
 code=fileread(which('sixgr.truth.runWaveformLinkBundle'));
 assert(contains(code,'liveArtifacts.LivePNGSnapshots = sixgr.artifact.publishLiveCSVPlots(cfg, rootRunFolder)'));
 assert(contains(code,'outputs.liveCSVPNGEnabled') && contains(code,'outputs.savePNG'));

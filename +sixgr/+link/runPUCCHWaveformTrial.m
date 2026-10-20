@@ -314,7 +314,10 @@ else
     trial.CRCPass = NaN;
 end
 trial.UCIContentMatch = ~comparison.ContentMismatch;
-trial.AckObserved = ~isempty(decoded) && logical(decoded(1));
+% Preserve receiver-owned HARQ applicability/bit identity. Never interpret
+% the leading CSI/SR bit, an invalid CRC or a whole codebook as one ACK.
+trial=sixgr.util.mergeStruct(trial, ...
+    sixgr.phy.pucch.harqObservationEvidence(context,rx));
 trial.DTXFlag = logical(rx.DTX);
 trial.DetectionMetric = rx.DetectionMetric;
 trial.DetectionThreshold = rx.DetectionThreshold;

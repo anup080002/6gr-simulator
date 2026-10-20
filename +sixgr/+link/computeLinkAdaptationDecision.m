@@ -1269,29 +1269,8 @@ end
 end
 
 function [ackKnown, ackObserved, source] = localResolveAckOutcome(metrics)
-ackKnown = false;
-ackObserved = false;
-source = "";
-candidates = { ...
-    "AckObserved"
-    "ObservedAck"
-    "CombinedDecodeOK"
-    "CurrentDecodeOK"
-    "CRCPass"};
-for i = 1:numel(candidates)
-    raw = sixgr.util.structGet(metrics, candidates{i}, []);
-    if isempty(raw)
-        continue;
-    end
-    if isnumeric(raw) || islogical(raw)
-        if isscalar(raw) && isfinite(double(raw))
-            ackKnown = true;
-            ackObserved = logical(raw);
-            source = candidates{i};
-            return;
-        end
-    end
-end
+[ackKnown,ackObserved,source]=sixgr.link.resolveHARQFeedbackObservation(metrics, ...
+    ["AckObserved","ObservedAck","CombinedDecodeOK","CurrentDecodeOK","CRCPass"]);
 end
 
 function [resetState, resetReason] = localShouldResetState(adaptationState, metrics, cfg)

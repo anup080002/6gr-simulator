@@ -13,7 +13,14 @@ assert(all(futureSlots>slot) && all(dueSlots==slot), ...
     'sixgr:truth:InvalidSharedULCalendarPartition', ...
     'Future and source-slot received grants must be disjoint calendar partitions.');
 state.SharedPendingULGrants=localAppend(futureGrants,dueGrants);
-[state,completed]=state.SharedWaveformStream.advanceSlot(state,cfg,onReceived);
+if nargout>1
+    [state,completed]=state.SharedWaveformStream.advanceSlot(state,cfg,onReceived);
+else
+    % A tilde output still requests the complete slot-wide capture list.
+    % Propagate the caller's real need so delivered IQ/channel observations
+    % can leave the callback workspace before the next physical interval.
+    state=state.SharedWaveformStream.advanceSlot(state,cfg,onReceived);
+end
 % Read callback-updated state, never restore the pre-advance snapshot: a
 % decoded UL DCI in this slot may have admitted another future grant.
 pending=state.SharedPendingULGrants;

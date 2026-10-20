@@ -1,19 +1,42 @@
-function score=pilotChannelNMSE(estimate,reference,indices)
+function [score,sampledEstimate,sampledReference]=pilotChannelNMSE(estimate,reference,indices)
 % Independent per-resource, per-RX, per-port error; never fit gain or phase.
+% Compact data-channel captures contain those exact pilot values already.
+% Do not reconstruct a full K/L/RX/port tensor just to sample it again.
 validateattributes(indices,{'numeric'},{'nonempty','finite','integer','positive'});
-assert(isequal(size(estimate),size(reference)) && ndims(estimate)<=4 && ...
-    ~isempty(estimate),'sixgr:srs:ChannelReferenceShapeMismatch', ...
-    'Estimated and independent channel grids must have identical K/L/RX/port dimensions.');
-K=size(estimate,1); L=size(estimate,2); R=size(estimate,3); P=size(estimate,4);
+shape=[size(reference,1) size(reference,2) size(reference,3) size(reference,4)];
+compact=isstruct(estimate);
+if compact
+    required={'Contract','GridShape','PilotIndices','PilotChannelValues'};
+    assert(isscalar(estimate) && all(isfield(estimate,required)) && ...
+        isscalar(string(estimate.Contract)) && ...
+        any(string(estimate.Contract)==["PDSCH_pilot_channel_capture/v1","PUSCH_pilot_channel_capture/v1"]) && ...
+        isnumeric(reference) && ~isempty(reference) && ndims(reference)<=4 && ...
+        isequal(estimate.GridShape,shape) && isequal(estimate.PilotIndices,indices) && ...
+        isnumeric(estimate.PilotChannelValues) && ...
+        isequal(size(estimate.PilotChannelValues),[numel(indices) shape(3)]), ...
+        'sixgr:srs:ChannelSnapshotMismatch', ...
+        'Compact scoring requires every retained pilot/branch and identical resource/grid identity.');
+else
+    assert(isequal(size(estimate),size(reference)) && ndims(estimate)<=4 && ...
+        ~isempty(estimate),'sixgr:srs:ChannelReferenceShapeMismatch', ...
+        'Estimated and independent channel grids must have identical K/L/RX/port dimensions.');
+end
+K=shape(1); L=shape(2); R=shape(3); P=shape(4);
 assert(all(indices(:)<=K*L*P),'sixgr:srs:PilotReferenceOutOfRange', ...
     'Every pilot index must belong to the actual transmit port grid.');
 [k,l,p]=ind2sub([K L P],double(indices(:)));
 assert(numel(unique(indices(:)))==numel(indices), ...
     'sixgr:srs:DuplicatePilotReference','Do not count the same port resource twice.');
-sampledEstimate=complex(zeros(numel(k),R)); sampledReference=sampledEstimate;
+sampledReference=complex(zeros(numel(k),R));
+if compact
+    sampledEstimate=double(estimate.PilotChannelValues);
+else
+    sampledEstimate=complex(zeros(numel(k),R));
+end
 for r=1:R
     at=sub2ind([K L R P],k,l,repmat(r,size(k)),p);
-    sampledEstimate(:,r)=estimate(at); sampledReference(:,r)=reference(at);
+    if ~compact, sampledEstimate(:,r)=estimate(at); end
+    sampledReference(:,r)=reference(at);
 end
 assert(all(isfinite(sampledEstimate(:))) && all(isfinite(sampledReference(:))), ...
     'sixgr:srs:IncompletePilotChannelReference','Every scored pilot/branch must be finite; no masking or truncation.');

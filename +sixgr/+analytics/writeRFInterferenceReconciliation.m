@@ -34,6 +34,9 @@ end
 if ~(istable(ulT) && height(ulT) > 0)
     ulT = localReadTable(fullfile(layout.AirInterfaceCSVDir, "ul_pusch_trials.csv"));
 end
+% Credit logical TBs before any population slicing; both exporters use the
+% same owner for this artifact instead of overwriting it with anchor gates.
+schedulerT = sixgr.analytics.buildSchedulerKPIReconciliation(dlT, ulT, cfg);
 dlT = localEffectiveRows(dlT);
 ulT = localEffectiveRows(ulT);
 
@@ -49,7 +52,6 @@ paT = localBuildPATable(dlT, ulT, cfg);
 evmT = localBuildEVMTable(dlT, ulT, cfg);
 paprT = localBuildPAPRTable(dlT, ulT, cfg);
 mimoT = localBuildMIMOTable(dlT, ulT, cfg);
-schedulerT = localBuildSchedulerTable(dlT, ulT, cfg);
 mobilityT = sixgr.analytics.buildMobilityKPIReconciliation(cfg, mobilityArtifacts, runFolder);
 channelRfT = localBuildChannelRFTable(cfoT, phaseNoiseT, timingT, iqT, paT, evmT, paprT, rfChainT);
 
@@ -959,20 +961,6 @@ tf = numel(scheduled) == height(T) && numel(transmittedMCS) == height(T) && ...
     all(strlength(evidenceId) > 0) && any(feedbackDecision);
 end
 
-function T = localBuildSchedulerTable(dlT, ulT, cfg)
-slotMs = localNumber(cfg, ["frame_timing.slot_duration_ms","numerology.slot_duration_ms"], 0.5);
-[dlGoodput, dlBits, dlTime] = localGoodputMbps(dlT, slotMs);
-[ulGoodput, ulBits, ulTime] = localGoodputMbps(ulT, slotMs);
-dlBLER = localBLER(dlT);
-ulBLER = localBLER(ulT);
-ok = localHeight(dlT) > 0 && localHeight(ulT) > 0 && isfinite(dlGoodput) && dlGoodput > 0 && ...
-    isfinite(ulGoodput) && ulGoodput > 0;
-T = table(localHeight(dlT), localHeight(ulT), dlBits, ulBits, dlTime, ulTime, dlGoodput, ulGoodput, ...
-    dlBLER, ulBLER, ok, "trial_crc_goodbits_airtime_columns", ...
-    'VariableNames', {'DL_GrantCount','UL_GrantCount','DL_GoodBits','UL_GoodBits','DL_Airtime_s','UL_Airtime_s', ...
-    'DL_Goodput_Mbps','UL_Goodput_Mbps','DL_BLER','UL_BLER','SchedulerKpiReconciliationOk','EvidenceSource'});
-end
-
 function T = localBuildChannelRFTable(cfoT, phaseNoiseT, timingT, iqT, paT, evmT, paprT, rfChainT)
 cfoOk = localAllFlag(cfoT, "CfoConfiguredAppliedOk");
 pnOk = localAllFlag(phaseNoiseT, "PhaseNoiseConfiguredAppliedOk");
@@ -1271,40 +1259,6 @@ if isempty(mask)
 else
     frac = mean(logical(mask(:)), "omitnan");
 end
-end
-
-function [goodput, bits, airtime] = localGoodputMbps(T, slotMs)
-bits = sum(localFiniteColumn(T, "GoodBits"), "omitnan");
-if ~isfinite(bits)
-    bits = 0;
-end
-ttiMs = localFiniteColumn(T, "AirInterfaceTTI_ms");
-if isempty(ttiMs)
-    airtime = max(localHeight(T), 0) * double(slotMs) / 1e3;
-else
-    airtime = sum(ttiMs, "omitnan") / 1e3;
-end
-if airtime > 0
-    goodput = bits / airtime / 1e6;
-else
-    goodput = NaN;
-end
-gpCol = localFiniteColumn(T, "Goodput_Mbps");
-if ~isempty(gpCol) && isfinite(localMean(gpCol)) && localMean(gpCol) > 0
-    goodput = localMean(gpCol);
-end
-end
-
-function bler = localBLER(T)
-bler = NaN;
-if ~(istable(T) && height(T) > 0 && localHasColumn(T, "CRCPass"))
-    return;
-end
-crc = localColumnAsLogical(T.CRCPass);
-if isempty(crc)
-    return;
-end
-bler = mean(~crc, "omitnan");
 end
 
 function tf = localAllFlag(T, name)

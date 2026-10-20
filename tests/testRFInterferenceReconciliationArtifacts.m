@@ -625,6 +625,10 @@ T = table( ...
     'PhaseNoiseConfigured','PhaseNoiseApplied','PAEnabled','PAApplied', ...
     'InterferenceMode','InterferenceContributorCount','InterferenceAggregatedRxPower_dBm', ...
     'InterferencePowerSource','FullInterfererChannelTruthUsed'});
+% Declared audit-fixture TB identities and actual fixture payload sizes;
+% production must never infer these from GoodBits or row ordinals.
+T.LogicalTBID = "declared-audit-tb-" + string(slot);
+T.TBSize_bits = repmat(12000,n,1);
 T.MCSTable = repmat("qam256_table2", n, 1);
 T.TargetCodeRate = repmat(567 / 1024, n, 1);
 if upper(string(direction)) == "DL"

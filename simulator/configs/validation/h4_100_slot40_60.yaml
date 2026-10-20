@@ -1,0 +1,55 @@
+# Validation policy, NOT a replacement PHY scenario. Keep the real 100-slot
+# horizon: truncating it at 60 would change future-grant admission near 60.
+schema: SixGRSlotWindow/v1
+research_class: study_item_candidate
+scenario_config: simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_adaptation.yaml
+scenario_id: h4_100_cdlc100_connected_impaired_40db_adaptation
+first_slot: 40
+last_slot: 60
+# Handoff coverage stays40--60. A report in the UL symbols of slot59
+# cannot control preceding DL symbols; slot60 is UL. Require the causal
+# CSI-to-data chain over the unchanged100-slot run, not before slot60.
+adaptation_last_slot: 100
+slot_numbering: one_based_absolute_carrier_slot
+max_layers: 4
+n_prb: 273
+expected_horizon: 100
+audit_directory: reports/validation/slot40_60
+# These are coverage requirements, not fabricated events or an attach deadline.
+# Late access / no UL / no received CSI makes this check incomplete, not PASS.
+minimum_rows:
+  pdsch: 1
+  pusch: 1
+  pdcch: 1
+  pucch: 1
+  csirs: 1
+  srs: 1
+  trs: 1
+  ul_timing: 1
+  admission: 1
+  feedback_grants: 1
+minimum_adaptation_rows:
+  received_csi: 1
+minimum_crc_passes:
+  pdsch: 1
+  pusch: 1
+minimum_decoded_pucch: 1
+minimum_csi_driven_dl_trials: 1
+inputs:
+  slots: {path: reports/csv/slot_trace.csv, slot: CanonicalSlot}
+  progress: {path: reports/csv/live_stage_status.csv, slot: null}
+  pdsch: {path: air_interface/csv/dl_pdsch_trials.csv, slot: Slot}
+  pusch: {path: air_interface/csv/ul_pusch_trials.csv, slot: Slot}
+  pdcch: {path: air_interface/csv/pdcch_trials.csv, slot: Slot}
+  pucch: {path: air_interface/csv/pucch_trials.csv, slot: Slot}
+  csirs: {path: air_interface/csv/csi_rs_trials.csv, slot: Slot}
+  srs: {path: air_interface/csv/srs_trials.csv, slot: Slot}
+  trs: {path: air_interface/csv/trs_trials.csv, slot: Slot}
+  received_csi: {path: control/csv/received_csi_reports.csv, slot: DeliveredSlot}
+  ul_timing: {path: packet_flow/csv/ul_scheduler_timing.csv, slot: ControlSlot}
+  admission: {path: packet_flow/csv/scheduler_admission_trace.csv, slot: ControlSlot}
+  feedback_grants: {path: packet_flow/csv/live_pucch_grants.csv, slot: Slot}
+  dl_grants: {path: packet_flow/csv/live_dl_scheduler_grants.csv, slot: Slot}
+  ul_grants: {path: packet_flow/csv/live_ul_scheduler_grants.csv, slot: Slot}
+  dl_no_decode: {path: control/csv/dl_no_decode_dispositions.csv, slot: SourceSlot}
+  ul_receive_only: {path: control/csv/rejected_ul_receive_only_audit.csv, slot: ScheduledSlot}

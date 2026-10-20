@@ -30,7 +30,7 @@ classdef TR38901Plus < handle
         StreetWidth_m (1,1) double = 20
         BuildingHeight_m (1,1) double = 5
 
-        % "nrPathLoss" or "ABG"
+        % "nrPathLoss", "ABG", or explicit "none" while disabled.
         PathlossModel (1,1) string = "nrPathLoss"
         PathlossExecutionBackend (1,1) string = ""
         PathlossTruthClassification (1,1) string = ""
@@ -511,6 +511,18 @@ classdef TR38901Plus < handle
             obj.PathlossModelSource = "";
             obj.PathlossComplianceStatus = "";
             obj.FallbackUsedForPathloss = false;
+
+            if model=="none" && ~obj.PathlossEnabled
+                % Normalized fixed-link LLS may explicitly omit large-scale
+                % pathloss. Do not require or manufacture an active model,
+                % and do not label zero configured loss as a 38.901 result.
+                % pathloss(...,'PathlossEnabled',true) still rejects none.
+                obj.PathlossExecutionBackend="disabled_by_configuration";
+                obj.PathlossTruthClassification="not_applicable_pathloss_disabled";
+                obj.PathlossModelSource="explicit_none_with_pathloss_disabled";
+                obj.PathlossComplianceStatus="not_applicable_pathloss_disabled";
+                return;
+            end
 
             if any(model == ["nrpathloss","nr"])
                 if localNrPathLossRuntimeAvailable() && localNrPathLossBandSupported(obj.Fc_Hz)

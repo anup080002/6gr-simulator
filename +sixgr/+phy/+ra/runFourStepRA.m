@@ -2083,7 +2083,7 @@ if knownReference
 elseif string(runtime.Mode)=="shared_physical_waveform_stream"
     physical=runtime.StageWaveforms.Msg1PhysicalExecution;
     ref=sixgr.truth.sharedArrivalTimingReference(physical.Planes, ...
-        physical.Prepared.PhysicalTiming.TransmitStartSample);
+        sixgr.phy.ra.preparedStageTransmitStartSample(physical.Prepared));
     % Match the detector's declared gNB-origin/filter-calibrated plane.
     % Zero geometric distance does not erase the received UE DL clock.
     trueOffset=ref.ExpectedArrivalOffset_samples-det.ObservationSearchGuard_samples- ...
@@ -2108,7 +2108,7 @@ function rx=localBindSharedArrivalScoring(rx,runtime,stage)
 if string(runtime.Mode)~="shared_physical_waveform_stream", return; end
 physical=runtime.StageWaveforms.(stage+"PhysicalExecution");
 ref=sixgr.truth.sharedArrivalTimingReference(physical.Planes, ...
-    physical.Prepared.PhysicalTiming.TransmitStartSample);
+    sixgr.phy.ra.preparedStageTransmitStartSample(physical.Prepared));
 rx.TimingScoringReferenceJSON=string(jsonencode(ref));
 rx.TimingScoringReferenceSource=ref.Source;
 rx.TimingScoringReferencePlane=ref.ReferencePlane;

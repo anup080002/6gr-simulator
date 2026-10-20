@@ -19,14 +19,9 @@ if isstruct(estimate)
         isequal(snapshot.GridShape,shape) && isequal(snapshot.PilotIndices,indices) && ...
         isequal(size(snapshot.PilotChannelValues),[numel(indices) shape(3)]), ...
         'sixgr:report:ChannelSnapshotMismatch','Compact observations must retain exact resource and branch identity.');
-    estimate=complex(nan(shape));
-    [k,l,p]=ind2sub(shape([1 2 4]),double(indices(:)));
-    for r=1:shape(3)
-        estimate(sub2ind(shape,k,l,repmat(r,size(k)),p))=snapshot.PilotChannelValues(:,r);
-    end
 end
-score=sixgr.phy.srs.pilotChannelNMSE(estimate,reference,indices);
-K=size(estimate,1); L=size(estimate,2); R=size(estimate,3); P=size(estimate,4);
+[score,h,truth]=sixgr.phy.srs.pilotChannelNMSE(estimate,reference,indices);
+K=size(reference,1); L=size(reference,2); R=size(reference,3); P=size(reference,4);
 [k,l,p]=ind2sub([K L P],double(indices(:)));
 n=numel(k); count=n*R;
 subcarrier=repmat(k-1,R,1); symbol=repmat(l-1,R,1);
@@ -34,8 +29,9 @@ port=repmat(p-1,R,1);
 % REPELEM of a scalar yields a row even though multi-branch input is a
 % column. Keep the singleton receive-branch case on the same resource axis.
 branch=reshape(repelem((0:R-1).',n),[],1);
-at=sub2ind([K L R P],subcarrier+1,symbol+1,branch+1,port+1);
-h=double(estimate(at)); truth=double(reference(at));
+% The scorer returns the exact same column-major pilot/branch population.
+% Reuse it without expanding a compact capture or sampling the grids twice.
+h=h(:); truth=truth(:);
 T=table(repmat(string(context.Channel),count,1), ...
     repmat(double(context.Slot),count,1),repmat(double(context.UEIndex),count,1), ...
     repmat(double(context.ConfiguredSNR_dB),count,1),subcarrier,symbol,branch,port, ...

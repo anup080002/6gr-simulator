@@ -1,0 +1,11 @@
+schema_version: 1
+required_fields: [schema_version, profile_id, research_class, stage, scope, scenario_path, scenario_seed_paths, episodes_per_case, execution_batch_episodes, seed_base, seed_stride, noise_seed_offset, guard_samples, family_alpha, event_error_limit, development_seeds, development_history_complete, timing_boundary, cases]
+case_fields: [id, signal_present, ue_index, serving_cell, absolute_slot0, transmitter]
+transmitter_fields: [dci_format, fields]
+stages: [development, frozen_qualification]
+research_classes: [optional_research_experiment]
+scopes: [installed_single_occasion_independent_reset_not_continuous_runtime]
+timing_boundaries: [configured_nominal_radio_occasion_no_measured_alignment]
+decision_design: fixed_sample_bonferroni_two_direction
+primary_h0_event: FalseCRCEpisode
+primary_h1_event: MissedPayloadEpisode

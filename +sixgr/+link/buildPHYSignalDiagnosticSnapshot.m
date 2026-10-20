@@ -326,10 +326,22 @@ rows.GridKind(:) = "receiver_channel_estimate_frequency_slice";
 rows.GridSHA256(:) = localComplexTensorHash(hSlice);
 sourceT = [sourceT; rows]; %#ok<AGROW>
 
+deferredGrid=struct();
 if logical(sixgr.util.structGet(cfg, ...
         "outputs.phySignalDiagnosticFullChannelGrid", false))
-    fullGridRows = localFullChannelGridRows(meta, hest);
-    sourceT = [sourceT; fullGridRows]; %#ok<AGROW>
+    % A 273-PRB 64-RX/four-port estimate has 11,741,184 values. Expanding
+    % each into the heterogeneous 100+ column table exhausts memory before
+    % the first UL trial can be published. Keep every value, but defer only
+    % its tabular expansion to the bounded canonical CSV writer. This limit
+    % changes representation, not capture population or PHY configuration.
+    if numel(hest)>65536
+        template=localBaseRows(meta,"channel_estimate_grid","receiver_hest_exact_tensor",1);
+        deferredGrid=sixgr.link.PHYDiagnosticChannelGrid.pack( ...
+            hest,template,localComplexTensorHash(hest));
+    else
+        fullGridRows = localFullChannelGridRows(meta, hest);
+        sourceT = [sourceT; fullGridRows]; %#ok<AGROW>
+    end
 
     % Spatial correlation is calculated from that same measured Hest
     % tensor.  No configured correlation matrix is substituted.
@@ -387,6 +399,9 @@ snapshot.Direction = direction;
 snapshot.SnapshotID = meta.SnapshotID;
 snapshot.Metadata = meta;
 snapshot.SourceTable = sourceT;
+snapshot.DeferredChannelGrid=deferredGrid;
+snapshot.SourceTableComplete=isempty(fieldnames(deferredGrid));
+snapshot.SourceRowCount=height(sourceT)+double(sixgr.util.structGet(deferredGrid,'RowCount',0));
 end
 
 function snapshot=localAugmentExecutedChannelEvidence(snapshot,direction,context)
@@ -429,6 +444,7 @@ if string(sixgr.util.structGet(context,'ExecutedChannelEvidenceRepresentation',"
     snapshot.Metadata.ExecutedChannelEvidenceRepresentation=string(context.ExecutedChannelEvidenceRepresentation);
     snapshot.Metadata.ExecutedPathGainStatus="not_in_effective_link_waveform_representation";
     snapshot.SourceTable=sourceT;
+    snapshot=localAugmentDeferredGrid(snapshot,context,direction);
     return;
 end
 assert(truePathStatus=="available", ...
@@ -490,6 +506,25 @@ sourceT=[sourceT;localExecutedRuntimeAngleRows(meta,context)]; %#ok<AGROW>
 sourceT=[sourceT;timeRows;dopplerRows]; %#ok<AGROW>
 sourceT=localBindExecutedChannelProvenance(sourceT,context,direction);
 snapshot.SourceTable=sourceT;
+snapshot=localAugmentDeferredGrid(snapshot,context,direction);
+end
+
+function snapshot=localAugmentDeferredGrid(snapshot,context,direction)
+grid=sixgr.util.structGet(snapshot,'DeferredChannelGrid',struct());
+if ~isempty(fieldnames(grid))
+    T=localWindowMetadataColumns(grid.Template,snapshot.Metadata);
+    owned=intersect({'ExecutedChannelEvidenceRepresentation','ExecutedPathGainStatus'},T.Properties.VariableNames);
+    T(:,owned)=[];
+    T=localBindExecutedChannelProvenance(T,context,direction);
+    for field=["ExecutedChannelEvidenceRepresentation","ExecutedPathGainStatus"]
+        if ismember(field,string(snapshot.SourceTable.Properties.VariableNames))
+            T.(field)=snapshot.SourceTable.(field)(1,:);
+        end
+    end
+    grid.Template=T; snapshot.DeferredChannelGrid=grid;
+end
+snapshot.SourceTableComplete=isempty(fieldnames(grid));
+snapshot.SourceRowCount=height(snapshot.SourceTable)+double(sixgr.util.structGet(grid,'RowCount',0));
 end
 
 function localValidateExecutedWaveformEvidence(context)

@@ -146,6 +146,15 @@ assert(logical(grantRow.GrantScheduledFlag(1)) && logical(grantRow.GrantExecuted
     logical(grantRow.StateChangeApplied(1)) == logical(grantRow.PUCCHDecodeOk(1)), ...
     "Canonical PUCCH grant rows must disclose scheduled/executed state and the runtime state consumer honestly.");
 
+% Exercise the production issue-registry classifier on the actual written
+% runtime schemas, not just hand-built rows with an ID column.
+disposition=sixgr.truth.classifyPUCCHGrantDisposition(grants,trials);
+assert(disposition.StandaloneObservedCount==1 && disposition.UnresolvedCount==1, ...
+    'The actual observed UE and the unexecuted UE must remain distinct.');
+wrong=trials; wrong.RNTI(:)=double(wrong.RNTI)+1;
+disposition=sixgr.truth.classifyPUCCHGrantDisposition(grants,wrong);
+assert(disposition.StandaloneObservedCount==0 && disposition.UnresolvedCount==2, ...
+    'An actual exported receiver row with contradictory RNTI must not close a grant.');
 ok = true;
 end
 

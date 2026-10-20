@@ -18,7 +18,10 @@ CAPTURE = "air_interface/csv/ul_constellation_samples.csv"
 CHART = "post-equalization constellation"
 
 
-def test_retained_receiver_capture_publishes_constellation_with_exact_identity(tmp_path):
+@pytest.mark.parametrize("file_payload", [False, True])
+def test_retained_receiver_capture_publishes_constellation_with_exact_identity(tmp_path, monkeypatch, file_payload):
+    if file_payload:
+        monkeypatch.setattr(live.materializer, "CSV_MEMORY_LIMIT_BYTES", 1024)
     before = {str(p.relative_to(SOURCE)): hashlib.sha256(p.read_bytes()).hexdigest()
               for p in SOURCE.rglob("*") if p.is_file()}
     result = live.publish(tmp_path, source_run_folder=SOURCE)

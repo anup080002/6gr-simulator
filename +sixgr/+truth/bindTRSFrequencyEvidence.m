@@ -9,6 +9,19 @@ row.FrequencyUnambiguousHalfRange_Hz=double(sixgr.util.structGet(out,'FrequencyU
 row.InjectedCFO_Hz=double(sixgr.util.structGet(out,'InjectedCFO_Hz',NaN));
 row.TrueCFO_Hz=NaN;
 row.ResidualCFO_PostCorrection_Hz=NaN; % No independent post-correction residual estimator here.
+% Keep the oscillator-only/scoring field above unavailable. Publish the
+% actual post-correction common-frequency estimator in its distinct field.
+defaults=sixgr.phy.trs.measureTRSResidualFrequency();
+for field=string(fieldnames(defaults)).'
+    row.(field)=sixgr.util.structGet(out,field,defaults.(field));
+end
+if row.ResidualCFOEstimateAvailable
+    assert(isfinite(row.ResidualCFO_EstimatedPostCorrection_Hz) && ...
+        row.ResidualFrequencyUsesDifferentObservable && ...
+        row.ResidualCFOEstimateRole=="received_common_frequency_not_separated_oscillator" && ...
+        strlength(row.TRSResidualFrequencyEvidenceJSON)>0, ...
+        'sixgr:truth:TRSResidualFrequencyAuthority','Retain the independent observable and its common-frequency domain.');
+end
 row.CFOCorrectionEnabled=logical(sixgr.util.structGet(out,'CFOCorrectionEnabled',false));
 row.CFOCorrectionApplied=logical(sixgr.util.structGet(out,'CFOCorrectionApplied',false));
 row.CFOCorrectionApplied_Hz=double(sixgr.util.structGet(out,'CFOCorrectionApplied_Hz',NaN));

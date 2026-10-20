@@ -3,6 +3,7 @@ import csv
 import hashlib
 import io
 import sys
+import tracemalloc
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,68 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'apps'))
 import lls_contract_materializer as m
 import lls_radio_measurement_plots as radio
+
+
+def trs_fixture(error=.25):
+    return dict(Slot='7', UEIndex='1', CellID='1', Direction='DL', SweepPointIndex='1',
+        ConfiguredSNR_dB='40', NMSEScoringAvailable='1',
+        NMSEReferenceSource='same_executed_desired_link_waveform_post_decode_TRS_pilot_ratio',
+        ChannelNMSEReferencePlane='effective_TRS_port_on_recorded_RX_clock',
+        ChannelNMSEReferenceUsedByReceiver='0', ChannelNMSEGainOrPhaseFitted='0',
+        ChannelNMSEErrorEnergy=str(error), ChannelNMSEReferenceEnergy='1',
+        ChannelNMSEComparedComplexValues='4', ChannelNMSEPilotResourceCount='1',
+        NMSE_dB=str(10*radio.math.log10(error)) if error else '-Inf',
+        ChannelNMSEQualificationMode='independent_complex_pilot_resources_no_gain_or_phase_fit',
+        TRSRuntimeEvidenceUsable='1', StrictOk='0')
+
+
+def trs_chart(rows):
+    out=io.StringIO(); writer=csv.DictWriter(out,fieldnames=rows[0])
+    writer.writeheader(); writer.writerows(rows)
+    payload=out.getvalue().encode()
+    return radio._trs_nmse_timeline(m,radio.TRS_NMSE_CHART,
+        {radio.TRS_TRIALS:dict(artifact_id=1)},lambda _:payload,1)
+
+
+def test_trs_timeline_retains_all_eight_sweep_points_and_qualification():
+    rows=[dict(trs_fixture(),SweepPointIndex=str(i),ConfiguredSNR_dB=str(snr))
+          for i,snr in enumerate([40,30,20,10,0,-10,-20,-30],1)]
+    result=trs_chart(rows)
+    exported=list(csv.DictReader(io.StringIO(result['csv_bytes'].decode())))
+    assert len(exported)==8
+    assert {int(r['sweep_point_index']) for r in exported}==set(range(1,9))
+    assert all(r['scheduler_usable']=='True' and r['strict_qualification_pass']=='False' for r in exported)
+    assert all(float(r['nmse_linear'])==.25 and int(r['compared_complex_values'])==4 for r in exported)
+    assert radio.TRS_TRIALS in radio.SOURCE_PATHS
+    assert radio.TRS_NMSE_CHART in radio.CHARTS
+    out=io.StringIO(); writer=csv.DictWriter(out,fieldnames=rows[0]); writer.writeheader(); writer.writerows(rows)
+    dispatched=radio.radio_measurement_chart(radio.TRS_NMSE_CHART,
+        {radio.TRS_TRIALS:dict(artifact_id=1)},lambda _:out.getvalue().encode(),1)
+    assert dispatched['csv_bytes']==result['csv_bytes']
+
+
+@pytest.mark.parametrize('field,value',[
+    ('NMSE_dB','-50'),('ChannelNMSEComparedComplexValues','0'),
+    ('ChannelNMSEPilotResourceCount','0'),('ChannelNMSEErrorEnergy','-1'),
+    ('ChannelNMSEReferenceEnergy','0'),('ChannelNMSEReferenceUsedByReceiver','1'),
+    ('ChannelNMSEGainOrPhaseFitted','1'),('NMSEReferenceSource','synthetic_reference'),
+    ('ChannelNMSEReferencePlane',''),('Slot','NaN'),
+])
+def test_trs_timeline_rejects_contradictory_scoring(field,value):
+    with pytest.raises(ValueError):
+        trs_chart([dict(trs_fixture(),**{field:value})])
+
+
+def test_trs_timeline_does_not_merge_duplicates_or_invent_zero_floor():
+    row=trs_fixture()
+    with pytest.raises(ValueError,match='Duplicate TRS'):
+        trs_chart([row,row])
+    result=trs_chart([trs_fixture(0)])
+    assert b'Channel NMSE (linear ratio)' in result['img_bytes']
+    exported=next(csv.DictReader(io.StringIO(result['csv_bytes'].decode())))
+    assert float(exported['nmse_db'])==-radio.math.inf and float(exported['nmse_linear'])==0
+    missing=trs_chart([dict(row,NMSEScoringAvailable='0')])
+    assert missing['source_row_count']==0
 
 
 def fixture(error=0.5):
@@ -125,3 +188,145 @@ def test_csirs_joint_points_reconcile_all_resources_not_pilot_residual():
     trials[0]['NMSE_dB']='-99'
     with pytest.raises(ValueError,match='independent pilot energies'):
         radio._scored_data_channel_nmse(m,trials[0],existing,payload.__getitem__)
+
+
+def test_nmse_parses_the_same_bytes_it_hashes():
+    row, existing, payload = fixture()
+    original = payload[1]
+    # A different Hest with identical error/reference energies must not be
+    # substituted after hash validation. These are labelled numeric fixtures.
+    changed = original.replace(b'1.5,0,1,0,0.25', b'0.5,0,1,0,0.25')
+    assert changed != original
+    calls = []
+
+    def fetch(artifact_id):
+        calls.append(artifact_id)
+        return original if len(calls) == 1 else changed
+
+    assert radio._scored_data_channel_nmse(m, row, existing, fetch) == float(row['NMSE_dB'])
+    assert calls == [1], 'Hashing and parsing must share one immutable read.'
+
+
+def test_nmse_uses_local_stream_and_closes_it(tmp_path):
+    row, existing, payload = fixture()
+    path = tmp_path / 'resources.csv'
+    path.write_bytes(payload[1])
+    opened = []
+
+    def fetch(_):
+        raise AssertionError('NMSE must not load the whole local resource CSV into bytes.')
+
+    def opener(_):
+        stream = path.open('rb')
+        opened.append(stream)
+        return stream
+
+    fetch.open_artifact_binary = opener
+    assert radio._scored_data_channel_nmse(m, row, existing, fetch) == float(row['NMSE_dB'])
+    assert len(opened) == 1 and opened[0].closed
+
+    row['ChannelEstimateResourcesCSVSHA256'] = '0' * 64
+    with pytest.raises(ValueError, match='resource hash mismatch'):
+        radio._scored_data_channel_nmse(m, row, existing, fetch)
+    assert len(opened) == 2 and all(stream.closed for stream in opened)
+
+
+def test_large_nmse_stream_keeps_exact_population_and_bounded_memory(tmp_path):
+    row, existing, payload = fixture()
+    sample = next(csv.DictReader(io.StringIO(payload[1].decode())))
+    path = tmp_path / 'wideband_channel.csv'
+    count = 60_000
+    with path.open('w', encoding='utf-8', newline='') as output:
+        writer = csv.DictWriter(output, fieldnames=sample)
+        writer.writeheader()
+        for index in range(count):
+            writer.writerow(dict(sample, SubcarrierIndex0=index % 3276,
+                SymbolIndex0=(index // 3276) % 14, RxBranchIndex0=index // (3276*14)))
+    row['ChannelEstimateComparedValues'] = str(count)
+    row['ChannelEstimateResourcesCSVSHA256'] = hashlib.sha256(path.read_bytes()).hexdigest()
+    opened = []
+
+    def fetch(_):
+        raise AssertionError('The wideband NMSE source must be streamed.')
+
+    def opener(_):
+        stream = path.open('rb')
+        opened.append(stream)
+        return stream
+
+    fetch.open_artifact_binary = opener
+    tracemalloc.start()
+    try:
+        result = radio._scored_data_channel_nmse(m, row, existing, fetch)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert result == float(row['NMSE_dB'])
+    assert peak < 8*1024*1024, f'Channel rows retained in Python: peak={peak}'
+    assert all(stream.closed for stream in opened)
+    print(f'CHANNEL_NMSE_STREAM_MEMORY rows={count} bytes={path.stat().st_size} python_peak_bytes={peak}')
+
+    # Retain count and fresh hash for a late duplicate: it must fail the
+    # exact coordinate check, not merely an old digest or population count.
+    with path.open('a', encoding='utf-8', newline='') as output:
+        csv.DictWriter(output, fieldnames=sample).writerow(dict(sample,
+            SubcarrierIndex0=0, SymbolIndex0=0, RxBranchIndex0=0))
+    row['ChannelEstimateComparedValues'] = str(count + 1)
+    row['ChannelEstimateResourcesCSVSHA256'] = hashlib.sha256(path.read_bytes()).hexdigest()
+    with pytest.raises(ValueError, match='repeated channel NMSE resource coordinate'):
+        radio._scored_data_channel_nmse(m, row, existing, fetch)
+    assert all(stream.closed for stream in opened)
+
+
+def test_channel_hash_covers_short_reads_bom_and_long_quoted_fields():
+    row, existing, payload = fixture()
+    sample = next(csv.DictReader(io.StringIO(payload[1].decode())))
+    sample['AuditDetail'] = 'x' * 200_000 + '\nquoted,tail'
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=sample)
+    writer.writeheader(); writer.writerow(sample)
+    data = b'\xef\xbb\xbf' + output.getvalue().encode()
+    row['ChannelEstimateResourcesCSVSHA256'] = hashlib.sha256(data).hexdigest()
+    opened = []
+
+    class ShortReads(io.BytesIO):
+        def read(self, size=-1):
+            return super().read(min(127, size) if size >= 0 else 127)
+
+    def fetch(_):
+        raise AssertionError('Stream is available.')
+
+    def opener(_):
+        stream = ShortReads(data)
+        opened.append(stream)
+        return stream
+
+    fetch.open_artifact_binary = opener
+    previous_limit = csv.field_size_limit()
+    assert radio._scored_data_channel_nmse(m, row, existing, fetch) == float(row['NMSE_dB'])
+    assert csv.field_size_limit() == previous_limit
+    assert all(stream.closed for stream in opened)
+
+
+@pytest.mark.parametrize('mutation', ['duplicate_header', 'extra_column', 'missing_column', 'invalid_utf8'])
+def test_malformed_channel_stream_is_rejected_and_closed(mutation):
+    row, existing, payload = fixture()
+    data = payload[1]
+    header, values = data.splitlines()
+    if mutation == 'duplicate_header':
+        data = header + b',HReal\n' + values + b',1.5\n'
+    elif mutation == 'extra_column':
+        data = header + b'\n' + values + b',unowned\n'
+    elif mutation == 'missing_column':
+        data = header + b'\n' + values.rsplit(b',', 1)[0] + b'\n'
+    else:
+        data = data.replace(b'executed_channel', b'executed_chan\xffnel')
+    row['ChannelEstimateResourcesCSVSHA256'] = hashlib.sha256(data).hexdigest()
+    stream = io.BytesIO(data)
+    def fetch(_):
+        raise AssertionError('Stream is available.')
+    fetch.open_artifact_binary = lambda _: stream
+    previous_limit = csv.field_size_limit()
+    with pytest.raises(ValueError):
+        radio._scored_data_channel_nmse(m, row, existing, fetch)
+    assert stream.closed and csv.field_size_limit() == previous_limit

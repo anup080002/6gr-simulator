@@ -37,6 +37,9 @@ def batch_command(scenario, results, tag, log_dir):
         "'Computer',computer,'Toolboxes',ver); "
         f"sixgr.util.jsonWrite({literal(log_dir / 'matlab_environment.json')},env); "
         f"cfg=sixgr.lls6g.config.loadScenarioConfig({literal(scenario)}); "
+        f"resolvedRoot=sixgr.report.resolveResultsRoot({literal(results)}); "
+        f"assert(strcmpi(resolvedRoot,{literal(results)}),'sixgr:server:OutputRootMismatch',"
+        "'Requested results root was redirected; no scenario started.'); "
         "assert(strlength(string(cfg.get('run_control.runtime_checkpoint_resume_from','')))==0,"
         "'sixgr:server:FreshOnly','Use reviewed same-host checkpoint instructions for resume.'); "
         f"target=fullfile({literal(results)},'lls',char(cfg.ScenarioID),{literal(tag)}); "
@@ -101,6 +104,7 @@ def execute(args):
     print(f"Revision: {revision}\nLogs: {log_dir}\nResults root: {results}", flush=True)
     environment = os.environ.copy()
     environment.update(SIXGR_OUTPUT_BACKEND_OVERRIDE="filesystem",
+                       SIXGR_RESULTS_ROOT=str(results),
                        SIXGR_WEBGUI_PYTHON=sys.executable, PYTHON_EXE=sys.executable)
     exit_code = 1
     try:
