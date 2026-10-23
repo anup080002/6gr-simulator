@@ -850,15 +850,14 @@ meta.RNTI = localFirstFiniteScalar( ...
     sixgr.util.structGet(cfg, "phy.rnti", NaN));
 meta.Frame = localFirstFiniteScalar(sixgr.util.structGet(context, "Frame", NaN));
 meta.Slot = localFirstFiniteScalar(sixgr.util.structGet(context, "Slot", NaN));
-meta.SFN = localFirstFiniteScalar(sixgr.util.structGet(context, "SFN", meta.Frame));
 meta.CellID = localFirstFiniteScalar( ...
     sixgr.util.structGet(context, "CellID", NaN), ...
-    sixgr.util.structGet(tx, "Carrier.NCellID", NaN), ...
+    localExecutedCarrierProperty(tx,"NCellID"), ...
     sixgr.util.structGet(cfg, "phy.nCellId", NaN), ...
     sixgr.util.structGet(cfg, "carrier.nCellId", NaN));
 meta.SCS_kHz = localFirstFiniteScalar( ...
-    sixgr.util.structGet(tx, "Carrier.SubcarrierSpacing", NaN), ...
-    sixgr.util.structGet(tx, "Carrier.SubcarrierSpacing_kHz", NaN), ...
+    localExecutedCarrierProperty(tx,"SubcarrierSpacing"), ...
+    localExecutedCarrierProperty(tx,"SubcarrierSpacing_kHz"), ...
     sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", NaN), ...
     sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing_kHz", NaN), ...
     sixgr.util.structGet(cfg, "channel.subcarrierSpacing_kHz", NaN), ...
@@ -866,7 +865,7 @@ meta.SCS_kHz = localFirstFiniteScalar( ...
     sixgr.util.structGet(cfg, "frame.scs_kHz", NaN), ...
     sixgr.util.structGet(cfg, "carrier.scs_kHz", NaN));
 meta.NStartGrid = localFirstFiniteScalar( ...
-    sixgr.util.structGet(tx, "Carrier.NStartGrid", NaN), ...
+    localExecutedCarrierProperty(tx,"NStartGrid"), ...
     sixgr.util.structGet(cfg, "carrier.nStartGrid", 0));
 meta.CarrierFrequency_Hz = localFirstFiniteScalar( ...
     sixgr.util.structGet(context, "CarrierFrequency_Hz", NaN), ...
@@ -884,11 +883,7 @@ if isfinite(meta.SCS_kHz) && meta.SCS_kHz > 0
 else
     meta.SlotsPerFrame = NaN;
 end
-if isfinite(meta.SFN) && isfinite(meta.Slot) && isfinite(meta.SlotsPerFrame)
-    meta.AbsoluteSlot = meta.SFN .* meta.SlotsPerFrame + meta.Slot;
-else
-    meta.AbsoluteSlot = NaN;
-end
+meta = localClockMetadata(meta, tx, context);
 meta.TBId = string(sixgr.util.structGet(context, "TBId", ""));
 meta.LayerIndex = localFirstFiniteScalar(sixgr.util.structGet(context, "LayerIndex", 1));
 meta.Layers = localFirstFiniteScalar(sixgr.util.structGet(context, "Layers", 1));
@@ -932,6 +927,114 @@ meta.NAReason = "";
 meta.SnapshotID = localSnapshotID(meta, cfg);
 end
 
+function meta = localClockMetadata(meta, tx, context)
+% Frame/Slot can identify independent trials. They are never radio-clock
+% authority. In particular, wrapped SFN cannot recover an absolute epoch.
+meta.CarrierNFrame = localClockIndex(tx,"Carrier.NFrame");
+meta.CarrierNSlot = localClockIndex(tx,"Carrier.NSlot");
+for name = ["CarrierNFrame","CarrierNSlot"]
+    declared = localClockIndex(context,name);
+    if isfinite(declared)
+        assert(isfinite(meta.(name)) && declared == meta.(name), ...
+            'sixgr:link:PHYDiagnosticClockConflict', ...
+            'Diagnostic %s differs from the executed carrier.',name);
+    end
+end
+meta.SFN = localClockIndex(context,"SFN");
+meta.SFNSource = string(sixgr.util.structGet(context,"SFNSource",""));
+assert(~isfinite(meta.SFN) || meta.SFN < 1024, ...
+    'sixgr:link:PHYDiagnosticClockInvalid','SFN must be in [0,1023].');
+if isfinite(meta.CarrierNFrame)
+    executedSFN = mod(meta.CarrierNFrame,1024);
+    assert(~isfinite(meta.SFN) || meta.SFN == executedSFN, ...
+        'sixgr:link:PHYDiagnosticClockConflict', ...
+        'Supplied SFN differs from executed carrier NFrame modulo 1024.');
+    meta.SFN = executedSFN;
+    meta.SFNSource = "executed_nrCarrierConfig_NFrame_mod1024";
+elseif isfinite(meta.SFN)
+    localRequireClockSource(meta.SFNSource,"SFNSource");
+else
+    meta.SFNSource = "";
+end
+meta.AbsoluteSlot = localClockIndex(context,"AbsoluteSlot");
+meta.RuntimeAbsoluteSlotIndex0 = localClockIndex(context,"RuntimeAbsoluteSlotIndex0");
+meta.AbsoluteSlotConvention = string(sixgr.util.structGet(context,"AbsoluteSlotConvention",""));
+meta.AbsoluteSlotSource = string(sixgr.util.structGet(context,"AbsoluteSlotSource",""));
+meta.SlotConvention = string(sixgr.util.structGet(context,"SlotConvention",""));
+assert(isscalar(meta.SlotConvention) && ~ismissing(meta.SlotConvention), ...
+    'sixgr:link:PHYDiagnosticClockInvalid','SlotConvention must be a scalar string.');
+if ~isfinite(meta.AbsoluteSlot) && isfinite(meta.RuntimeAbsoluteSlotIndex0)
+    meta.AbsoluteSlot=meta.RuntimeAbsoluteSlotIndex0;
+    meta.AbsoluteSlotConvention="zero_based_absolute_slot";
+    meta.AbsoluteSlotSource="bound_runtime_AbsoluteSlotIndex0";
+end
+if isfinite(meta.AbsoluteSlot)
+    assert(isscalar(meta.AbsoluteSlotConvention) && ...
+        meta.AbsoluteSlotConvention == "zero_based_absolute_slot", ...
+        'sixgr:link:PHYDiagnosticClockInvalid', ...
+        'An absolute diagnostic slot requires an explicit zero-based convention.');
+    localRequireClockSource(meta.AbsoluteSlotSource,"AbsoluteSlotSource");
+    assert(~isfinite(meta.RuntimeAbsoluteSlotIndex0) || ...
+        meta.AbsoluteSlot == meta.RuntimeAbsoluteSlotIndex0, ...
+        'sixgr:link:PHYDiagnosticClockConflict', ...
+        'AbsoluteSlot differs from the bound runtime absolute slot index.');
+    if meta.SlotConvention == "one_based_absolute_slot"
+        assert(isfinite(meta.Slot) && meta.Slot == meta.AbsoluteSlot+1, ...
+            'sixgr:link:PHYDiagnosticClockConflict', ...
+            'One-based report Slot differs from explicit zero-based AbsoluteSlot.');
+    end
+end
+% The executed carrier frame may be wrapped. Compare only the radio frame
+% modulo 1024; the explicit runtime index, not SFN, supplies the epoch.
+absolute0 = meta.RuntimeAbsoluteSlotIndex0;
+if ~isfinite(absolute0), absolute0 = meta.AbsoluteSlot; end
+if isfinite(absolute0) && isfinite(meta.SlotsPerFrame)
+    if isfinite(meta.CarrierNSlot)
+        assert(mod(meta.CarrierNSlot,meta.SlotsPerFrame) == mod(absolute0,meta.SlotsPerFrame), ...
+            'sixgr:link:PHYDiagnosticClockConflict', ...
+            'Absolute slot and executed carrier slot have inconsistent origins.');
+    end
+    if isfinite(meta.SFN)
+        assert(meta.SFN == mod(floor(absolute0/meta.SlotsPerFrame),1024), ...
+            'sixgr:link:PHYDiagnosticClockConflict', ...
+            'Absolute slot and executed SFN identify different radio frames.');
+    end
+end
+end
+
+function value = localClockIndex(owner,path)
+if startsWith(string(path),"Carrier.")
+    value=localExecutedCarrierProperty(owner,extractAfter(string(path),"Carrier."));
+else
+    value = sixgr.util.structGet(owner,path,NaN);
+end
+if isempty(value), value=NaN; return; end
+assert(isnumeric(value) && isreal(value) && isscalar(value) && ...
+    (isnan(value) || (isfinite(value) && value>=0 && value==fix(value))), ...
+    'sixgr:link:PHYDiagnosticClockInvalid', ...
+    'Clock field %s must be an explicit nonnegative integer or unavailable NaN.',path);
+value=double(value);
+end
+
+function value = localExecutedCarrierProperty(tx,name)
+% structGet deliberately traverses only structs. Native nrCarrierConfig is
+% the production TX authority and must be read through its actual property,
+% not silently replaced with configuration/context copies.
+carrier=sixgr.util.structGet(tx,"Carrier",[]);
+value=NaN;
+if isstruct(carrier) && isscalar(carrier) && isfield(carrier,name)
+    value=carrier.(name);
+elseif isa(carrier,'nrCarrierConfig') && isscalar(carrier) && isprop(carrier,name)
+    value=carrier.(name);
+end
+end
+
+function localRequireClockSource(value,name)
+assert(isscalar(value) && ~ismissing(value) && strlength(strtrim(value))>0, ...
+    'sixgr:link:PHYDiagnosticClockInvalid', ...
+    'Clock field %s requires explicit provenance.',name);
+end
+
 function id = localSnapshotID(meta, cfg)
 runId = string(sixgr.util.structGet(cfg, "run.runId", ...
     sixgr.util.structGet(cfg, "run.runTag", ...
@@ -959,6 +1062,14 @@ T.Frame = repmat(double(meta.Frame), n, 1);
 T.Slot = repmat(double(meta.Slot), n, 1);
 T.SFN = repmat(double(meta.SFN), n, 1);
 T.AbsoluteSlot = repmat(double(meta.AbsoluteSlot), n, 1);
+% Legacy snapshot augmentation retains its original schema and clock
+% receipt; it must not infer new clock provenance from the appended channel.
+for name=["CarrierNFrame","CarrierNSlot","RuntimeAbsoluteSlotIndex0"]
+    if isfield(meta,name), T.(name)=repmat(double(meta.(name)),n,1); end
+end
+for name=["SFNSource","SlotConvention","AbsoluteSlotConvention","AbsoluteSlotSource"]
+    if isfield(meta,name), T.(name)=repmat(string(meta.(name)),n,1); end
+end
 T.CellID = repmat(double(meta.CellID), n, 1);
 T.SCS_kHz = repmat(double(meta.SCS_kHz), n, 1);
 T.NStartGrid = repmat(double(meta.NStartGrid), n, 1);
@@ -1081,7 +1192,7 @@ T.TXNonzeroSampleObserved=repmat(logical(sixgr.util.structGet( ...
 end
 
 function T=localPostChannelSampleRows(meta,context,sampleIndex)
-T=localEmptySourceTable();
+T=localBaseRows(meta,"","",0);
 wave=localFirstWaveformColumn(sixgr.util.structGet(context,"PostChannelWaveform",[]));
 if isempty(wave), return; end
 origin=double(sixgr.util.structGet(context,"PostChannelWaveformStartSample",1));
@@ -1286,7 +1397,7 @@ T.GridSHA256(:) = localComplexTensorHash(txWave);
 end
 
 function T = localExecutedRuntimeAngleRows(meta, context)
-T = localEmptySourceTable();
+T = localBaseRows(meta,"","",0);
 if ~logical(sixgr.util.structGet(context, ...
         "RuntimeChannelAngleEvidenceAvailable", false))
     return;
@@ -1357,8 +1468,8 @@ T.GridSHA256(:) = string(sixgr.util.structGet(context, ...
 end
 
 function [timeRows, dopplerRows] = localExecutedTimeVaryingChannelRows(meta, context)
-timeRows = localEmptySourceTable();
-dopplerRows = localEmptySourceTable();
+timeRows = localBaseRows(meta,"","",0);
+dopplerRows = localBaseRows(meta,"","",0);
 pathGains = sixgr.util.structGet(context, "RuntimeChannelPathGains", []);
 sampleTimes = double(sixgr.util.structGet(context, ...
     "RuntimeChannelPathGainSampleTimes_s", []));
@@ -1695,6 +1806,8 @@ function T = localEmptySourceTable()
 meta = struct( ...
     "SnapshotID", "", "Direction", "", "UEIndex", NaN, "UEIdentitySource", "", "RNTI", NaN, ...
     "Frame", NaN, "Slot", NaN, "SFN", NaN, "AbsoluteSlot", NaN, "CellID", NaN, ...
+    "CarrierNFrame", NaN, "CarrierNSlot", NaN, "RuntimeAbsoluteSlotIndex0", NaN, ...
+    "SFNSource", "", "SlotConvention", "", "AbsoluteSlotConvention", "", "AbsoluteSlotSource", "", ...
     "TBId", "", "LayerIndex", NaN, "Layers", NaN, ...
     "RxAntennaIndex", NaN, "TxPortIndex", NaN, "ChannelModel", "", ...
     "DelayProfile", "", "ChannelEstimateSource", "", "ChannelEstimateMethod", "", ...

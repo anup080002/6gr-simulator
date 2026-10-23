@@ -27,8 +27,24 @@ after UL quality regression passes (v146, terminal exit 0). The retained v141
 physical run has one rank-4/MCS-28 PUSCH CRC success, then a later CSI refresh
 failure. Its repaired full transition sequence has **not** been rerun.
 
-**Not a release qualification:** the old embedded-CSI calibration harness still
-lacks the explicit selected precoder required by strict multi-port operation.
+The diagnostic clock follow-up now binds executed carrier and absolute-runtime
+clocks separately from trial counters in both DL and UL runners. The snapshot
+builder reads actual native `nrCarrierConfig` properties instead of attempting
+struct-only traversal. The standalone embedded-CSI fixture supplies the normal
+runtime root, antenna context and explicit native selected-precoder digest;
+strict ownership guards remain enabled.
+
+Focused v149 verification passes both `testPHYSignalDiagnostic` (11 positive
+and 15 negative clock cases plus export checks) and
+`testDLPDSCHCSIDimensionsDoNotOverrideRuntime` (actual two-port/rank-2 PDSCH and
+CSI-RS reception). The physical trial has CRC success and matching selected/
+applied matrix hashes: report Frame=1, Slot=4, executed SFN=0, absolute slot=3.
+All 17 selected source hashes were unchanged during verification. Earlier v147
+and v148 failures remain preserved, not rewritten. The v147 lossless-grid test
+also passed, retaining 11,741,184 declared test values; that is serialization
+evidence, not an additional physical-channel performance result.
+
+**Not a release qualification:** these are bounded component/integration checks.
 Full n40 execution, all P0 closure, statistical accuracy and full SLS acceptance
 remain open. See the [row-by-row HTML status](docs/lls/lls_gap_status_20261023.html)
 and [RCA ledger](docs/lls/h4_100mhz_20261015_issue_status.csv).
@@ -37,6 +53,7 @@ Focused checks (no scenario campaign and no `testAll`):
 
 ```powershell
 matlab -batch "setup6GRSimToolkit('Verbose',false); assert(testPeriodicCSIRefreshAfterULQuality()); assert(testULSpatialQualityFeedbackIsolation()); assert(testLLSPublicClockAndMeasurementProvenance());"
+matlab -batch "setup6GRSimToolkit('Verbose',false); assert(testPHYSignalDiagnostic()); assert(testDLPDSCHCSIDimensionsDoNotOverrideRuntime());"
 ```
 
 The no-argument public-table test uses declared adapter inputs. Supply the
