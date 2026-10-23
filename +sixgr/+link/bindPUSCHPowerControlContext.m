@@ -170,6 +170,8 @@ resolved = sixgr.phy.ul.pusch.PUSCHPowerController.resolve( ...
     "DeltaTF_dB", deltaTF, ...
     "PreviousF_dB", previousF_dB, ...
     "TPCDelta_dB", tpcDelta_dB, ...
+    "PreviousAtMaximumPower", logical(sixgr.util.structGet(stateIn,"AtMaximumPower",false)), ...
+    "PreviousAtMinimumPower", logical(sixgr.util.structGet(stateIn,"AtMinimumPower",false)), ...
     "PCMAX_dBm", pcmax, ...
     "ReferenceWaveformPower_dBm", referenceWaveformPower_dB, ...
     "PathlossReferenceRS", referenceRS);
@@ -185,6 +187,8 @@ pc.TPCDelta_dB = double(tpcDelta_dB);
 pc.TPCSource = char(tpcSource);
 pc.PreviousF_dB = double(resolved.PreviousF_dB);
 pc.UpdatedF_dB = double(resolved.UpdatedF_dB);
+pc.AppliedTPCDelta_dB = double(resolved.AppliedTPCDelta_dB);
+pc.TPCAdjustmentHeldAtPowerLimit = logical(resolved.TPCAdjustmentHeldAtPowerLimit);
 pc.AdjustmentMode = char(resolved.AdjustmentMode);
 pc.Mu = double(resolved.Mu);
 pc.MRB = double(resolved.MRB);
@@ -203,6 +207,9 @@ stateOut.PreviousF_dB = double(resolved.UpdatedF_dB);
 stateOut.UpdateCount = double(sixgr.util.structGet(stateIn, "UpdateCount", 0)) + double(closedLoopEnabled);
 stateOut.LastTPCCommandBits = double(tpcCommandBits);
 stateOut.LastTPCDelta_dB = double(tpcDelta_dB);
+stateOut.AtMaximumPower = resolved.RequestedPower_dBm >= resolved.PCMAX_dBm;
+% This model has no lower output-power clipping branch. Do not invent one.
+stateOut.AtMinimumPower = false;
 end
 
 function [delta_dB, bits, source] = localResolvePUSCHTPCCommand(grant, adjustmentMode, closedLoopEnabled)

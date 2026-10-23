@@ -1,0 +1,13 @@
+inherits:
+  - ../scenarios/lls_tdd_4ghz_20mhz_64txru_4rx_cdlc100_impaired.yaml
+  - ../bands/n40_20mhz_15khz_tdd.yaml
+meta:
+  scenario_id: lls_n40_ssb30_common15_regression
+  description: Retained legal mixed-numerology regression; not the user's selected uniform-30-kHz run.
+reference_signals:
+  csi_rs_resource_num_rbs: [106, 106, 106, 106, 106, 106, 106, 106]
+antenna_and_array:
+  bs_element_frequency_min_hz: 2300000000
+  bs_element_frequency_max_hz: 2400000000
+  ue_element_frequency_min_hz: 2300000000
+  ue_element_frequency_max_hz: 2400000000

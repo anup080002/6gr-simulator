@@ -50,6 +50,51 @@ Additional retained evidence, not final acceptance:
 - Every-slot checkpoints are configured for future launches/resumes.
   They cannot reconstruct the unsaved state after49 in the failed attempt.
 
+## Follow-up: slot-46 checkpoint inventory memory failure
+
+The v2 continuation reached slot46, then failed in
+`sixgr.util.matSave>localValidateSavedPayload` with
+`sixgr:util:matSave:InvalidSerializedPayload`, caused by **Out of memory**.
+This was checkpoint publication, not evidence of a PHY CRC failure.
+Engine PID7652 was stopped with explicit approval; no run evidence was
+deleted. The slot46 directory has no committed state/receipt pair and is
+not a usable restart point. The last durable checkpoint remains45.
+
+The root cause is `whos('-file', ...)`: while computing nested inventory
+sizes/types, MATLAB can invoke `loadobj` and reconstruct saved objects
+beside the still-live runtime. A new handle-object regression reproduced
+that behavior before the repair. Production `+sixgr/+util/matSave.m` now
+uses native `who('-file', ...)` and requires the exact intended variable
+names. Full source, staging and final-file byte/hash checks remain active.
+The serializer does not discard arrays, change precision, reconstruct
+missing measurements or alter PHY/channel/decoder state. Inventory alone
+is not full reload qualification; actual restoration still uses `load`.
+
+Read-only measurement on the retained 1,024,634,989-byte checkpoint45:
+names-only inventory took0.103s; MATLAB committed memory changed from
+2.1349GiB to2.1352GiB. This is an inventory-operation measurement, **not**
+a whole-run memory or speed benchmark.
+
+All seven affected tests passed in
+`logs/lls_repairs/checkpoint_inventory_focused_20261020.log`:
+`testMatSaveFilesystemAtomic`, `testSlotCheckpoint`,
+`testSlotCheckpointPolicy`, `testSlotCheckpointLongPath`,
+`testSlotCheckpointExternalArchives`,
+`testSlotCheckpointExternalArchivesLongPath`, and
+`testCompletedWaveformRuntimeCheckpoint`.
+The actual CDL/RF/noise, pending-observation and LDPC/HARQ continuation
+test passes; changed scientific settings and corrupted dependencies still
+reject. The pre-repair failing regression is retained in
+`logs/lls_repairs/checkpoint_inventory_red_20261020.log`.
+No testAll was run.
+
+The v3 operational resume input is
+`logs/lls_repairs/h4_checkpoint45_resume_20261020_v3/resume.yaml`.
+It restores checkpoint45 and next executes46 with every-slot checkpoints.
+Integrated checkpoint46/feedback50 completion, sustained DL/UL adaptation,
+final export acceptance and statistical qualification remain unverified
+by these component tests.
+
 | Issue | Root cause and production repair | Verified scope / remaining acceptance |
 |---|---|---|
 | Missing exact DL overhead counts | `PDSCH_Tx.m` canonical adapters did not expose the resource-summary schema. `pdschPlanResourceSets.m` converts immutable zero-based resource identities to explicitly one-based carrier-plane sets, including exact PRB/symbol allocation. Both facade paths now bind it. | Coded TX/RX and report propagation pass. Independent resource checks cover200 DL and200 UL allocations with zero TBS difference. New resumed rows still require integrated inspection. No TBS or waveform mapping was changed. |
@@ -370,3 +415,323 @@ acceptance rows above.
 
 No running MATLAB source or primary measurements were edited during this
 documentation update. Existing logs, IQ and checkpoints remain preserved.
+
+## Checkpoint46 completed; subsequent performance repairs
+
+On20 October2026, checkpoint46 committed at14:41:32 UTC. The watcher
+independently verified state SHA-256
+`cf991457d1aff3812d0d3a6afe61b95772dd1e220c817fd30356cec22e4b5fa9`
+and stopped only MATLAB24156 at14:43:36 UTC. The 13,048,376,626-byte state
+remains at `after_slot_000046_f257184a-4951-462a-9010-5dfc521d3f1c/state.mat`
+in the original E: checkpoint tree. All original IQ/results/logs remain.
+Next executed slot is47; the partial later attempt will be preserved by
+normal restart staging.
+
+These are infrastructure changes, not new3GPP requirements or altered PHY
+algorithms:
+
+| Change | Core implementation and integrity boundary |
+|---|---|
+| Checkpoints49/52/55/... | `checkpoint_first_slot: 49`, `checkpoint_every_slots: 3`; operational restoration retains the original scientific identity. Anchor0 preserves old modulo behavior. |
+| Shared file versions | `SlotCheckpoint.m` and `CheckpointFileStore.m`: immutable SHA-addressed private copies, verified source/object bytes, new versions for changed files; no mutable-producer hardlinks. Legacy snapshot layout stays supported. Shared objects are not garbage-collected by rolling state retention. |
+| Completed sample ownership | `WaveformObservationBuffer.m`, `CompletedSampleArchive.m`, `CoupledWaveformStream.m`: independently verify exact file-backed samples before releasing their arrays. Keep unfinished RX coverage, channel/filter/RF/RNG state, scoring segments and HARQ buffers. This does not eliminate all64-port memory. |
+| DL/UL scheduling intervals | `CoupledTruthRuntime.m`, `SchedulerPF.m`, `SchedulerBase.m`: budget, eligibility, common reservations, PF probes, final plan, resource/TBS, feedback AMC, active UE binding, exact freeze and DCI. Exclusive times avoid double-counting nested scopes. No scheduling shortcuts were added. |
+| Unchanged live CSVs | `CSVWriteReuse.m` and `csvWriteTable.m`, scoped by the production publisher: table/schema hash plus independent existing-file hashes. Changed, missing or tampered destinations go through normal complete publication. No measurement rows are dropped. |
+| Compression benchmark | `matSave.m` exposes an explicit opt-in benchmark option; the production default stays compressed. `benchmark_checkpoint_compression.ps1` runs isolated fresh MATLAB processes with memory sampling. |
+
+The16-test affected batch passed completely:
+`logs/lls_repairs/h4_checkpoint46_performance_20261020_v1/receipt.json`.
+It includes exact native CDL/RF/noise/pending-window continuation, native
+LDPC/HARQ retry, immutable object corruption and changed-version tests,
+long paths, external archives, exact table restoration and profiler-on/off
+grant/DCI equivalence. No `testAll` or new scenario was launched.
+
+The full-slot benchmark used273 PRBs,64 ports,122.88 MSa/s and61,440 samples
+with the same native OFDM sample hash in both modes. It is a bounded
+serialization fixture on C:, **not** the full13GB state on E:.
+
+| v7.3 mode | Save and verified publication | Native load | File size | OS process peak commit |
+|---|---:|---:|---:|---:|
+| Compressed |11.648 s|0.943 s|115.45 MiB|1.640 GiB|
+| Uncompressed |5.834 s|0.240 s|120.14 MiB|1.652 GiB|
+
+Evidence:
+`logs/lls_repairs/h4_checkpoint_compression_fullband_20261020_v1/`.
+Phase private/working-set peaks are sampled; the OS high-water counter is
+process-lifetime, including startup. MATLAB `memory` boundary snapshots
+are separately labelled and must not be substituted for peaks.
+Do not extrapolate this single comparison into a promised scenario speedup.
+
+Prepared restart configuration:
+`logs/lls_repairs/h4_checkpoint46_performance_20261020_v1/resume.yaml`.
+Actual slot47/49 timing, memory reduction, slot50 feedback/PUSCH completion,
+sustained adaptation and final publication remain integrated acceptance work.
+
+The additional legacy-schema1 restoration, production slot40--60 timing
+preflight and completed-runtime publication guard all pass:
+`logs/lls_repairs/h4_checkpoint46_followup_20261020_v1/receipt.json`.
+Total:19 distinct affected MATLAB tests. The real loader regenerated the
+HTML configuration/catalog snapshots;87 Python documentation/slot-window
+checks subsequently pass. No test assertion or detector threshold was relaxed.
+
+At15:06 UTC the same scenario was relaunched from checkpoint46 (engine2244,
+launcher6452). Its launch log is
+`logs/lls_repairs/h4_checkpoint46_performance_20261020_v1/resume_launcher.log`.
+The storage watcher targets only that engine and can stop it after a newly
+verified checkpoint if storage reaches the configured reserves. The earlier
+repair-stop watcher is finished. A launched/restoring process is not evidence
+of a completed slot47 or checkpoint49.
+
+## Checkpoint49 repair boundary — 21 October 2026
+
+The user chose **repair after checkpoint49, then resume slot50**. The watcher
+verified checkpoint49 and stopped only engine2244 at
+20 October2026 18:33:29 UTC. Its state is6,898,770,843 bytes with SHA-256
+`b941df768a2e69939960f5ab6755871618192b975a932fec3b4fc330a47a1c25`.
+It contains1220 dependencies. All evidence, including the partial slot50
+attempt that began while hashing, remains preserved. Checkpoint49 is the
+restart boundary; no completed PUSCH/slot50 result is inferred.
+
+Main-codebase changes:
+
+| Area | Repair and verification | Remaining limit |
+|---|---|---|
+| Common-resource scheduler cost | Vectorized `generateTRSSymbolsAndIndices.m` instead of scalar per-RE struct append. Independent loop/nrCSIRS comparisons preserve table values, types, ordering and RNG. Four affected scheduling/TRS tests pass. | The bounded273-PRB slot47 filter fell from261.886132 to71.721000s (3.65×); not a whole-slot speedup. Repeated reservation rebuilds remain. |
+| RF inventory in energy model | `resolveLLSEnergyModelConfig.m` rejects contradictions by default. Exporter explicitly requests a new reporting model with declared64/4 RF inventory, retaining original2/2 inputs. Directional counts stay separate. | These are engineering circuit-power assumptions, not3GPP-mandated powers or hardware measurements. No frozen PHY configuration changed. |
+| Endpoint energy | `integrateLLSEndpointEnergy.m` partitions explicit endpoint/population intervals, charges identical simultaneous states once, and keeps channel attribution nonadditive. Resource intervals use exact CP-aware timing where actual symbol fields exist. | The checkpoint49 prefix still lacks some actual resource operands and joint simultaneous-state authority. Complete energy totals are not qualified. Missing data does not become sleep or zero energy. |
+| PDCCH resource evidence | Production writer retains actual transmitted control data/DMRS PRB union and CORESET start via `pdcchResourceIntervalEvidence.m`. Physical PDCCH export check passes. | Older generic PRB counts describe associated data allocations, not the actual control resource. No historical substitute is inserted. |
+| Goodput publication | `bindTransportGoodputPublicationScope.m` validates original CRC, TB identity, credit and scope before binding late publisher RunID. Retains old key; does not change bits or double-credit retries. Six affected scope/export checks pass. | Actual resumed publication remains an integrated gate. Old checkpoint files are not rewritten. |
+| Plot correctness | The materializer does not divide nonadditive channel-window energy into fictitious per-TB energy samples or average it into RF transmit power.84 affected Python tests pass. | Complete modeled endpoint totals and independently attributed RF-power relations require their own inputs. |
+
+The final affected MATLAB selection passed4/4 after the final edits. Earlier
+focused passes and the bounded before/after profiles are retained beneath
+`logs/lls_repairs/h4_checkpoint49_core_20261021_v1/`.
+The final checkpoint-prefix audit uses hash-verified small snapshots only,
+without loading native runtime state or changing original measurement files:
+`energy_prefix_final/receipt.json`. It records `ModelAvailable=true`,
+`EndpointTotalsAvailable=false`, and `PrimaryStudyEligible=false`.
+No full `testAll` was run.
+
+Prepared operational restart:
+`logs/lls_repairs/h4_checkpoint49_core_20261021_v1/resume.yaml`.
+It starts after49, preserves the100-slot/4GHz/100MHz TDD scientific scenario
+and existing frozen pending grants, and retains checkpoints52/55/58/... .
+This is repaired-source diagnostic continuation, not frozen-source primary
+performance evidence. A successful launch or restore does not establish
+PUSCH, sustained adaptation, final publication, or statistical qualification.
+
+Actual previous checkpoint49 profiling measured2662.546s total
+(44min22s). Nested MAT-save, hashing and snapshot spans overlap and must not
+be summed. The new49 state is smaller than the old46 state, but they are
+different states, so this is not an apples-to-apples memory speedup.
+The double native-load path remains open (H4-209); its integrity checks are
+not bypassed for this restart.
+
+## Resource recovery and endpoint-state repairs — 21 October 2026
+
+The physical run remains stopped at verified checkpoint49. The following
+work was performed in the main codebase, without rewriting the checkpoint,
+its raw receiver tables, or the interrupted slot50 evidence.
+
+- `readObservedOFDMResourceIntervals.m` now resolves actual carrier SCS/CP
+  explicitly and reads content-addressed `.bin` CSV snapshots directly.
+  Tests cover normal/extended CP, chunk invariance, hashes, exact coordinates
+  and rejection of planned rather than executed occupancy.
+- The actual checkpoint resource object was hash verified before and after
+  reading. Its1,241,707 RE rows compact to235 allocation/symbol intervals
+  in125.865s, using bounded32,768-row reads. This is retained TX occupancy,
+  not a new PHY realization, inferred receiver-on state or hardware energy.
+- New DL/UL throughput trial producers carry per-symbol occupied PRB sets
+  derived from their executed RE ledger. CSI-RS/TRS producers carry actual
+  grid occupancy. `expandExecutedResourceIntervals.m` preserves absolute
+  slot/symbol timing; energy integration validates original receiver TB
+  credit before making nonadditive per-symbol attribution rows.
+- Joint gNB model evaluation uses the union of actual simultaneous PRBs.
+  Equal numeric power is no longer evidence of an identical joint state.
+  UE receive/transmit model operands are checked explicitly, and one
+  endpoint budget is counted once. These remain declared engineering
+  models, not3GPP-mandated circuit powers or measured hardware watts.
+
+Verified receipts:
+
+- `logs/lls_repairs/h4_energy_recovery_guards_20261021_v1/receipt.json`:3/3.
+- `logs/lls_repairs/h4_data_resource_exports_20261021_v1/receipt.json`:4/4,
+  including actual DL/UL receiver trials and PDSCH/PUSCH/PDCCH/PUCCH
+  resource/CSV/PNG checks. The two accounting tests overlap the first batch;
+  these are five distinct affected tests, not seven distinct tests.
+- `logs/lls_repairs/h4_checkpoint49_core_20261021_v1/resource_recovery/receipt.json`
+  binds the recovered CSV to source hash
+  `192c36de3ee9247637d4c4b9bb61acf8cf50c589aa4896bf17bae3c1f1174cbb`.
+
+Recovered evidence confirms126-PRB PDSCH allocations at one-based slots41/42,
+273 PRBs in the later completed DL allocations,272 occupied SRS PRBs, and
+12 carrier PRBs in each recorded connected PDCCH candidate. Four SSB blocks
+each span four symbols; their240-subcarrier placement crosses21 carrier PRBs
+because it is not aligned to a carrier PRB boundary. Carrier-PRB intersection
+count must not be confused with the20-RB width of the native SSB grid.
+
+Remaining: bind the recovered intervals to historical trial identities,
+handle native PRACH clocks separately, complete endpoint-state coverage,
+verify all producers in resumed execution, and complete final publication.
+The existence of recovered resource sets does not make the old energy audit
+pass. `EndpointEnergyQualified=false` and `PrimaryStudyEligible=false` remain
+explicit in the recovery receipt. No physical scenario or full testAll was
+started by this recovery work.
+
+## Exact historical binding and native PRACH clock — 2026-10-21
+
+The core reporting adapter now binds the retained occupancy to all 28
+non-PRACH receiver rows at checkpoint 49. It checks configuration, channel,
+cell/UE, allocation identity and any retained population identity. It
+distinguishes the DL and UL-grant PDCCH transmissions at slot 46, the four
+SSB beams sharing one acquisition-report slot, and each TRS capture's
+multiple resource slots. It does not select the nearest slot or fabricate
+receiver outcomes. Original receiver files and checkpoint objects remain
+unchanged.
+
+`prachNativeSampleIntervals.m` independently uses the native PRACH grid,
+recorded transmit origin, CP/useful sample intervals and sample rate. It
+preserves the native grid/waveform hashes and their power plane. The
+production post-execution RA stage publisher now supplies this evidence
+through `runWaveformLinkBundle.m`. Resource-model carrier-PRB intersections
+are explicitly different from native PRACH RE counts or measured RF
+bandwidth. Guards and unobserved RF filter tails are not invented activity.
+
+The retained Msg1 record binds 48 native allocation rows. Together with the
+28 OFDM receiver rows, the represented endpoint model now integrates
+without the previous missing-input or overlapping-state failures. This is
+not complete-run energy: 92 executed OFDM resource intervals still need
+their access/SI observation adapters (12 PDCCH, 52 PDSCH, and 28 access-stage
+PUSCH intervals). Those PUSCH intervals are **not connected UL data trials**.
+
+The primary energy summary therefore keeps total-energy/bit,
+throughput-per-watt, and related complete-energy metrics unqualified.
+Finite partial calculations are retained separately in
+`energy_represented_interval_diagnostics.csv`. The executed delivered-bit
+denominator remains 40,136 bits; no additional delivery was inferred from
+resource occupancy. `EndpointTotalsAvailable` is scoped to represented
+intervals, while `ResourceCoverageComplete=false`,
+`CompleteRunEnergyAvailable=false`, and `PrimaryStudyEligible=false`.
+
+Verified evidence:
+
+- `logs/lls_repairs/h4_resource_binding_20261021_v2/receipt.json`: 3/3.
+- `logs/lls_repairs/h4_native_resource_binding_20261021_v2/receipt.json`: 2/2,
+  including actual short/long PRACH generation and FFT/CSV/PNG checks at
+  one and two ports. This is not statistical PRACH receiver qualification.
+- `logs/lls_repairs/h4_energy_coverage_20261021_v1/receipt.json`: 2/2,
+  including the actual two-occasion shared-SRS collector/schema guard.
+- `logs/lls_repairs/h4_energy_coverage_20261021_v2/receipt.json`: 1/1,
+  including unaccounted native-transmission coverage. These overlapping
+  batches cover five distinct affected tests, not eight distinct tests.
+- `logs/lls_repairs/h4_checkpoint49_core_20261021_v1/energy_bound_native_v3/receipt.json`:
+  hash-verified historical audit, not physical replay or hardware power.
+
+Next work is the actual SI/RA energy-observation adapter, complete prefix
+publication wiring and detailed native-clock report fields. The physical
+100 MHz scenario remains stopped at the verified checkpoint-49 boundary;
+no new scenario or full testAll was launched by these repairs. The new
+regressions are registered in testAll for the eventual approved full-suite
+verification.
+
+## Common-signal binding and duration correction — 2026-10-21
+
+This update supersedes the earlier statement that 92 access/SI resource
+intervals remain unbound. `buildCommonSignalEnergyObservations.m` now joins
+the actual SIB1 and RA executions to their exact executed resource records.
+It validates run/configuration, UE/cell/attempt, beam, allocation identity,
+capture clocks and runtime-versus-self-loop provenance. It retains the
+recorded decode outcome; resource occupancy does not imply decode success.
+Access PUSCH remains separate from connected UL payload and goodput.
+
+The normal three-argument `exportLLSEnergyDiagnostics` path is wired through
+`loadLLSEnergyResourceEvidence.m`. It reads retained artifacts and caches only
+compact resource intervals by content hash, carrier parameters and parser
+source hash. It neither loads the multi-GiB runtime checkpoint nor replays
+PHY samples just to regenerate a report.
+
+The hash-verified checkpoint-49 audit in
+`logs/lls_repairs/h4_checkpoint49_core_20261021_v1/energy_common_v2/receipt.json`
+records 28 receiver rows, one native PRACH observation, 14 common-signal
+observations, and all 92 formerly unmatched intervals bound. There are zero
+unbound intervals in the supplied ledger. First-delivered bits remain 40,136.
+Reporting duration is 0.0245 s (49 completed slots at 30 kHz SCS), and J/frame
+uses the 10-ms radio-frame duration, not the configured slot count.
+
+Verification includes the common-signal, endpoint-integration and RF
+provenance passes in `h4_common_energy_20261021_v3`, followed by the repaired
+energy-integrity pass in `h4_common_energy_20261021_v4`. The v3 energy test
+failure and earlier audit versions remain preserved. These are focused
+checks, not a completed physical scenario or full test suite.
+
+`ResourceCoverageComplete=true` refers to the supplied executed ledgers.
+`CompleteRunEnergyAvailable=false` and `PrimaryStudyEligible=false` remain:
+full endpoint TX/RX/monitoring/idle/sleep-state coverage is not established.
+No absent interval is assigned zero power or sleep, and the configured
+circuit-power model is not a hardware measurement or normative 3GPP wattage.
+
+## Committed RF execution recording — 2026-10-21
+
+The actual shared RF runtime now records every committed TX/RX operator
+interval when the existing resolved energy-evidence flag is enabled. This
+includes processing outside channel-specific receiver observation windows.
+The compact recorder retains clocks, registered endpoint/port identities,
+mean-square measurements, actual all-zero-input flags, existing waveform
+hashes and executed stage counts. It does not retain another IQ/channel
+array, draw random values, or change receiver samples. Zero mean-square
+alone is not classified as zero input: a tested underflow case has nonzero
+samples whose squared magnitudes underflow to zero.
+
+`publishRFEndpointExecutionLedger.m` writes the interval CSV, coverage CSV
+and hash-bound manifest under `rf/csv`. Seventeen-digit numeric serialization
+preserves exact double roundtrip; retained report-only reading validates
+the CSV hash, declared types and execution/configuration identity. An old
+checkpoint starts recording at its actual saved sample clock. It never
+claims the previously unrecorded prefix.
+
+Evidence: `h4_rf_execution_20261021_v7/receipt.json` has three passing tests:
+the recorder/publisher and corruption guards, actual shared AGC/converter
+metadata, and shared CDL/RF/noise whole-versus-partitioned equivalence. The
+earlier v2 receipt covers energy integrity and common-signal binding. The v6
+receipt covers nine slots through the production coupled stream, including
+four PBCH candidates, the actually transmitted SIB1 and TRS. The measured
+TRS NMSE is -18.9866 dB against the unchanged scenario gate of -8 dB; this
+threshold is a configured qualification criterion, not a universal 3GPP
+requirement. Earlier fixture failures remain preserved.
+
+This closes a missing **RF execution recorder**, not complete hardware-state
+modeling or the 100-slot scenario. Full-run circuit energy still requires an
+explicit operating-state model and complete coverage. Neither zero input nor
+absence of a decoded channel establishes sleep. No physical 100 MHz replay
+or full testAll was launched by these focused RF checks.
+
+## Single-owner checkpoint restore — 2026-10-21
+
+`SlotCheckpoint.prepareResume` can now return a transient native-state
+owner. Production `runSingle` passes that owner through execution options
+to `runWaveformLinkBundle`; it is never inserted in the scientific YAML,
+configuration snapshots or the next checkpoint. The PHY consumer takes it
+exactly once and the temporary owner releases its large payload. A cleanup
+handler also releases it if setup fails before consumption. Ordinary
+two-output preflight and direct checkpoint readers remain supported.
+
+The handoff rechecks state bytes, receipt identity, current source identity
+and scientific configuration. It does not run native `loadobj` a second
+time. Any changed receipt/state/source rejects rather than silently loading
+a substitute. A lease cannot be serialized or reused after consumption.
+Dependency preflight, hash verification and failed-attempt preservation are
+unchanged. Read/validation, external-dependency verification, artifact
+restoration and handoff verification times are reported separately.
+
+`logs/lls_repairs/h4_checkpoint_single_owner_20261021_v1/receipt.json` passes
+four affected checks: the one-load/corruption fixture, exact physical
+CDL/RF/noise and pending-window continuation plus actual LDPC/HARQ soft
+combining, schema-1 compatibility, and source/config/storage policy guards.
+The physical test also verifies shared native object identity after the
+handoff. Its checkpoint is a bounded 148,628,412-byte component fixture;
+its 33.5500705-second read/validation time is not a benchmark of the retained
+multi-GiB 100 MHz checkpoint. No whole-slot speedup is claimed yet.
+
+The physical 100 MHz run remains stopped. The next execution must still
+verify slot-50 data/feedback, sustained adaptation and complete publication.
+Whole-run energy remains incomplete, separately from this restore repair.

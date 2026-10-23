@@ -40,6 +40,35 @@ csirsChannelEstimationTic = tic;
     carrier, received.OFDMGrid, csirsInd, csirsSym, csirsInfo, ...
     cfg, opt.ReceivedExecutionEvidence);
 csirsChannelEstimationLatency_ms = 1e3 * toc(csirsChannelEstimationTic);
+if csirsEstimateInfo.Available && ~isfield(csirsEstimateInfo,'SelectedResourceOrdinal')
+    % A single configured resource has CRI ordinal zero regardless of its
+    % RRC resource ID. Do not use ResourceID as an ordinal or leave selection
+    % identity implicit; the same receipt feeds feedback and private scoring.
+    resources=sixgr.util.structGet(csirsInfo,'Resources',[]);
+    assert(numel(resources)<=1,'sixgr:refsig:MissingCSISelectedResource', ...
+        'A multi-resource estimate requires an explicit measured selection.');
+    if isscalar(resources)
+        resourceID=double(resources.ResourceID);
+    else
+        assert(isfield(csirsInfo,'ResourceID'),'sixgr:refsig:MissingCSISelectedResource', ...
+            'An available singleton estimate needs its exact installed resource identity.');
+        resourceID=double(csirsInfo.ResourceID);
+    end
+    validateattributes(resourceID,{'double'},{'scalar','real','finite','integer','nonnegative'});
+    for identityField=["ResourceID","ResourceIDs"]
+        if isfield(csirsInfo,identityField)
+            assert(isequal(double(csirsInfo.(identityField)),resourceID), ...
+                'sixgr:refsig:CSIResourceIdentityMismatch', ...
+                'Singleton identity aliases must match its actual reference map.');
+        end
+    end
+    csirsEstimateInfo.SelectedResourceID=resourceID;
+    csirsEstimateInfo.SelectedResourceOrdinal=1;
+    csirsEstimateInfo.SelectedCRI=0;
+    csirsEstimateInfo.NumConfiguredResources=1;
+    csirsEstimateInfo.NumMeasuredResources=1;
+    csirsEstimateInfo.SelectionSource="only_installed_and_received_CSI_RS_resource";
+end
 rx.CSIRSChannelEstimate = csirsHest;
 rx.CSIRSNoiseVar = csirsNoiseVar;
 rx.CSIRSChannelEstimation = csirsEstimateInfo;
@@ -925,12 +954,14 @@ ueIndex = double(sixgr.util.structGet(cfg, ...
 if ~(isscalar(ueIndex) && isfinite(ueIndex) && ueIndex >= 0)
     ueIndex = 0;
 end
-resourceID = double(sixgr.util.structGet(estInfo, "SelectedResourceID", ...
-    sixgr.util.structGet(cfg, "phy.csirs.resourceID", 0)));
-resourceOrdinal = double(sixgr.util.structGet(estInfo, "SelectedCRI", resourceID));
-if ~(isscalar(resourceID) && isfinite(resourceID) && resourceID >= 0)
-    resourceID = 0;
-end
+assert(all(isfield(estInfo,{'SelectedResourceID','SelectedCRI','SelectedResourceOrdinal'})), ...
+    'sixgr:refsig:MissingCSISelectedResource','The immutable measurement needs actual selected resource and ordinal.');
+resourceID = double(estInfo.SelectedResourceID);
+resourceOrdinal = double(estInfo.SelectedCRI);
+validateattributes(resourceID,{'double'},{'scalar','real','finite','integer','nonnegative'});
+validateattributes(resourceOrdinal,{'double'},{'scalar','real','finite','integer','nonnegative'});
+assert(resourceOrdinal+1==estInfo.SelectedResourceOrdinal, ...
+    'sixgr:refsig:CSIResourceIdentityMismatch','Zero-based CRI and one-based resource ordinal must agree.');
 digest = sixgr.phy.mimo.MatrixContract.digest(Hwb);
 measurementID = "csirs-ue" + string(floor(ueIndex)) + ...
     "-resource" + string(floor(resourceID)) + "-slot" + string(slotValue) + ...

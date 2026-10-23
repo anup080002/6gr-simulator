@@ -42,6 +42,20 @@ DOMAIN_COLUMNS = {
 }
 
 
+# These exact producer fields have no aliases to uci_on_pusch_present or
+# uci_on_pusch_decode_status. Processing may execute for an absent payload,
+# unresolved CSI, or failed TB; the older presence vocabulary is separate.
+PUSCH_UCI_EVIDENCE_COLUMNS = (
+    "UCIOnPUSCHFlag", "UCIOnPUSCHFlagDefinition", "UCIOnPUSCHFlagSource", "UCIOnPUSCHFlagStatus",
+    "UCIOnPUSCHApplied", "UCIOnPUSCHSource", "UCIOnPUSCHEvidenceSource",
+    "InputUCIOnPUSCHFlag", "InputUCIOnPUSCHFlagDefinition", "InputUCIOnPUSCHFlagSource", "InputUCIOnPUSCHFlagStatus",
+)
+PUSCH_UCI_CONTEXT_COLUMNS = (
+    "RuntimeEvidenceSource", "RuntimeMaterializationStatus",
+    "PartialReception", "CSIPresenceResolved", "CSIReportDetected", "CSIPart1Usable",
+)
+DOMAIN_COLUMNS["pusch"] += " " + " ".join(PUSCH_UCI_EVIDENCE_COLUMNS + PUSCH_UCI_CONTEXT_COLUMNS)
+
 DOMAIN_COLUMNS["measurement"] += (
     " ULNormalizedReferencePower_dB ULNormalizedReferencePowerSource"
     " ULNormalizedWindowRSSI_dB ULNormalizedWindowRSSISource"
@@ -60,6 +74,7 @@ def _s(slug: str, title: str, domain: str, column_key: str, tables: str, charts:
 
 
 REPORT_SECTIONS = [
+    _s("private-csi-selection-study", "Private retrospective CSI selection study (not received UCI or grant application)", "measurement", "measurement", "private_csi_selection_observations private_csi_selection_source_audit", "Private CSI selection regret — fixed-CRI nominal-MMSE study"),
     _s("run-trial-scenario-overview", "Run / Trial / Scenario Overview", "run_overview", "run_overview", "live_run_overview live_trial_overview live_scenario_overview live_case_status live_required_vs_optional_case_status live_truth_policy_status", "run health timeline;error/warning/fallback stacked time series;required vs failed case bar chart;truth policy violations by category"),
     _s("scenario-geometry-topology-layout", "Scenario / Geometry / Topology / Layout", "geometry", "geometry", "live_site_table live_sector_table live_trp_table live_cell_table live_ue_table live_link_table live_path_geometry_table live_candidate_cell_table", "BS/sector/UE topology scatter plot;UE trajectory overlay;serving cell map;candidate cell rank heatmap;distance distribution histogram;azimuth/elevation rose plots;path geometry summary charts"),
     _s("mobility-access-cell-selection-reselection-handover", "Mobility / Access / Cell Selection / Reselection / Handover", "mobility", "mobility", "live_mobility_state live_measurement_filter_state live_selection_state live_reselection_state live_handover_state live_event_trigger_table live_access_state", "serving cell timeline;selected beam timeline;mobility event timeline;hysteresis / TTT scatter;access state transition Sankey;Doppler vs speed plot;selection/reselection trigger histogram"),
@@ -67,7 +82,7 @@ REPORT_SECTIONS = [
     _s("scheduler-mac-queue-qos-power-control-uci-flow", "Scheduler / MAC / Queue / QoS / Power Control / UCI Flow", "scheduler_mac", "scheduler_mac", "live_scheduler_cycle live_dl_scheduler_grants live_ul_scheduler_grants live_queue_state live_buffer_status live_hol_delay_state live_qos_state live_mac_pdu_summary live_power_control_state live_phr_state live_sr_state live_bsr_state live_mac_ce_state", "scheduled PRBs per UE over time;MCS over time;CQI vs selected MCS;queue depth over time;HOL delay over time;scheduler fairness over time;SR/BSR event timeline;power control command timeline;PHR distribution;grant reason distribution"),
     _s("harq-ack-nack-retransmission", "HARQ / ACK-NACK / Retransmission", "harq", "harq", "live_harq_process_table live_harq_timeline live_ack_nack_table live_soft_buffer_table", "HARQ process timeline;RV usage distribution;retransmission count histogram;ACK/NACK timeline;residual BLER by HARQ process;combining gain histogram"),
     _s("dl-control-phy-pdcch", "DL Control PHY - PDCCH", "control_phy", "control_phy", "live_pdcch_stage_table live_pdcch_summary live_pdcch_dmrs_table", "PDCCH stage latency waterfall;aggregation level distribution;CCE usage heatmap;PDCCH DMRS occupancy;PDCCH decode success/failure trend if applicable;PDCCH channel-estimate magnitude;PDCCH channel-estimate phase"),
-    _s("ssb-pbch-pss-sss", "SSB / PBCH / PSS / SSS", "control_phy", "control_phy", "live_ssb_stage_table live_pbch_summary live_sync_signal_state", "SSB index timeline;PBCH stage latency;SSB/PBCH occupancy map;sync success/failure timeline if available;SSB EVM;SSB-window RSSI timeline"),
+    _s("ssb-pbch-pss-sss", "SSB / PBCH / PSS / SSS", "control_phy", "control_phy", "live_ssb_stage_table live_pbch_summary live_sync_signal_state live_ssb_native_allocation_snapshot", "SSB index timeline;PBCH stage latency;SSB/PBCH occupancy map;sync success/failure timeline if available;SSB EVM;SSB-window RSSI timeline"),
     _s("csi-rs", "CSI-RS", "control_phy", "control_phy", "live_csirs_stage_table live_csirs_resource_table", "CSI-RS resource occupancy;port usage chart;CSI-RS latency trend;CSI-RS EVM;CSI-RS pilot residual;CSI-RS RSSI timeline;CSI-RS RSRQ timeline"),
     _s("pdsch-dl-data-chain", "PDSCH / DL Data Chain", "pdsch", "pdsch", "live_pdsch_stage_table live_pdsch_transport_block_table live_pdsch_code_block_table live_pdsch_mapping_table live_pdsch_dmrs_ptrs_table", "TB size over time;MCS/code-rate timeline;code-block count histogram;LDPC stage latency waterfall;DMRS/PTRS occupancy plot;precoder / beam selection timeline;DL resource-grid heatmap"),
     _s("pusch-ul-data-chain", "PUSCH / UL Data Chain", "pusch", "pusch", "live_pusch_stage_table live_pusch_rx_summary live_ul_dmrs_table live_llr_summary live_decoder_summary", "channel estimation latency;equalizer latency;decoder iteration histogram;TA estimate timeline;LLR statistics over time;UL resource-grid / equalized symbol summaries"),

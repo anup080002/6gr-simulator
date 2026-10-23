@@ -73,6 +73,39 @@ assert(resolvedLegacyFixed.ConfigHash == legacyFixedHash && ...
     "legacy_inactive_link_adaptation_feedback_delay_missing", ...
     "Inactive fixed-MCS legacy feedback-delay gaps must be explicit recovery compatibility evidence.");
 
+% Historical waveform results predate an explicit hardware idle-power
+% operand. Recover the exact snapshot, NEVER borrow a value from current
+% YAML or silently qualify energy. Fresh launches remain strict.
+legacyEnergy=executed.toStruct();
+legacyEnergy.energy_efficiency=rmfield(legacyEnergy.energy_efficiency, ...
+    'bs_rf_chain_idle_power_fraction');
+legacyEnergyHash=sixgr.lls6g.config.hashResolvedScenario(legacyEnergy);
+sixgr.util.jsonWrite(snapshotPath,legacyEnergy);
+legacyEnergyDigest=sixgr.util.sha256File(snapshotPath);
+sixgr.util.jsonWrite(fullfile(metaDir,'scenario_config_identity.json'),struct( ...
+    'ConfigHash',legacyEnergyHash,'ResolvedJSONSHA256',legacyEnergyDigest));
+sixgr.util.csvWriteTable(fullfile(airDir,'prach_trials.csv'), ...
+    table(legacyEnergyHash,'VariableNames',{'ConfigHash'}));
+[energySnapshot,energyAuthority]=sixgr.truth.resolveRecoveryScenarioConfig(root,executed);
+% Compare to the actual persisted JSON representation (MATLAB strings,
+% cells and vector orientations can legitimately change on JSON encoding).
+assert(isequaln(energySnapshot.toStruct(),jsondecode(fileread(snapshotPath))) && ...
+    energySnapshot.ConfigHash==legacyEnergyHash && energyAuthority.ExactMatch && ...
+    ~energyAuthority.PersistedSnapshotCurrentCompatibilityOk && ...
+    energyAuthority.PersistedSnapshotCompatibilityStatus=="legacy_energy_idle_power_fraction_missing");
+internal=sixgr.lls6g.buildInternalConfig(energySnapshot,root);
+energy=sixgr.truth.resolveLLSEnergyModelConfig(internal);
+assert(~energy.Available && contains(energy.FailureReason,'BSRFChainIdlePowerFraction'));
+assert(string(sixgr.util.sha256File(snapshotPath))==string(legacyEnergyDigest));
+caught=false;
+try
+    sixgr.lls6g.config.validateScenarioConfig(legacyEnergy,'Kind','scenario','AllowPartial',false);
+catch failure
+    caught=strcmp(failure.identifier,'sixgr:lls6g:config:MissingField') && ...
+        contains(failure.message,'bs_rf_chain_idle_power_fraction');
+end
+assert(caught,'Recovery compatibility must not relax fresh-launch validation.');
+
 % Restore the current-schema immutable fixture for the remaining checks.
 sixgr.util.jsonWrite(snapshotPath, executed.toStruct());
 fid = fopen(snapshotPath, "r");

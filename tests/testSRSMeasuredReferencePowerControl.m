@@ -1,0 +1,107 @@
+function ok=testSRSMeasuredReferencePowerControl()
+% Actual 20-MHz SRS preparation, with explicitly declared codec/RS fixtures.
+% Not evidence of acquired access or a waveform-measured SSB in a full run.
+setup6GRSimToolkit('Verbose',false);
+s=sixgr.lls6g.config.loadScenarioConfig( ...
+    'simulator/configs/scenarios/lls_tdd_n40_20mhz_64txru_4rx_cdlc100_impaired.yaml');
+cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
+multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
+state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,tempname,multi,struct(),0);
+state.CurrentSlot=1; state.CurrentServingIdx(:)=1;
+state.UECommonCellConfigurationByUE={decodedSSBPowerCodecFixture(cfg,5,1,1)};
+measurement=table(0,110,"SSB-0","explicit_physical_diagnostic_fixture", ...
+    1,-90,20,'VariableNames',{'ReferenceSignalId','MeasuredReferenceSignalPathloss_dB', ...
+    'PathlossReferenceRS','MeasuredReferenceSignalPathlossSource','ServingCell', ...
+    'SS_RSRP_dBm','ReferenceSignalTxEPRE_dBm'});
+state=sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementRuntime( ...
+    state,'SSB','UE',1,measurement,'ProducerSlot',1,'AvailableSlot',1,'Valid',true, ...
+    'Direction','DL','SourceSignal','SSB','MeasurementSource','explicit_selector_fixture');
+state.CurrentSlot=5;
+[bound,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'UL');
+reference=bound.lls6g.userContext.RuntimeSRSPowerReference;
+assert(reference.Usable && reference.Pathloss_dB==95 && ...
+    reference.SignalledReferencePower_dBm==5 && reference.FilteredRSRP_dBm==-90 && ...
+    reference.ReferenceRS=="SSB-0" && strlength(reference.SIB1RxTreeHash)>0);
+assert(reference.ConfiguredReference.Source== ...
+    "yaml:rf.frontend.ul_power_control.srs.pathloss_reference");
+poisoned=state;
+poisoned.ReferenceSignalMeasurementTable.Pathloss_dB(:)=777;
+poisoned.ReferenceSignalMeasurementTable.ReferenceSignalTxEPRE_dBm(:)=999;
+poisoned.ReferenceSignalMeasurementTable.RSRP_dBm(:)=-140;
+assert(isequaln(reference,sixgr.truth.resolveSRSPowerReference(poisoned,cfg,1,5)), ...
+    'SRS power must not consume physical scoring or unfiltered samples.');
+for condition=["missing_sib1","wrong_epoch","wrong_cell","future_sib1", ...
+        "future_rsrp","wrong_beam","stale"]
+    negative=state;
+    switch condition
+        case "missing_sib1", negative.UECommonCellConfigurationByUE={struct()};
+        case "wrong_epoch", negative.UECommonCellConfigurationByUE{1}.ConfigurationEpoch=-1;
+        case "wrong_cell", negative.UECommonCellConfigurationByUE{1}.ServingCell=2;
+        case "future_sib1", negative.UECommonCellConfigurationByUE{1}.AvailableSlot=6;
+        case "future_rsrp", negative.ReferenceSignalMeasurementTable.AvailableSlot(:)=6;
+        case "wrong_beam", negative.ReferenceSignalMeasurementTable.ResourceId(:)=1;
+        case "stale", negative.CurrentSlot=25;
+    end
+    rejected=sixgr.truth.resolveSRSPowerReference(negative,cfg,1,negative.CurrentSlot);
+    assert(~rejected.Usable && isnan(rejected.Pathloss_dB), ...
+        'Unusable SRS power reference was accepted: %s',condition);
+end
+% Future UL planning retains decision-time knowledge.
+future=state; future.RuntimeViewMode="future_ul_grant_planning";
+future.PlanningDecisionSlot=5; future.CurrentSlot=9;
+future.ReferenceSignalMeasurementTable.AvailableSlot(:)=7;
+assert(~sixgr.truth.resolveSRSPowerReference(future,cfg,1,9).Usable);
+
+bound=sixgr.phy.grid.applyRuntimeCarrierTimeline(bound,5);
+bound.phy.srs.receivedPowerControlState=sixgr.link.ReceivedULPowerControlState(bound);
+args={'SlotIndex',5,'TrialIndex',1,'TimingAdvanceSamples',0,'PrepareOnly',true};
+pending=sixgr.link.runSRSChannelEstimation(bound,args{:});
+p=pending.PreparedTransmission; evidence=p.Metadata.PowerEvidence;
+expected=-80+10*log10(2*48)+.8*95;
+assert(p.NumPhysicalTransmitAntennas==4 && p.NumReceiveAntennas==64 && ...
+    evidence.MRB==48 && evidence.Mu==1 && ...
+    abs(evidence.AppliedPower_dBm-expected)<1e-10 && ...
+    evidence.Reference.Pathloss_dB==95 && ...
+    contains(evidence.PathlossSource,"ue_decoded_sib1_power_minus_filtered_ssb_rsrp"));
+% Read actual useful samples of the emitted sounding symbol, not a context
+% label or a duty-cycle diluted mean across the otherwise empty UL slot.
+ofdm=p.TxInfo.OFDMInfo; symbol0=double(p.Tx.SRS.SymbolStart);
+first=sum(ofdm.SymbolLengths(1:symbol0))+ofdm.CyclicPrefixLengths(symbol0+1)+1;
+samples=p.Tx.Waveform(first:first+ofdm.Nfft-1,:);
+measured=10*log10(mean(sum(abs(samples).^2,2)));
+assert(abs(measured-expected)<1e-8, ...
+    'Actual SRS useful-symbol power %g does not close to target %g.',measured,expected);
+resourceStart=sixgr.link.srsResourceStartSample(p.Tx,p.StartSample,p.SampleRateHz);
+[emitted,ratio]=p.bindSRSPowerAtEmission(bound.phy.srs.receivedPowerControlState,resourceStart);
+assert(ratio==1 && norm(emitted.Tx.Waveform-p.Tx.Waveform,'fro')<1e-12 && ...
+    emitted.Metadata.PowerEvidence.BoundAtEmission && ...
+    emitted.Metadata.PowerEvidence.AdjustmentState=="same_as_pusch");
+localReject(@()p.bindSRSPowerAtEmission(bound.phy.srs.receivedPowerControlState,resourceStart+1), ...
+    'sixgr:srs:LatePowerBinding');
+missingOwner=bound; missingOwner.phy.srs=rmfield(missingOwner.phy.srs,'receivedPowerControlState');
+localReject(@()sixgr.link.runSRSChannelEstimation(missingOwner,args{:}), ...
+    'sixgr:srs:MissingReceivedPowerState');
+missing=bound; missing.lls6g.userContext.RuntimeSRSPowerReference=struct();
+localReject(@()sixgr.link.runSRSChannelEstimation(missing,args{:}), ...
+    'sixgr:srs:PathlossReferenceMeasurementMissing');
+changed=bound; changed.rf.frontend.ul_power_control.srs.pathloss_reference.reference_signal_id=1;
+localReject(@()sixgr.link.runSRSChannelEstimation(changed,args{:}), ...
+    'sixgr:srs:PathlossReferenceContextMismatch');
+changed=bound; changed.rf.frontend.ul_power_control.srs.delta_tf_db=1;
+localReject(@()sixgr.link.runSRSChannelEstimation(changed,args{:}), ...
+    'RF:SRSDeltaTFNotApplicable');
+fields=sixgr.link.srsPowerControlEvidence(evidence);
+assert(fields.SRSPowerControlAdjustmentState=="same_as_pusch" && ...
+    fields.SRSPowerControlAdjustment_dB==0 && fields.SRSPowerControlStateUpdateCount==0);
+assert(fields.SRSPowerControlPathloss_dB==95 && ...
+    fields.SRSPowerControlPathlossReferenceRS=="SSB-0" && ...
+    fields.SRSPowerControlSignalledReferencePower_dBm==5 && ...
+    fields.SRSPowerControlFilteredRSRP_dBm==-90 && ...
+    strlength(fields.SRSPowerControlSIB1RxTreeHash)>0);
+fprintf('SRS_MEASURED_POWER_PASS: 48/51PRB 4TX 64RX target=%g measured=%g dBm; causal codec/RS fixtures, not access qualification\n',expected,measured);
+ok=true;
+end
+function localReject(fn,id)
+try, fn(); catch cause, assert(strcmp(cause.identifier,id),'%s',getReport(cause)); return; end
+error('test:ExpectedRejection','Missing rejection %s.',id);
+end

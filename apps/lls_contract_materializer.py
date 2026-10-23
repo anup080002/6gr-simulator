@@ -32,7 +32,7 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-10-19-contract-v114-file-backed-constellation-publication"
+MATERIALIZER_VERSION = "2026-10-23-contract-v119-pusch-uci-owner-population"
 FILESYSTEM_CONTRACT_CACHE_PATH = (
     "artifact_generation/browser_contract_exact_source_cache.json"
 )
@@ -146,6 +146,11 @@ def contract_artifact_is_policy_filtered(
     path = str(logical_path or "").strip().lower().replace("\\", "/")
     name = str(contract_name or "").strip().lower()
     identity = f"{path}|{name}"
+    if (name in {"private_csi_selection_observations", "private_csi_selection_source_audit"}
+            or name.startswith("private csi selection regret") or "private_csi_selection_" in path
+            or "contract__private-csi-selection-study__" in path):
+        if not bool(policy.get("csi_selection_quality_enabled", False)):
+            return True
 
     # Component runners execute and qualify one explicit PHY family.  They
     # are not incomplete full-stack runs.  Apply scope only to entries in
@@ -2717,11 +2722,28 @@ def _fill_numeric_text_companions(dict_rows: list[dict[str, str]], header: list[
             row[text_col] = numeric_value or f"{number:.12g}"
 
 
+def _pusch_uci_preserved_columns(header: list[str]) -> frozenset[str]:
+    """Keep declared UCI evidence verbatim; do not qualify raw receiver facts.
+
+    In particular, a default Applied=0 plus blank Source is not proof of
+    receiver execution. Runtime provenance and separate outcome fields are
+    protected only alongside a declared UCI evidence column.
+    """
+    evidence = frozenset(name.lower() for name in output_contract.PUSCH_UCI_EVIDENCE_COLUMNS)
+    if not evidence.intersection(str(name).lower() for name in header):
+        return frozenset()
+    return evidence.union(name.lower() for name in output_contract.PUSCH_UCI_CONTEXT_COLUMNS)
+
+
 def _drop_all_blank_columns(header: list[str], rows: list[list[str]]) -> tuple[list[str], list[list[str]]]:
     if not header or not rows:
         return header, rows
+    preserved = _pusch_uci_preserved_columns(header)
     keep_indices: list[int] = []
-    for idx, _name in enumerate(header):
+    for idx, name in enumerate(header):
+        if str(name).lower() in preserved:
+            keep_indices.append(idx)
+            continue
         values = _column_values(rows, idx)
         if all(str(value or "").strip() in {"", "NaN", "nan", "<missing>", "missing"} for value in values):
             continue
@@ -2742,8 +2764,11 @@ def _canonicalize_contract_source_rows(logical_path: str, header: list[str], row
         return _encode_csv(trimmed_header, trimmed_rows), trimmed_header, trimmed_rows
     dict_rows = [{str(header[idx]): str(row[idx]) if idx < len(row) else "" for idx in range(len(header))} for row in rows]
     _fill_numeric_text_companions(dict_rows, header)
+    preserved = _pusch_uci_preserved_columns(header)
     for field_name in header:
         lower_name = str(field_name or "").lower()
+        if lower_name in preserved:
+            continue
         companion_mask = _semantic_companion_mask(dict_rows, lower_name)
         for row_idx, row in enumerate(dict_rows):
             current = str(row.get(field_name, "") or "").strip()
@@ -3676,6 +3701,10 @@ def _specialized_table_materialization(
     run_row: dict[str, Any] | None = None,
     feature_policy: dict[str, bool] | None = None,
 ) -> dict[str, Any] | None:
+    from lls_csi_selection_quality import table_materialization as selection_table
+    selection = selection_table(table_name, source_lookup, fetch_artifact_bytes, run_id)
+    if selection is not None:
+        return selection
     generic = _specialized_live_report_table(
         table_name,
         source_lookup,
@@ -4985,7 +5014,9 @@ def _specialized_live_report_table(
                 "source_logical_path": "packet_flow/csv/live_dl_scheduler_grants.csv|packet_flow/csv/live_ul_scheduler_grants.csv",
                 "source_row_count": len(rows),
             }
-    if table_name in {"live_mac_pdu_summary", "live_mac_ce_state", "live_pusch_rx_summary", "live_llr_summary", "live_decoder_summary", "live_channel_realization_table", "live_interference_table", "live_tracking_table"}:
+    # PUSCH receiver tables use the canonical, lossless alias selector below;
+    # this bounded cross-signal summary must not replace their population.
+    if table_name in {"live_mac_pdu_summary", "live_mac_ce_state", "live_llr_summary", "live_decoder_summary", "live_channel_realization_table", "live_interference_table", "live_tracking_table"}:
         if table_name == "live_mac_ce_state":
             rows = [{
                 "run_id": run_id,
@@ -5010,8 +5041,6 @@ def _specialized_live_report_table(
         selected_sources: list[tuple[str, list[dict[str, str]]]] = []
         if table_name == "live_mac_pdu_summary":
             selected_sources = [(raw_sources["dl_pdsch"], raw_rows["dl_pdsch"]), (raw_sources["ul_pusch"], raw_rows["ul_pusch"])]
-        elif table_name == "live_pusch_rx_summary":
-            selected_sources = [(raw_sources["ul_pusch"], raw_rows["ul_pusch"])]
         elif table_name == "live_llr_summary":
             selected_sources = [(raw_sources["dl_pdsch"], raw_rows["dl_pdsch"]), (raw_sources["ul_pusch"], raw_rows["ul_pusch"])]
         elif table_name == "live_decoder_summary":
@@ -5033,7 +5062,7 @@ def _specialized_live_report_table(
                     "slot": _row_text(row, "Slot"),
                     "source_artifact": logical_path,
                 }
-                if table_name in {"live_mac_pdu_summary", "live_pusch_rx_summary"}:
+                if table_name == "live_mac_pdu_summary":
                     out_row.update({
                         "tb_size_bits": _row_text(row, "TBSize_bits"),
                         "mcs": _row_text(row, "MCS", "CQIDerivedMCS"),
@@ -5373,7 +5402,17 @@ def _select_source_table_artifact(
             continue
         source_data = fetch_artifact_bytes(int(art["artifact_id"]))
         header, rows = _decode_csv(source_data)
+        if path == "reports/csv/pusch_runtime_event_table.csv" and (
+            not header or not all(str(name).strip() for name in header)
+        ):
+            # Validate the declared schema before blank-column pruning can
+            # conceal a malformed producer column.
+            raise ValueError("PUSCH public runtime table has no valid declared header")
         source_data, header, rows = _canonicalize_contract_source_rows(path, header, rows)
+        if path == "reports/csv/pusch_runtime_event_table.csv":
+            # A present owner-produced population (including zero rows) is
+            # not interchangeable with raw/summary historical fallback rows.
+            return art, source_data, header, rows
         if not rows:
             if not fallback[0] and header and all(str(name).strip() for name in header):
                 fallback = (art, source_data, header, rows)
@@ -7603,6 +7642,12 @@ def _runtime_energy_histogram_chart(
         ["rf/csv/energy_timeline_trace.csv", "reports/csv/live_energy_efficiency_table.csv", "analytics/csv/energy_efficiency_analytics.csv"],
     ):
         for row in rows:
+            # v3 channel rows are overlapping attribution windows, not
+            # additive energy assigned to this TB. A histogram must not
+            # reconstruct Energy/bit from those rows after endpoint totals
+            # have been corrected. Await independently attributed samples.
+            if _row_text(row, "AccountingRole").startswith("nonadditive_channel_attribution"):
+                continue
             value = _row_float(row, "EnergyPerBit_J", "energy_per_bit_j", "Energy_per_bit_J", "UEEnergyPerBit_J", "GNBEnergyPerBit_J")
             if value is None:
                 energy = _row_float(row, "Energy_J")
@@ -10048,6 +10093,11 @@ def _runtime_energy_relation_chart(
     trial_sources = _all_available_rows(existing, fetch_artifact_bytes, ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"])
     tx_power: dict[tuple[str, int, int], list[float]] = defaultdict(list)
     for row in energy_rows:
+        if _row_text(row, "AccountingRole").startswith("nonadditive_channel_attribution"):
+            # These are overlapping engineering-model windows, not a
+            # per-grant RF transmit-power observation. Averaging them by
+            # slot cannot produce the power of a particular data trial.
+            continue
         if "tx" not in _row_text(row, "State").lower():
             continue
         direction = _row_text(row, "Direction").upper()
@@ -11759,15 +11809,44 @@ def _constellation_experiment_fields(row):
 
 def _constellation_experiment_label(scope):
     labels = []
+    source_aware = "snr_source_field" in scope
+    if source_aware and scope.get("snr_source_value_db") is not None:
+        field, value = scope["snr_source_field"], scope["snr_source_value_db"]
+        if scope.get("snr_value_role") == "configured_parameter":
+            labels.append(f"Configured SNR={value} dB")
+        else:
+            labels.append(f"Source {field}={value} dB (role not retained)")
     for field, label in (("sweep_point_index", "point"), ("configured_snr_db", "SNR"),
                          ("source_run_id", "run"), ("drop_index", "drop"),
                          ("realization_index", "realization"), ("seed", "seed"),
                          ("trial_ordinal", "trial"), ("transmission_attempt_id", "attempt")):
         value = scope.get(field)
+        if source_aware and field == "configured_snr_db":
+            continue
         if value is not None and value != "":
             # Do not round distinct configured SNR values into one legend key.
             labels.append(f"{label}={value}" + (" dB" if field == "configured_snr_db" else ""))
     return " ".join(labels)
+
+
+def _constellation_snr_source(row):
+    """Keep legacy SNR aliases descriptive, never promote them to noise evidence.
+
+    Only the explicit ConfiguredSNR_dB column declares a configured role.
+    A sidecar/config/file name is not read here to reinterpret legacy rows.
+    Other chart families retain their existing contracts until reviewed.
+    """
+    for field in ("ConfiguredSNR_dB", "SNR_dB", "snr_db"):
+        # The generic reader deliberately accepts case-insensitive aliases;
+        # provenance must instead name the exact column actually present.
+        value = _coerce_float(row.get(field))
+        if value is not None:
+            configured = field == "ConfiguredSNR_dB"
+            return {"configured_snr_db": value if configured else None,
+                    "snr_source_value_db": value, "snr_source_field": field,
+                    "snr_value_role": "configured_parameter" if configured else "unspecified_source_column"}
+    return {"configured_snr_db": None, "snr_source_value_db": None,
+            "snr_source_field": "", "snr_value_role": "unavailable"}
 
 
 def _runtime_constellation_chart(chart_name, existing, fetch_artifact_bytes, run_id):
@@ -11786,6 +11865,26 @@ def _runtime_constellation_chart(chart_name, existing, fetch_artifact_bytes, run
 
 
 def _runtime_constellation_stream(chart_name, sources, run_id, csv_rows):
+    cohort_fields = (
+        ("input_run_id", "RunID"), ("execution_id", "ExecutionID"),
+        ("config_hash", "ConfigHash"), ("scenario_id", "ScenarioID"),
+        ("random_seed", "RandomSeed"), ("channel_seed", "ChannelSeed"),
+        ("source_random_seed", "SourceRandomSeed"), ("source_channel_seed", "SourceChannelSeed"),
+        ("prepared_random_seed", "PreparedRandomSeed"), ("prepared_channel_seed", "PreparedChannelSeed"),
+        ("run_folder", "RunFolder"), ("run_tag", "RunTag"),
+        # Aggregator provenance is a separate wrapper, never TX-point authority.
+        ("sweep_aggregate_point_index", "SweepAggregatePointIndex"),
+        ("sweep_aggregate_label", "SweepAggregateLabel"),
+        ("sweep_aggregate_configured_snr_db", "SweepAggregateConfiguredSNR_dB"),
+        ("sweep_aggregate_source_csv", "SweepAggregateSourceCSV"),
+        ("sweep_aggregate_point_status", "SweepAggregatePointStatus"))
+    capture_fields = (
+        ("observation_id", "ObservationID"), ("receiver_window_id", "ReceiverWindowID"),
+        ("receiver_observation_sha256", "ReceiverObservationSHA256"),
+        ("receiver_clock_domain", "ReceiverClockDomain"), ("receiver_clock_epoch", "ReceiverClockEpoch"),
+        ("observation_start_sample", "ObservationStartSample"),
+        ("observation_end_sample_exclusive", "ObservationEndSampleExclusive"),
+        ("observation_sample_rate_hz", "ObservationSampleRateHz"))
     group_field = {"constellation per layer": "LayerIndex",
                    "constellation per codeword": "CodewordIndex"}.get(chart_name)
     pre = chart_name == "pre-equalization constellation"
@@ -11824,13 +11923,46 @@ def _runtime_constellation_stream(chart_name, sources, run_id, csv_rows):
             if chart_name == "constellation per modulation order" and not modulation:
                 raise ValueError("Modulation constellation requires an exported modulation identity")
             experiment = _constellation_experiment_fields(row)
+            experiment.update(_constellation_snr_source(row))
+            if "SourceRunID" in row:
+                experiment["source_run_id"] = _row_text(row, "SourceRunID")
+            cohort = {name: _row_text(row, source) for name, source in cohort_fields}
+            capture = {name: _row_text(row, source) for name, source in capture_fields}
+            domain = _row_text(row, "SymbolCoordinateDomain")
+            native_domain = _row_text(row, "SymbolOrderLinearIndexDomain")
+            native_key = _row_text(row, "SymbolOrderLinearIndex")
+            if domain not in {"", "layer_resource_elements", "pre_transform_qam_positions"}:
+                raise ValueError("Constellation has an unknown symbol coordinate domain")
+            if native_key or native_domain or domain == "pre_transform_qam_positions":
+                if not domain or _full_evm_resource_identity(row, domain) is None:
+                    raise ValueError("Constellation native position key/domain contradicts its retained coordinates")
+            elif domain == "layer_resource_elements" and any(
+                    _row_text(row, field) for field in ("OFDMSymbolIndex", "SubcarrierIndex")):
+                if _full_evm_resource_identity(row, domain) is None:
+                    raise ValueError("Constellation physical RE coordinates are invalid")
+            coordinates = {"symbol_coordinate_domain": domain,
+                "symbol_order_linear_index_domain": native_domain, "symbol_order_linear_index": native_key,
+                "subcarrier_index": _row_text(row, "SubcarrierIndex"),
+                "ofdm_symbol_index": _row_text(row, "OFDMSymbolIndex"),
+                "detector_output_coordinate_domain": _row_text(row, "DetectorOutputCoordinateDomain"),
+                "observation_symbol_count": _row_text(row, "ObservationSymbolCount"),
+                "captured_symbol_count": _row_text(row, "CapturedSymbolCount")}
+            capture_scope = _row_text(row, "CaptureScope")
             ue = _row_text(row, "UEIndex", "ue_id")
             normalization = _row_text(row, "RuntimeNormalization", "Normalization", "normalization")
-            panel_scope = {name: experiment[name] for name in ("sweep_point_index", "configured_snr_db", "source_run_id")}
-            panel_key = (direction, ue, modulation, normalization, group, *panel_scope.values())
+            panel_scope = {name: experiment[name] for name in ("sweep_point_index", "configured_snr_db", "source_run_id",
+                "seed", "drop_index", "realization_index", "snr_source_value_db", "snr_source_field", "snr_value_role")}
+            panel_key = (direction, ue, modulation, normalization, group, *panel_scope.values(),
+                         *cohort.values(), domain, native_domain, capture_scope)
+            cohort_identity = json.dumps({**panel_scope, **cohort,
+                "symbol_coordinate_domain": domain, "native_order_domain": native_domain,
+                "capture_scope": capture_scope}, sort_keys=True, separators=(",", ":"))
             title = f"{direction} {group_field} {int(group)}" if group_field else (
                 f"{direction} {chart_name.replace(' constellation', '')}" if xy_chart else f"{direction} {modulation}")
             details = _constellation_experiment_label(panel_scope)
+            cohort_label = " ".join(f"{name}={value}" for name, value in cohort.items() if value)
+            if cohort_label:
+                details += " " + cohort_label
             if ue:
                 details += f" U{ue}"
             if modulation and chart_name != "constellation per modulation order":
@@ -11839,17 +11971,25 @@ def _runtime_constellation_stream(chart_name, sources, run_id, csv_rows):
                 title += "\n" + "\n".join(textwrap.wrap(details.strip(), 39))
             if normalization:
                 title += "\n" + "\n".join(textwrap.wrap(normalization, 39))
+            domain_label = domain or "coordinate domain not retained"
+            scope_label = capture_scope or "capture scope not retained"
+            title += "\n" + "\n".join(textwrap.wrap(domain_label + " | " + scope_label, 39))
+            if native_domain:
+                title += "\n" + "\n".join(textwrap.wrap(native_domain, 39))
             panel = groups.setdefault(panel_key, {"title": title, "index": len(groups)})
             ref_x, ref_y = _row_float(row, "ReferenceSymbolReal"), _row_float(row, "ReferenceSymbolImag")
             values = {"x_value": x, "y_value": y, "reference_x": ref_x, "reference_y": ref_y} if xy_chart else {
                 "EqualizedReal": x, "EqualizedImag": y, "ReferenceSymbolReal": ref_x, "ReferenceSymbolImag": ref_y}
             csv_rows.append({"run_id": run_id, "chart_name": chart_name, "direction": direction,
-                **experiment, **values, "ue_index": ue, "frame": _row_text(row, "Frame"),
+                **experiment, **cohort, **capture, **coordinates, **values,
+                "cohort_domain_scope_label": cohort_label + " | " + domain_label + " | " + scope_label,
+                "cohort_domain_scope_identity": cohort_identity,
+                "ue_index": ue, "frame": _row_text(row, "Frame"),
                 "sfn": _row_text(row, "SFN"), "slot": _row_text(row, "RuntimeSlot", "Slot", "slot"),
                 "tb_id": _row_text(row, "LogicalTBID", "TBId", "tb_id"),
                 "layer_index": _row_text(row, "LayerIndex", "layer"),
                 "codeword_index": _row_text(row, "CodewordIndex"), "modulation": modulation,
-                "sample_index": _row_text(row, "SampleIndex"), "capture_scope": _row_text(row, "CaptureScope"),
+                "sample_index": _row_text(row, "SampleIndex"), "capture_scope": capture_scope,
                 "normalization": normalization, "source_table_logical_path": source_path,
                 "source_row_index": source_row_index,
                 **({group_field: int(group)} if group_field else {})}, panel["index"])
@@ -11864,14 +12004,14 @@ def _runtime_constellation_stream(chart_name, sources, run_id, csv_rows):
     counts = csv_rows.directions
     return {**_csv_payload_fields(csv_rows.csv_payload()),
         "img_bytes": _render_scatter_panels_svg(chart_name,
-            "Separate point / UE / modulation panels; uniform row-index preview per panel. All retained samples in CSV.",
+            "Cohort/domain/scope panels; all samples in CSV. SNR labels: not an applied/measured noise claim.",
             panels, [f"dl_rows={counts['DL']}", f"ul_rows={counts['UL']}", f"panels={len(panels)}",
                      "Preview: up to 450 samples/panel", "Preview: up to 256 unique references/panel", "CSV: all retained samples"]),
         "csv_status": "specialized_runtime_constellation_dataset",
         "image_status": "generated_specialized_runtime_constellation_svg",
         "source_table_path": "|".join(csv_rows.sources),
         "source_row_count": len(csv_rows),
-        "note": "Canonical captures take precedence over aliases. Raw receiver symbols are not payload fitted; exact planes and declared sweep/UE/modulation scopes remain separate. CSV retains all samples and attempt identities; images are labelled per-panel previews, not statistical populations."}
+        "note": "Canonical captures take precedence over aliases. Raw receiver symbols are not payload fitted; supplied run/point/seed/execution, coordinate-domain and capture-scope cohorts remain separate. CSV retains all samples, native coordinate tokens and attempt identities. Explicit ConfiguredSNR_dB is a configured parameter; legacy SNR_dB/snr_db retain an unspecified source-column role, never applied/measured noise authority. Capture scope is the source declaration, not scatter-reader completeness qualification; images are labelled per-panel previews, not statistical populations. SweepAggregate fields are wrapper provenance, not reconstructed physical identity."}
 
 
 def _runtime_paired_symbol_error_histogram(rows, chart_name):
@@ -11882,15 +12022,27 @@ def _runtime_paired_symbol_error_histogram(rows, chart_name):
 
     def label_of(row):
         return (f"{row['direction']} U{row['ue_index']} {row['modulation']} "
-                f"{row['normalization']} " + _constellation_experiment_label(row)).strip()
+                f"{row['normalization']} " + _constellation_experiment_label(row) + " " +
+                row.get("cohort_domain_scope_label", "")).strip()
+
+    def identity_of(row):
+        # Labels are human-readable, not keys: delimiters inside a retained
+        # ID must not collapse two declared populations into one histogram.
+        return tuple(row.get(field) for field in (
+            "cohort_domain_scope_identity", "direction", "ue_index", "modulation", "normalization",
+            "configured_snr_db", "sweep_point_index", "source_run_id", "drop_index", "realization_index",
+            "seed", "trial_ordinal", "transmission_attempt_id"))
 
     populations = Counter()
+    labels = {}
     low, high = math.inf, -math.inf
     for row in rows:
         error = error_of(row)
         if error is None:
             continue
-        populations[label_of(row)] += 1
+        identity = identity_of(row)
+        labels[identity] = label_of(row)
+        populations[identity] += 1
         low, high = min(low, error), max(high, error)
     if not populations:
         raise ValueError("Symbol error histogram requires retained paired reference symbols")
@@ -11901,7 +12053,7 @@ def _runtime_paired_symbol_error_histogram(rows, chart_name):
         error = error_of(row)
         if error is not None:
             index = min(int((error-low)/width), count-1) if width else 0
-            counts[label_of(row), index] += 1
+            counts[identity_of(row), index] += 1
 
     def annotated_rows():
         for row in rows:
@@ -11911,14 +12063,14 @@ def _runtime_paired_symbol_error_histogram(rows, chart_name):
                        value_status="available" if error is not None else "unavailable_paired_reference",
                        histogram_bin_count=count, histogram_minimum=low, histogram_maximum=high)
             if error is not None:
-                label = label_of(row)
+                identity = identity_of(row)
                 index = min(int((error-low)/width), count-1) if width else 0
                 row.update(bin_index=index, bin_lower=low+index*width, bin_upper=low+(index+1)*width,
-                           bin_count=counts[label, index], population_sample_count=populations[label])
+                           bin_count=counts[identity, index], population_sample_count=populations[identity])
             yield row
 
-    series = [{"name": label, "points": [[low+(i+0.5)*width, counts[label, i]] for i in range(count)],
-               "marker": "circle"} for label in populations]
+    series = [{"name": labels[identity], "points": [[low+(i+0.5)*width, counts[identity, i]] for i in range(count)],
+               "marker": "circle"} for identity in populations]
     note = ("Raw receiver minus its paired transmitted symbol; not a hard-decision symbol error rate. "
             "Common equal-width bins; counts, not means. Last bin includes its upper edge. "
             "CSV retains all sample errors and bin assignments; count each bin once per population.")
@@ -11986,7 +12138,52 @@ def _runtime_evm_profile_chart(chart_name, existing, fetch_artifact_bytes, run_i
             return _runtime_evm_profile_stream(chart_name, sources, run_id, coverage)
 
 
+def _full_evm_resource_identity(row, coordinate_domain):
+    """Validate retained coordinates, never infer an RE from despread QAM.
+
+    Native pre-transform keys identify allocation positions, not subcarriers.
+    Some MATLAB CSV paths prune the entirely non-applicable subcarrier column;
+    its absence is permitted only with the explicit domain and native key.
+    """
+    coordinates = [_row_float(row, field) for field in ("LayerIndex", "OFDMSymbolIndex")]
+    if any(value is None or value < 1 or value != int(value) for value in coordinates):
+        return None
+    native_domain = _row_text(row, "SymbolOrderLinearIndexDomain")
+    if coordinate_domain == "pre_transform_qam_positions":
+        native_key = _row_float(row, "SymbolOrderLinearIndex")
+        if (native_domain != "native_pre_transform_allocation_position_key"
+                or native_key is None or not 1 <= native_key < 2**53 or native_key != int(native_key)
+                or _row_text(row, "SubcarrierIndex").lower() not in {"", "nan"}):
+            return None
+        # This key is unique across the whole native allocation, even if a
+        # corrupt row changes its accompanying OFDM-symbol/layer coordinate.
+        return (coordinate_domain, int(native_key))
+    if coordinate_domain not in {"", "layer_resource_elements"}:
+        return None
+    subcarrier = _row_float(row, "SubcarrierIndex")
+    if subcarrier is None or subcarrier < 1 or subcarrier != int(subcarrier):
+        return None
+    if native_domain not in {"", "layer_grid_linear_index"}:
+        return None
+    if native_domain or _row_text(row, "SymbolOrderLinearIndex"):
+        native_key = _row_float(row, "SymbolOrderLinearIndex")
+        if (native_domain != "layer_grid_linear_index" or native_key is None
+                or not 1 <= native_key < 2**53 or native_key != int(native_key)):
+            return None
+    return ("layer_resource_elements", *map(int, coordinates), int(subcarrier))
+
+
 def _runtime_evm_profile_stream(chart_name, sources, run_id, coverage):
+    capture_fields = (
+        ("execution_id", "ExecutionID"), ("config_hash", "ConfigHash"),
+        ("channel_seed", "ChannelSeed"), ("observation_id", "ObservationID"),
+        ("receiver_window_id", "ReceiverWindowID"),
+        ("receiver_observation_sha256", "ReceiverObservationSHA256"),
+        ("receiver_clock_domain", "ReceiverClockDomain"),
+        ("receiver_clock_epoch", "ReceiverClockEpoch"),
+        ("observation_start_sample", "ObservationStartSample"),
+        ("observation_end_sample_exclusive", "ObservationEndSampleExclusive"),
+        ("observation_sample_rate_hz", "ObservationSampleRateHz"))
     required_direction = "DL" if chart_name.startswith("PDSCH ") else "UL" if chart_name.startswith("PUSCH ") else ""
     profile_name = chart_name.removeprefix("PDSCH ").removeprefix("PUSCH ")
     axis_field = {
@@ -12043,6 +12240,9 @@ def _runtime_evm_profile_stream(chart_name, sources, run_id, coverage):
             ordering = _row_text(row, "SymbolOrdering")
             ordering_status = _row_text(row, "SymbolOrderingStatus")
             coordinate_domain = _row_text(row, "SymbolCoordinateDomain")
+            native_order_domain = _row_text(row, "SymbolOrderLinearIndexDomain")
+            if coordinate_domain not in {"", "layer_resource_elements", "pre_transform_qam_positions"}:
+                return None
             if axis_field == "SubcarrierIndex" and coordinate_domain == "pre_transform_qam_positions":
                 return None  # Inverse-DFT QAM positions are not per-subcarrier measurements.
             if not slot or not ue or not (frame or sfn) or not layer or codeword == "":
@@ -12054,25 +12254,34 @@ def _runtime_evm_profile_stream(chart_name, sources, run_id, coverage):
             scope = _row_text(row, "CaptureScope")
             full = scope == "full_allocation_paired_symbols"
             experiment = _constellation_experiment_fields(row)
+            # Retain additional actual capture/lifecycle keys when supplied.
+            # Their absence stays empty; slot/TB ordinals never create them.
+            capture_identity = {name: _row_text(row, source) for name, source in capture_fields}
+            experiment.update(capture_identity)
             observation_key = (direction, ue, frame, sfn, slot, cell, tb, *experiment.values())
             observation = observations.setdefault(observation_key, {
-                "id": len(observations), "full": full, "expected": None, "count": 0})
-            if observation["full"] != full:
-                return None  # Mixed full/preview rows cannot establish coverage.
+                "id": len(observations), "full": full, "expected": None, "count": 0,
+                "coordinate_domain": coordinate_domain, "native_order_domain": native_order_domain})
+            if (observation["full"] != full or observation["coordinate_domain"] != coordinate_domain
+                    or observation["native_order_domain"] != native_order_domain):
+                return None  # Mixed scopes/domains cannot establish one observation's coverage.
             if full:
                 count = _row_float(row, "ObservationSymbolCount")
                 captured = _row_float(row, "CapturedSymbolCount")
                 index = _row_float(row, "SampleIndex")
-                resource = tuple(_row_float(row, f) for f in ("LayerIndex", "OFDMSymbolIndex", "SubcarrierIndex"))
+                resource = _full_evm_resource_identity(row, coordinate_domain)
                 if count is None or count < 1 or count != int(count) or captured != count:
                     return None
                 if index is None or index != int(index) or not 1 <= index <= count:
                     return None
-                if any(v is None or v < 1 or v != int(v) for v in resource):
+                if resource is None:
                     return None
                 if (observation["expected"] not in (None, count)
                         or not coverage.add((observation["id"], "sample", int(index)))
-                        or not coverage.add((observation["id"], "resource", tuple(map(int, resource))))):
+                        or not coverage.add((observation["id"], "resource", resource))):
+                    return None
+                if native_order_domain and not coverage.add((observation["id"], "native_position",
+                                                            int(_row_float(row, "SymbolOrderLinearIndex")))):
                     return None
                 observation["expected"] = count
                 observation["count"] += 1
@@ -12091,6 +12300,7 @@ def _runtime_evm_profile_stream(chart_name, sources, run_id, coverage):
                 "symbol_ordering_status": ordering_status,
                 "measured_sample_source": sample_source,
                 "symbol_coordinate_domain": coordinate_domain,
+                "symbol_order_linear_index_domain": native_order_domain,
                 "measurement_scope": "full_allocation_paired_symbols" if full else "persisted_paired_sample_subset",
                 "evm_normalization": "average_reference_signal_power_in_bucket",
                 "source_table_logical_path": source_path,
@@ -12126,6 +12336,11 @@ def _runtime_evm_profile_stream(chart_name, sources, run_id, coverage):
             label += f" C{row['cell_id']}"
         if row["tb_id"]:
             label += f" TB{row['tb_id']}"
+        for field, _source in capture_fields:
+            if row[field]:
+                label += f" {field}={row[field]}"
+        label += (" | pre-transform QAM positions" if row["symbol_coordinate_domain"] == "pre_transform_qam_positions"
+                  else " | layer resource elements")
         for metric, name in (("rms_evm_pct", "RMS"), ("peak_evm_pct", "Peak")):
             plot_points[f"{name} {label}"].append([row[axis_field], row[metric]])
     series = [{"name": name, "points": sorted(points), "marker": "circle" if name.startswith("RMS") else "square"}
@@ -12133,7 +12348,8 @@ def _runtime_evm_profile_stream(chart_name, sources, run_id, coverage):
     all_full = all(obs["full"] for obs in observations.values())
     coverage = "Full paired-allocation coverage verified by sample/resource identities and transmitter counts." if all_full else "Contains persisted sample subsets; not full-allocation coverage."
     note = ("RMS and Peak EVM from actual receiver symbols without reporter payload gain/phase fitting; average reference-power normalization "
-            "within each UE/frame/slot/TB/codeword/layer bucket. " + coverage + " Not RF conformance EVM.")
+            "within each UE/frame/slot/TB/codeword/layer bucket. " + coverage +
+            " Pre-transform QAM supports symbol/layer profiles, not per-subcarrier EVM. Not RF conformance EVM.")
     summary = [f"paired_samples={sum(row['sample_count'] for row in csv_rows)}",
                "normalization=average reference power", "scope=full paired allocation" if all_full else "scope=contains sample subsets"]
     image_bytes = _render_multi_series_svg(chart_name, note, series, summary,
@@ -12392,6 +12608,10 @@ def _specialized_chart_materialization(
     run_id: int,
 ) -> dict[str, Any] | None:
     chart_name = str(chart_name or "")
+    from lls_csi_selection_quality import chart_materialization as selection_chart
+    selection = selection_chart(chart_name, existing, fetch_artifact_bytes, run_id)
+    if selection is not None:
+        return selection
     if chart_name == "partial or missing data dashboard":
         return _availability_audit_chart(existing, fetch_artifact_bytes, run_id)
     if chart_name == "ACK/NACK timeline":
@@ -12408,6 +12628,11 @@ def _specialized_chart_materialization(
     if chart_name == "PRACH native resource grid":
         from lls_resource_occupancy_plots import native_prach_grid_chart
         return native_prach_grid_chart(existing, fetch_artifact_bytes, run_id)
+    if chart_name in {"SSB native resource grid", "SSB/PBCH occupancy map", "PBCH/SSB map"}:
+        from lls_native_ssb_plot import native_ssb_grid_chart
+        native = native_ssb_grid_chart(chart_name, existing, fetch_artifact_bytes, run_id)
+        if native is not None:
+            return native
     if chart_name == "frame/slot/symbol occupancy timeline":
         from lls_resource_occupancy_plots import symbol_occupancy_chart
         return symbol_occupancy_chart(existing, fetch_artifact_bytes, run_id)
@@ -15244,6 +15469,35 @@ def materialize_run_contract_artifacts(
             )
             if special is not None:
                 chart_csv_bytes = special["csv_file"] if "csv_file" in special else bytes(special["csv_bytes"])
+                if special.get("no_plot"):
+                    # This study has a separate source-audit table. Preserve
+                    # its empty plotted schema, not a synthetic reason image.
+                    status = str(special.get("csv_status") or "unavailable_no_observations")
+                    source_path = str(special.get("source_table_path") or "")
+                    # A forced refresh must not leave an older, now-invalid
+                    # browser-owned study image visible beside an empty CSV.
+                    # Never delete an input archive or another producer's plot.
+                    if not run_folder or not Path(run_folder).is_dir():
+                        raise ValueError("No-plot cleanup requires the existing actual run folder")
+                    root_path = Path(run_folder).resolve()
+                    image_path = (root_path / target_img).resolve()
+                    if (chart_name != "Private CSI selection regret — fixed-CRI nominal-MMSE study"
+                            or not image_path.is_relative_to(root_path)
+                            or not image_path.name.startswith("contract__private-csi-selection-study__")):
+                        raise ValueError("No-plot cleanup requires this exact browser-owned study image")
+                    if image_path.is_file():
+                        _windows_long_path(image_path).unlink()
+                    existing.pop(target_img, None)
+                    source_lookup.pop(target_img, None)
+                    _write_file_if_possible(run_folder, target_csv, chart_csv_bytes)
+                    artifact_id = persist_artifact(target_csv, "table_csv", "text/csv; charset=UTF-8",
+                        chart_csv_bytes, {"materializer_version": MATERIALIZER_VERSION,
+                            "chart_name": chart_name, "source_logical_path": source_path,
+                            "source_row_count": 0, "source_mapping_status": "unavailable"})
+                    created.append({"logical_path": target_csv, "artifact_id": artifact_id, "status": status})
+                    manifest_rows.append([target_csv, "table_csv", status, source_path, special.get("note", "")])
+                    manifest_rows.append([target_img, "image_png", status, source_path, "No valid observations; no PNG generated."])
+                    continue
                 image_bytes = _rasterize_contract_png(
                     bytes(special["img_bytes"]),
                     source_mime_type="image/svg+xml",

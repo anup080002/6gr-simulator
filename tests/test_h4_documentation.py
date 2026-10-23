@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 import re
 import threading
+import csv
+import hashlib
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError
 
@@ -14,6 +16,61 @@ GUIDE = ROOT / 'docs/lls/h4_100mhz_guide'
 spec = importlib.util.spec_from_file_location('h4_guide', GUIDE / 'serve.py')
 guide = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(guide)
+inventory_spec = importlib.util.spec_from_file_location('h4_evidence_inventory', GUIDE / 'buildEvidenceGuide.py')
+inventory = importlib.util.module_from_spec(inventory_spec)
+inventory_spec.loader.exec_module(inventory)
+
+
+def test_evidence_inventory_matches_installed_declarations_without_importing_dashboard():
+    with (GUIDE / 'evidence-catalog.csv').open(encoding='utf-8', newline='') as stream:
+        retained = list(csv.DictReader(stream))
+    expected = inventory.installed_entries()
+    actual = [r for r in retained if r['kind'] not in ('inventory', 'observed_file')]
+    assert actual == expected
+    meta = json.loads(retained[0]['details_json'])
+    assert meta['scope'] == 'documentation_inventory_not_measurement_or_acceptance'
+    for path, digest in meta['source_sha256'].items():
+        assert hashlib.sha256((ROOT / path).read_bytes()).hexdigest() == digest, path
+    assert len([r for r in retained if r['kind'] == 'dashboard_panel']) >= 35
+    assert len([r for r in retained if r['kind'] == 'live_chart']) >= 35
+    assert len({(r['kind'], r['id']) for r in retained}) == len(retained)
+    # Generated docs are served as read-only source, not a new results API.
+    assert guide.source_payload('docs/lls/h4_100mhz_guide/evidence-catalog.csv')['text']
+
+
+def test_bounded_inventory_does_not_count_wide_header_as_measurements(tmp_path):
+    sample = tmp_path / 'wide.csv'
+    header = ['column_' + str(k) for k in range(1000)]
+    with sample.open('w', newline='', encoding='utf-8') as stream:
+        csv.writer(stream).writerow(header)
+    fields, metadata = inventory.inspect_header(sample)
+    assert fields == header
+    assert sample.stat().st_size > 2303
+    assert metadata['first_record_seen'] is False
+    assert metadata['first_record_matches_header_width'] is False
+    with sample.open('a', newline='', encoding='utf-8') as stream:
+        csv.writer(stream).writerow(['one, "quoted"\nvalue'] + [''] * 999)
+    _, metadata = inventory.inspect_header(sample)
+    assert metadata['first_record_seen'] and metadata['first_record_matches_header_width']
+    assert 'not audited' in metadata['inspection']
+
+
+def test_documentation_literal_reader_never_executes_code():
+    import ast
+    with pytest.raises(ValueError):
+        inventory.literals(ast.parse("__import__('os').system('anything')", mode='eval').body, {})
+    with pytest.raises(ValueError):
+        inventory.literals(ast.parse("x.__class__", mode='eval').body, {})
+
+
+def test_observed_file_inventory_contains_no_measurement_payload(tmp_path):
+    (tmp_path / 'trial.csv').write_text('Slot,SecretPayload\n1,do-not-copy-this\n')
+    (tmp_path / 'plot.png').write_bytes(b'not-even-a-valid-image')
+    entries = inventory.observed_entries(tmp_path)
+    assert len(entries) == 2
+    assert 'do-not-copy-this' not in json.dumps(entries)
+    png = next(r for r in entries if r['id'] == 'plot.png')
+    assert 'no pixel or lineage audit' in json.loads(png['details_json'])['inspection']
 
 
 def test_source_atlas_targets_exist():
@@ -49,6 +106,29 @@ def test_algorithm_script_loaded_before_navigation():
     assert text.index('window.H4Guide=') < text.index('G.initMethodChapter=')
 
 
+def test_absolute_power_definitions_keep_normative_and_unqualified_scopes_separate():
+    text = (GUIDE / 'chapters.js').read_text(encoding='utf-8')
+    chapter = text.split("CHAPTERS.push({id:'absolute-power-n40'", 1)[1]
+    for phrase in ('Complex samples in sqrt(mW)', 'not a universal NR BS power',
+                   'PH_Type1   = PCMAX - Prequested',
+                   'SRS has its own resource-set reference',
+                   'There is no PUSCH DeltaTF term',
+                   'Remaining integrated power-control gap'):
+        assert phrase in chapter, phrase
+    for path in re.findall(r"S\('([^']+)'\)", chapter):
+        assert (ROOT / path).is_file(), path
+        assert guide.source_payload(path)['path'] == path
+    with (ROOT / 'docs/lls/h4_100mhz_20261015_issue_status.csv').open(
+            encoding='utf-8-sig', newline='') as stream:
+        rows = list(csv.DictReader(stream))
+    for issue_id in ('N40-PWR-01', 'N40-PWR-02', 'N40-PWR-03'):
+        matches = [row for row in rows if row['ID'] == issue_id]
+        assert len(matches) == 1 and None not in matches[0]
+        for path in matches[0]['Production files'].split(';'):
+            assert (ROOT / path.strip()).is_file(), path
+    assert 'CONFIRMED GAP' in next(row for row in rows if row['ID'] == 'N40-PWR-03')['Current status']
+
+
 def test_detailed_guide_is_read_only_not_a_simulation_launcher():
     text = (GUIDE / 'chapters.js').read_text(encoding='utf-8')
     assert 'G.teachingMath=' in text
@@ -57,6 +137,30 @@ def test_detailed_guide_is_read_only_not_a_simulation_launcher():
     assert "fetch(" not in text
     assert 'XMLHttpRequest' not in text
     assert 'localStorage' not in text
+
+
+def test_resource_efficiency_backlog_is_open_and_has_real_production_owners():
+    with (ROOT / 'docs/lls/h4_100mhz_20261015_issue_status.csv').open(
+            encoding='utf-8-sig', newline='') as stream:
+        rows = list(csv.DictReader(stream))
+    text = (GUIDE / 'chapters.js').read_text(encoding='utf-8')
+    for issue_id in ('H4-196', 'H4-197', 'H4-198'):
+        matches = [row for row in rows if row['ID'] == issue_id]
+        assert len(matches) == 1, issue_id
+        row = matches[0]
+        assert None not in row and len(row) == 8, row
+        assert row['Current status'].startswith('OPEN deferred at user request')
+        assert row['Remaining acceptance']
+        for path in row['Production files'].split(';'):
+            assert (ROOT / path.strip()).is_file(), path
+        assert issue_id in text
+    # Legal configuration choices must not be presented as mandatory violations
+    # or as already implemented gains in the running waveform experiment.
+    assert 'not mandatory 3GPP symbol exclusions' in text
+    assert 'No specific mandatory-procedure violation was established' in text
+    assert 'not 5,400 proven recoverable data REs or measured throughput' in text
+    assert 'This documentation changes no active YAML, MATLAB code' in text
+    assert 'G.resourceEfficiencyFixes=fixes' in text
 
 
 @pytest.mark.parametrize('path', ['../README.md', 'docs/../README.md', '.git/config',

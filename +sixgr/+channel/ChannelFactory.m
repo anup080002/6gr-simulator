@@ -795,23 +795,42 @@ classdef ChannelFactory
             if logical(sixgr.util.structGet(ch, "IsFading", false)) && isfield(ch, "Object") && ~isempty(ch.Object)
                 state.UseFading = true;
                 state.Obj = ch.Object;
+                % Inspect before reset/warmup: coefficient generation and
+                % waveform filtering are different native API contracts.
+                sixgr.channel.waveformChannelOutputContract(state.Obj);
                 [padSamples, trimSamples] = sixgr.channel.ChannelFactory.resolveChannelDelaySamples(ch.Object, fs);
                 state.ChannelPadSamples = padSamples;
                 state.ChannelTrimSamples = trimSamples;
                 state.WarmupSamples = max(256, padSamples);
-                reset(state.Obj);
+                if isempty(waveform)
+                    warmup = zeros(state.WarmupSamples, max(1, round(numTx)));
+                else
+                    warmup = zeros(state.WarmupSamples, max(1, round(numTx)), 'like', waveform);
+                end
+                if isa(state.Obj,'nrCDLChannel') && isinf(state.Obj.SampleDensity) && ...
+                        strcmp(version('-release'),'2026a')
+                    % Fresh-only R2026a native filter serialization repair.
+                    % The helper performs this boundary's one public reset;
+                    % discarded setup is not physical warmup or clock time.
+                    state.Meta.NativeReciprocalFilterInitialization = ...
+                        sixgr.channel.initializeFreshCDLReciprocalFilters(state.Obj,warmup);
+                else
+                    reset(state.Obj);
+                    if isa(state.Obj,'nrCDLChannel')
+                        initializationStatus="not_qualified_on_this_release";
+                        if ~isinf(state.Obj.SampleDensity)
+                            initializationStatus="finite_density_outside_repair_scope";
+                        end
+                        state.Meta.NativeReciprocalFilterInitialization = struct( ...
+                            'Applied',false,'Status',initializationStatus, ...
+                            'RuntimeMATLABRelease',string(version('-release')), ...
+                            'QualifiedMATLABRelease',"2026a", ...
+                            'FiniteDensityQualified',false,'HistoricalCheckpointRepaired',false);
+                    end
+                end
                 state.ResetCount = double(state.ResetCount) + 1;
                 if state.WarmupSamples > 0
-                    if isempty(waveform)
-                        warmup = zeros(state.WarmupSamples, max(1, round(numTx)));
-                    else
-                        warmup = zeros(state.WarmupSamples, max(1, round(numTx)), 'like', waveform);
-                    end
-                    try
-                        state.Obj(warmup);
-                    catch
-                        [~, ~] = state.Obj(warmup);
-                    end
+                    sixgr.channel.applyWaveformChannelOnce(state.Obj,warmup,false);
                     state.TotalObjectInputSamples = double(state.TotalObjectInputSamples) + double(state.WarmupSamples);
                 end
                 pendingIdle = max(0, round(double(sixgr.util.structGet(state, "PendingIdleSamples", 0))));
@@ -1134,9 +1153,6 @@ classdef ChannelFactory
                         size(identityInput,2),double(state.NumTxAnt),double(elementExpansion), ...
                         size(sixgr.util.structGet(state,"PortToElementMatrix",[]),1), ...
                         size(sixgr.util.structGet(state,"PortToElementMatrix",[]),2));
-                    if identityReference
-                        reference=sixgr.channel.IdentityAWGNRuntime.reference(state,size(x,1));
-                    end
                     replay.ChannelModelApplied="AWGN";
                     replay.RuntimeChannelTimingTruthSource="executed_identity_operator_zero_delay";
                     replay.RuntimeChannelPathDelays_s=0;
@@ -1151,22 +1167,21 @@ classdef ChannelFactory
                         replay.BeamFailureRecoveryActiveSampleCount=sum(arrayfun( ...
                             @(s) double(s.EpisodeActive)*(s.EndOffsetExclusive-s.FirstOffset), ...
                             beamSegments));
-                        beamSignature=[];
-                        for beamSegmentIndex=1:numel(beamSegments)
-                            segmentMatrix=beamSegments(beamSegmentIndex).Matrix;
-                            beamSignature=[beamSignature; ... %#ok<AGROW>
-                                beamSegments(beamSegmentIndex).FirstOffset; ...
-                                beamSegments(beamSegmentIndex).EndOffsetExclusive; ...
-                                double(beamSegments(beamSegmentIndex).EpisodeActive); ...
-                                size(segmentMatrix,1);size(segmentMatrix,2); ...
-                                real(segmentMatrix(:));imag(segmentMatrix(:))];
-                        end
                         replay.AppliedAWGNSpatialMatrixSHA256=char(string( ...
-                            sixgr.channel.ChannelFactory.runtimeNumericArraySHA256( ...
-                            beamSignature)));
+                            sixgr.channel.PiecewiseAWGNReference.signature(beamSegments)));
                         replay.RuntimeChannelTimingTruthSource="executed_fixed_matrix_operator_zero_delay";
+                        if state.Meta.BeamFailureRecoveryEpisodeEnabled
+                            replay.RuntimeChannelTimingTruthSource="executed_piecewise_matrix_operator_zero_delay";
+                        end
+                        if identityReference
+                            reference=sixgr.channel.IdentityAWGNRuntime.reference( ...
+                                state,size(x,1),beamSegments);
+                        end
                     else
                         y=identityInput;
+                        if identityReference
+                            reference=sixgr.channel.IdentityAWGNRuntime.reference(state,size(x,1));
+                        end
                     end
                 end
                 replay.ChannelFadingExecutionStatus = "runtime_channel_state_awgn_or_not_materialized";
@@ -3073,6 +3088,25 @@ classdef ChannelFactory
                 arr.ElementSpacing = runtimeSpec.ElementSpacing;
                 arr.PolarizationAngles = sixgr.channel.ChannelFactory.localResolveCDLPolarizationAngles( ...
                     arr.PolarizationAngles, runtimeSpec.PolarizationCount);
+                if ~runtimeSpec.AdapterMeta.LogicalPortProjectionApplied
+                    angles = sixgr.util.structGet(runtimeAntenna, "PolarizationAngles_deg", []);
+                    if ~isempty(angles)
+                        if ~(isnumeric(angles) && isreal(angles) && isvector(angles) && ...
+                                numel(angles)==runtimeSpec.PolarizationCount && all(isfinite(angles(:))))
+                            error("ChannelFactory:InvalidRuntimePolarizationAngles", ...
+                                "The physical CDL array requires one finite angle per configured polarization.");
+                        end
+                        arr.PolarizationAngles = double(angles(:).');
+                    end
+                    model = sixgr.util.structGet(runtimeAntenna, "ElementPolarizationModel", []);
+                    if ~isempty(model)
+                        if ~(isnumeric(model) && isreal(model) && isscalar(model) && ismember(model,[1 2]))
+                            error("ChannelFactory:InvalidRuntimePolarizationModel", ...
+                                "Runtime element polarization model must be TR 38.901 Model 1 or 2.");
+                        end
+                        arr.PolarizationModel = char("Model-" + string(model));
+                    end
+                end
                 adapterMeta = runtimeSpec.AdapterMeta;
                 adapterMeta.ElementPatternApplied = false;
                 adapterMeta.ElementPatternSource = "nrCDLChannel_struct_element_pattern";
@@ -3206,6 +3240,13 @@ classdef ChannelFactory
             spec.Size = [nRow nCol nPol panelRows panelCols];
             spec.ElementSpacing = sixgr.channel.ChannelFactory.localNonoverlappingCDLSpacing( ...
                 spec.Size, spacingV, spacingH);
+            panelSpacing = sixgr.util.structGet(runtimeAntenna, "PanelCenterSpacing_lambda", []);
+            if ~isempty(panelSpacing)
+                validateattributes(panelSpacing, {'numeric'}, ...
+                    {'real','finite','positive','numel',2});
+                % Runtime array convention H/V; nrCDLChannel convention V/H.
+                spec.ElementSpacing(3:4) = double(panelSpacing([2 1]));
+            end
             spec.PolarizationCount = nPol;
             spec.AdapterMeta = struct("LogicalPortProjectionApplied", false, "PortMapping", "runtime_array_shape_matches_channel_ports");
             valid = true;

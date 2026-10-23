@@ -10,6 +10,10 @@ assert(isequaln(items([]),sixgr.truth.orderSharedReceiverCompletions(items([])))
 % Without a completed PUSCH, ordering cannot create one or synthesize a clock.
 onlyPUCCH=items(1);
 assert(isequaln(onlyPUCCH,sixgr.truth.orderSharedReceiverCompletions(onlyPUCCH)));
+% Same-clock control reception must be reduced before SRS power binding.
+extra=struct('Kind',{'BindSRSPower','PDCCH','PrepareULData'},'Identity',{8,9,10});
+ordered=sixgr.truth.orderSharedReceiverCompletions([extra items]);
+assert(isequal([ordered.Identity],[5 6 3 2 9 10 1 4 7 8]));
 fprintf('SHARED_COMPLETION_DEPENDENCY_ORDER_PASS identity_preserved=1 no_future_observation_added=1\n');
 ok=true;
 end

@@ -3,7 +3,7 @@ function ref=resolveDACAmplitudeReference(cfg,raw,fs,direction)
 % Quantization uses this range directly: no pre/post signal gain, power
 % restoration, allocation normalization, rank normalization or SNR tuning.
 mode=string(sixgr.util.structGet(raw,'reference_domain','waveform_samples'));
-if ~isscalar(mode) || ~any(mode==["waveform_samples","normalized_nr_ofdm_full_carrier"])
+if ~isscalar(mode) || ~any(mode==["waveform_samples","normalized_nr_ofdm_full_carrier","absolute_endpoint_rms"])
     error('RF:DACReferenceDomain','Unsupported rf_frontend.dac.reference_domain.');
 end
 ref=struct('Domain',mode,'WaveformUnitsPerReferenceUnit',1, ...
@@ -11,6 +11,11 @@ ref=struct('Domain',mode,'WaveformUnitsPerReferenceUnit',1, ...
     'Nfft',NaN,'NumSubcarriers',NaN,'NumTransmitPorts',NaN, ...
     'Source',"explicit_waveform_sample_units",'PayloadDependent',false);
 if mode=="waveform_samples", return; end
+if mode=="absolute_endpoint_rms"
+    absolute=sixgr.rf.resolveAbsoluteEndpointReference(cfg,raw,direction);
+    for name=string(fieldnames(absolute)).', ref.(name)=absolute.(name); end
+    return;
+end
 if ~sixgr.rf.isNormalizedFixedSNRPowerReference(cfg)
     error('RF:DACReferencePowerDomain', ...
         'Normalized OFDM DAC reference requires normalized fixed-Es samples, not absolute-power samples.');

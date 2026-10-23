@@ -24,6 +24,11 @@ progress = struct('CurrentSlot',slot,'TotalSlots',total, ...
     'ClockScope',"campaign_contiguous_radio_slots_1based", ...
     'ProgressSource',"unavailable_no_completed_radio_slot_counter", ...
     'ProgressMeaning',"processed_radio_slots_not_CRC_success_checkpoint_or_final_acceptance");
+if isfield(state,'ExecutionHorizon')
+    progress.OriginalConfiguredSlots=state.ExecutionHorizon.OriginalConfiguredSlots;
+    progress.ExecutionFinishAfterSlot=state.ExecutionHorizon.FinishAfterSlot;
+    progress.ExecutionHorizonSource="explicit_checkpoint_continuation_request";
+end
 if isfinite(spf)
     if isfinite(slot) && slot > 0
         progress.CurrentFrame = 1 + floor((slot-1)/spf);

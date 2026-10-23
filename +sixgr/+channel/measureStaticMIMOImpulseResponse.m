@@ -1,6 +1,9 @@
 function [h, evidence] = measureStaticMIMOImpulseResponse(channelObject, numTx, numRx, sampleRate)
 %MEASURESTATICMIMOIMPULSERESPONSE Measure an exact static toolbox-channel FIR.
 
+% This consumer filters an actual probe; coefficient-only channel objects
+% must reject before reset or any native state consumption.
+sixgr.channel.waveformChannelOutputContract(channelObject);
 numTx = max(1,round(double(numTx)));
 numRx = max(1,round(double(numRx)));
 sampleRate = double(sampleRate);
@@ -13,12 +16,7 @@ for tx = 1:numTx
     probe((tx-1)*spacing + 1,tx) = 1;
 end
 reset(channelObject);
-try
-    response = channelObject(probe);
-catch ME
-    error("sixgr:channel:ReciprocalImpulseProbeFailed", ...
-        "Static reciprocal channel impulse probe failed: %s", ME.message);
-end
+response = sixgr.channel.applyWaveformChannelOnce(channelObject,probe,false);
 if size(response,2) ~= numRx
     error("sixgr:channel:ReciprocalImpulseProbeDimensionMismatch", ...
         "Toolbox channel returned %d receive columns; expected %d.", ...

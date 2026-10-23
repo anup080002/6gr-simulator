@@ -2,7 +2,8 @@ classdef PAProfile
 %PAPROFILE Calibrated bounded PA models with no output-power restoration.
 
     methods(Static)
-        function [profile,canonical]=fromConfiguration(config)
+        function [profile,canonical]=fromConfiguration(config,direction)
+            if nargin<2, direction=""; end
             canonical=false;
             profile=struct();
             profileId=string(sixgr.util.structGet(config, ...
@@ -25,11 +26,21 @@ classdef PAProfile
                 raw,"input_backoff_db",NaN)), ...
                 "Version",string(sixgr.util.structGet(raw,"version","")));
             model=lower(strtrim(profile.Model));
+            if profile.ReferenceDomain=="absolute_endpoint_rms" && model~="rapp"
+                error('RF:AbsolutePAReferenceModel', ...
+                    'absolute_endpoint_rms is implemented for Rapp saturation only.');
+            end
             if model=="rapp"
                 profile.Smoothness=double(sixgr.util.structGet( ...
                     raw,"smoothness",NaN));
                 profile.SaturationAmplitude=double(sixgr.util.structGet( ...
                     raw,"saturation_amplitude",NaN));
+                if profile.ReferenceDomain=="absolute_endpoint_rms"
+                    profile.EndpointReference=sixgr.rf.resolveAbsoluteEndpointReference( ...
+                        config,raw,direction);
+                    profile.SaturationAmplitude=profile.SaturationAmplitude* ...
+                        profile.EndpointReference.WaveformUnitsPerReferenceUnit;
+                end
             elseif model=="saleh"
                 profile.AlphaAM=double(sixgr.util.structGet(raw,"alpha_am",NaN));
                 profile.BetaAM=double(sixgr.util.structGet(raw,"beta_am",NaN));

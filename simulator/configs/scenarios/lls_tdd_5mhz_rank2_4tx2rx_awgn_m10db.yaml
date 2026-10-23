@@ -110,11 +110,12 @@ pusch:
   num_antenna_ports: 2
 
 reference_signals:
-  # Joint received-pilot LS, guarded by executed fixed-channel/RF evidence.
-  # Preserve signed noise-debiased CSI power; no configured-SNR oracle.
-  csi_rs_runtime_channel_estimator: flat_static_awgn_ls
+  # The executed beam-failure/recovery operator is piecewise, not static.
+  # Use native per-resource estimates; do not assert static-flat eligibility
+  # from the AWGN family or substitute configured SNR for received pilots.
+  csi_rs_runtime_channel_estimator: nr_channel_estimate
   trs:
-    runtime_channel_estimator: flat_static_awgn_ls
+    runtime_channel_estimator: nr_channel_estimate
     # Qualified on independent noise/signal waveform episodes for this
     # native-clock 4TX/2RX AWGN scope; not a fading/PUCCH qualification.
     detection_policy: white_noise_projection_v1
@@ -131,9 +132,9 @@ reference_signals:
     # Keep the four-slot clock-age guard and actual SRS/PUSCH arbitration;
     # do not recover timing from an illegally overlapping SRS at symbol 13.
     symbol_start: 11
-    # Joint received-pilot LS, only for the explicitly executed flat AWGN
-    # operator and an undistorted (or gain-only AGC-compensated) RX plane.
-    runtime_channel_estimator: flat_static_awgn_ls
+    # The reciprocal UL also executes the piecewise operator. Preserve
+    # native per-resource estimates without a static-flat promise.
+    runtime_channel_estimator: nr_channel_estimate
 
 random_access:
   num_tx_antennas: 2

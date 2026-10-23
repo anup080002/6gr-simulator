@@ -60,6 +60,9 @@ if isfield(rx,'DetectionMetricValid')
         'sixgr:link:InvalidPUCCHMetricValidity','Detector validity must be a scalar boolean.');
     evidence.DetectionMetricValid=logical(flag);
 end
+if isfield(rx,'DetectionMetricSource')
+    evidence.DetectionMetricSource=string(rx.DetectionMetricSource);
+end
 if isfield(rx,'DetectionOutcome')
     outcome=string(rx.DetectionOutcome);
     assert(isscalar(outcome) && any(outcome==["detected","dtx","unavailable"]), ...

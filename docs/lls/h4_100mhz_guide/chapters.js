@@ -126,7 +126,7 @@ ${E('Δf = 15·2<sup>μ</sup> kHz = 30 kHz &nbsp; ; &nbsp; F<sub>s</sub> = N<sub
 ${T(['Quantity','H4 value','Interpretation'],[['Numerology / CP','μ=1 / normal','14 symbols per slot; 2 slots per subframe.'],['Frame / subframe / slot','10 ms / 1 ms / 0.5 ms','20 slots per radio frame, 100 slots in this 50 ms run.'],['Active grid','3276 subcarriers × 14 symbols','45,864 RE coordinates per slot per port before reservations.'],['FFT / sample rate','4096 / 122.88 MSa/s','These must agree with SCS. Changing only one distorts the physical frequency scale.'],['Useful symbol','33.333333 μs','4096 useful samples.'],['CP, native no-window H4 clock','352 samples at each slot start; 288 for its other symbols','2.864583 / 2.343750 μs; sums to 61,440 samples per slot.']])}
 <p>The CP values above were obtained from the installed <code>nrOFDMInfo</code> for this carrier and explicit zero windowing, not assumed equal for every symbol. Use the returned native timing arrays whenever constructing capture boundaries or processing deadlines. Reference reading: ${R('211','38.211 §4 and §5.3')}; bandwidth lookup: ${R('104','38.104 §5.3.2')}.</p>
 <div class="lab"><div class="lab-label">Interactive H4 TDD calendar · schematic, not an execution trace</div><label>Slot within the five-slot period <select id="slot-select"><option value="0">1 — DL</option><option value="1">2 — DL</option><option value="2">3 — DL</option><option value="3">4 — special</option><option value="4">5 — UL</option></select></label><div id="grid-lab"></div><p class="lab-caption">The role strip is exact for the declared pattern. The channel overlay is illustrative: actual reserved RE depend on occasion, grant, rank, mapping type and native indices.</p></div>
-<h2>Time and frequency allocations</h2><p>The full DL allocation template starts at symbol 2 for 12 symbols. The special-slot alternative starts at symbol 2 for 8 symbols. UL data starts at symbol 0 for 11 symbols; SRS occupies symbol 11 on its configured occasion. The special slot has 10 DL symbols, 2 guard symbols, then 2 UL symbols. A nominal 273-PRB maximum is a capability limit, not a promise that every grant occupies all PRBs.</p><p>Build the actual RE set: remove control, DM-RS, PT-RS, CSI-RS, CSI-IM and other reservations, respecting their symbol scope. A contiguous RIV allocation cannot jump across a hole simply because free PRBs exist on both sides. Inspect <code>scheduler_resource_exclusions.csv</code>, the frozen grant and native mapped indices together.</p>${F('band','common','resource','scheduler')}`),
+<h2>Time and frequency allocations</h2><p>The full DL allocation template starts at symbol 2 for 12 symbols. The special-slot alternative starts at symbol 2 for 8 symbols. UL data starts at symbol 0 for 11 symbols (0–10); SRS occupies symbol 11 on its configured occasion, and configured PUCCH resources use symbols 12–13 when an obligation is transmitted. These particular lengths are <strong>valid but conservative YAML choices, not mandatory 3GPP symbol exclusions</strong>. A CORESET or PUCCH resource does not necessarily occupy the full bandwidth of those symbols. See the <a href="#resource-efficiency">resource-efficiency differences and deferred repair plan</a>.</p><p>The special slot has 10 DL symbols, 2 guard symbols, then 2 UL symbols. A nominal 273-PRB maximum is a capability limit, not a promise that every grant occupies all PRBs. Build the actual RE set: remove control, DM-RS, PT-RS, CSI-RS, CSI-IM and other reservations, respecting their symbol scope. A contiguous RIV allocation cannot jump across a hole simply because free PRBs exist on both sides. Inspect <code>scheduler_resource_exclusions.csv</code>, the frozen grant and native mapped indices together.</p>${F('band','common','resource','scheduler')}`),
 C('ofdm','Waveform & resources','OFDM, CP and windowing','Orthogonality is a relationship between the subcarrier spacing, useful symbol time and receiver alignment.',()=>`
 ${E('x[n] = (1/N) Σ<sub>k=0…N−1</sub> X[k]e<sup>j2πkn/N</sup> &nbsp; ; &nbsp; X[k] = Σ<sub>n=0…N−1</sub> x[n]e<sup>−j2πkn/N</sup>','This equation uses the conventional 1/N IFFT normalization. The separate unitary mathematics helper uses √N scaling; the production toolbox branch records its actual transform and noise calibration. Do not exchange these conventions silently.')}
 <p>The active grid is placed into FFT bins with guard bins outside the carrier. The IFFT creates a sum of orthogonal tones. The CP copies samples from the useful symbol's end to its beginning. If the effective channel memory and residual alignment error fit the CP, the demodulated channel can often be modeled per subcarrier. Excess delay or poor timing produces inter-symbol/inter-carrier interference; increasing nominal SNR cannot remove that model mismatch.</p>
@@ -852,14 +852,14 @@ ${T(['Channel','Producer / adapter','Measurement interpretation'],[
  chapter('restart-flow','Checkpoint restoration, WebGUI state and safe continuation','A durable checkpoint is more than the last visible slot. File restoration happens before resumed PHY execution.',()=>`
 ${badges(['infrastructure'])}
 <ol class="steps">
-<li><strong>Locate a completed checkpoint.</strong> The receipt names the last fully committed slot, state MAT digest, original configuration/source identity and external file dependencies. Slot45 means next slot46; a partial slot49 CSV does not create a checkpoint49.</li>
+<li><strong>Locate a completed checkpoint.</strong> The receipt names the last fully committed slot, state MAT digest, original configuration/source identity and external file dependencies. Slot46 means next slot47; a partial slot49 CSV does not create a checkpoint49. The current adaptation recovery policy is <code>checkpoint_first_slot: 49</code> with <code>checkpoint_every_slots: 3</code>, hence 49,52,55,… . This is a configurable execution policy, not a 3GPP slot requirement.</li>
 <li><strong>Validate state and compatibility.</strong> Check state checksum, MATLAB compatibility, scientific configuration and the explicit repair-source policy. A source-repaired continuation is labelled diagnostic.</li>
 <li><strong>Verify every dependency prefix.</strong> Confirm retained files still contain the checkpoint bytes. Missing or changed evidence fails restoration; do not manufacture replacements from summary counters.</li>
 <li><strong>Build a staging tree.</strong> Copy exact saved mutable prefixes and use verified same-volume immutable hardlinks where the implementation allows them. A previously failed run remains visible until the switch.</li>
 <li><strong>Preserve the interrupted attempt.</strong> Keep its extra IQ, CSVs, failure and logs in the recovery location before installing restored prefixes at the normal run path. One codebase remains; evidence histories are deliberately separate.</li>
 <li><strong>Publish the resume receipt.</strong> Record origin, repaired-source reason and narrowly allowed operational settings. The original scientific hash still owns pending grants/HARQ; it must not be rewritten as if new physics generated old samples.</li>
 <li><strong>Restore continuous owners.</strong> Reinstate scheduler, UE/control state, TB/soft buffers, pending receive windows, channel/RF/oscillator and RNG state. A process restart must not independently reseed the middle of the link.</li>
-<li><strong>Execute and checkpoint the next slot.</strong> Only now is the run advancing radio time. Save subsequent completed boundaries according to the actual applied cadence; a receipt—not a promise—establishes checkpoint49.</li>
+<li><strong>Execute and checkpoint the next slot.</strong> Only now is the run advancing radio time. Save subsequent completed boundaries according to the actual applied cadence; a receipt—not a promise—establishes checkpoint49. Schema-v2 checkpoints reuse immutable checksum-verified dependency versions; changing a mutable CSV creates a new version, never a link to its live mutable file. Keep the private object store with its checkpoint receipts. Completed sample owners may load exact samples from lossless archives; pending reception, channel/RF/RNG and HARQ state must still continue identically.</li>
 </ol>
 ${F('checkpoint','runner','capture','stream')}
 <h2>Why the WebGUI can still show “slot50 failed”</h2>
@@ -948,4 +948,769 @@ G.initMethodChapter=id=>{
    document.querySelectorAll('[data-causal]').forEach(b=>b.onclick=()=>select(Number(b.dataset.causal)));select(0);
  }
 };
+})();
+
+/* Reading the live screen and its artifacts: authored interpretation, never run data. */
+(() => {
+const G=window.H4Guide, {CHAPTERS,FILES,REFS,esc,S,R,T,N,F}=G;
+const atlasLink=q=>`<a href="#output-atlas?q=${encodeURIComponent(q)}">Find exact fields, CSVs and plots ↗</a>`;
+// Each family describes a population/plane, not a claim that it is available.
+const families=[
+{id:'run',title:'Run identity, completion and checkpoint state',panels:['Runtime Event Stream','SNR sweep progress','Run / configuration'],owners:['runner','runtime','profiler'],query:'live_stage_status',
+ row:'One persisted stage update or one sweep point. A stage record is not a PHY trial. The selected run ID, source revision and sweep-point identity must agree before combining tables.',
+ fields:[
+ ['Run ID, source/config hashes, seed','Identify the experiment. A run name such as “100 MHz” is descriptive, not proof of its executed settings. Read resolved configuration, checkpoint operational overrides and source provenance together.'],
+ ['Slot, stage, last committed checkpoint','Radio progress and durable restart progress are different. A started slot can fail before commit. A checkpoint is usable only after its atomic save and receipt complete.'],
+ ['Completed / passed / failed / pending','Completion is execution termination; pass is an acceptance decision at a stated scope. A recovered PNG or successful access subcase cannot turn a failed scenario into a pass.'],
+ ['Wall-clock timestamps / radio sample timestamps','Wall time measures computational cost; radio time orders physical events. A five-minute slot computation still represents 0.5 ms of radio time here.'],
+ ['Checkpoint interval / live plot interval','One-slot state saving and less-frequent PNG rendering are separate controls. The latter does not reduce the source measurement cadence.']],
+ plots:'Progress and stage-duration plots explain where execution is and where time is spent. They are not throughput or radio-latency curves.',
+ observe:'First establish selected RunID, point, latest radio event and last durable checkpoint. Then open the earliest fatal exception, not only the most recent report-recovery message.',
+ limit:'This documentation inventory is a dated snapshot, not a live monitor. Historical failure receipts remain evidence after a repair continuation.'},
+{id:'eligibility',title:'UE cards, DL/UL admission and traffic readiness',panels:['UE Status','UL planning'],owners:['runtime','scheduler','exports'],query:'control_gating',
+ row:'One UE state at a publication instant. It summarizes several independently timed receiver results; it is not necessarily a single simultaneous measurement.',
+ fields:[
+ ['Access / RRC connected','A bounded received-procedure state. Read the RRC scope before calling this full network attachment.'],
+ ['DL eligible versus UL eligible','Different gates: traffic enabled, queued bytes, legal timing, control state, HARQ availability, configured CSI/SRS/TRS/QCL requirements. “DL yes” does not imply “UL yes”.'],
+ ['UL block reason / next legal UL slot','Explains admission failure and a permitted target under configured timing choices. A K2 target landing in a DL-only interval is a legal rejection, not permission to transmit there.'],
+ ['SS / CSI / DL / UL SINR and rate','Different channels, times and receiver planes. Empty connected UL metrics can coexist with a successful RA Msg3 PUSCH.'],
+ ['Serving RSRP / UE PHR / last slots','Absolute RSRP requires calibrated power. PHR needs a modeled/received power-headroom report. Last observation, available and delivered slots must not be treated as interchangeable.']],
+ plots:'Queue, grant and delivery timelines show why resources were used or left idle. A card is a convenience summary; use source rows for an audit.',
+ observe:'For no UL data, follow traffic → queue → SRS requirement/validity → rank → HARQ → legal K2 → decoded DCI → executed PUSCH → completion.',
+ limit:'Do not remove the SRS gate to fill the card. Candidate cell-link loss entries are not individual multipath rays or MIMO ranks.'},
+{id:'ssb',title:'SSB beam sweep, PSS/SSS and PBCH recovery',panels:['ssb_sweep','ssb_pbch','ssb_measurements'],owners:['ssbtx','ssbrx','pbch','access'],query:'pbch',
+ row:'One received SSB candidate for a UE, burst and beam. Multiple rows with the same slot can be distinct SSB indices; they must remain separate in CSV joins and legends.',
+ fields:[
+ ['Configured / executed / observed beam counts','Requested beams, transmitted beams and independently received candidates are distinct. Sweep completeness needs identity coverage, not merely four rows.'],
+ ['SSB index / precoder row / selected beam','SSB index is zero-based; a MATLAB weight-row index may be one-based. Selection is a decision over measured candidates, not an extra waveform.'],
+ ['PSS / SSS detected; recovered PCI','PSS supplies a coarse identity group and timing hypothesis; SSS resolves cell identity. A correlation detection is not PBCH CRC success.'],
+ ['MIB decoded / PBCH CRC / selected','PBCH decoding and MIB recovery add coding/identity evidence. Selection should be traceable to that observation and its availability time.'],
+ ['SS-RSRP, SS-SINR, EVM, NMSE','Read units and planes. Normalized reference-RE power is not dBm. Decision-directed PBCH EVM and independently scored channel NMSE answer different questions.']],
+ plots:'SSB power and EVM plots need point, UE, burst/observation and SSB-index identity. A line crossing between different beams is not a single-beam time evolution.',
+ observe:'Compare selected-beam power/SINR with other successfully measured candidates, then trace the selected SSB into access and initial TCI/QCL state.',
+ limit:'A configured beam list alone does not prove a physical sweep. PBCH pass does not establish later SIB1, PRACH or connected data.'},
+{id:'sync',title:'DL/UL synchronization: estimate, correction and residual',panels:['ssb_sync_timing','dl_sync','ul_sync','csi_sync'],owners:['ssbrx','dlrx','ulrx','csirx'],query:'Timing',
+ row:'One receiver observation and one named clock/processing plane. Pre-front-end and post-front-end CSI are different observations, not two estimates that must be equal.',
+ fields:[
+ ['Injected CFO / timing','Scoring/configuration reference, never an acceptable substitute for a receiver estimate. Separate propagation, capture pre-roll, channel-filter delay and RF timing shift.'],
+ ['Estimated / applied CFO (Hz)','The estimate is what the receiver inferred; applied is the correction actually used. Different values can reflect clipping, policy or previous tracking state and require explicit sources.'],
+ ['Timing estimate / applied (samples)','Relative to the stated capture origin and Fs. Zero can mean a genuinely aligned window; a one-hypothesis search does not demonstrate acquisition over unknown delay.'],
+ ['Residual CFO / timing','Must come from the declared post-correction estimator or a clearly labeled scoring comparison. Injected minus applied is not an independent residual measurement.'],
+ ['Start / end / available samples','Intervals are typically [start,end). Duration is (end−start)/Fs. Resource time, observation completion, state update and publication are distinct events.']],
+ plots:'Timing/CFO traces should distinguish injected, estimated, applied and residual series. An estimator-consistency trace using the same observation is not an independent oscillator-accuracy campaign.',
+ observe:'Check estimator support, search hypotheses, sample clock and correction order before judging a zero. At 122.88 MSa/s, 32 samples correspond to 0.260416667 µs.',
+ limit:'No universal “CFO must be nonzero” rule. No generic receiver acquisition or residual-accuracy threshold is mandated for every simulator channel.'},
+{id:'prach',title:'PRACH detection, preamble identity and timing advance',panels:['prach_rach','prach_timing','prach_identity'],owners:['prachtx','prachrx','prachdetector','ra'],query:'prach',
+ row:'A Msg1 observation is not the same population as a completed four-step RA attempt. Noise-only trials form a third, separate population for false-alarm assessment.',
+ fields:[
+ ['RSI / TX preamble / detected preamble set','RSI selects sequence construction; preamble ID selects the candidate. TX identity is audit-only. Compare the received candidate set with the intended preamble without forcing the detector to choose it.'],
+ ['Metric / threshold / threshold source','A normalized detector statistic, not received dBm. The native MathWorks default depends on actual receive columns and useful repetitions; its formula is a receiver choice, not a universal 3GPP threshold.'],
+ ['Miss / false alarm / DTX','A missed intended preamble, an unintended accepted candidate and no transmitted signal are different events. Read applicability and population before computing rates.'],
+ ['Raw / propagation timing; TA command','Raw correlation lag includes observation conventions. The RAR TA command is quantized and may differ from a sample-domain delay estimate. Keep command, Tc units, samples and microseconds separate.'],
+ ['Beam / RA-RNTI / Msg3 TA applied','Trace association to received SSB evidence and the actual RA occasion. A proposed TA is not evidence that Msg3 applied the received command.']],
+ plots:'Correlation traces locate peaks against the recorded threshold. False-alarm/miss curves need independent empty/signal-present episodes; one successful attempt only supports one received outcome.',
+ observe:'Follow Msg1 candidate → received RAR RAPID match → TA interpretation → Msg3 timing and CRC → contention resolution.',
+ limit:'Low numerical threshold alone is not evidence of tuning or correctness. Use the PRACH calculator chapter and frozen statistical qualification conditions.'},
+{id:'access',title:'Four-step access, RRC parameters and RF windows',panels:['ra_attempt','ra_stage_waveforms','ra_receiver_rf','rrc_attach','rrc_receiver_evidence','rrc_parameters','initial_access','ra_rx_msg2','ra_rx_msg3','ra_rx_msg4','ra_rx_setup'],owners:['ra','access','runtime'],query:'rrc',
+ row:'Procedure tables can be per attempt, per message, per state transition or per RF observation window. Join by attempt/UE/message identity before comparing slots.',
+ fields:[
+ ['Temporary / final C-RNTI and UE identifier','Operational radio identity and simulator UE index are different. A decoded grant must use the installed operational RNTI/BWP context.'],
+ ['Msg2/3/4 and SetupComplete CRC','Each belongs to its own physical channel and received payload. A preceding pass cannot fill an unattempted later decode.'],
+ ['RRC previous/event/next state; SRB1 installed','Shows the bounded protocol owner consuming decoded evidence. Check transaction identity, timers and failure reason; not a full commercial RRC implementation claim.'],
+ ['Prepared TX ports / physical TX / RX dimensions','Logical signal ports, mapped 64-element TX dimensions and four UE chains must be distinguished. This is not the transmitted data rank.'],
+ ['RF applied flags / sample intervals','An “any covering segment” flag does not prove every sample experienced identical impairment settings. Read interval scope, parameters and actual conversion statistics.']],
+ plots:'Lifecycle timelines expose causal ordering and time-to-state; waveform/RF traces explain each message capture. Access delay needs a declared start/end event.',
+ observe:'Explain acquisition success, RA completion and bounded RRC connection separately. A 13 ms interval after acquisition is not necessarily total time from simulation start.',
+ limit:'Do not impose an arbitrary attach-by-slot rule. SSB/SI/PRACH calendars, response windows, processing and retries control progression.'},
+{id:'pdcch',title:'PDCCH search, candidate evidence and DCI acceptance',panels:['pdcch','pdcch_hypotheses'],owners:['pdcch','pdcchblind','runtime'],query:'pdcch',
+ row:'One control occasion with a collection of candidates and hypotheses. A candidate can be tested with several payload formats/lengths; hypotheses are correlated within one capture.',
+ fields:[
+ ['CORESET / search space / RNTI','Defines where and for whom the receiver searches. Use installed configuration and received CRC masking, not the transmitter grant as a decoded substitute.'],
+ ['Candidates available / attempted / blind decodes','Sixteen candidates and 32 hypotheses can be consistent. Count candidate resources separately from format hypotheses and independent statistical episodes.'],
+ ['AL / selected candidate / hypothesis vectors','AL determines CCE consumption; the vector identifies which hypotheses actually ran. Missing candidates must not be synthesized for a clean-looking table.'],
+ ['CRC / semantic acceptance / decode status','A bit-level CRC outcome and an accepted legal command are separate. A receiver crash is neither a measured missed command nor a valid no-signal result.'],
+ ['False alarm / DTX / threshold / LLR','No-signal acceptance requires a proper denominator and all accepted candidates. Real decoder LLRs are not an EVM-to-LLR proxy.']],
+ plots:'AL distributions show selected control cost; detection plots show actual outcomes. A blind-decode count is workload, not an independent false-alarm sample count.',
+ observe:'Join accepted DCI to GrantContextId, due slot, BWP/HARQ identity and a data outcome or explicit pending/cancel/skip reason.',
+ limit:'A PDCCH pass does not prove PDSCH/PUSCH executed. Connected-control tables exclude RA control shown in the access section.'},
+{id:'data',title:'PDSCH / PUSCH execution, coding and received outcomes',panels:['pdsch','pusch','traffic'],owners:['dltx','dlrx','ultx','ulrx','coding'],query:'trials',
+ row:'One executed shared-channel attempt; preserve direction, UE, slot, grant, TB, HARQ epoch, codeword and retry identity. A retransmission is not a new offered application payload.',
+ fields:[
+ ['MCS / modulation / target rate / table authority','MCS is an index in a specific table, not modulation alone. Read selection mode, received CQI/SRS source and effective code rate/TBS.'],
+ ['Rank/layers / DMRS ports / precoder','Actual transmitted layers differ from configured maximum and recommended RI. DMRS port identities support demodulation; physical antenna count is another domain.'],
+ ['PRBs / symbols / gross/data/pilot REs','Symbols 2–13 are inclusive zero-based bounds; pilots and exclusions remain inside that interval. PRB count need not equal the full carrier.'],
+ ['TBS / code blocks / rate-matched bits','TBS follows the real allocation and MCS/layers. Segmentation, filler, puncture/repetition and UCI multiplexing determine coded payload size; not all mapped bits are new information.'],
+ ['CRC / SINR / EVM / channel NMSE','CRC establishes a received block result. SINR source and EVM/NMSE reference planes must remain attached; low EVM does not establish correct scheduling identity.']],
+ plots:'BLER/BER plots aggregate declared attempts; constellations use the selected equalized receiver plane. Per-layer figures require measured per-layer evidence, not duplicated wideband values.',
+ observe:'For low throughput, inspect queue, PRBs, symbols, MCS/rank, overhead, retransmissions and time denominator before blaming SINR.',
+ limit:'A rank-one bootstrap before delivered CSI is not proof of broken adaptation. Retrospective grant changes would violate causality.'},
+{id:'uci',title:'PUCCH / UCI delivery, DTX and HARQ/CSI transport',panels:['pucch'],owners:['pucch','pucchrx','uci','pucchtrial'],query:'pucch',
+ row:'One expected UCI opportunity and its selected physical transport. Obligations, reservations, transmitted resources, received bits and runtime consumption are separate records.',
+ fields:[
+ ['Requested / resolved format; bits; resource','Format must fit payload, duration and configured rate/capacity. HARQ, CSI and SR layouts must match the independently installed receive expectation.'],
+ ['Metric ≥ threshold versus detected outcome','Crossing a detector threshold need not mean the expected UCI decoded or passed subsequent validity checks. Read the recorded outcome definition.'],
+ ['CRC applicable / CRC outcome','Some small UCI payloads have no CRC. “Not applicable” is not automatic correct content; decoding/content evidence still matters.'],
+ ['DTX / missed feedback / false ACK / false NACK','Use transmitted/no-signal/expected-bit populations. A false ACK is especially important because it can release an unsuccessfully decoded TB.'],
+ ['PUCCH versus UCI-on-PUSCH','Transport selection must preserve obligations and reservations until verified execution/completion. Feedback updates should occur after the same-sample completion batch is reduced.']],
+ plots:'PUCCH error/detection charts expose reliability under the stated format and population. Format-0 noncoherent sequence detection has no ordinary QAM constellation/equalizer EVM.',
+ observe:'Trace expected HARQ/CSI payload → selected resource → actual reception → decoded bits → consumer update. Check absence/DTX independently from a crash.',
+ limit:'Integrated successful feedback does not qualify noise-only false-ACK or missed-ACK probabilities. Ideal-control SLS tests are a different evidence class.'},
+{id:'csi',title:'CSI-RS measurements, received CSI and scheduler admission',panels:['csi','csi_sync','csi_channel','csi_report'],owners:['csi','csirx','csireport','csiconfig','runtime'],query:'csi',
+ row:'A CSI-RS resource observation, a UE-side report decision, a scheduled UCI obligation and a received report are four distinct rows/populations.',
+ fields:[
+ ['CRI / RI / PMI / LI / CQI','Resource, recommended rank, codebook components, layer indicator and quality recommendation. Their encoding depends on installed report/codebook configuration. None is actual data rank by itself.'],
+ ['CSI-RSRP / RSSI / RSRQ / SINR','Read branch, reference REs, measurement window and power plane. Practical post-front-end CSI and independent pre-front-end antenna measurements should not be silently mixed.'],
+ ['Rank/PMI objective versus measured SINR','A scheduler/codebook objective is not automatically the physical CSI-SINR measurement. Keep its source label and optimization assumptions.'],
+ ['Source / reference-resource / due / delivered slot','The scheduler may use only causally available decoded feedback. Matching numeric PMI values is not enough to join a report and grant.'],
+ ['Held decision / confirmations / selected MCS','Hysteresis may delay rank promotion. Verify confirmation count and new-data grant selection, not just a recommendation. Check explicit SINR wire status: not every diagnostic SINR is encoded in UCI.']],
+ plots:'CQI/RI/CRI/PMI timelines should distinguish measurement and delivery; reported-versus-applied PMI needs report/grant identity and matrix-domain reconciliation.',
+ observe:'Follow one CSI resource all the way to independently decoded UCI and a later CRC-bearing data attempt. That chain demonstrates adaptation; a recommended rank-two row alone does not.',
+ limit:'Pilot reconstruction residual is not independent nominal-channel NMSE. CSI-RS per-antenna dBm charts are inapplicable without a calibrated absolute plane.'},
+{id:'beam',title:'Beam management, codebook precoding, TCI and QCL',panels:['beam_state','beam','qcl_tci'],owners:['csireport','runtime','qcladmission','dltx'],query:'precoder',
+ row:'One state transition, frozen precoder application or received-QCL binding. Beam, CSI resource, TCI state/codepoint and PMI identify different objects.',
+ fields:[
+ ['Beamforming / explicit weights / application stage','Evidence of the applied matrix path, not merely a configured flag. A physical element mapping may follow logical-port precoding.'],
+ ['Requested / applied PMI; explicit matrix','An explicit bootstrap matrix may have no scalar PMI. For codebook feedback, preserve component vector, codebook settings and compatible matrix comparison.'],
+ ['Precoder SHA / rows / columns / match','Content identity supports provenance; a matching hash does not prove correct codebook choice. Check matrix domain, dimensions and power normalization.'],
+ ['Best projection / power / gap','A post-hoc Hest projection over candidates is not an executed beam sweep or absolute antenna gain. Read the candidate set and reference normalization.'],
+ ['TCI / QCL source, age and available sample','A control-decoded state must identify a valid reference resource and applicable timing/spatial relationship. A future TRS cannot authorize an earlier grant.']],
+ plots:'Beam/TCI state timelines show transitions and activation. Matrix-integrity plots detect identity/dimension failures; rank/port traces reveal actual spatial use.',
+ observe:'For a skipped DL slot, inspect QCL source age, result availability and the saved freshness policy. A stale timing reference can block data even with queued bytes and good previous SINR.',
+ limit:'A 64-element array is not rank 64 or proof of eight measured beams. TCI activation, CSI feedback and applied precoder each need their own evidence.'},
+{id:'srs',title:'SRS estimation, UL rank, bandwidth coverage and phase evolution',panels:['srs','srs_phase'],owners:['srstx','srsrx','srs','runtime'],query:'srs',
+ row:'One received sounding observation, plus optional comparisons to earlier matching pilot coordinates. First-observation rows can validly lack temporal phase estimates.',
+ fields:[
+ ['Port count / rank estimate / retained rank / condition','Sounding dimensions and numerical/spatial rank are not automatically the chosen PUSCH rank. UL admission and codebook constraints still apply.'],
+ ['Raw complex NMSE / qualified NMSE / reference clock','Compare against the same executed channel, RX delay/CFO and pilot coordinates. A mismatched reference clock can dominate NMSE without indicating receiver failure.'],
+ ['First/last PRB / coverage','Coverage is measured sounded bandwidth. 272/273 PRBs is approximately 99.63%, not literal full-carrier measurement even if within configured tolerance.'],
+ ['Leakage / leakage status','Needs an independently executed inter-port estimator. Do not infer leakage from total NMSE, conditioning or nominal orthogonality.'],
+ ['Phase pairs / separation / rate / half-width','Common phase rate is Δphase/(2πΔt); unaliased half-width is 1/(2Δt). Matched pilots and prior observations are required. This is not maximum Doppler spread.']],
+ plots:'NMSE and sounding-rank traces diagnose estimator quality and UL feedback support. Temporal phase plots require enough repeated coordinates; missing first-observation points should not be replaced by zero.',
+ observe:'Follow SRS available time → UL feedback/rank/MCS decision → frozen UL DCI → PUSCH. A later SRS cannot change an already scheduled grant.',
+ limit:'Measured SRS SINR and post-equalizer PUSCH SINR need not be equal, but large discrepancies require same-plane noise/power/port accounting checks.'},
+{id:'trs',title:'TRS tracking, independent NMSE and usable state',panels:['trs'],owners:['trs','runtime','qcladmission'],query:'trs',
+ row:'A received tracking occasion, sometimes spanning more than one slot. A row’s source slot is not necessarily when its result can be consumed.',
+ fields:[
+ ['Scheduler usable / tracking state / qualification pass','Three different questions: practical receiver evidence sufficient? fresh tracking state? strict scoring criterion met? They can legitimately differ.'],
+ ['Periodicity / max age / availability','Ages must cover intended causal observation and processing gaps. Do not compare a resource start with a delivery timestamp without naming the convention.'],
+ ['NMSE / reference plane / sample count / mode','A meaningful score needs a valid independent reference and nonzero compared population. Metadata loss is an export defect even if a numeric score exists.'],
+ ['Received-pilot EVM','Compare the documented pilot/reference samples at their declared plane. It is not a transmitter-conformance modulation EVM.'],
+ ['Post-correction common frequency','Independent observable within the capture, where implemented; not necessarily an independent episode or pure oscillator residual. Read observation-pair count and estimator source.']],
+ plots:'TRS NMSE and residual-frequency timelines show tracking across occasions; overlay availability/age conceptually when diagnosing scheduling gaps.',
+ observe:'If a TRS row is valid but qualification fails, identify which practical checks passed and which independent scoring limit failed; do not collapse them into one status.',
+ limit:'A source at slot 47 whose capture finishes after slot 48 may not repair a slot-48 QCL gap. Correct causal gating is not a missing-data bug.'},
+{id:'resources',title:'Time/frequency allocation, reservations and coding overhead',panels:['traffic','Scheduler grants','Resource occupancy'],owners:['resource','scheduler','dltx','ultx'],query:'allocation',
+ row:'One grant/resource set or one RE occupancy coordinate. Gross allocated REs, exclusions, pilots and actual data REs describe sets, not interchangeable scalar estimates.',
+ fields:[
+ ['Frame / slot / symbol','For H4 μ=1, 0.5 ms slots have 14 normal-CP symbols. State explicitly whether slots are runtime one-based or absolute zero-based.'],
+ ['PRB start/count / BWP origin','A count of 126 does not identify the occupied segment by itself. Interpret PRB indices in their BWP/carrier domain.'],
+ ['Symbol start/count','2–13 means start 2 / count 12; 2–9 means start 2 / count 8; UL 0–10 means start 0 / count 11. These H4 templates are conservative configuration choices, not mandatory full-band NR exclusions. See the resource-efficiency deferred plan.'],
+ ['Gross / data / DMRS / PT-RS / reserved totals','Use exact resource-set union and overlap rules. Do not sum per-port/pilot counts into a gross unique-RE count without reconciling their domains.'],
+ ['K0 / K1 / K2 and legal targets','Slot offsets and configured symbol allocations work together. K2 rejection of a DL-only target is expected; enumerate permitted timing choices rather than bypassing direction checks.']],
+ plots:'PRB heatmaps and symbol occupancy show allocation holes and overlap conflicts. They do not prove decoder success or unique delivered bits.',
+ observe:'SSB reservations can split a contiguous allocator into 126-PRB segments, while another slot uses 273. Explain actual reservations and policy before calling this lost bandwidth.',
+ limit:'Full bandwidth is not mandatory every slot. A channel’s symbol interval contains pilots/control exclusions, not only user data.'},
+{id:'harq',title:'Traffic, HARQ, BLER and unique goodput',panels:['traffic','HARQ','Queue / delivery'],owners:['harq','packets','conserved','dl','ul'],query:'harq',
+ row:'Attempts, original transport blocks and delivered packets are different populations. Record which one supplies the denominator and whether time includes access/idle/guard intervals.',
+ fields:[
+ ['Offered rate / scheduled TB rate / goodput','Offered application load, scheduled information bits and unique successfully delivered bits differ. A per-attempt displayed rate is not necessarily full-run goodput.'],
+ ['HARQ process / NDI / RV / attempt / TB identity','A retransmission retains the original TB and compatible soft-buffer context. Stop after CRC success; do not count decoded bits twice.'],
+ ['Initial BLER / conditional retry BLER / residual BLER','First-attempt failures/all first attempts; retry failures/attempts that actually reached that retry; residual failure/original TBs. These are not interchangeable curves.'],
+ ['MCS / rank / SINR / queue before-after','Low throughput can be bootstrap MCS, partial allocation, empty queue, timing gates or retransmissions even if the most recent SINR is high.'],
+ ['Trials / errors / confidence / censoring','A zero-error result with four trials is not a qualified low-BLER claim. Report confidence and stopping rules, including any maximum-population cap.']],
+ plots:'Controlled-SNR BLER curves and opportunistic measured-SINR scatter need different labels. HARQ gain requires matched original-TB comparisons, not unrelated successful packets.',
+ observe:'Reconcile unique offered bits = delivered + queued + explicitly dropped/in-flight terms at the chosen boundary. Trace ACK reception separately from PDSCH CRC.',
+ limit:'Sustained adaptation requires later grants using received feedback, not an artificially increased configured rank. A 100-slot run is a functional check, not broad statistical calibration.'},
+{id:'channel',title:'CDL/TDL, path loss, geometry and antenna evidence',panels:['channel_angles','Cell-link loss evidence','Channel / antenna'],owners:['channel','pathloss','doppler'],query:'channel_impulse',
+ row:'A CDL profile path/tap, a geometry link or an antenna mapping. These different tables must not be joined merely by a “rank” or row number.',
+ fields:[
+ ['AoD / ZoD / AoA / ZoA','Departure/arrival azimuth and zenith angles in the declared coordinate frame. Zenith and elevation are not the same convention. Profile angles are not receiver-estimated directions unless explicitly measured.'],
+ ['Delay / path power / delay spread','Tap delay and relative average path power describe small-scale profile structure. They are not per-ray absolute link loss; total normalization and path loss have separate owners.'],
+ ['Pathloss / shadowing / O2I / large-scale gain','These require geometry/model inputs and an applied budget. A disabled fixed-reference experiment must not display zero as measured path loss.'],
+ ['Maximum Doppler / radial shift / estimated phase rate','Maximum fading Doppler, geometry radial frequency shift and measured common phase evolution are distinct; one must not overwrite another.'],
+ ['Array shape / polarization / physical elements / logical ports','Verify the executed native channel object and mapping. TDL correlation support does not imply the same element-pattern/angle execution as CDL.']],
+ plots:'Impulse/delay profiles, angle distributions, topology and antenna plots explain the executed model. A configured radiation pattern image is not proof it affected received IQ.',
+ observe:'Check channel profile, delay spread, actual object Doppler, array orientation/polarization and direction dimensions before interpreting MIMO performance.',
+ limit:'CDL-C is a link-level fading profile, not a full UMa geometry/pathloss model by itself. AWGN has no multipath rays to estimate.'},
+{id:'rf',title:'RF conversion, PA, clipping, phase noise and power planes',panels:['Waveform / RF','ra_receiver_rf','waveform_quality'],owners:['rf','rfstream','iq','lab'],query:'clipping',
+ row:'A named TX/RX processing stage or sample interval. Input/output pairs can include gain/backoff; they are not automatically modulation-error pairs.',
+ fields:[
+ ['DAC / ADC bits, full scale, code range','Converter precision only helps if normalized waveform amplitude uses the declared range appropriately. Inspect measured RMS, headroom and conversion error, not bit depth alone.'],
+ ['Clipped count / sample count / fraction','Recompute numerator/denominator with complex-sample/component convention. A few clipped samples and a percent require the same population and interval.'],
+ ['PA backoff / output power / EVM','Raw input-to-output error includes intended gain changes. A59% amplitude difference may be backoff; it must not be labeled standards-qualified EVM.'],
+ ['CFO / IQ imbalance / phase noise / compensation','Retain injected settings, executed interval and receiver estimates/corrections. CPE and ICI effects are not established by a single applied flag.'],
+ ['dB relative / dBm / W','Absolute power requires calibration and a reference plane. Do not add 30 to normalized dB and call it dBm.']],
+ plots:'Spectrum/PSD reveal occupied spectrum and leakage; PAPR CCDF reveals peak statistics; clipping histograms reveal converter stress. Each needs a defined sample stream and scaling.',
+ observe:'For a VSG/VSA bandwidth mismatch, check actual sample rate, FFT/CP/SCS and import settings. Baseband Fs is not RF carrier frequency; wrong playback Fs scales both duration and bandwidth.',
+ limit:'The assumed phase-noise sensitivity profile is not hardware qualification. Digital receiver EVM is not automatically TS38.104/38.101 transmitter conformance.'},
+{id:'quality',title:'Waveform quality: EVM, NMSE, hashes and applicability',panels:['waveform_quality','receiver_criteria'],owners:['metrics','evm','estimate','exports'],query:'evm',
+ row:'One channel receiver observation and metric plane. The same named EVM field can represent decision-directed, paired-reference or received-pilot evidence; source/status disambiguate it.',
+ fields:[
+ ['EVM rms / percent / applicable','Percent = 100 × dimensionless RMS ratio. EVM 0.05 is 5%, not 0.05%. Non-applicable format/receiver paths should not be filled with invented zero.'],
+ ['EVM reference source / status','Paired same-execution transmitted-reference scoring differs from nearest-QAM decision-directed scoring. A reconstruction residual can underestimate true errors.'],
+ ['NMSE / scoring availability / reference / count','10log10(sum|Hest−Href|²/sum|Href|²). Clock, REs, antennas/ports and precoder domain must match; independent scoring must not feed perfect channel data into decoding.'],
+ ['Channel estimation / equalization applicability and availability','Noncoherent PUCCH format0 is not a successful conventional equalizer. A boolean must distinguish not required from executed successfully.'],
+ ['Waveform executed / hash / plane / interval','A received-waveform panel should identify actual RX input bytes at a named pre/post-correction plane. TX hash and MAT-file hash are different identities. A hash authenticates content, not scientific correctness.']],
+ plots:'Constellation: I versus Q of the declared symbols; EVM versus symbol: localized distortion; NMSE versus SNR: estimator error. Preserve beam/point/observation identity and sample count.',
+ observe:'Use source CSV rows and reference metadata to recompute EVM/NMSE, then reconcile PNG plotted rows. A common label alone is not enough to compare channels.',
+ limit:'One threshold cannot qualify all channels. Read the recorded receiver criteria and standards applicability; a pilot metric is not a universal RF pass/fail test.'},
+{id:'publication',title:'CSV/PNG lineage, sweep grouping and missing outputs',panels:['Results / Evidence','Qualification','Artifact Explorer'],owners:['exports','liveplots','packets'],query:'contract',
+ row:'Raw CSV rows are measurements/events; plotted CSV rows are the actual chart dataset; PNG is a rendering; manifests/lineage record their relationship. None should silently substitute for another.',
+ fields:[
+ ['SourceArtifact / source row / source hash','Trace a derived point back to its actual input and immutable snapshot. Check whether a hash is source CSV, receiver samples or image bytes.'],
+ ['Point identity / direction / UE / beam / modulation','A joint sweep CSV can contain every point, but unlike populations must remain separate series. Do not connect unrelated beams or codebooks into a false trend.'],
+ ['Live checkpoint / final export','Live PNGs are explicitly partial. Several immutable snapshots are revisions, not extra independent samples and not separate SNR scenarios.'],
+ ['Unavailable / inapplicable / pending / failed','Investigate required missing producers; distinguish not-yet-executed events, disabled/incompatible features, insufficient populations and broken export paths.'],
+ ['Qualification categories / contract declarations','A catalog lists requested outputs, not successful generation. A component PASS does not certify a whole scenario or a research feature.']],
+ plots:'Every accepted PNG should identify its plotted CSV and source lineage. The PNG must preserve its exact meaning; a generic substitute curve cannot repair a missing measurement.',
+ observe:'Select RunID/point, open the chart source CSV, inspect units/population/grouping, reconcile formulas and counts, then review terminal receipt and qualification scope.',
+ limit:'All eight SNR points can share one file per physical curve; this does not mean merging all channels/metrics into a single meaningless CSV or PNG.'}
+];
+const byID=Object.fromEntries(families.map(f=>[f.id,f]));
+const familyCard=(f,compact=false)=>`<article class="evidence-card" data-evidence-family="${f.id}">
+<h3>${esc(f.title)}</h3><p><strong>What one row means.</strong> ${esc(f.row)}</p>
+<p class="doc-note"><strong>Related panels:</strong> ${f.panels.map(esc).join(' · ')} · ${atlasLink(f.query)}</p>
+${compact?`<p><strong>How to explain it.</strong> ${esc(f.observe)}</p><details><summary>Fields, plots and interpretation limits</summary>`:''}
+${T(['Field group','Meaning and how to read it'],f.fields.map(r=>r.map(esc)))}
+<p><strong>CSV → PNG interpretation.</strong> ${esc(f.plots)}</p>
+${compact?'':`<p><strong>What to observe.</strong> ${esc(f.observe)}</p>`}
+${N('Do not overclaim',esc(f.limit))}${F(...f.owners)}${compact?'</details>':''}</article>`;
+const coverage={
+ start:['run','publication'],fundamentals:['data','quality'],architecture:['run','eligibility'],
+ configuration:['run','resources'],grid:['resources'],ofdm:['resources','rf'],
+ tx:['data','rf'],coding:['data','harq'],rx:['sync','quality'],
+ access:['ssb','access'],prach:['prach','access'],pdcch:['pdcch'],
+ uci:['uci','csi'],referencesignals:['csi','srs','trs'],mimo:['beam','srs'],
+ beam:['ssb','beam'],adaptation:['csi','srs','harq'],scheduler:['eligibility','resources'],
+ harq:['harq','uci'],channel:['channel'],power:['channel','rf'],rf:['rf','quality'],
+ measurements:['quality','sync'],outputs:['publication'],qualification:['publication','harq'],
+ comparison:['quality','channel'],'configuration-map':['run','resources'],'run-families':['run','publication'],
+ parameters:['run'],scenarios:['run'],recipe:['run','publication'],sources:['publication'],
+ glossary:['quality'],references:['publication'],'algorithm-register':['quality'],
+ 'channel-playbooks':['data','access'],'worked-calculations':['quality','harq'],
+ 'causal-flow':['eligibility','csi'],'measurement-contract':['quality','publication'],
+ 'restart-flow':['run'],'threshold-authority':['prach','uci','quality']
+};
+// Do not silently default a new technical section to an unrelated panel.
+CHAPTERS.forEach(c=>{
+ if(!coverage[c.id])throw Error('Missing dashboard reading guide for '+c.id);
+ const previous=c.body;
+ c.body=()=>previous()+`<section class="chapter-evidence"><h2>Explain this section on the realtime dashboard</h2>
+ <p>Read the experiment identity, row population, units and source plane before interpreting the value. These are reading instructions, not fresh run results.</p>
+ ${coverage[c.id].map(k=>familyCard(byID[k],true)).join('')}
+ <p><a href="#dashboard-reading">Full dashboard field guide</a> · <a href="#output-atlas">Search all documented CSV/PNG entries</a> · <a href="#standards-crosswalk">3GPP-to-source comparison</a></p></section>`;
+});
+const chapters=[
+{id:'dashboard-reading',group:'Read the evidence',title:'Explain every realtime panel',lead:'A presenter’s field guide: what a row means, how to read each field group, where it comes from and which conclusions are justified.',body:()=>`
+${N('Use the same run and the same evidence plane','Do not compare a current UE card with a stale screenshot or a different checkpoint PNG. Browser tables may show only recent rows; inspect the CSV for the full retained population.')}
+<div class="controls"><label>Find a panel, field or question<input id="evidence-family-search" type="search" placeholder="Try: rank, zero, false ACK, pathloss, QCL"></label></div><p id="evidence-family-count" aria-live="polite"></p>
+<div class="evidence-families">${families.map(f=>familyCard(f)).join('')}</div>
+<h2>Exact display labels and raw column names</h2><p>The <a href="#output-atlas?kind=dashboard_panel">panel inventory</a> is extracted from the actual dashboard, not paraphrased schema names. Runtime/procedure CSV entries include the raw-column ↔ display-label mappings. Some composed panels combine several tables; a field mapping alone does not establish a successful receive event.</p>`},
+{id:'output-atlas',group:'Read the evidence',title:'CSV and PNG output atlas',lead:'Search installed output contracts, actual dashboard column mappings and a dated inventory of retained files. Declarations, file presence and validated results remain distinct.',body:()=>`
+<p>This index covers the installed report/analytics contracts, raw runtime and procedure tables, live charts, visual validation rules, and CSV/PNG files observed when the documentation inventory was generated. It includes historical live snapshots: these are not extra independent trials. <strong>No measurement values are manufactured or rewritten.</strong></p>
+<div id="evidence-inventory-summary" class="config-status">Loading read-only documentation inventory…</div>
+<div class="controls"><label>Search name, column, unit, source or meaning<input id="artifact-search" type="search" placeholder="Try: SRS, EVM, received_csi, TBSBits"></label><label>Entry class<select id="artifact-kind"><option value="">All classes</option><option value="runtime_csv">Canonical runtime CSVs</option><option value="procedure_csv">Procedure / access CSVs</option><option value="dashboard_panel">Exact realtime panel labels</option><option value="live_chart">Live CSV + PNG pairs</option><option value="visual_contract">Visual acceptance contracts</option><option value="declared_table">Declared report / analytics tables</option><option value="declared_chart">Declared report / analytics charts</option><option value="observed_file">Files observed in retained run</option></select></label></div>
+<div id="artifact-table"></div>
+<h2>How to use a CSV and its PNG together</h2>${T(['Step','Read / calculate','What it establishes'],[
+['1. Identity','RunID, source/config/seed hashes, sweep point, source slot and observation identity.','Which experiment and population you are looking at.'],
+['2. Row meaning','Trial, RE, symbol, path, grant, transition, histogram bin, summary or plotted point.','Whether rows can be counted as independent trials.'],
+['3. Metric','Unit, formula, reference plane, validity/status and numerator/denominator.','What the value actually measures.'],
+['4. Grouping','Direction, UE, MCS/rank, beam/resource, channel/RF branch and retransmission class.','Which rows form one comparable series.'],
+['5. Lineage','PNG → own plotted CSV → raw source rows/hash → executed producer.','That the picture represents the claimed observations.'],
+['6. Scope','Completed population, uncertainty, final receipt and required missing outputs.','What can be claimed and what still needs measurement or qualification.']
+])}
+<p>${S('docs/lls/h4_100mhz_guide/evidence-catalog.csv','Open / download the documentation inventory')} · ${S('docs/lls/h4_100mhz_guide/buildEvidenceGuide.py','Inventory generator')} · <a href="#result-reading">Worked interpretation examples</a></p>
+${N('Important scope','The optional retained-run scan reads bounded CSV headers and first-record presence, plus PNG file presence. It does not parse every value, validate image pixels, check full populations, verify all source hashes or certify final publication. A header-only file is not a measured dataset.',true)}`},
+{id:'result-reading',group:'Read the evidence',title:'Read plots and explain the findings',lead:'Use these explanations when presenting results. Numerical examples below are arithmetic illustrations of supplied observations, not newly collected evidence.',body:()=>`
+<h2>A useful explanation has five parts</h2><p>Say: “This figure measures <em>which quantity</em>, on <em>which samples/plane</em>, for <em>which population</em>. We observe <em>this behavior</em>. It supports <em>this bounded conclusion</em>, but not <em>this stronger claim</em>.” Mention units and the actual source CSV. If a figure is a live checkpoint, say so.</p>
+${T(['Figure family','Axes / CSV meaning','What to look for','What it does not prove'],[
+['BLER / BER','Operating-point or measured-SINR x; failure fraction y; counts and stopping rule retained.','Waterfall, error floor, matched MCS/rank/RF populations; distinguish controlled curve from runtime scatter.','A zero among four trials is not zero underlying error probability.'],
+['Throughput / goodput','Bits per explicit time denominator; direction/UE/rank and resource allocation accompany each point.','Whether changes track TBS, bandwidth, symbols, queue or retries; compare paired operating conditions.','A per-slot successful-TB rate is not full-run user-experienced throughput.'],
+['Constellation / EVM','I/Q samples from a named receiver plane; EVM against a declared reference.','Rotation, compression, dispersion and per-symbol/port differences; inspect sample counts.','Nearest-point EVM alone cannot establish bit accuracy, hardware EVM conformance or channel NMSE.'],
+['Spectrum / PSD','Frequency in Hz relative to stated center; power or density with declared FFT/window normalization.','Occupied band, shoulders, leakage, images and asymmetric distortion.','A picture without Fs/scaling metadata cannot establish correct instrument playback bandwidth.'],
+['PAPR CCDF','Threshold in dB versus exceedance probability over a stated waveform/window population.','Tail behavior and required backoff; compare equal oversampling/window conventions.','A short waveform cannot establish rare peak probability or an absolute PA rating.'],
+['NMSE / pilot residual','Error-to-reference energy ratio in dB; sample/domain metadata retained.','Frequency/time/port structure, aging, clock mismatches; compare independent NMSE separately from fit residual.','A same-pilot reconstruction residual is not independent channel-estimation accuracy.'],
+['CQI / RI / PMI / CRI','Received feedback over time, with report/resource/delivery identity.','Whether delivered feedback is consumed by later new-data grants and whether hysteresis explains holds.','A recommendation does not prove actual transmitted rank or encoded SINR delivery.'],
+['Beam / TCI / QCL','Selection/state transitions and source-resource availability.','Valid resource binding, state activation, freshness gaps and applied matrix identity.','A best Hest projection is not a physical beam-sweep measurement.'],
+['Correlation / detection','Candidate lag/metric or actual signal/no-signal outcomes and threshold.','Correct target detection, unintended acceptance, timing ambiguity and independent episode counts.','A threshold crossing is not complete payload or protocol success.'],
+['Resource heatmap','Time/frequency occupancy, not a bit-error map.','SSB/CORESET/DMRS/PT-RS/PUCCH/SRS reservations, legal duplex symbols, holes and collisions.','Colored occupied REs alone do not prove data CRC or throughput.'],
+['Channel / geometry','Tap delays/powers/angles or cell/UE coordinates with coordinate frame.','Consistency of model, scaling, array orientation and link-budget assumptions.','Relative tap power is not absolute path loss per ray; model angles are not necessarily measured AoA.'],
+['RF / latency / complexity','Exact stage sample statistics or wall-clock costs; denominator and operation named.','Converter utilization, clipping fraction, stage bottlenecks, repeated work and memory pressure.','CPU execution time is not radio protocol latency; aggregate error including backoff is not standard EVM.'],
+['Coverage / qualification','Required evidence counts, scope and pass/fail criteria.','Missing source measurements, incomplete statistical populations and non-applicable features.','A catalog with every expected filename is not a completed or conformant run.']
+])}
+<h2>Worked reading examples</h2>
+${T(['Observation','Explanation you can give','Next evidence to inspect'],[
+['EVM rms 0.05085','This is approximately 5.085% under the recorded reference convention. If decision-directed, it is a receiver diagnostic, not conducted transmitter EVM.','EVMReferenceSource, applicable/status, paired samples and observation identity.'],
+['Timing estimate0, applied0','The window may already be aligned. If only one timing hypothesis was tested, this does not demonstrate unknown-delay acquisition.','Capture origin, search range/count, clock metadata and post-correction residual.'],
+['273 PRBs, symbols 2–13, rank 1','The scheduled interval is 12 symbols. Gross grid area is 273 × 12 × 12 = 39,312 RE positions before set-specific exclusions; do not use this gross count directly as information bits.','Canonical data/pilot/reserved resource sets, modulation, exact TBS and CRC.'],
+['SRS 272/273 PRBs','Measured sounding coverage is about 99.63%. An allowed one-RB tolerance is a policy, not evidence of literal 273-PRB sounding.','Configured bandwidth/hopping, actual pilot indices and coverage status.'],
+['Four DL successes, no errors','Functional evidence for those attempts. The exact one-sided 95% zero-error upper bound is 1−0.05^(1/4) ≈ 52.71%; a tiny BLER claim is not supported.','Population/stopping plan and independent trials; use the statistics calculator.'],
+['MCS1/rank1 before CSI delivery','Could be a valid bootstrap grant or confirmation hold. Check measured → encoded → received → delivered → admitted → applied order.','Received CSI-UCI and subsequent frozen-grant identities, not only UE-side RI.'],
+['No data in a slot with a free HARQ process','Traffic, legal timing, QCL/TRS freshness or decoded-control gating can still block data.','Admission reason, queue, legal symbol targets and exact available-at samples.']
+])}
+<h2>One sweep, one comparable series</h2><p>For an eight-point sweep, keep all points for one physical curve in a joint CSV and PNG. Retain point ID even if two points have the same configured SNR; otherwise repeated seeds or duplicate values can collide. Group by direction, UE/beam/resource, MCS/rank, channel/RF branch and measurement plane as appropriate. A single 40 dB run cannot supply the other seven points. Do not interpolate absent data as measured outcomes.</p>
+<h2>What to do about missing values</h2><p>First identify applicability. Next ask whether the event has occurred, the receiver produced the quantity, the exporter retained it, and the GUI mapped it. Required missing evidence needs a producer/integration repair; a missing reference plane needs correct measurement/scoring, not a label change. An inapplicable metric must remain explicitly inapplicable. Historical values can only be recovered from sufficient retained exact samples/state, never invented from neighboring rows.</p>
+${families.filter(f=>['quality','publication'].includes(f.id)).map(f=>familyCard(f,true)).join('')}`}
+];
+CHAPTERS.splice(CHAPTERS.findIndex(c=>c.id==='comparison'),0,...chapters);
+chapters.forEach(c=>{G.chapterBasis[c.id]=['engineering','infrastructure'];});
+G.evidenceFamilies=families; G.evidenceCoverage=coverage;
+G.evidenceInterpretation=row=>{
+ const text=`${row.id} ${row.title} ${(row.paths||[]).join(' ')}`.toLowerCase();
+ const rules=[['prach|msg1|correlation','prach'],['ssb|pbch|pss|sss','ssb'],['rrc|msg2|msg3|msg4|access|ra_','access'],
+ ['pdcch|dci|coreset|cce','pdcch'],['pucch|uci|false.ack|dtx','uci'],['srs|sounding','srs'],['trs|tracking','trs'],
+ ['csi|cqi|cri|pmi|ri.timeline','csi'],['beam|precod|qcl|tci','beam'],['harq|bler|ber|goodput|throughput|packet','harq'],
+ ['clipping|dac|adc|papr|spectrum|psd|rf_|power','rf'],['channel|pathloss|angle|antenna|doppler|geometry','channel'],
+ ['resource|allocation|occupancy|scheduler','resources'],['evm|nmse|constellation|waveform|llr','quality'],
+ ['timing|sync|cfo','sync'],['status|metadata|checkpoint|stage','run']];
+ return byID[(rules.find(([pattern])=>new RegExp(pattern).test(text))||['','publication'])[1]];
+};
+const init=G.initMethodChapter;
+G.initMethodChapter=id=>{
+ init(id);
+ if(id==='dashboard-reading'){
+  const update=()=>{const q=document.getElementById('evidence-family-search').value.trim().toLowerCase();let n=0;
+   document.querySelectorAll('[data-evidence-family]').forEach(el=>{el.hidden=!el.textContent.toLowerCase().includes(q);if(!el.hidden)n++;});
+   document.getElementById('evidence-family-count').textContent=`${n} of ${families.length} interpretation families. Exact panel fields are in the output atlas.`;};
+  document.getElementById('evidence-family-search').oninput=update;update();
+ }
+};
+})();
+
+/* Clause-to-implementation comparison: structural audit, not certification. */
+(() => {
+const G=window.H4Guide,{CHAPTERS,REFS,S,R,T,N,F,esc}=G;
+Object.assign(REFS,{
+ pdschstudy:['MathWorks: NR PDSCH Throughput','https://www.mathworks.com/help/5g/ug/nr-pdsch-throughput.html','Reproducible waveform-link example, not a certificate for SixGR. Match configuration and receiver assumptions before comparing.'],
+ puschstudy:['MathWorks: NR PUSCH Throughput','https://www.mathworks.com/help/5g/ug/nr-pusch-throughput.html','UL waveform-link example; match waveform, rank, channel, HARQ, noise normalization and stopping rules.']
+});
+const clause=(key,section)=>`${R(key)} §${esc(section)}`;
+// Statements in "comparison" describe the inspected code path. No new PHY
+// test was executed to author this crosswalk.
+const rows=[
+['grid','Frame, BWP, grid and OFDM',[['211','4; 5.3'],['213','11.1']],['builder','ofdm','ofdmrx','resource'],
+ 'YAML → native carrier/BWP → legal symbol/PRB sets → OFDM metadata → sample waveform → receiver FFT.',
+ 'Source structure aligned for the configured path. Native metadata explains 273 PRBs, 30 kHz, 4096-point FFT and 122.88 MSa/s. D,D,D,S(10/2/2),U is the selected scenario, not a universal NR frame.',
+ 'Check actual CP lengths, start phase, windowing, FFT clock, duplex roles and TX/RX sample counts; changes to sample rate need revalidation.'],
+['ssb','SSB, PSS/SSS and PBCH',[['211','7.3.3; 7.4.2; 7.4.3'],['212','7.1'],['213','4; 13']],['ssbtx','ssbrx','pbch','access'],
+ 'Configured burst/weights → PSS/SSS/PBCH mapping → shared channel/RF → blind cell search → DMRS estimate/MMSE → PBCH/BCH decode → measured selection.',
+ 'NR signal/coding structure is used. PBCH_Recovery calls native estimation, equalization and decoding; blind-search windows, correlation thresholds and beam-selection policy are receiver choices.',
+ 'Need received candidate identities, actual beam coverage, CRC/MIB and source/delivery clocks. A four-beam YAML does not establish an executed four-beam sweep.'],
+['prach','PRACH and random-access response',[['211','6.3.3; 5.3.2'],['213','8'],['321','5.1']],['prachtx','prachrx','prachdetector','ra'],
+ 'Installed PRACH occasion/sequence → Msg1 → practical correlation search → received candidate/timing → RAR DCI/PDSCH → RAPID/TA → Msg3 → contention resolution.',
+ 'Native PRACH detection is present. Its default correlation formula is MathWorks design, not a mandated 3GPP formula. The bounded procedure owner is not full MAC/RRC qualification.',
+ 'Verify signal/no-signal populations, response timing, received RAPID, TA quantization and Msg3 application. No oracle preamble or attach-by-fixed-slot rule.'],
+['pdcch','PDCCH, DCI and control search',[['211','7.3.2; 7.4.1.3'],['212','7.3'],['213','10; 13']],['pdcch','pdcchblind','runtime'],
+ 'Installed CORESET/search space → candidate RE/DMRS hypotheses → practical channel estimate → polar/CRC outcomes → RNTI/semantic validation → received command.',
+ 'Standards-derived resources/coding are separated from SixGR hypothesis enumeration and acceptance policy. A six-bit proposed UL MCS experiment is not automatically an agreed NR DCI field.',
+ 'Qualify exact payload layouts, AL/CCE cost, absent-signal false acceptance, decoder failures and causal grant identity. Candidate count and hypothesis count are not independent trial counts.'],
+['pdsch','PDSCH and DL-SCH',[['211','7.3.1; 7.4.1.1; 7.4.1.2'],['212','7.2'],['214','5.1.2; 5.1.3']],['dltx','dlrx','coding','resource'],
+ 'Frozen DL grant → exact TBS → CRC/LDPC/rate match → modulation/layers/precoding/REs → waveform → timing/channel/equalization/LLRs → HARQ decode.',
+ 'Source inspection confirms nrTBS and independent frozen-grant consistency guards. Pilot-based practical reception and separate scoring are intended; exact equivalence remains conditional on allocation/configuration.',
+ 'Match DMRS/PT-RS, reserved REs, TBS/code blocks, RV/NDI, layer/port domains and retained TB. Run matched fixed cases before extrapolating to all ranks/MCS.'],
+['pusch','PUSCH, UL-SCH and UL waveform',[['211','6.3.1; 6.4.1.1; 6.4.1.2'],['212','6.2'],['214','6.1']],['ultx','ulrx','coding','resource'],
+ 'Decoded UL grant → SRS-authorized rank/precoder → exact TBS/UCI budget → legal waveform/RE mapping → channel/RF → receiver/UCI/UL-SCH → delayed completion.',
+ 'Source inspection confirms nrTBS, native PUSCH mapping and installed transform-precoding guards. CP-OFDM and DFT-s-OFDM are separate legal configurations, not interchangeable checkboxes.',
+ 'Verify scheduled-versus-executed allocation, receive dimensions, stored TBS, UCI budget, timing and actual UL data trials; Msg3 success alone is insufficient.'],
+['uci','PUCCH and UCI multiplexing',[['211','6.3.2; 6.4.1.3'],['212','6.3; 6.2.7'],['213','9']],['pucch','pucchrx','uci','ultx'],
+ 'Configured obligation → resource/format/transport choice → coding and mapping → independent expected receive layout → actual decode/DTX → runtime consumer.',
+ 'NR formats and coding constraints are bound in production paths. Detector thresholds, completion-batch barriers and reservation bookkeeping are implementation responsibilities.',
+ 'Test each legal HARQ/CSI/SR combination, CRC applicability, UCI-on-PUSCH, no-signal false ACK and missed feedback; ideal delayed control is a different model.'],
+['csi','CSI-RS, CSI feedback and codebooks',[['211','7.4.1.5'],['214','5.2; 5.2.2.2.1'],['212','6.3']],['csi','csirx','csireport','csiconfig'],
+ 'Installed resources → received pilot tensor → candidate codebook/rank evaluation → configured report bits → UCI reception → causally admitted grant.',
+ 'NRCSIReportEngine reconstructs Type-I/Type-II matrix identities and checks scheduler reconciliation. This supports a structural claim for implemented codebook branches, not exhaustive codebook or performance qualification.',
+ 'Verify configured port geometry, oversampling/restrictions, index convention, report bits, matrix normalization and final applied matrix. Confirm received report—not only UE recommendation—drives data.'],
+['srs','SRS and UL sounding',[['211','6.4.1.4'],['214','6.2']],['srstx','srsrx','srs'],
+ 'Installed sounding/hopping/ports → SRS waveform → practical per-resource estimation → coverage/leakage/rank metrics → causal UL state.',
+ 'Sounding generation/placement follows configured NR structures; rank selection, noise estimation and leakage/common-phase estimators are receiver algorithms requiring validation.',
+ 'Verify multiport despreading, native hopping, sounded PRB set, same-clock independent NMSE and actual SRS-to-PUSCH feedback. Common phase rate is not maximum Doppler spread.'],
+['trs','Tracking references and QCL',[['211','7.4.1.5'],['214','5.1.5; 5.1.6.1']],['trs','qcladmission','runtime'],
+ 'Configured tracking resources → received pilot observation → timing/frequency/channel state → availability/freshness → QCL-eligible later grant.',
+ 'TRS uses CSI-RS-based resources; SixGR period/age gates, practical estimator design and strict NMSE qualification are separate policies. QCL does not license perfect-channel injection.',
+ 'Verify reference identity/type, capture-end availability, source age, correction evidence and independent scoring. Do not equate scheduler usable with qualification pass.'],
+['coding','CRC, LDPC, polar and rate matching',[['212','5; 6; 7']],['coding','ratematch','recover','ldpc','dlsch'],
+ 'Payload → CRC/segmentation → code construction → rate matching → channel → LLRs → rate recovery/combining → decoding/CRC.',
+ 'The implementation calls native information/layout functions and maintains real decoder buffers. A source mapping is not proof of every lifting size, rate-matching edge case or polar payload.',
+ 'Compare exact bit layouts and output lengths, filler handling, finite soft buffer, Qm/layers, RV and decoder termination; retain negative identity/layout tests.'],
+['harq','HARQ and feedback timing',[['321','5.3; 5.4'],['213','9'],['214','5.1; 6.1']],['harq','uci','runtime'],
+ 'New TB/process/NDI → physical attempt → CRC → scheduled ACK transport → received feedback → stop or compatible retransmission.',
+ 'Real original-TB retention and soft combining are implemented paths. Scheduler retry policy and conditional-curve fitting are not automatically normative conformance procedures.',
+ 'Independently verify process/epoch/BWP identity, actual retry populations, stop-on-success and unique delivery accounting before claiming HARQ gain.'],
+['channel','CDL, TDL, UMa and arrays',[['901','7.1–7.4; 7.7']],['channel','pathloss','doppler'],
+ 'Scenario geometry/profile/array → native CDL/TDL state → evolving path coefficients/filtering → optional large-scale gain → received samples.',
+ 'Concrete native profiles and explicit array metadata are supported. TDL correlation cannot claim CDL element-angle/polarization execution. UMa pathloss is separate from selecting CDL-C.',
+ 'Check native object values, model ranges, delay scaling, Doppler ownership, array orientation/polarization, normalization and lossless capture continuity.'],
+['noise','AWGN and reference-SNR convention',[['901','7.7']],['noise','awgn','bundle'],
+ 'Declare occupied-RE Es/N0 or receiver-noise budget → calibrate OFDM transform → independent sample noise → received grid/metrics.',
+ 'The occupied-RE convention is an explicit SixGR/MathWorks experiment definition. A general channel-model reference does not mandate one universal simulator noise-normalization shortcut.',
+ 'Numerically reconcile main, FRC, calibration and HARQ-probe paths. Measured SINR after fading/RF need not equal configured Es/N0.'],
+['measurements','Power, quality and receiver measurements',[['215','5.1.1–5.1.6; 5.2']],['ssbrx','csirx','srs','metrics'],
+ 'Declared RS/observation set and calibrated plane → linear power/statistic → requested dB units → source-labeled CSV → plot.',
+ 'Measurement names reference NR definitions; implemented sample populations and normalized planes must be compared explicitly. A normalized RSRP column is not an absolute 38.215 dBm result.',
+ 'Audit measurement REs, branch/combining convention, bandwidth, interference/noise denominator, reference plane and units; do not infer absolute power from nominal SNR.'],
+['rf','RF requirements versus impairment models',[['104','6'],['101-1','6'],['141-1','6']],['rf','rfstream','lab'],
+ 'Configured TX/RX impairment stages → executed intervals and samples → paired scoring and spectrum/PAPR → applicable test procedure.',
+ 'DAC/ADC, PA, CFO, IQ and assumed phase noise are configurable models, not automatically prescribed hardware architectures. A digital diagnostic does not certify a transmitter.',
+ 'Match applicable band/BW/modulation, measurement window, normalization, equalization/filtering and test conditions. Verify real instrument options before hardware claims.'],
+['scheduler','Scheduling, ILLA/OLLA and traffic',[['214','5.1; 5.2; 6.1'],['213','9; 11']],['scheduler','illa','olla','ollamcs'],
+ 'Queues + causal CSI/SRS + HARQ/timing legality → selected MCS/rank/resources → frozen grant → received outcomes → future margin update.',
+ 'Legal resource/MCS/feedback structures are standards-derived. Proportional-fair scoring, SINR threshold calibration, OLLA steps, confirmation hysteresis and offered traffic are SixGR design choices.',
+ 'Verify dB margins map through dB thresholds rather than being added to an integer MCS; demonstrate consumed feedback and later data changes with held-out calibration.'],
+['publication','Exports, WebGUI, checkpoints and qualification',[['141-1','8; Annex A']],['exports','liveplots','runner'],
+ 'Actual physical results → canonical raw tables → exact plotted datasets/lineage → visual render → scoped acceptance receipt.',
+ 'File formats, dashboards and checkpoints are simulator infrastructure, not 3GPP procedures. An FRC reference only applies when its prescribed case and test conditions actually match.',
+ 'Validate full population, per-file identity, no synthetic substitution, reference domains and independently accepted thresholds. A resumed mixed-source repair run is not frozen-source qualification.']
+];
+const card=row=>{const[id,name,refs,owners,flow,comparison,verify]=row;
+ return `<article class="evidence-card" data-standard-topic="${id}"><h3>${esc(name)}</h3>
+ <p>${refs.map(([k,c])=>clause(k,c)).join(' · ')}</p><p><strong>Our implementation flow.</strong> ${esc(flow)}</p>
+ ${F(...owners)}<p><strong>Does it match?</strong> ${esc(comparison)}</p>
+ <p><strong>Evidence required to close the comparison.</strong> ${esc(verify)}</p></article>`;
+};
+CHAPTERS.splice(CHAPTERS.findIndex(c=>c.id==='comparison'),0,{
+ id:'standards-crosswalk',group:'Read the evidence',title:'3GPP link-level references and implementation match',
+ lead:'Specification → MATLAB/SixGR flow → observable evidence → remaining verification. This is a source-level comparison, not a new conformance result.',
+ body:()=>`
+ ${N('Short answer: structurally aligned in important paths; not fully qualified','The inspected code uses NR channel/coding/resource structures and native MATLAB components. Receiver algorithms, scheduling policy, channel assumptions and evidence infrastructure need separate labels. This guide does not claim that every configured branch or every generated value has passed an independent 3GPP conformance test.',true)}
+ <h2>Which references actually define a link-level experiment?</h2>
+ ${T(['Reference','Use it for','Do not infer'],[
+ [clause('901','7.7'),'CDL/TDL link-level channel definitions and scaling; geometry/array assumptions elsewhere in the same report.','That CDL-C alone defines traffic, all RF impairments, adaptive scheduler policy or a complete UMa network.'],
+ [clause('141-1','8; Annex A'),'Applicable BS conducted performance tests and fixed-reference-channel conditions for an independent UL anchor.','That an arbitrary 100 MHz, 64×4 adaptive scenario is one of those conformance tests.'],
+ [R('211')+' / '+R('212')+' / '+R('213')+' / '+R('214'),'Waveform, coding, control, data and CSI procedures to bind into a precisely specified experiment.','That the standards dictate the exact practical receiver, OLLA controller or optimizer.'],
+ [R('215'),'Physical measurement definitions; inspect resource sets and units.','That all fields named RSRP/SINR automatically implement the same measurement plane.'],
+ [R('pdschstudy')+' / '+R('puschstudy'),'Independent MATLAB example workflows for matched coded DL/UL throughput checks.','That calling a MATLAB primitive proves SixGR integration equivalence.'],
+ [R('snr'),'Noise normalization and configured versus receiver-SNR interpretation.','That the configured SNR must numerically equal every measured channel SINR.']
+ ])}
+ <p>The release numbers in the links are deliberately pinned. This is an <strong>NR-derived research LLS</strong>, not a claim that all 6G procedures are standardized or implemented. Confirm the exact release, band, feature and test-case applicability for a contribution. Official PDFs and MathWorks reference pages were checked on 20 October 2026; online toolbox examples may differ from the locally installed release.</p>
+ <h2>Comparison by channel and element</h2><div class="controls"><label>Find channel, specification or implementation detail<input id="standard-search" type="search" placeholder="Try: SRS, TBS, 5.2, threshold, QCL"></label></div>
+ <p id="standard-count" aria-live="polite"></p>${rows.map(card).join('')}
+ <h2>How to establish a stronger match</h2>
+ ${T(['Gate','Matched evidence'],[
+ ['Bit/resource equivalence','Same configuration: exact RE indices, sequences, codeword lengths, CRC masks, codebook indices, TBS/LDPC/rate-match layout and TX power normalization.'],
+ ['Numerical receiver agreement','Same received waveform/noise realization: practical timing/channel estimates, equalized symbols, LLRs and decoded outcomes; independent scoring never enters the receiver.'],
+ ['Reference performance','Matched native example or applicable FRC conditions, independent seeds, error counts/stopping rules and confidence intervals. Report differences in receiver algorithms.'],
+ ['Integrated procedure','Received access/control/CSI/SRS/UCI → causal frozen grant → real data/HARQ → conserved packet delivery → final exact-source plots.'],
+ ['Scope of acceptance','State the cases actually exercised and those still missing; retain negative outcomes. Static source alignment is not “all scenarios passing”.']
+ ])}
+ <p>Start with fixed allocation/MCS/rank and well-defined AWGN/CDL assumptions before using adaptive throughput for equivalence. Cross-path noise reconciliation, full-band spatial mapping, control reliability and sufficient-population calibration remain separate checks. Use <a href="#algorithm-register">algorithm authority tags</a>, <a href="#channel-playbooks">detailed flows</a> and <a href="#output-atlas">output mappings</a> together.</p>`
+});
+G.chapterBasis['standards-crosswalk']=['nr','model','matlab','engineering','research'];
+G.standardComparisons=rows;
+// Relevant crosswalk topics are included inline with each earlier chapter.
+const topics={
+ grid:['grid'],ofdm:['grid','noise'],tx:['pdsch','pusch'],rx:['measurements','noise'],
+ coding:['coding'],access:['ssb','prach'],prach:['prach'],pdcch:['pdcch'],
+ uci:['uci'],referencesignals:['csi','srs','trs'],mimo:['csi','channel'],
+ beam:['csi','trs'],adaptation:['scheduler','csi','srs'],scheduler:['scheduler','grid'],
+ harq:['harq'],channel:['channel'],power:['noise','measurements'],rf:['rf'],
+ measurements:['measurements'],outputs:['publication'],qualification:['publication','rf'],
+ comparison:['scheduler','publication'],'channel-playbooks':['ssb','prach','pdsch','pusch'],
+ 'measurement-contract':['measurements'],'threshold-authority':['prach','rf']
+};
+CHAPTERS.forEach(c=>{
+ const keys=topics[c.id];if(!keys)return;
+ const body=c.body;c.body=()=>body()+`<section class="chapter-standards"><h2>3GPP → this implementation → verification</h2>
+ ${keys.map(k=>card(rows.find(row=>row[0]===k))).join('')}
+ <p><a href="#standards-crosswalk">Complete crosswalk and independent LLS reference plan</a></p></section>`;
+});
+const init=G.initMethodChapter;
+G.initMethodChapter=id=>{
+ init(id);if(id!=='standards-crosswalk')return;
+ const update=()=>{const q=document.getElementById('standard-search').value.toLowerCase();let n=0;
+  document.querySelectorAll('[data-standard-topic]').forEach(el=>{el.hidden=!el.textContent.toLowerCase().includes(q);if(!el.hidden)n++;});
+  document.getElementById('standard-count').textContent=`${n} of ${rows.length} source-level comparisons. Not a new qualification receipt.`;};
+ document.getElementById('standard-search').oninput=update;update();
+};
+})();
+
+/* Deferred engineering work: documentation only, never a live PHY override. */
+(() => {
+const G=window.H4Guide,{CHAPTERS,S,R,T,N,F,E}=G;
+const fixes=[
+ {id:'H4-196',priority:'P1 resource efficiency',area:'DL early-symbol reuse',status:'OPEN — deferred; not implemented by this documentation',
+  rca:'The installed PDSCH TDRA list contains only start 2 / length 12 and start 2 / length 8. It excludes the first two symbols across every allocated PRB although the dedicated connected CORESET spans only 48 PRBs.',
+  plan:'Offer validated YAML TDRA alternatives, including start 0 where legal. Select using the slot, CORESET/search-space occasions, configured rate-match patterns, SSB/CSI/TRS reservations, DM-RS compatibility and received TCI/QCL timing. Preserve exact authored/decoded DCI, native TX/RX indices and TBS; never simply overwrite control REs.',
+  files:['simulator/configs/scenarios/h4_100_common_connected.yaml','+sixgr/+lls6g/buildInternalConfig.m','+sixgr/+l2/+mac/SchedulerBase.m','+sixgr/+phy/+frame/TimingRelationEngine.m','+sixgr/+phy/+grid/allocREsPDSCH.m','+sixgr/+phy/+dl/PDSCH_Tx.m','+sixgr/+phy/+dl/PDSCH_Rx.m'],
+  gate:'Compare exact native RE sets for S=0 and S=2 with partial-band CORESET, CSI-RS/TRS/SSB and special slots. Reject illegal overlaps and TDD roles. Decode actual DCI and TBs; confirm unchanged TB identity on HARQ retries. No throughput-gain claim from a symbol-count ratio.'},
+ {id:'H4-197',priority:'P1 resource efficiency',area:'UL occasion-dependent TDRA and UCI transport',status:'OPEN — deferred; not implemented by this documentation',
+  rca:'Both installed PUSCH TDRA entries have start 0 / length 11. SRS is placed at symbol 11 in the periodic full-UL occasion; PUCCH resources use symbols 12–13 when selected. The fixed template cannot reclaim time merely because a PUCCH obligation is absent or moved.',
+  plan:'Enumerate legal YAML PUSCH/SRS/PUCCH calendars and select a compatible contiguous TDRA at grant time. A 14-symbol option requires no conflicting SRS/control use, or a separately validated applicable multiplexing procedure. If UCI uses PUSCH, retain its coded-bit/RE budget, processing deadlines and decoded completion; release PUCCH only through verified transport ownership. Do not scatter payload into SRS comb holes without an applicable standard mapping.',
+  files:['simulator/configs/scenarios/h4_100_common_connected.yaml','+sixgr/+l2/+mac/SchedulerBase.m','+sixgr/+phy/+frame/TimingRelationEngine.m','+sixgr/+phy/+grid/allocREsPUSCH.m','+sixgr/+phy/+ul/PUSCH_Tx.m','+sixgr/+phy/+ul/PUSCH_Rx.m','+sixgr/+truth/CoupledTruthRuntime.m'],
+  gate:'Test SRS present/absent, PUCCH present/absent, dedicated versus PUSCH UCI, missing DCI, frozen future grants, HARQ retries and invalid special-slot targets. Require real PUSCH plus ACK/SR/CSI decoded outcomes with collision-free executed RE sets.'},
+ {id:'H4-198',priority:'P1 measurement and qualification',area:'Account for reclaimable resources and prove efficiency',status:'OPEN — deferred; not implemented by this documentation',
+  rca:'An allocation interval or gross symbol percentage alone cannot distinguish required overhead, configured reservation, policy-idle resources, no queued traffic and actual transmitted data. Nor does a valid short allocation establish maximum throughput.',
+  plan:'Define same-domain resource-set accounting for mandatory exclusions, configured reservation, emitted control/reference REs, mapped data, UCI and policy-idle opportunity. Keep planned/committed/received identities separate. Compare the existing conservative arm and the new legal allocator with matched traffic, seeds, channel/RF settings, rank/MCS policy and control obligations.',
+  files:['+sixgr/+phy/+resource/computeResourceAccounting.m','+sixgr/+truth/runWaveformLinkBundle.m','+sixgr/+truth/exportLLSLiveDerivedTables.m','apps/lls_radio_measurement_plots.py','apps/lls_web_dashboard.py'],
+  gate:'Reconcile union/intersection counts without per-port double counting, exact TBS/rate-match layout and unique delivered bits. Publish all sweep points in common CSV/PNG families. Show uncertainty and negative outcomes; do not infer gain from 14/12 or 14/11, drop controls, or label expected capacity as measured goodput.'}
+];
+const rows=fixes.map(f=>[
+ `<strong>${f.id}</strong><br>${f.priority}<br>${f.status}`,f.area,f.rca,f.plan,
+ `<div class="file-list">${f.files.map(p=>S(p)).join('')}</div>`,f.gate
+]);
+CHAPTERS.splice(CHAPTERS.findIndex(c=>c.id==='grid')+1,0,{
+ id:'resource-efficiency',group:'Waveform & resources',title:'Symbol allocation: 3GPP options, conservative policy and fix-later list',
+ lead:'Why H4 currently uses DL 2–13 and UL 0–10; what is legal, what is conservative, and what must be implemented before reclaiming resources.',
+ body:()=>`
+ ${N('Classification: standards-permitted, resource-conservative','This is an implementation capability/efficiency gap, not evidence that S=2,L=12 PDSCH or S=0,L=11 PUSCH violates 3GPP. The standard permits choices; it does not mandate our exact schedule or guarantee maximum utilization. All three backlog entries below remain OPEN. This documentation changes no active YAML, MATLAB code, measurement or checkpoint.',true)}
+ <h2>The executed H4 choices and their authority</h2>
+ <p>Checked against the resolved 100 MHz H4 configuration on 20 October 2026. Symbols are zero-based. An allocation [S,L] spans S through S+L−1. The configured pattern is D,D,D,S,U with 10 DL / 2 switching-gap / 2 UL symbols in the special slot; that pattern is a scenario choice too.</p>
+ ${T(['Occasion','Configured data interval','Other time/resource uses','Required by 3GPP?'],[
+ ['Full DL','S=2,L=12 → symbols 2–13','Connected PDCCH/CORESET is in symbols 0–1; its configured width is 8 six-PRB groups = 48 PRBs, starting at PRB112.','The chosen start 2 is not mandatory. Excluding all 273 PRBs for both early symbols is more conservative than excluding the applicable control resource set.'],
+ ['Special slot','S=2,L=8 → symbols 2–9','Symbols 0–1: control; 10–11: switching gap; 12–13: UL, including configured PUCCH.','Respect the installed duplex roles. Reclaiming DL control-region resources does not permit DL data in the switching gap or UL symbols.'],
+ ['Full UL','S=0,L=11 → symbols 0–10','SRS at symbol11 on its configured occasion; selected PUCCH uses symbols12–13. SRS is comb-mapped and PUCCH uses selected PRBs, not every RE.','Length11 is not mandatory. Changing it without resolving the actual SRS/PUCCH calendar and UCI obligations is not a valid optimization.']
+ ])}
+ <p>Configuration owners: ${S('common','H4 allocation/control/SRS YAML','time_domain_allocations')} and ${S('band','H4 TDD pattern','Pattern1')}. ${S('builder','YAML-to-core binding','localApplyDataChannel')} validates and transfers the declared values; it must not silently convert a requested allocation into another one.</p>
+ <h2>What the NR specification actually permits</h2>
+ <p>${R('214','TS38.214 §5.1.2.1, Table5.1.2.1-1')} defines PDSCH start/length combinations; §6.1.2.1, Table6.1.2.1-1 covers PUSCH. For normal CP and mapping Type A, both H4 combinations are legal; S=0,L=14 is also permitted for each channel, subject to the applicable resource, control and reception conditions. The configured allocation table and decoded DCI identify the actual choice—not a hard-coded universal start symbol.</p>
+ <p>${R('214','TS38.214 §5.1.4')} defines PDSCH unavailable-resource/rate-matching handling, including configured control resources. ${R('213','TS38.213 §9 and §11.1')} supplies UCI and duplex procedures, and ${R('211','TS38.211 §6.3.1, §6.3.2, §6.4.1.4 and §7.3.1')} supplies the channel/signal mappings. A valid [0,14] parameter is not permission to collide with SRS, PUCCH, PDCCH or DM-RS.</p>
+ <h2>DL: recover legal resources, not control collisions</h2>
+ <p>The present template prevents PDSCH from using early-symbol PRBs outside the connected CORESET. A fuller allocation could use applicable non-reserved resources while retaining configured rate matching. The receiver must buffer and interpret the waveform according to the received control and QCL/TCI timing; data must not obtain authority from an unreceived DCI. Reference-signal and DM-RS conflicts still require exact checks.</p>
+ <details><summary>Educational resource-opportunity calculation—not a measured gain</summary>
+ ${E('N<sub>early,gross</sub> = 273 × 12 × 2 = 6,552 RE coordinates<br>N<sub>CORESET,region</sub> = 48 × 12 × 2 = 1,152 RE coordinates<br>N<sub>outside that region</sub> = (273−48) × 12 × 2 = 5,400 RE coordinates','Single grid-coordinate plane, excluding layers/ports. This is a geometric upper-bound opportunity before other reservations and legality checks, not 5,400 proven recoverable data REs or measured throughput. The whole CORESET region is not the number of REs emitted by one AL4 PDCCH.')}
+ </details>
+ <h2>UL: length 11 is policy; length 14 needs a legal occasion</h2>
+ <p>The installed periodic SRS is at symbol 11, so merely changing PUSCH to [0,14] in this run would overlap that sounding occasion. SRS-free occasions, a reviewed alternative SRS calendar or another applicable validated mapping are prerequisites for a longer grant. There is no promise that all 14 symbols can be recovered in the current calendar.</p>
+ <p>PUCCH resources at symbols 12–13 describe opportunities, not proof that PUCCH is emitted every time. A missing obligation, or verified UCI-on-PUSCH transport, can change resource availability. UCI on PUSCH still consumes coded bits/REs; it is not free. A planned or rejected PUSCH must not release a real feedback obligation. Frequency separation and UE simultaneous-transmission capability also require the applicable collision/multiplexing rules.</p>
+ ${N('Do not equate a symbol interval with payload','DM-RS, PT-RS, CSI-RS/CSI-IM, SSB and control reservations can remove REs inside an allocation. CP is part of each OFDM symbol; it is not the reason for excluding two complete symbols. Reserved, emitted, data-bearing and policy-idle are different quantities.')}
+ <h2>Mismatch / difference register and deferred implementation order</h2>
+ <p>The word “difference” here means a narrower engineering policy than the available NR resource-allocation flexibility. No specific mandatory-procedure violation was established by these symbol lengths. This does not certify the entire runtime. Track the open work in ${S('docs/lls/h4_100mhz_20261015_issue_status.csv','main H4 RCA / fix-later ledger')}.</p>
+ ${T(['ID / priority / status','Area','Root cause','Required implementation','Production owners to inspect/change','Evidence required before closure'],rows)}
+ <h2>Safe implementation and verification sequence</h2>
+ <ol class="steps"><li><strong>Retain this baseline.</strong> Do not mutate the active scientific configuration or pending grants. A revised allocation/calendar needs a new configuration identity and a fresh run, not an operational override of checkpoint45.</li>
+ <li><strong>Define legal configuration alternatives.</strong> Keep [index,start,length,K0/K2], mapping type, CORESET/rate-match rules, SRS calendar and UCI transport in validated YAML. Preserve special-slot direction and processing deadlines; do not disable signals to improve a number.</li>
+ <li><strong>Bind one exact grant end to end.</strong> Scheduler → authored/received DCI → TX/RX RE mapping → real TBS/LDPC/rate matching → HARQ/UCI completion → resource and goodput exports. Shared core changes must be bandwidth-parameterized, with 5/20/100/400MHz applicability checked separately rather than assumed.</li>
+ <li><strong>Run affected tests, then matched physical cases.</strong> Extend TDRA roundtrip, native allocation, control/RS reservation and UCI ownership tests. Compare separate-seed performance populations after deterministic mapping checks. Do not run testAll for this documentation task.</li></ol>
+ <p>Relevant existing regression starting points: ${S('tests/testLLSTDRAConfigRoundTrip.m')}, ${S('tests/testPDSCHTDRAFromDecodedDCI.m')}, ${S('tests/testPDSCHCSIRSExactReservation.m')}, ${S('tests/testPDSCHTRSExactReservation.m')}, ${S('tests/testPUCCHPUSCHReservationFDDTDD.m')}, ${S('tests/testUCIOnPUSCHYAMLAuthority.m')} and ${S('tests/testSchedulerGrantConsistency.m')}. Existing tests need expanded cases; their existence does not close these entries.</p>
+ ${F('resource','scheduler','dltx','dlrx','ultx','ulrx')}
+ <p><a href="#grid">Frame/grid explanation</a> · <a href="#standards-crosswalk">Full standards comparison</a> · <a href="#dashboard-reading">Reading resource and goodput fields</a></p>`
+});
+G.chapterBasis['resource-efficiency']=['nr','engineering','infrastructure'];
+G.resourceEfficiencyFixes=fixes;
+for(const id of ['comparison','standards-crosswalk','scheduler']){
+ const c=CHAPTERS.find(x=>x.id===id),body=c.body;
+ c.body=()=>body()+`<section class="chapter-standards"><h2>Open resource-efficiency difference: conservative symbol templates</h2><p>H4 uses DL [2,12] and UL [0,11]. These are standards-permitted choices, not mandatory NR limits or maximum-throughput evidence. <a href="#resource-efficiency">Read the exact configuration, standards distinction and OPEN H4-196/H4-197/H4-198 fix-later plan</a>. The active run is unchanged.</p></section>`;
+}
+})();
+
+/* Source-level antenna/port/power audit. Never a replacement for run evidence. */
+(() => {
+const G=window.H4Guide,{CHAPTERS,S,T,N}=G;
+CHAPTERS.push({id:'antenna-port-power-audit',group:'MIMO & channel',
+ title:'Antenna geometry, logical ports, layers and power: exact implementation audit',
+ lead:'Standards-derived mathematics, configurable engineering choices and remaining integrated acceptance are different claims.',
+ body:()=>`
+ ${N('Scope: NR-derived waveform LLS, not blanket 6G conformance','This audit checks particular NR procedures and channel assumptions. A source repair or focused pass does not certify all beam procedures, every MCS/rank combination, final plots, or statistical performance. The retained 100-slot run failed at slot 50; its latest completed restart checkpoint is 49. It has not been reclassified as passing.',true)}
+ <h2>Standards basis and what it does not prescribe</h2>
+ <p><a href="https://www.etsi.org/deliver/etsi_ts/138200_138299/138211/18.08.00_60/ts_138211v180800p.pdf" target="_blank" rel="noopener">TS 38.211 §4.4.1</a> defines antenna ports through their channel-inference relationship; a port is not a count of metal elements or RF chains. <a href="https://www.etsi.org/deliver/etsi_ts/138200_138299/138214/18.08.00_60/ts_138214v180800p.pdf" target="_blank" rel="noopener">TS 38.214 §5.2.2.2.1</a> supplies Type-I Single-Panel CSI codebook rules. Physical panel-to-port weights and scheduler search policies remain explicit implementation choices.</p>
+ <p><a href="https://www.etsi.org/deliver/etsi_tr/138900_138999/138901/18.00.00_60/tr_138901v180000p.pdf" target="_blank" rel="noopener">TR 38.901 §7.3 and §7.7.1</a> supply array/polarization and CDL modeling conventions. Panel separation affects element coordinates and therefore spatial channel phases. Configured H/V angles must survive into the actual channel object; replacing them with default ±45° changes the model.</p>
+ <h2>Follow a transmitted data layer all the way to the physical array</h2>
+ <ol class="steps"><li>Read ${S('simulator/configs/mimo/ran1_h4_64txru_4rx.yaml')}. The gNB has 4×4 positions, two polarizations and two panels: 64 element dimensions. The UE has 1×2 positions and two polarizations: four dimensions.</li>
+ <li>${S('+sixgr/+lls6g/buildInternalConfig.m')} builds eight 64×4 CSI resource bases. ${S('+sixgr/+phy/+refsig/materializeCSIRSPhysicalGrid.m')} places the configured pilots through those bases into the actual transmit grid. Eight resources are eight beam choices, not eight simultaneous data layers.</li>
+ <li>Receive CSI-RS → estimate channel/interference → select CRI/RI/PMI/CQI → encode and physically convey UCI → decode and deliver it causally → freeze a future grant. A receiver recommendation alone is not a delivered report or applied adaptation.</li>
+ <li>${S('+sixgr/+phy/+mimo/TypeISinglePanelCodebook.m')} produces a logical-port matrix W for the received PMI and rank. If B is the selected 64×4 resource basis, the physical matrix is F = BW. The physical dual-panel array does not turn the four-port Single-Panel report into a Multi-Panel report.</li>
+ <li>The transmitted data and associated DM-RS must use the same applicable precoding contract. ${S('+sixgr/+channel/ChannelFactory.m')} filters physical dimensions; the practical receiver estimates from received pilots. Independent reference scoring stays outside receiver decisions.</li></ol>
+ <h2>Power and rank: the exact invariant</h2>
+ <p>For uncorrelated unit-energy layer symbols, average transmit power is tr(F Fᴴ). When BᴴB = I, this equals tr(W Wᴴ). The H4 unit-Frobenius convention fixes this trace to one; a separately declared semi-unitary convention has trace equal to rank. Neither convention permits silently multiplying total power by antenna count. A fixed Es/N0 experiment uses normalized sample units, not measured dBm or hardware joules. ${S('+sixgr/+rf/applyPowerContext.m')} enforces the amplitude-domain distinction.</p>
+ <p>One successful rank-1 TB does not prove rank-4 performance. A circuit-energy model must use the installed RF-chain inventory, not RI, DM-RS-port count or CSI resource count. The always-awake policy is an engineering baseline with no sleep savings; complete elapsed-time endpoint-energy integration remains open.</p>
+ <h2>Circuit-power calculation: configurable engineering assumption, not NR RF power</h2>
+ <p>${S('+sixgr/+rf/EnergyModelBS.m')} uses <code>P = Pstatic + Pchain × NRF × [fIdle + (1−fIdle) × load] + PRF / ηPA</code>. Here load is the occupied PRB fraction of the represented resource interval. <code>energy_efficiency.bs_rf_chain_idle_power_fraction</code> selects fIdle; the YAML default 0.2 preserves the previous equation and is not a 3GPP requirement. The other inputs are <code>bs_static_power_w</code>, <code>bs_per_rf_chain_power_w</code>, <code>bs_pa_efficiency</code> and the declared endpoint RF budget/inventory.</p>
+ <p>For example, the declared H4 model at 64 RF chains, full PRB load, 200 W static power, 10 W per chain, 46 dBm RF budget (39.8107 W) and ηPA = 0.35 gives approximately 953.745 W. At zero resource load and zero RF output, the same awake equation gives 328 W. These are evaluations of an assumed circuit-power equation, not measured equipment power, not normalized-IQ watts and not evidence that an unobserved time interval was idle.</p>
+ <p>The v4 energy resolver exports all 13 explicit operands in <code>rf/csv/energy_model_terms.csv</code>. A previously hidden clamp changed an allowed ηPA below 0.001; it has been removed. Efficiency must satisfy 0 &lt; ηPA ≤ 1; load and fIdle must lie in [0,1]. Invalid operands are rejected rather than changed. The retained H4 setting ηPA = 0.35 was not affected by that clamp, so this defect does not explain its slot-50 failure.</p>
+ <p>${S('+sixgr/+rf/EnergyModelUE.m')} uses <code>Ptx = Pidle + kTX × PRF</code>, <code>Prx = configured RxW</code>, and the explicitly declared idle/sleep powers. All operands must be real and finite; powers are nonnegative and kTX is positive. A non-TX state cannot carry a nonzero RF transmit budget. The core previously clamped negative transmit power and ignored an RF budget passed to a receive/idle state; it now rejects those contradictory inputs. Valid nonnegative TX arithmetic is unchanged. This is a configurable engineering equation, not a 3GPP UE power-consumption requirement.</p>
+ <p><strong>Actual H4 configuration binding:</strong> <code>h4_100_common_connected.yaml</code> now composes <code>energy/always_awake_baseline.yaml</code> after the inherited defaults. The earlier repair to <code>lls_causal_access_to_data_wiring.yaml</code> did not affect H4: its TDD parent follows another inheritance chain which retained micro-sleep. New H4 executions now explicitly select <code>operating_state_policy: always_awake</code>, <code>sleep_state_model: none</code> and disabled race-to-sleep metrics on both configuration surfaces. Testing a wrapper that adds this fragment is insufficient; the regression loads the executable adaptation YAML itself.</p>
+ <p>${S('+sixgr/+truth/integrateLLSEndpointEnergy.m')} combines simultaneous channel observations through the union of their actual PRBs and evaluates one endpoint state. It must not sum identical PA budgets or count the same static circuit twice. Where the chain-power coefficient is exactly load-independent (Pchain = 0 or fIdle = 1), the constant equation is computable even if PRB occupancy is missing; the exported occupancy stays unknown. In all load-dependent cases, the resource measurement is still required.</p>
+ <p><strong>Remaining boundary:</strong> ${S('+sixgr/+truth/exportLLSEnergyDiagnostics.m')} still reports represented intervals, not complete whole-run hardware energy. The always-awake configuration does not reconstruct omitted historical TX/RX/idle activity. Full-time accounting and final integrated acceptance remain open; no sleep saving or hardware qualification is claimed.</p>
+ <h2>Checkpoint configuration preflight is not a migration</h2>
+ <p>${S('+sixgr/+runtime/SlotCheckpoint.m')} now writes a small, checksum-bound <code>scientific_scenario.mat</code> alongside newly created checkpoints. A changed scientific configuration is rejected before the large channel/RF/HARQ state is loaded. After a matching preflight, the native state hash, source/repair policy, scientific configuration and external dependencies are still checked. Changing the small mirror cannot authorize changing the native payload. Old checkpoints without the mirror retain their native-state validation; checkpoint 49 has not been rewritten or upgraded by this change.</p>
+ <p>The newly bound awake policy must not silently replace checkpoint 49's saved configuration. Its prefix remains historical evidence under the original settings. Whole-run energy under a changed policy requires an explicit, separately identified model evaluation with complete activity evidence or a fresh execution; a checkpoint restart cannot invent the missing prefix.</p>
+ <h3>Resume saved science without reloading changed YAML</h3>
+ <p>${S('+sixgr/+runtime/CheckpointContinuationRequest.m')} implements the separate <code>sixgr_checkpoint_continuation/v1</code> execution-request contract. It names an absolute checkpoint, its expected state SHA-256, the original configuration hash, a reviewed repair reason and optional checkpoint/display controls. It accepts no <code>inherits</code>, channel, seed, bandwidth, traffic, threshold or other scientific override. The example structure is in ${S('simulator/configs/templates/checkpoint_continuation.yaml')}.</p>
+ <p>The reader verifies the immutable saved configuration and identity-file checksums, then the native state bytes and source identity. It compares the native saved scenario to the archived configuration and retains the original MATLAB types, configuration hash and runtime objects. Every external dependency is checked before the failed attempt is preserved and the exact checkpoint prefix restored. The single-owner lease prevents a second native deserialization. An ordinary YAML resume still requires exact scientific equality; this request is restoration of old science, not permission to adopt new science.</p>
+ <p>Operational checkpoint cadence and display refresh changes are recorded separately. Missing historical energy terms and observations are not populated from current defaults. A changed-source continuation remains <code>PrimaryStudyEligible=false</code> even if its later physical slots succeed. Only a separately qualified full-source execution can support the corresponding study claims.</p>
+ <h2>Panel-spacing configuration and repaired geometry</h2>
+ <p>The new endpoint keys are <code>bs_panel_center_spacing_horizontal_lambda</code>, <code>bs_panel_center_spacing_vertical_lambda</code> and the corresponding <code>ue_*</code> keys in <code>antenna_and_array</code>. Both coordinates must be supplied together, positive and nonoverlapping on replicated axes. H4 declares gNB [2.5,2.5] and UE [1.5,1.0] in horizontal/vertical order. These reproduce the old phased-array geometry; they are not mandatory 3GPP spacings.</p>
+ <p>The MATLAB array property uses vertical/horizontal order and meters; conversion is [dV,dH,DV,DH] × λ. See <a href="https://www.mathworks.com/help/phased/ref/phased.nrrectangularpanelarray-system-object.html" target="_blank" rel="noopener">the array Spacing definition</a>. The ambiguous legacy <code>panel_spacing</code> scalar is not silently reinterpreted. Without the new explicit pair, the previous phased-array spacing rule remains labeled as legacy.</p>
+ <p>${S('+sixgr/+rf/AntennaArrayFactory.m')} now uses consistent row/column/polarization/panel ordering in both numeric and phased paths. A non-square four-panel reproduction previously differed by 1.6 wavelengths. The repaired numeric coordinates are checked against every installed array element. Runtime <code>PanelCenterSpacingH_lambda</code>, <code>PanelCenterSpacingV_lambda</code> and <code>PanelCenterSpacingSource</code> reach the antenna CSV through ${S('+sixgr/+truth/CoupledTruthRuntime.m')}; missing historical fields are not backfilled from today's YAML.</p>
+ <h2>Repair and qualification boundaries</h2>
+ ${T(['Area','Implementation / evidence','Still required'],[
+ ['Array coordinates and spacing','Core factory, YAML binding and CDL adapter repaired; independent coordinate test and H4 inventory/export test.','Integrated final-source run and broader array/RF qualification.'],
+ ['Polarization','Numeric CDL adapter preserves explicit physical polarization angles and Model-1/Model-2; malformed declarations are rejected.','Do not claim custom element patterns were executed by a numeric-only array. Required physical patterns still require the actual phased object.'],
+ ['Ports and layer power','Existing native precoder contracts distinguish elements, RF chains, ports, layers and normalization.','Demonstrate sustained delivered CSI/SRS driving future decoded DL/UL grants, including higher ranks.'],
+ ['Beam availability in WebGUI','Canonical beam CSVs now participate in readiness checks; header-only files do not.','Readiness is not successful beam management or qualification.'],
+ ['Whole-run energy','Alias authority and explicit 64/4 endpoint RF inventory repaired.','Integrate complete declared awake TX/RX/idle time; historical missing activity is not zero energy.'],
+ ['Checkpoint and final acceptance','Existing IQ and checkpoint 49 preserved.','Do not resume a changed scientific configuration by bypassing checkpoint identity checks; label repair continuation and replay missing required evidence.'],
+ ['Calibration','No new statistical performance result created by these repairs.','Independent BLER/HARQ, detector and RF populations remain separate acceptance gates.']])}
+ <p>Focused sources: ${S('tests/testAntennaPanelGeometryConsistency.m')}, ${S('tests/testH4AntennaPanelInventory.m')}, ${S('tests/testAntennaPortArchitectureContracts.m')}, ${S('tests/testPDSCHPrecoderPowerConservation.m')}. Current dispositions belong to ${S('docs/lls/h4_100mhz_20261015_issue_status.csv')}.</p>`
+});
+G.chapterBasis['antenna-port-power-audit']=['nr','engineering','infrastructure'];
+})();
+
+/* Absolute reference contract for the selected n40 child, not old H4 data. */
+(() => {
+const G=window.H4Guide,{CHAPTERS,S,T,N}=G;
+CHAPTERS.push({id:'absolute-power-n40',group:'MIMO & channel',
+ title:'20 MHz n40: absolute power, RSRP, thermal noise and power headroom',
+ lead:'NR measurement/procedure definitions with explicit research operating points; never retrofit dBm onto an old normalized run.',
+ body:()=>`
+ ${N('Changed experiment, not a reporting conversion','The selected fresh 60-slot n40 YAML now selects absolute samples and receiver thermal noise. It does not preserve the previous forced 40-dB Es/N0 point. Existing normalized CSVs remain normalized. Source wiring and focused tests do not establish integrated reception, complete exports, statistical reliability or RF-device conformance.',true)}
+ <p>Selected configuration: ${S('simulator/configs/scenarios/lls_tdd_n40_20mhz_64txru_4rx_cdlc100_impaired.yaml')}. The 100-MHz parent is unchanged by this child override. Sampling remains 30.72 MSa/s, FFT 1024, 51 PRBs, uniform 30 kHz SCS, 2.350 GHz, 64 gNB TXRU and four UE chains.</p>
+ <h2>What is normative and what is a declared assumption?</h2>
+ ${T(['Quantity','Selected definition / value','Authority'],[
+ ['Power units','Complex samples in sqrt(mW). Average sum of squared amplitudes over physical TX ports equals total mW over useful OFDM samples. W = mW/1000; dBm = 10 log10(mW).','Implementation convention, not a mandated MATLAB scaling.'],
+ ['gNB budget','30 dBm full-BWP-equivalent pre-RF total, shared over all 64 physical chains; fixed EPRE over the configured BWP. Sparse allocations do not get boosted to full-cell power.','Study assumption, not a universal NR BS power. Actual post-RF power is separate.'],
+ ['UE limit','23 dBm total across four chains, not 23 dBm per chain or layer. Per-transmission PUSCH/PUCCH/SRS/PRACH targets use their separate procedures.','Declared configured limit. Allocation-dependent MPR/A-MPR, UL-MIMO and hardware-class qualification remain necessary.'],
+ ['Propagation','UMa NLOS, gNB height 25 m and UE height 1.5 m, seeded runtime positions, CDL-C 100 ns. Shadow fading and O2I are off in this outdoor baseline.','TR 38.901 V18.0.0 Table 7.4.1-1 / CDL model; not a mandatory deployment.'],
+ ['Noise','Thermal PSD -174 dBm/Hz; DL receiver NF 7 dB, UL receiver NF 5 dB.','Declared receiver assumptions, not universal 3GPP noise figures.'],
+ ['Converters / PA','12-bit DAC with fixed 12-dB range headroom; Rapp PA smoothness 2 with saturation 8 dB above fixed nominal per-chain RMS.','RF research model, not hardware calibration or a 3GPP impairment requirement.']])}
+ <h2>Trace the actual amplitude from YAML to receiver</h2>
+ <ol class="steps"><li><code>integration.power_reference_mode=absolute_calibrated_sqrt_mw</code> and <code>configured_snr_is_link_authority=false</code> select physical units. <code>simulation.noise_operating_mode=receiver_noise_figure_thermal_noise</code> selects noise independent of signal level.</li>
+ <li>${S('+sixgr/+rf/PowerContext.m')} and ${S('+sixgr/+rf/applyPowerContext.m')} set the total or fixed-EPRE reference before RF. Precoding must preserve total power; increasing rank does not multiply the budget.</li>
+ <li>${S('+sixgr/+rf/resolveAbsoluteEndpointReference.m')} fixes RMS = sqrt(10^(Pbudget/10)/Ntx) and range = RMS × 10^(headroom/20). It reads frozen endpoint budgets, not current grant power, current payload samples or measured SINR. The DAC and PA use these physical sample units.</li>
+ <li>${S('+sixgr/+rf/+runtime/PAProfile.m')} applies Rapp AM/AM with that absolute saturation amplitude. The inherited normalized profile's additional 8-dB input attenuation is not also applied: the physical 8-dB operating headroom is already specified relative to saturation. No post-PA power restoration is allowed. Record actual TX power and compression after RF.</li>
+ <li>The channel applies physical large-scale loss once and CDL array/polarization/fading. Geometry-derived path loss is model evidence, not a UE measurement. Received-reference path loss for UL power control is a separate causal estimate.</li>
+ <li>The receiver adds its own thermal noise, then runs RF/AGC/ADC and practical synchronization/channel estimation. Absolute RSRP/RSSI must use the antenna/pre-front-end plane, or a documented inverse of receiver gain; ADC-output power alone is not antenna dBm.</li></ol>
+ <h2>Noise, EPRE and RSRP arithmetic</h2>
+ <p><code>N(B) = -174 + 10 log10(B_Hz) + NF</code> dBm. At a stated 20-MHz measurement bandwidth this is approximately -93.990 dBm at the UE and -95.990 dBm at the gNB. The occupied grid is only 18.36 MHz; an RSSI calculation must use its actual specified measurement bandwidth/symbol population, not silently substitute 20 MHz.</p>
+ <p>For complex sqrt(mW) samples at Fs, per-receive-chain noise variance is <code>10^((-174+NF)/10) × Fs</code> mW. Do not divide it by receive antenna count or scale it with path loss, desired samples or configured SNR. ${S('+sixgr/+link/resolveReceiverThermalNoiseVariance.m')} and ${S('tests/testReceiverAbsoluteThermalNoise.m')} exercise this rule.</p>
+ <p><a href="https://www.etsi.org/deliver/etsi_ts/138200_138299/138215/18.04.00_60/ts_138215v180400p.pdf" target="_blank" rel="noopener">TS 38.215 V18.4.0 §§5.1.1–5.1.4</a> defines SS/CSI RSRP and RSRQ. Average reference-RE power in linear units before converting to dBm; exclude CP. Retain cell, SSB/CSI resource, branch and averaging population. FR1 uses the antenna-connector reference; never average branch dBm values or combine different SSB identities into one beam measurement.</p>
+ <p>With native unnormalized FFT output Y and physical sqrt(mW) input, per-subcarrier power is |Y/Nfft|² mW. This FFT scale must be derived from the executed transform, not guessed from a normalized grid. SS-RSRP uses the permitted SSS/reference population; CSI-RSRP uses the configured CSI-RS population. NR RSSI includes all received contributions over its defined bandwidth and symbols. RSRQ uses N × RSRP / RSSI in linear units with matching populations.</p>
+ <p>The nominal full-BWP reference EPRE is <code>30 - 10 log10(51×12) ≈ 2.133 dBm</code>. The selected integer <code>ss-PBCH-BlockPower</code> policy declares 2 dBm and applies its reference offset. Its post-RF emitted EPRE still requires measurement; this configuration number is not a substitute for measured SS-RSRP.</p>
+ <h2>UL power control and why power headroom may be negative</h2>
+ <p><a href="https://www.etsi.org/deliver/etsi_ts/138200_138299/138213/18.08.00_60/ts_138213v180800p.pdf" target="_blank" rel="noopener">TS 38.213 V18.8.0 §§7.1–7.4 and §7.7</a> gives channel-specific power-control and PH procedures. For the selected single-carrier PUSCH scope:</p>
+ <pre>Prequested = P0 + 10 log10(2^mu × MRB) + alpha × PL + DeltaTF + f
+Ptx        = min(PCMAX, Prequested)
+PH_Type1   = PCMAX - Prequested</pre>
+ <p>For mu=1, 51 PRBs, P0=-80 dBm, alpha=0.8, PL=110 dB, DeltaTF=f=0, requested power is about 28.086 dBm. With PCMAX=23 dBm, transmitted target is capped at 23 dBm and PH is -5.086 dB. Reporting zero instead would hide the unmet power requirement. The remaining margin after clipping is zero, but that is a different quantity. ${S('+sixgr/+rf/+runtime/UplinkPowerControlState.m')} now keeps both values separate; ${S('+sixgr/+phy/+ul/+pusch/PUSCHPowerController.m')} already retains signed Type-1 headroom.</p>
+ <p>PL must come from the applicable configured reference-signal transmit power and causally measured RSRP. Configured SNR and geometry-oracle loss must not replace that UE estimate. PUCCH uses its format-dependent delta terms and unit pathloss coefficient; PRACH uses its received-target/ramping procedure, not a PUSCH bandwidth formula. A diagnostic power margin for PRACH is not a Type-1 PHR MAC report.</p>
+ <h3>SRS has its own resource-set reference and power equation</h3>
+ <pre>PL_SRS = decoded referenceSignalPower - filtered RSRP of the configured RS
+P_SRS = min(PCMAX, P0_SRS + 10 log10(2^mu × M_SRS) + alpha_SRS × PL_SRS + h)</pre>
+ <p>TS 38.213 §7.3.1 defines this procedure and equal power division over the transmitted SRS antenna ports. There is no PUSCH DeltaTF term. The shared request field must be zero for SRS; a nonzero value is rejected, not quietly applied. The selected YAML explicitly identifies SSB index 0 as the SRS pathloss reference. It does not silently inherit the PUSCH reference or take the beam with the most favorable geometry.</p>
+ <p>${S('+sixgr/+truth/resolveSRSPowerReference.m')} selects the UE's decoded SIB1 reference power and filtered received SSB RSRP through ${S('+sixgr/+truth/bindSharedSSBPowerReference.m')}. It checks serving cell, configuration epoch, resource identity, available time and configured freshness. Physical transmitter-EPRE diagnostics and generated channel path loss are not substituted for signalled UE knowledge. The CSI-RS-based SRS pathloss-reference alternative still needs its signalled-power binding and is not supported by this repair.</p>
+ <p>For the focused fixture, decoded power 5 dBm and filtered RSRP -90 dBm give PL=95 dB. With mu=1, M_SRS=48, P0=-80 dBm, alpha=0.8 and h=0, the target is 15.8227 dBm. The actual useful samples of the four-port SRS waveform match that total. The fixture deliberately injects decoded configuration and reference measurements at the tested boundary; it does not prove integrated access, actual SSB acquisition or statistical performance.</p>
+ <p>${S('+sixgr/+link/srsPowerControlEvidence.m')} exports requested/applied power, PCMAX, MRB, mu, adjustment, measured pathloss, reference identity, producer/available slots, filtered RSRP and decoded-SIB1 tree hash into <code>air_interface/csv/srs_trials.csv</code>. Normalized-reference runs leave absolute values empty rather than manufacture dBm. These are emitted targets and reference provenance; post-RF power is a separately measured quantity.</p>
+ ${N('Connected power-control scope','The received PUSCH owner now retains decoded-command adjustment history. The n40 scenario explicitly selects same_as_pusch for SRS; its power is rebound at the configured SRS resource boundary using the applicable history. See the type1o-power-and-sliv chapter for the equation, timing and evidence. Separate SRS DCI 2_3 adjustment, RRC power-parameter reconfiguration and full-run statistical qualification are not established by these focused repairs.',true)}
+ <p><a href="https://www.etsi.org/deliver/etsi_ts/138100_138199/13810101/18.13.00_60/ts_13810101v181300p.pdf" target="_blank" rel="noopener">TS 38.101-1 V18.13.0 §6.2 / §6.2D</a> distinguishes maximum power, configured power and waveform/allocation-dependent reductions. The present fixed 23-dBm cap is a declared research UE limit, not proof that every MCS, allocation or four-chain waveform satisfies the corresponding RF requirements.</p>
+ <h2>Acceptance and output boundaries</h2>
+ <p>Keep requested, capped, actual pre/post-RF power, PCMAX, signed PH, reference resource/measurement identity, gain, path loss, receiver NF, noise bandwidth and units distinct. Do not rewrite old normalized measurement CSVs. The new operating point still requires an integrated access/data run, producer-to-CSV/PNG/WebGUI checks, post-RF reference-power closure, and sufficient independent populations for BLER/miss/false-alarm claims. A short successful run cannot close those statistical or RF qualifications.</p>
+ <p>Focused checks: ${S('tests/testAbsoluteEndpointRFReference.m')}, ${S('tests/test20MHzAbsolutePowerContract.m')}, ${S('tests/testPowerContextPhysicalUnits.m')}, ${S('tests/testPUSCHMeasuredReferencePowerControl.m')}, ${S('tests/testSRSMeasuredReferencePowerControl.m')}, ${S('tests/testSRSRuntimeTrialSchema.m')}. Inspect their actual retained receipts; a listed test is not a passing result.</p>`
+});
+G.chapterBasis['absolute-power-n40']=['nr','model','engineering','research'];
+})();
+
+/* Original implementation review; the supplied Intel PDF is not redistributed. */
+(() => {
+const G=window.H4Guide,{CHAPTERS,S,T,N}=G;
+CHAPTERS.push({id:'flexran-algorithm-review',group:'PHY chains',
+ title:'FlexRAN receiver algorithms: mathematics, implementation and gaps',
+ lead:'A section-by-section review of the supplied 103-page v21.07 algorithm note, with NR requirements separated from receiver design choices.',
+ body:()=>`
+ ${N('Scope and acceptance','The August 2021 Intel note is an implementation reference, not an additional 3GPP specification. Its product limits and empirical constants are not mandatory NR behavior. Reading an algorithm, locating a similarly named function, and passing an algebra test are different from integrating and qualifying that algorithm. The complete FlexRAN algorithm set is NOT implemented or qualified in SixGR.',true)}
+ <p>Source identity: document 610016-9.0, v21.07, 103 pages; SHA-256 <code>A7FA256CB321A47B1501206B6666EEF1CE1538EA7F44ECF4807F40D68CACC9EC</code>. The supplied copy is marked confidential: the PDF, extracted pages and original diagrams have not been added to this repository. These explanations and code repairs are original. The review covers sections 1–6 and Appendix A, including the PUSCH, SRS, PUCCH and PRACH processing flows.</p>
+ <p>Full implementation inventory: ${S('docs/lls/flexran_v2107_algorithm_review.csv','48-row algorithm / file / status / remaining-work matrix')}. Status <code>EXISTING_PATH_REVIEWED</code> means source inspection, not a newly executed waveform qualification. <code>DIFFERENT_NATIVE_BACKEND</code> means MATLAB provides the operation but the vendor algorithm has not been reproduced.</p>
+ <h2>Authority: what may and may not change</h2>
+ ${T(['Layer','Authority','Consequence'],[
+ ['Constellations, scrambling, ports, RE mapping and transforms','NR normative: TS 38.211, pinned here to V18.8.0','Use the specified bits, coordinates, sequence and transform conventions. A receiver note cannot replace them.'],
+ ['CRC, polar/LDPC, rate recovery and UCI structure','NR normative: TS 38.212; pin the scenario release','Preserve code parameters, interleavers, puncturing/shortening and HARQ soft-buffer identities.'],
+ ['LS/LMMSE/DCT filtering, IRC, timing/CFO estimators and DTX decisions','Implementation policy','Different receivers can be valid NR receivers. Compare decoded performance and false alarms under matched conditions.'],
+ ['Doppler thresholds, grouping rules, initial 30-dB prior, four-RB windows and fixed-point widths','Vendor tuning / engineering assumptions','Configure explicitly; do not claim 3GPP requires them or that the reference validates every scenario.'],
+ ['TDD SRS reciprocity precoder','Implementation policy plus RF reciprocity assumption','Requires causal received SRS and calibrated or explicitly ideal RF reciprocity; it is not a CSI PMI codebook.']])}
+ <p>Normative modulation reference: <a href="https://www.etsi.org/deliver/etsi_ts/138200_138299/138211/18.08.00_60/ts_138211v180800p.pdf" target="_blank" rel="noopener">TS 38.211 V18.8.0 §5.1</a>. MATLAB interfaces: <a href="https://www.mathworks.com/help/5g/ref/nrsymboldemodulate.html" target="_blank" rel="noopener">nrSymbolDemodulate</a> and <a href="https://www.mathworks.com/help/5g/ref/nrchannelestimate.html" target="_blank" rel="noopener">nrChannelEstimate</a>. Executed checks use local R2026a; the current online documentation may describe a newer release.</p>
+ <h2>PUSCH: actual input-to-output ownership</h2>
+ <ol><li>Received antenna samples and installed grant determine the capture, timing acquisition, CFO compensation, CP removal and FFT. Never obtain the receiver estimate from the injected impairment.</li>
+ <li>Extract the granted REs and locally generated DMRS/PTRS references. CDM/OCC separation must preserve logical port identity and actual pilot coordinates.</li>
+ <li>Estimate the channel and disturbance per resource. Interpolation uses only the allowed observations; an oracle channel can score estimation error but cannot feed decoding.</li>
+ <li>MMSE/IRC produces equalized layer symbols, effective gain and disturbance statistics. For transform precoding, preserve the DFT-domain noise and reliability convention.</li>
+ <li>Demap and descramble, then separate HARQ-ACK, CSI part 1, CSI part 2 and UL-SCH. Received CSI1 determines any variable CSI2 length through the installed report configuration.</li>
+ <li>Rate recover each code block, accumulate real retransmissions in the matching soft buffer, decode, check CRC and assemble the original TB. Publish receiver outcomes even when CRC fails.</li></ol>
+ <p>Production owner: ${S('+sixgr/+phy/+ul/PUSCH_Rx.m')}. It currently uses <code>nrPUSCHDecode</code> and <code>nrULSCHDecoder</code>; the generic mapper changes below do not silently replace that entire decoder.</p>
+ <h2>Channel estimation, synchronization and equalization equations</h2>
+ ${T(['Operation','Mathematics and assumptions','SixGR implementation / remaining boundary'],[
+ ['Pilot LS','For a separated known pilot: hLS = y conjugate(x) / |x|². CDM mixtures must be separated before treating these as independent port estimates.','Shared channelEstimate wraps native practical estimation; generic scalar expansion is forbidden for fading.'],
+ ['LMMSE interpolation','hHat = Rhp (Rpp + Rnoise)⁻¹ hLS. Rnoise is on the LS-pilot plane, including pilot amplitude and despreading effects.','Explicit covariance LMMSE exists. The note-specific two-pass covariance/noise estimator and DCT filter are still separate implementation work.'],
+ ['Timing phase slope','For H[k] proportional to exp(−j2π k τ/NFFT), τHat = NFFT angle(sum H[k] conjugate(H[k+Δk]))/(2πΔk).','Requires same port/time and actual frequency spacing. Remove the ramp before interpolation and restore it when equalizing data whose timing plane has not changed. This estimates effective delay, not automatically absolute propagation time.'],
+ ['CFO from repeated pilots','fHat = angle(sum H2 conjugate(H1))/(2π Δt); phase unwrapping and multiple pairs extend the fit, not the fundamental acquisition range without assumptions.','estimateCFOFromReferenceSymbols already matches complete port groups and uses actual FFT-centre times. Channel phase evolution can bias CFO; do not label this maximum Doppler spread.'],
+ ['PTRS CPE','Given a DMRS-based channel reference, phaseHat = angle(sum conjugate(Hhat xPTRS) yPTRS). Rotate data by exp(−j phaseHat), or consistently rotate H; not both.','Canonical PDSCH has channel-compensated PTRS processing. The older correctCPEFromPTRS helper assumes a unit/equalized channel and needs an explicit input-plane contract before use on arbitrary raw fading grids.'],
+ ['MMSE / IRC','W = (Hᴴ Rn⁻¹ H + I)⁻¹ Hᴴ Rn⁻¹ for unit-covariance layer symbols. Equivalent whitened solves avoid explicit inverses.','equalizeMMSE retains effective WH and output covariance. Noise must not be included twice in Rn.'],
+ ['Reliability after MMSE','For output z = βx + e, use distances |z−βa|²/v where v=E|e|². Alternatively divide z by β and v by |β|².','The demapper-input plane must agree with receiver CSI weighting. A second reliability multiplication can corrupt LLR calibration.']])}
+ <p>Sources: ${S('+sixgr/+phy/+rx/channelEstimate.m')}, ${S('+sixgr/+phy/+rx/estimateCFOFromReferenceSymbols.m')}, ${S('+sixgr/+phy/+rx/equalizeMMSE.m')}, ${S('+sixgr/+pdsch/PDSCHReceiver.m')}.</p>
+ <h2>Implemented repair: constellation and soft-bit mathematics</h2>
+ <p>NR BPSK uses <code>(1−2b)(1+j)/√2</code>. NR π/2-BPSK additionally uses <code>exp(jπ/2 (i mod 2))</code>, starting at symbol index zero. The previous alternative mapper used a real axis and a cumulative rotation; the alternative demapper ignored this rotation. Both are repaired in ${S('+sixgr/+phy/+mod/modulate.m')} and ${S('+sixgr/+phy/+mod/demodulateLLR.m')}.</p>
+ <p>For equiprobable symbols and complex Gaussian disturbance variance <code>v=E|n|²</code>, the exact bit LLR is <code>log Σ[a:b=0] exp(−|y−a|²/v) − log Σ[a:b=1] exp(−|y−a|²/v)</code>. Max-log replaces each log-sum by its largest term. Positive LLR means bit zero. Square QAM allows exact independent I/Q marginalization using NR's alternating input-bit assignment; ${S('+sixgr/+phy/+mod/nrPAMAlphabet.m')} builds that one-axis alphabet. Log-sum-exp is evaluated stably, in bounded chunks.</p>
+ <p>The old wrapper requested <code>Approx=false</code> but called MATLAB's QAM max-log demapper and reported that request as if it described the calculation. Exact requests now execute actual marginalization. <code>Approx=true</code> explicitly selects max-log. Metadata names the executed algorithm, constellation convention and actual noise variance. No selected-backend failure is silently retried with a different bit map. Explicit <code>Engine="comm"</code> QAM remains a separately labelled Communications Toolbox mapping; it is not NR bit order. Default 1024-QAM now uses NR labels. Existing saved studies that relied on the old default mapping must not mix those bits with the corrected mapping.</p>
+ <pre><code>[s, txInfo] = sixgr.phy.mod.modulate(bits, "256QAM", "Engine", "native_nr");
+[exact, rxInfo] = sixgr.phy.mod.demodulateLLR(y, "256QAM", measuredVariance);
+[maxlog, approximation] = sixgr.phy.mod.demodulateLLR(y, "256QAM", measuredVariance, ...
+    "Engine", "native_nr", "Approx", true);</code></pre>
+ <p>These are core API choices, not newly wired global YAML switches for every physical channel. The control wrapper uses the corrected default automatically; PUSCH and PUCCH still own their native decoder branches. Empty/NaN scalar variance defaults explicitly to one and is reported; production receivers must pass their measured variance.</p>
+ <h2>SRS, receive compression and reciprocal DL precoding</h2>
+ <p>SRS receiver flow: installed SRS resource → received comb/hop extraction → cyclic-shift/port separation → per-resource channel and noise estimates → causal measurement state → beam/rank selection. The note also proposes delay-window DFT denoising and spatial compression; neither is established merely by having an FFT or a codebook in the repository.</p>
+ <p>For a receive compression matrix A, use <code>y′=Ay</code>, <code>H′=AH</code> and <code>Rn′=A Rn Aᴴ</code>. Selecting beams without transforming the disturbance covariance changes the modeled receiver. Before enabling this option, verify causal SRS age, identity, port layout, polarization, retained dimensions and loss relative to the uncompressed receiver.</p>
+ <p>The unitary DFT basis is <code>B[n,m]=exp(−j2πnm/N)/√N</code>. Oversampled beams have unit column power but are not all orthogonal. The existing ${S('+sixgr/+rf/getCachedOversampledDFTCodebook.m')} includes the necessary denominator; do not replace it with the printed expression missing that divisor.</p>
+ <p>For calibrated TDD reciprocity, the propagation direction reverses through a transpose, not a conjugate transpose: <code>Hdl=Hulᵀ</code>. Conjugation then appears in beamforming. ${S('+sixgr/+rf/BeamformingSRSReciprocity.m')} now preserves singleton UE/gNB dimensions, resolves its own package methods correctly, implements MRT as conjugate channel steering, and distinguishes it from SVD. For the selected streams, ZF solves <code>Hselected Wraw=I</code> using QR; rank-deficient requests fail rather than silently turning into regularized ZF. Each column is normalized separately, so total column energy is the number of layers; the caller must still apply the intended total-power budget.</p>
+ <p>This helper coherently averages the channel over frequency/time and is labelled accordingly. It is not a universal per-PRB beamformer, a measured RF-reciprocity calibration, a closed production scheduler loop, or a replacement for the TS 38.214 PMI codebook.</p>
+ <h2>PUCCH: keep format-specific detection semantics</h2>
+ <p>Format 0 uses sequence/cyclic-shift hypotheses without DMRS; it must not be assigned a fabricated channel estimate. Format 1 uses its DMRS/OCC/sequence structure. Formats 2–4 use their actual coded-bit and reference-signal layouts, with the legal transform/OCC operations. ${S('+sixgr/+phy/+pucch/PUCCHReceiver.m')} calls the native format decoder and ${S('+sixgr/+phy/+pucch/UCIDecoder.m')} owns UCI coding decisions.</p>
+ <p>The note's PNR detector and full/half-codeword consistency detector are alternative implementation policies, not substitutes for NR payload-length coding rules. They are not yet installed as qualified selectable backends. A threshold calibrated on one metric cannot be reused on a differently normalized metric. Qualification needs independent no-signal and signal-present occasions, false ACK/NACK/SR accounting, missed detection, decoded-bit error rates and confidence intervals. CRC absence on short UCI is not itself a failure; CRC success does not prove zero false alarm.</p>
+ <h2>PRACH: threshold units and statistical assumptions</h2>
+ <p>Reference processing: format-specific CP/window → frequency translation/resampling if needed → FFT and PRACH subcarrier extraction → root-sequence correlation → delay-domain profile → noncoherent antenna/repetition combination → preamble/timing decision. The production detector is ${S('+sixgr/+rach/PRACHDetector.m')}; MATLAB's normalized detection metric remains authoritative there.</p>
+ <p>For an average of N independent normalized exponential powers, <code>G(t)=gammainc(Nt,N)</code>. If L searched bins were independent, an occasion false-alarm target α would give <code>t=G⁻¹((1−α)^(1/L))</code>. This is the statistical model underlying the note's threshold design, not a universal 3GPP threshold. Oversampled correlation bins are correlated, estimated background power is random, and antennas/repetitions may not be independent. Its PDP threshold therefore cannot be pasted into the current normalized-correlation detector.</p>
+ <p>Pending alternatives include peak-excluded noise estimation, relative near-far rejection and root-dependent CFO ghost rejection. They require their own metric, configured assumptions, retained search samples and independent H0/H1 qualification. The 122.88-to-5.12 MSa/s decimator example is not a mandatory clock chain for 20-, 100- or 400-MHz scenarios.</p>
+ <h2>Apparent source errors and unsupported literal imports</h2>
+ ${T(['Source location','Finding','Correct implementation treatment'],[
+ ['§2.9 p35','Three-pilot polynomial weights are described under linear interpolation','They form quadratic Lagrange interpolation; name and test the actual polynomial.'],
+ ['§2.18 pp51–53','256-QAM bit count and one interval boundary are inconsistent; scaling needs independent verification','Use NR 8-bit labels and posterior/min-distance equations, verified against independent enumerated constellations.'],
+ ['§3.3 p68','Printed DFT exponents omit the dimension divisor','Without it integer-index columns collapse; preserve a normalized DFT basis and test rank/orthogonality.'],
+ ['§4.10 p78','BPSK decision uses a quadrant conjunction','Use the projection on the correct NR constellation axis.'],
+ ['§4.14 p82','MRC denominator is written as a sum of channel norms','Unit-gain MRC uses sum of squared magnitudes; verify effective gain and output noise.'],
+ ['§4.19–4.21 pp83–86','Polar size/shortening statements and code-rate wording are ambiguous or inconsistent','Use TS 38.212 payload-based coding and correct shortening LLRs. No ad hoc code-rate switch.'],
+ ['§2.21–2.23 pp55–57','Selection pseudocode does not establish inverse HARQ accumulation; CRC length notation can add one extra bit','Retain canonical rate recovery and CRC degree; verify repeated-index accumulation and original TB identity.'],
+ ['§5.10 pp97–98','Peak exclusion window labels are ambiguous','Require an explicit format-specific configuration and measured false-alarm/near-far validation.']])}
+ <h2>Verification and next implementation gates</h2>
+ <p>${S('tests/testNRModulationLikelihoods.m')} exhaustively checks all QAM labels through 1024-QAM against an independent TS 38.211 oracle and MATLAB, compares exact and max-log outputs to full complex-alphabet likelihoods at three noise variances, tests BPSK rotations, power and invalid inputs. ${S('tests/testDemodulateLLRExactDefault.m')} now uses a QAM point where exact and max-log actually differ. ${S('tests/testSRSReciprocityLinearAlgorithms.m')} checks MRT/ZF/SVD, singleton axes, DFT power, rank and invalid requests. These are component tests, not BLER curves.</p>
+ <ol><li>Complete configurable two-pass LMMSE/DCT/SRS delay-window estimation, with actual pilot/noise coordinate contracts and independent fading tests.</li><li>Wire optional spatial compression through causal SRS, transformed covariance, beam identity and production grant execution.</li><li>Implement optional PUCCH/PRACH detector backends only with their own metric and independently measured threshold populations.</li><li>Expose selected algorithms in YAML, receiver evidence, CSV/PNG and WebGUI, then qualify integrated DL/UL and fading/RF/array branches.</li></ol>
+ <p>The existing NR backend remains available while these alternate paths are implemented. No full campaign, changed detector thresholds, statistical result, or claim of complete FlexRAN parity follows from this review.</p>`
+});
+G.chapterBasis['flexran-algorithm-review']=['nr','matlab','engineering','research'];
+})();
+
+/* Reference-plane and SLIV corrections: explicitly separate measurements from declarations. */
+(() => {
+const G=window.H4Guide,{CHAPTERS,S,T,N}=G;
+CHAPTERS.push({id:'type1o-power-and-sliv',group:'PHY chains',
+ title:'Type 1-O power reference and exact SLIV allocation',
+ lead:'The n40 20-MHz scenario models an integrated-array gNB. Internal RF samples, radiated power, logical ports and data layers are different quantities.',
+ body:()=>`
+ ${N('Model scope','Type 1-O is the chosen modeled gNB RF interface, not physical hardware certification. The existing 30-dBm budget remains internal total pre-RF power. It is not multiplied by 64 antennas or four layers and is not relabelled as TRP.',true)}
+ <h2>Reference configuration and actual owners</h2>
+ <p>${S('simulator/configs/scenarios/lls_tdd_n40_20mhz_64txru_4rx_cdlc100_impaired.yaml')} declares <code>power_and_rf_frontend.bs_reference</code>: <code>rf_type: 1-O</code>, <code>requirement_boundary: RIB</code>, <code>budget_plane: internal_pre_rf_total</code> and <code>antenna_gain_owner: physical_array_channel</code>. ${S('+sixgr/+rf/resolveBSRFReference.m')} validates this explicit contract and at least eight gNB TX and RX units. ${S('+sixgr/+lls6g/buildInternalConfig.m')} binds the resolved contract into runtime configuration; the RF execution manifest retains it.</p>
+ <p>NR normative reference: <a href="https://www.etsi.org/deliver/etsi_ts/138100_138199/138104/18.08.00_60/ts_138104v180800p.pdf" target="_blank" rel="noopener">TS 38.104 V18.8.0 §4.3.3 and §9.2</a>. Type 1-O uses the radiated interface boundary. The declared-beam power requirement uses directional EIRP, not a sum of internal connector ratings. A numerical model does not satisfy OTA testing simply by choosing this type.</p>
+ ${T(['Quantity','Definition / reference plane','Current implementation'],[
+ ['Physical-chain power','p_m = mean_n |x_m[n]|² at a named RF boundary; total is sum_m p_m.','Measured separately at RF input, immediately after TX PA, and RF output. Unequal chain powers are retained.'],
+ ['Units','sqrt(mW) samples give p_m in mW; normalized samples give only squared normalized amplitude.','Absolute units are bound by the physical runtime power owner, not inferred by the RF operator.'],
+ ['Population','All supplied samples, including CP and idle samples.','This is not active-RE EPRE or transmitter-ON-only standards power. Keep the interval and denominator visible.'],
+ ['Logical-port / layer power','With x=W s and Q=E[s sᴴ], physical power covariance is W Q Wᴴ.','An equal chain split is not inferred from a port count; equal total power requires explicit precoder and layer-covariance normalization.'],
+ ['TRP and EIRP','For normalized directional radiation vector a, EIRP(Ω)=aᴴ R a and TRP=(1/4π)∫ EIRP(Ω)dΩ.','Same-execution full covariance and radiation-pattern integration remain required; per-chain diagonal powers alone cannot reconstruct coherent beam power.'],
+ ['UE PCMAX / MPR','A separate UE class, allocation and active-port power contract.','Choosing gNB type 1-O does not qualify UE power class, MPR/A-MPR or full-power-mode behavior.']])}
+ <h2>How to read the new per-chain CSV</h2>
+ <p><code>rf/csv/rf_endpoint_chain_power_intervals.csv</code> has one actual endpoint/interval row. <code>InputPerChainMeanSquareJSON</code>, <code>PostPAPerChainMeanSquareJSON</code> and <code>OutputPerChainMeanSquareJSON</code> preserve the ordered chain vectors. Their sums must equal the corresponding total. <code>PostPATotalPower_mW</code> and <code>PostPAPerChainPower_dBmJSON</code> exist numerically only on the declared absolute sample plane; a truly zero-power chain has no finite dBm value. No epsilon replaces zero.</p>
+ <p>Producer: ${S('+sixgr/+rf/measurePhysicalChainPower.m')} inside ${S('+sixgr/+rf/applyRFImpairmentChain.m')}. The compact accumulator retains no IQ and consumes no RNG. ${S('+sixgr/+truth/RFEndpointExecutionLedger.m')} commits the statistics with the actual sample interval; ${S('+sixgr/+truth/publishRFEndpointExecutionLedger.m')} writes and verifies the CSV hash. Historical scalar-only records are not split into synthetic equal-power chains. <code>ChainPowerCompleteFromOrigin</code> distinguishes complete coverage from a repaired suffix.</p>
+ <h2>SLIV: encoding is not the scheduling granularity</h2>
+ <p>For zero-based start S and length L, use <code>14(L−1)+S</code> when <code>L−1≤7</code>, otherwise <code>14(15−L)+(13−S)</code>. The radix remains 14 for extended CP; legality separately limits S+L to 12 rather than 14. The repaired helpers previously used the slot symbol count as the radix, giving 23 instead of 55 for extended-CP S=0,L=12.</p>
+ <p>Normative reference: <a href="https://www.etsi.org/deliver/etsi_ts/138200_138299/138214/18.06.00_60/ts_138214v180600p.pdf" target="_blank" rel="noopener">TS 38.214 V18.6.0 §§5.1.2.1 and 6.1.2.1</a>. DCI time-domain assignment selects a configured TDRA row. SLIV describes that row's symbol interval; it is not a promise that every RE in those symbols carries payload. Mapping-type, CP, DMRS, TDD direction, processing and unavailable-resource rules still apply. Frequency scheduling uses PRBs/RBGs and the transmitter maps the exact legal data/pilot RE sets.</p>
+ <p>Production owners: ${S('+sixgr/+phy/+frame/ResourceAllocationValidator.m')} and ${S('+sixgr/+l2/+mac/SchedulerBase.m')}. ${S('tests/testNRSLIVEncoding.m')} checks nine independent numeric anchors, all 105 normal-CP and 78 extended-CP geometric intervals, invalid codewords and configured TDRA consistency. These encoding checks do not assert every interval is legal for every channel or mapping type.</p>
+ <h2>Remaining acceptance gates</h2>
+ <h3>SRS shared adjustment: receiver command to actual samples</h3>
+ <p><strong>NR normative:</strong> <a href="https://www.etsi.org/deliver/etsi_ts/138200_138299/138213/18.08.00_60/ts_138213v180800p.pdf" target="_blank" rel="noopener">TS 38.213 V18.8.0 §7.3.1</a> permits SRS to share the current PUSCH adjustment. For the configured shared case, <code>P_SRS=min(P_CMAX, P0_SRS+10log10(2^mu M_SRS)+alpha_SRS PL+h)</code>, where <code>h=f_PUSCH</code>. SRS has no modulation/coding DeltaTF term. This scenario chooses the shared option; it is not mandatory for every NR scenario.</p>
+ <p><strong>Exact implementation:</strong> YAML <code>rf_frontend.ul_power_control.srs.adjustment_state: same_as_pusch</code> → ${S('+sixgr/+link/ReceivedULPowerControlState.m')} retains actual received DCI identity, adjustment and effective UE-transmit sample → ${S('+sixgr/+rf/+runtime/SRSPowerController.m')} resolves the equation → ${S('+sixgr/+truth/CoupledWaveformStream.m')} creates an SRS resource-boundary event → ${S('+sixgr/+link/PreparedUplinkControlTransmission.m')} binds the latest applicable state before node RF. ${S('+sixgr/+link/srsResourceStartSample.m')} uses the actual numerology/CP clock and advanced UE slot origin, not an incidental first nonzero sample. A queued future PUSCH update cannot affect an earlier SRS; reading state does not apply TPC twice.</p>
+ <p><strong>Implementation policy:</strong> a deterministic resource-boundary event replaces only the still-unemitted SRS contribution. The composer rejects changes after a nonzero sample has been consumed, preserves prior samples and other contributors, and retains before/after hashes. No RF/channel rerun or injected receiver measurement is used. A windowing precursor before the configured resource boundary requires an earlier explicit commitment and is rejected by this path. The currently supported path prepares one SRS resource per transmission; additional independent resources need their own boundary events.</p>
+ <p><strong>CSV interpretation:</strong> <code>SRSPowerControlAdjustment_dB</code> is the applied h; <code>StateOwner</code>, <code>StateUpdateCount</code> and <code>ReceivedAssignmentDigest</code> identify its retained control source. <code>TPCAvailableAtSample</code>, <code>TPCAppliedAtSample</code> and <code>AdjustmentReadAtSample</code> distinguish reception, PUSCH adjustment effectiveness and SRS consumption. These names have the <code>SRSPowerControl</code> prefix in <code>air_interface/csv/srs_trials.csv</code>. The initial installed P0/alpha state has zero updates and no command digest; it is not a fabricated decoded command. <code>BoundAtEmission</code> distinguishes live binding from preparation-only checks.</p>
+ <p><strong>Remaining scope:</strong> separate SRS closed-loop control needs independently received DCI 2_3. An unsupported policy fails instead of silently reinitializing h to zero. Focused waveform and command-history tests do not establish sustained 60-slot operation, hardware power qualification or a BLER population.</p>
+ <p><strong>Retained focused evidence, 22 October 2026:</strong> ${S('tests/testReceivedULPowerControlState.m')} decoded six actual PDCCH commands and retained adjustments 1, 4, 3, 6, 6, 5 dB, including saturation hold. Its SRS component changed h from 1 to 4 dB before emission: amplitude ratio 1.41254, requested and measured useful-symbol power 17.8021 dBm. ${S('tests/testSRSMeasuredReferencePowerControl.m')} separately exercised the configured 20-MHz 48/51-PRB, four-TX/64-RX preparation: requested and measured 15.8227 dBm. Both use explicitly labelled access/pathloss boundary fixtures, not full access qualification. The closing receipt is <code>logs/srs_causal_power_closure_20261022.log</code>; failed development attempts are retained separately.</p>
+ <p><strong>Shared physical integration:</strong> ${S('tests/test20MHzSharedSRSPowerBinding.m')} completes six physical slots with the configured CDL-C/RF path and one SRS occasion. The SRS was prepared with h=0, then rebound with a newly applicable decoded-command adjustment h=1 dB. The applied pre-RF target is 16.8227123303957 dBm; the actual receiver's independent channel NMSE is −15.3539543013097 dB and its configured check passes. The shared RF ledger has complete per-chain coverage. This evidence is retained under <code>results/validation/n40_shared_srs_power/20261022_165228_120</code> and <code>logs/n40_shared_srs_power_20261022_v2.log</code>. Access/TAG and preceding independently decoded PDCCH/coded PUSCH state are explicit boundary inputs: this is not a six-slot access test or shared PUSCH reception, and it does not establish statistical qualification.</p>
+ <h3>Reading the WebGUI SRS power-control panel</h3>
+ <p>The live <em>SRS power control — received reference and causal adjustment</em> panel projects actual <code>air_interface/csv/srs_trials.csv</code> fields. Compare decoded RS power with filtered reference RSRP to explain pathloss; compare requested power with PCMAX to explain clipping. The displayed applied target is <strong>pre-RF</strong>, not measured post-PA power, TRP or EIRP. For shared adjustment, the TPC result-availability sample must precede its effective PUSCH sample, and the SRS read sample selects the applicable state. The decoded assignment hash and update count distinguish actual commands from initial h=0. Missing historical fields stay absent rather than being filled with zeros. The producer is ${S('+sixgr/+link/srsPowerControlEvidence.m')}; ${S('+sixgr/+truth/bindSharedSRSPower.m')} handles the live binding, and ${S('apps/lls_web_dashboard.py')} supplies the presentation.</p>
+ <ul><li>Integrated antenna covariance/pattern normalization, radiation efficiency and same-execution beam EIRP/TRP export; no extra array gain may be added to a channel that already applies it.</li><li>Independent logical-port/RE and layer-budget evidence across adaptive precoders.</li><li>Allocation-dependent UE RF power limits, MPR/A-MPR and active-port/full-power qualification.</li><li>Optional FlexRAN two-pass/DCT estimation, SRS compression and detector alternatives remain separate work, as listed in the algorithm chapter.</li></ul>`
+});
+G.chapterBasis['type1o-power-and-sliv']=['nr','engineering','research'];
 })();

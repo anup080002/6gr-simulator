@@ -43,6 +43,13 @@ for direction = ["DL","UL"]
     assert(T.RNTI==expected && T.UEIndex==2, ...
         'test:ExecutedDataIdentityMissing','%s trial dropped actual TX identity.',direction);
     assert(strlength(string(T.GrantContextId))>0);
+    assert(T.ExecutedResourceIntervalSource=="executed_TX_RE_runs_PRB_symbol_union_not_RF_activity" && ...
+        strlength(T.ExecutedResourceIntervalsJSON)>0);
+    intervals=jsondecode(T.ExecutedResourceIntervalsJSON);
+    assert(all([intervals.AbsoluteSlotIndex0]==T.Slot-1));
+    expanded=sixgr.truth.expandExecutedResourceIntervals(T,cfg);
+    assert(height(expanded)==numel(intervals) && all(expanded.NumSymbols==1) && ...
+        isequal(sort(expanded.SymbolStart),sort([intervals.SymbolIndex0].')));
     fprintf('%s actual trial: UEIndex=%d RNTI=%d; stale alias=%d rejected as authority.\n', ...
         direction,T.UEIndex,T.RNTI,cfg.phy.rnti);
 end

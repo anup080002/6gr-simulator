@@ -9,6 +9,9 @@ if nargin==0
     [absentOK,~]=testSharedPeriodicCSIProducer("absent");
     a=removevars(state.SharedGNBCSIReportTable,'UEReferenceRecordJSON');
     b=removevars(removed.SharedGNBCSIReportTable,'UEReferenceRecordJSON');
+    assert(isequaln(state.TestPeriodicCSICaptures,removed.TestPeriodicCSICaptures), ...
+        'test:CSIProducerAuditCounterfactualChanged', ...
+        'Removing optional producer audit must preserve exact receiver samples and capture clocks.');
     assert(isequaln(a,b),'Removing optional UE producer audit must not change gNB CSI publication.');
     ok=ok && removedOK && absentOK;
     fprintf('INDEPENDENT_PERIODIC_CSI_RECEPTION_PASS present_removed_absent=3 calendar_arms_without_producer=1\n');
@@ -23,10 +26,29 @@ s=sixgr.lls6g.config.loadScenarioConfig('simulator/configs/scenarios/lls_pdcch_s
 cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
 cfg.phy.ssb.enable=false; cfg.phy.sib1.enable=false; cfg.phy.trs.enable=false;
 cfg.phy.csirs.period_slots=5; cfg.phy.csirs.offset_slots=0;
+% This test isolates CSI transport. The shared queue YAML now also installs
+% an SR calendar; absent-SR and installed-SR are explicitly exercised
+% separately by verifyInstallationBoundary below. Do not disable production
+% SR or mistake its legitimate receive window for premature CSI reception.
+cfg.validation.pucch_resources.scheduling_request_resources=struct([]);
+cfg.validation.pucch_resources.sr_resource_ids=[];
 multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
+% Direct component initialization generates layout using the global stream
+% before the link runner seeds its own work. Freeze that earlier boundary so
+% present/removed producer cases compare identical channels and RX samples.
+callerRNG=rng; restoreRNG=onCleanup(@()rng(callerRNG)); %#ok<NASGU>
+rng(cfg.run.seed,'twister');
 state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,tempname,multi,struct(),10);
-state=sixgr.truth.CoupledTruthRuntime.startSlot(state,cfg,'DL',1,1,1,10,12);
+state=sixgr.truth.CoupledTruthRuntime.startSlot(state,cfg,'DL',1,1,1,10,cfg.channel.snr_dB);
 state.CurrentServingIdx(:)=1;
+% Explicit already-connected component boundary. This test does not execute
+% random access; the production access gate remains enabled and unchanged.
+% Timing, CSI input and access are declared fixtures; only transport is PHY.
+assert(~sixgr.truth.CoupledRadioIdentity.connectedReady(state,1), ...
+    'The cold fixture must not implicitly qualify connected CSI reception.');
+state.AccessState(1)="succeeded";
+state.TestAccessBoundary="declared_preconnected_component_fixture_not_physical_RA";
+assert(sixgr.truth.CoupledRadioIdentity.connectedReady(state,1));
 state.TestCSIProducerMode=producerMode;
 state.TestCSIWithReceivedClock=logical(withReceivedClock);
 [state,owner]=sixgr.truth.CoupledWaveformStream.initialize(state,cfg,{cfg});
@@ -81,11 +103,19 @@ row=table(1,1,1,true,true,true,true,true,true,10,1,0,0,0,18.5, ...
     'ResourceExtractionAvailable','ChannelEstimateAvailable','CSIMeasurementAvailable', ...
     'CQI','RI','PMI','CRI','LI','SINR_dB','MeasurementSource'});
 row.ObservationDeliverySlot=2;
+row.RNTI=sixgr.truth.CoupledRadioIdentity.resolve(state,1);
 row.ObservationStartSample=0;
 row.ObservationEndSampleExclusive=sixgr.phy.frame.slotStartSample(carrier,1,fs);
 row.ResultAvailableAtSample=row.ObservationEndSampleExclusive;
 row.ObservationSampleRateHz=fs; row.MeasurementClockEpoch=owner.Physical.ConfigurationEpoch;
 row.MeasurementClockDomain="shared_receiver_sample_clock/v1";
+% Explicit component-boundary identity, not a claimed physical CSI estimate.
+reportCfg=sixgr.phy.mimo.CSIReportConfiguration( ...
+    cfg.phy.csi.reportConfiguration,cfg.phy.csi.reportConfigurationEpoch);
+row.CSIReportConfigID=string(reportCfg.ReportConfigID);
+row.CSIConfigurationEpoch=double(reportCfg.Epoch);
+row.CSIMeasurementID="declared_transport_fixture_CSI1";
+row.CSIMeasurementDigest="declared_transport_fixture_not_physical_measurement_digest";
 row.DeliverySlotStartSample=row.ResultAvailableAtSample;
 row.DeliverySlotEndSampleExclusive=sixgr.phy.frame.slotStartSample(carrier,2,fs);
 % Retained future boundary fixture: it must not become usable before the
@@ -96,7 +126,7 @@ end
 queuedReport=table();
 for slot=1:10
     [state,~,blocked]=sixgr.truth.CoupledTruthRuntime.startSlotWithQueuedUL( ...
-        state,cfg,'DL',1,1,slot,10,12,repmat(struct(),0,1),true);
+        state,cfg,'DL',1,1,slot,10,cfg.channel.snr_dB,repmat(struct(),0,1),true);
     assert(isempty(blocked));
     if slot<=4, assert(isempty(state.PendingCSITable)); end
     if ~isempty(state.PendingCSITable) && ~state.PendingCSITable.Processed
@@ -110,9 +140,11 @@ for slot=1:10
     end
     [state,~]=owner.advanceSlot(state,cfg,@receive);
 end
-report=state.SharedGNBCSIReportTable;
+report=sixgr.util.structGet(state,'SharedGNBCSIReportTable',table());
 % Retain the actual received fields/clock even when a later assertion fails.
 saveEvidence(root,cfg,row,queuedReport,report,struct(),state,fs);
+assert(height(report)==1,'test:MissingIndependentCSIReception', ...
+    'Expected one configured physical CSI reception; inspect retained obligations and queued input.');
 fprintf('PERIODIC_CSI_RECEIVED mode=%s CQI=%g RI=%g PMI=%g due=%g delivered=%g available_sample=%g fs=%g state_slot=%g\n', ...
     producerMode,report.CQI,report.RI,report.PMI,report.DueSlot,report.DeliveredSlot, ...
     report.AvailableAtSample,fs,state.CurrentSlot);
@@ -163,6 +195,13 @@ if producerMode=="absent"
     trial=state.ControlTrials.PUCCH;
     assert(trial.ReceiverUsable==rx.ReceiverUsable && trial.DTXFlag==rx.DTX, ...
         'Receiver-only trial must preserve the independently executed receiver flags.');
+    assert(trial.SignalPresent==0 && trial.PresenceTargetNonzeroInputSamples==0 && ...
+        trial.TrialType=="no_signal_before_receiver_noise_and_RF" && ...
+        trial.FalseAlarmFlag==double(rx.DetectionOutcome=="detected") && ...
+        trial.FalseAcceptanceFlag==double(rx.ReceiverUsable && ~rx.DTX && ...
+            (~rx.CRCApplicable || rx.CRCPassed)) && ...
+        ~trial.PresenceIndependentTrialsEstablished && ~trial.PresenceScoringUsedByReceiver, ...
+        'An actual absent-signal observation must retain its false detection, not a reliability PASS.');
     widths=[trial.ReceiverExpectedHARQBitCount trial.ReceiverExpectedSRBitCount ...
         trial.ReceiverExpectedCSIPart1BitCount trial.ReceiverExpectedCSIPart2BitCount];
     assert(all(isfinite(widths)) && sum(widths)==trial.ReceiverExpectedBitCount && ...
@@ -193,6 +232,8 @@ assert(height(queuedReport)==1 && ...
     audit.MeasurementClockEpoch==row.MeasurementClockEpoch && ...
     string(audit.MeasurementClockDomain)==row.MeasurementClockDomain && ...
     string(audit.ReportIdentity)==report.ReportIdentity && ...
+    string(audit.CSIMeasurementID)==row.CSIMeasurementID && ...
+    string(audit.CSIMeasurementDigest)==row.CSIMeasurementDigest && ...
     audit.SourceSlot==row.Slot && audit.DueSlot==report.DueSlot, ...
     'UE-only timing must survive publication in the bound audit record.');
 else
@@ -200,13 +241,40 @@ else
 end
 assert(isnan(report.MeasurementAvailableAtSample) && isnan(report.MeasurementAvailableSlot) && ...
     isnan(report.MeasurementClockEpoch) && strlength(report.MeasurementClockDomain)==0 && ...
+    strlength(report.CSIMeasurementID)==0 && strlength(report.CSIMeasurementDigest)==0 && ...
     isnan(report.SINR_dB) && report.SourceSignal=="received_CSI_UCI", ...
     'Decoded CSI fields must not masquerade as a reported UE measurement clock or raw SINR.');
+assert(report.ReceiverClockEpoch==owner.Physical.ConfigurationEpoch && ...
+    report.ReceiverClockDomain=="shared_receiver_sample_clock/v1", ...
+    'Received UCI must retain its own clock epoch, not the UE audit clock.');
+latency=sixgr.report.collectCSIReportLatency(report,state.ControlTrials.CSIRS);
+delivery=sixgr.report.collectCSIReportDeliveryEvidence(report);
+assert(height(delivery)==1 && delivery.EmissionVerified && delivery.BitComparisonAvailable && ...
+    delivery.BitErrorCount==0 && delivery.CQIDeliveryCorrect==1 && ...
+    delivery.RIDeliveryCorrect==1 && delivery.PMIDeliveryCorrect==1 && ...
+    delivery.CorrectDeliveredFieldCount==delivery.TransmittedFieldCount, ...
+    'Compare emitted serialization with independent decoded fields, not UE recommendations.');
+assert(~isfield(state.LatestDLFeedback.ReceivedCSIReport,'CSIDeliveryAuditJSON') || ...
+    strlength(state.LatestDLFeedback.ReceivedCSIReport.CSIDeliveryAuditJSON)==0, ...
+    'Private TX scoring must not enter scheduler CSI state.');
+if producerMode=="present"
+    assert(height(latency)==1 && latency.LatencyAvailable && ...
+        latency.MeasurementEndToDelivery_ms== ...
+        (report.AvailableAtSample-row.ObservationEndSampleExclusive)*1000/fs, ...
+        'Measured UCI completion and declared component-boundary CSI input must preserve exact audit timing.');
+else
+    assert(~any(latency.LatencyAvailable), ...
+        'Physical UCI reception without the optional UE audit cannot manufacture end-to-end latency.');
+end
 assert(height(state.ControlTrials.PUCCH)==1 && state.ControlTrials.PUCCH.Slot==9 && ...
     state.ControlTrials.PUCCH.PUCCHDecodeOk);
 assert(state.ControlTrials.PUCCH.PUCCHTransmissionPrepared && ...
     ~state.ControlTrials.PUCCH.ReceiverOnlyAssignment, ...
     'A real shared PUCCH must not inherit the no-producer union-schema flag.');
+assert(state.ControlTrials.PUCCH.SignalPresent==1 && ...
+    state.ControlTrials.PUCCH.PresenceTargetNonzeroInputSamples>0 && ...
+    isnan(state.ControlTrials.PUCCH.FalseAlarmFlag), ...
+    'Actual component consumption must establish H1; H1 is not part of an H0 denominator.');
 assert(isempty(state.PendingFeedbackTable) && height(state.PUCCHGrantTraceTable)==1 && ...
     state.PUCCHGrantTraceTable.GrantExecutedFlag && isnan(state.PUCCHGrantTraceTable.HarqID));
 assert(state.LatestDLFeedback.Valid && state.LatestDLFeedback.SchedulerCQIRawCQI==10);
@@ -220,14 +288,14 @@ logsRoot=fullfile(root,'logs'); if ~isfolder(logsRoot), mkdir(logsRoot); end
 folder=tempname(logsRoot); mkdir(folder);
 writetable(report,fullfile(folder,'periodic_CSI_received_report.csv'));
 writetable(state.ControlTrials.PUCCH,fullfile(folder,'actual_PUCCH_trial.csv'));
-writetable(state.CSIReportObligationTable,fullfile(folder,'configured_CSI_obligations.csv'));
-captures=state.TestPeriodicCSICaptures;
+writetable(sixgr.util.structGet(state,'CSIReportObligationTable',table()),fullfile(folder,'configured_CSI_obligations.csv'));
+captures=sixgr.util.structGet(state,'TestPeriodicCSICaptures',struct([]));
 timingReferences=sixgr.util.structGet(state,'ReceivedULTimingReferences',{});
 save(fullfile(folder,'shared_periodic_CSI.mat'),'cfg','row','queuedReport','report','audit','captures','fs','timingReferences');
 fprintf('PERIODIC_CSI_EVIDENCE mode=%s folder=%s\n',state.TestCSIProducerMode,folder);
 end
 function verifyInstallationBoundary(state,cfg)
-% Inventory alone is not an installed SR calendar. No UE procedure state or
+% No SR is installed in this CSI-only boundary. No UE procedure state or
 % CSI producer is needed to derive this independent gNB receive schema.
 h=sixgr.truth.buildConfiguredPUCCHReception(state,cfg,1,9,"installation_boundary");
 assert(isempty(h),'A configured CSI calendar without actual reference TX is not an eligible report.');
@@ -247,7 +315,7 @@ catch cause
     rejected=true;
 end
 assert(rejected,'Malformed installed SR must not be treated as an absent procedure.');
-fprintf('CSI_RX_INSTALLATION_BOUNDARY_PASS inventory_only=0 installed=1 UE_state_not_consumed=1 malformed_rejected=1\n');
+fprintf('CSI_RX_INSTALLATION_BOUNDARY_PASS absent_SR=1 installed_SR=1 UE_state_not_consumed=1 malformed_rejected=1\n');
 end
 function state=receive(state,items)
 for item=items
@@ -317,6 +385,23 @@ for item=items
             state=sixgr.truth.CoupledTruthRuntime.completeSharedPUCCHFeedbackRuntime(state,item);
         end
         actual=state.SharedGNBUCIReceptions{end}.Receiver;
+        beforePublication=state.SharedGNBCSIReportTable; beforeFeedback=state.LatestDLFeedback;
+        audit=sixgr.truth.scoreSharedPUCCHPresence(item,actual,state.SharedWaveformStream.Physical.ConfigurationEpoch);
+        assert(audit.SignalPresent==state.ControlTrials.PUCCH.SignalPresent && ...
+            state.ControlTrials.PUCCH.DetectionMetricSource==actual.DetectionMetricSource);
+        legacy=item;
+        for pi=1:numel(legacy.Planes)
+            for si=1:numel(legacy.Planes(pi).Segments)
+                legacy.Planes(pi).Segments{si}.Execution=rmfield( ...
+                    legacy.Planes(pi).Segments{si}.Execution,'ExecutedContributors');
+            end
+        end
+        unavailable=sixgr.truth.scoreSharedPUCCHPresence(legacy,actual, ...
+            state.SharedWaveformStream.Physical.ConfigurationEpoch);
+        assert(isnan(unavailable.SignalPresent) && isnan(unavailable.FalseAlarmFlag));
+        assert(isequaln(beforePublication,state.SharedGNBCSIReportTable) && ...
+            isequaln(beforeFeedback,state.LatestDLFeedback), ...
+            'Post-hoc presence scoring cannot change receiver publication or scheduler state.');
         fprintf('CSI_FRONTEND_REPLAY mode=%s actual_noise=%g calibrated_noise=%g actual_metric=%g calibrated_metric=%g applied_gain_min_db=%g applied_gain_max_db=%g\n', ...
             state.TestCSIProducerMode,actual.GridNoiseVariance,direct.GridNoiseVariance, ...
             actual.DetectionMetric,direct.DetectionMetric,gain.AppliedGainMin_dB,gain.AppliedGainMax_dB);

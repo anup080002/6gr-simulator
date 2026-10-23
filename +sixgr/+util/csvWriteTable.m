@@ -34,6 +34,9 @@ end
 if ~p.Results.PreserveSchema && height(T) > 0
     T = sixgr.util.pruneStructurallyBlankTableColumns(T);
 end
+[unchanged,reuseTicket]=sixgr.util.CSVWriteReuse.check( ...
+    filePath,T,p.Results.RoundTripNumericText,p.Results.MirrorPaths);
+if unchanged, return; end
 % Bound string conversion and writetable workspace independently of run
 % length. A wide, million-row evidence table must not be duplicated as a
 % second all-string table while the waveform/channel state is live.
@@ -41,4 +44,5 @@ writer=sixgr.util.CSVTableStream(filePath,p.Results.RoundTripNumericText);
 cleanup=onCleanup(@()delete(writer)); %#ok<NASGU>
 writer.append(T);
 writer.finish(p.Results.MirrorPaths);
+sixgr.util.CSVWriteReuse.commit(reuseTicket);
 end

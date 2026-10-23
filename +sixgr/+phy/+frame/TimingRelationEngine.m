@@ -198,7 +198,19 @@ classdef TimingRelationEngine < handle
             result.TargetAbsoluteSlot = localAbsoluteSlot( ...
                 targetSlotStart, targetBWP);
 
-            if targetStart < sourceEnd
+            % Same-cell, same-BWP K0=0 PDSCH may overlap its scheduling
+            % PDCCH in time (38.214 5.1.2.1 and 5.1.4). The receiver retains
+            % samples and decodes only after accepted DCI. Exact CORESET/RS
+            % exclusions and QCL remain separate grant/receiver contracts.
+            % This is NOT an exception for UL preparation, HARQ, another
+            % BWP/carrier, or data entirely preceding the control occasion.
+            sameSlotDLOverlap = procedure == "PDSCH" && kValue == 0 && ...
+                schedulingCCID == scheduledCCID && sourceBWPID == targetBWPID && ...
+                sourceBWP.Mu == targetBWP.Mu && ...
+                sourceBWP.CyclicPrefix == targetBWP.CyclicPrefix && ...
+                targetSlotStart == sourceSlotStart && ...
+                targetStart < sourceEnd && targetEnd > sourceTime;
+            if targetStart < sourceEnd && ~sameSlotDLOverlap
                 result = obj.finish(result, false, "target_time_in_past");
                 return;
             end
@@ -244,7 +256,8 @@ classdef TimingRelationEngine < handle
             % source-end to waveform-placement processing interval.
             gap = -gap;
             result.ProcessingGapTicks = gap;
-            if gap < minimumProcessingTicks
+            result.BufferedSameSlotPDSCH = sameSlotDLOverlap && minimumProcessingTicks == 0;
+            if gap < minimumProcessingTicks && ~result.BufferedSameSlotPDSCH
                 result = obj.finish(result, false, ...
                     localProcessingFailureReason(procedure));
                 return;
@@ -567,10 +580,20 @@ if decision.HARQACKRequired
         "HARQProcessID", localHARQProcessID(grant));
     processingBase=sixgr.phy.frame.TimingPolicyCatalog.capability1ProcessingBase( ...
         "HARQ_ACK",[sourceBWP.Mu,dlBWP.Mu,ulBWP.Mu]);
-    feedbackRequest.MinimumProcessingTicks=processingBase.Ticks;
+    try
+        processingBudget=localPDSCHProcessingBudget(cfg,grant,dlBWP, ...
+            [sourceBWP.Mu,dlBWP.Mu,ulBWP.Mu],dataAllocation, ...
+            controlStart,controlAllocation,sourceBWP,dataResult);
+    catch cause
+        decision.ReasonCode="pdsch_processing_allocation_invalid";
+        decision.Diagnostic=string(cause.identifier)+": "+string(cause.message);
+        return;
+    end
+    feedbackRequest.MinimumProcessingTicks=processingBudget.Ticks;
     [feedbackResult, feedbackAttempts] = localSelectRelation( ...
         engine, feedbackRequest, "HARQ_ACK", grant, policy, "K1");
     feedbackResult.ProcessingBase=processingBase;
+    feedbackResult.ProcessingBudget=processingBudget;
     decision.HARQACKDecision = feedbackResult;
     decision.HARQACKAttempts = feedbackAttempts;
     if ~feedbackResult.Valid
@@ -587,6 +610,46 @@ decision.Valid = true;
 decision.Status = "PASS";
 decision.ReasonCode = "production_timing_valid";
 decision.Diagnostic = "";
+end
+
+function budget=localPDSCHProcessingBudget(cfg,grant,bwp,mus,allocation, ...
+        controlStart,controlAllocation,sourceBWP,dataResult)
+carrier=nrCarrierConfig('NSizeGrid',bwp.NSizeBWP,'NStartGrid',bwp.NStartBWP, ...
+    'SubcarrierSpacing',bwp.SCSKHz,'CyclicPrefix',bwp.CyclicPrefix);
+carrier.NSlot=mod(double(dataResult.TargetAbsoluteSlot),carrier.SlotsPerFrame);
+args={'SymbolAllocation',allocation};
+keys={"PRBSet","Modulation","NumLayers","RNTI","MappingType"};
+aliases={"PRBSet","Modulation",["NumLayers","Layers"],"RNTI",["MappingType","mappingType"]};
+for k=1:numel(keys)
+    value=localOptional(grant,aliases{k},[]);
+    if ~isempty(value), args=[args,{keys{k},value}]; end %#ok<AGROW>
+end
+prbs=localOptional(grant,"PRBSet",[]);
+start=localOptional(grant,"PRBStart",[]);
+count=localOptional(grant,["AllocatedPRBCount","PRBCount"],[]);
+if isempty(prbs) && ~isempty(start) && ~isempty(count)
+    validateattributes(start,{'numeric'},{'scalar','integer','nonnegative','finite'});
+    validateattributes(count,{'numeric'},{'scalar','integer','positive','finite'});
+    args=[args,{'PRBSet',double(start)+(0:double(count)-1)}];
+end
+layers=localOptional(grant,["NumLayers","Layers"], ...
+    sixgr.util.structGet(cfg,'phy.pdsch.numLayers', ...
+    sixgr.util.structGet(cfg,'phy.pdsch.nLayers',NaN)));
+ports=sixgr.phy.grant.resolveScheduledDMRSPortSet(cfg,'DL',layers,grant);
+cfg=sixgr.util.structSet(cfg,'phy.pdsch.dmrs.scheduledPortSet',ports);
+% Use the same configuration factory as TX, without claiming to resolve
+% resource exclusions here. Exact allocation/collision checks still run at
+% grant freezing; sequence values do not enter this processing-time budget.
+pdsch=sixgr.phy.grid.pdschConfigFromConfig(carrier,cfg,args{:},'NumLayers',layers);
+controlEnd=controlStart.plusSymbols(controlAllocation(2),sourceBWP);
+dataStart=sixgr.phy.frame.AbsoluteTime.fromTicks(dataResult.TargetTick);
+overlap=0;
+for k=0:allocation(2)-1
+    first=dataStart.plusSymbols(k,bwp);
+    last=first.plusSymbols(1,bwp);
+    overlap=overlap+double(first<controlEnd && controlStart<last);
+end
+budget=sixgr.phy.frame.pdschProcessingTime(carrier,pdsch,mus,overlap);
 end
 
 function budget=localPUSCHProcessingBudget(cfg,grant,bwp,mus,allocation)
@@ -1352,6 +1415,7 @@ result = struct( ...
     "SourceNumSymbols", double(sourceNumSymbols), ...
     "MinimumProcessingTicks", int64(-1), ...
     "ProcessingGapTicks", int64(-1), ...
+    "BufferedSameSlotPDSCH", false, ...
     "TimingAdvanceTicks", int64(0), ...
     "WaveformPlacementTick", int64(-1), ...
     "AvailabilityReasonCode", "", ...

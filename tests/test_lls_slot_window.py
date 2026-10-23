@@ -9,19 +9,22 @@ from pathlib import Path
 import pytest
 import yaml
 
-from scripts.audit_lls_slot_window import audit, evaluate, load_plan
+from scripts.audit_lls_slot_window import audit, evaluate, load_plan, read_sources
 
 PLAN = Path(__file__).resolve().parents[1] / "simulator/configs/validation/h4_100_slot40_60.yaml"
 
 
-def test_h4_checkpoint_policy_preserves_every_completed_slot_and_radio_horizon():
+def test_h4_checkpoint_policy_anchors_three_slot_cadence_and_preserves_radio_horizon():
     """Configuration guard, not proof of an executed checkpoint or PHY pass."""
     plan = load_plan(PLAN)
     root = Path(__file__).resolve().parents[1]
     scenario = yaml.safe_load((root / plan["scenario_config"]).read_text(encoding="utf-8"))
     control = scenario["run_control"]
     assert control["runtime_checkpoint_enable"] is True
-    assert control["checkpoint_every_slots"] == 1
+    assert control["checkpoint_every_slots"] == 3
+    assert control["checkpoint_first_slot"] == 49
+    assert [s for s in range(40, 61) if s >= control["checkpoint_first_slot"]
+            and (s - control["checkpoint_first_slot"]) % control["checkpoint_every_slots"] == 0] == [49, 52, 55, 58]
     assert control["total_slots"] == plan["expected_horizon"] == 100
     assert control["total_time_ms"] == 50
     assert scenario["simulation"]["random_seed"] == 20260927
@@ -81,6 +84,57 @@ def failures(plan, tables):
 
 def test_audit_logic_fixture_not_physical_acceptance():
     assert not failures(*fixture())
+
+
+def canonical_identity_fixture():
+    plan, tables = fixture()
+    for values in tables.values():
+        for row in values:
+            row.update(RunUUID="", RunID="audit_fixture_run",
+                       ExecutionID="execution_fixture_not_phy")
+    return plan, tables
+
+
+def test_filesystem_execution_identity_does_not_require_database_uuid():
+    plan, tables = canonical_identity_fixture()
+    original = copy.deepcopy(tables)
+    assert not failures(plan, tables)
+    assert tables == original  # no replacement or repair of the input rows
+
+
+@pytest.mark.parametrize("field,value,expected", [
+    ("RunID", "another_run", "joined.RunID"),
+    ("ExecutionID", "another_execution", "joined.ExecutionID"),
+    ("RunID", "", "physical.canonical_execution_identity"),
+    ("ExecutionID", "", "physical.canonical_execution_identity"),
+])
+def test_filesystem_identity_mismatch_or_missing_never_passes(field, value, expected):
+    plan, tables = canonical_identity_fixture()
+    tables["pucch"][0][field] = value
+    assert expected in failures(plan, tables)
+
+
+def test_canonical_mode_cannot_hide_unbound_physical_table_behind_legacy_uuid():
+    plan, tables = canonical_identity_fixture()
+    for row in tables["pucch"]:
+        row.pop("RunID")
+        row.pop("ExecutionID")
+        row["RunUUID"] = "legacy_id_not_replacement_execution_authority"
+    assert "physical.canonical_execution_identity" in failures(plan, tables)
+
+
+def test_partial_canonical_pair_cannot_fall_back_to_valid_legacy_identity():
+    plan, tables = fixture()
+    tables["pdsch"][0]["ExecutionID"] = "execution_fixture_not_phy"
+    missing = failures(plan, tables)
+    assert {"joined.RunID", "physical.canonical_execution_identity"} <= missing
+
+
+def test_optional_database_uuid_still_rejects_conflicting_values():
+    plan, tables = canonical_identity_fixture()
+    tables["pdsch"][0]["RunUUID"] = "db_A"
+    tables["pucch"][0]["RunUUID"] = "db_B"
+    assert "joined.RunUUID" in failures(plan, tables)
 
 
 @pytest.mark.parametrize("table,field,value,expected", [
@@ -213,6 +267,47 @@ def test_source_bound_extraction_and_hashes_preserve_originals(tmp_path):
         assert hashlib.sha256(Path(path).read_bytes()).hexdigest() == digest
     disk = json.loads((tmp_path / plan["audit_directory"] / "receipt.json").read_text())
     assert len(disk["Sources"]) == len(plan["inputs"])
+
+
+def test_large_retained_phy_field_preserved_with_scoped_limit(tmp_path):
+    """A wide evidence field is valid CSV, not permission to invent a trial."""
+    path = tmp_path / "physical.csv"
+    retained = json.dumps({"fixture_only_not_phy": [0, 1] * 70000})
+    with path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(["Slot", "EvidenceJSON"])
+        writer.writerow([46, retained])
+    before = path.read_bytes()
+    previous = csv.field_size_limit()
+    csv.field_size_limit(131072)
+    try:
+        tables, sources = read_sources(
+            tmp_path, {"inputs": {"physical": {"path": path.name, "slot": "Slot"}}})
+        assert csv.field_size_limit() == 131072
+    finally:
+        csv.field_size_limit(previous)
+    assert tables["physical"][0]["EvidenceJSON"] == retained
+    assert tables["physical"][0]["AuditSourceRecord"] == 1
+    assert len(tables["physical"]) == 1
+    assert sources[0]["SHA256"] == hashlib.sha256(before).hexdigest()
+    assert sources[0]["Bytes"] == len(before)
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("body", [
+    '46,"' + "x" * 200000,  # Unterminated field must not be accepted.
+    "46," + "x" * 200000 + ",unexpected\n",
+    "46\n",
+], ids=["unterminated_large_field", "extra_column_after_large_field", "missing_column"])
+def test_large_field_support_keeps_malformed_evidence_rejected(tmp_path, body):
+    path = tmp_path / "physical.csv"
+    path.write_text("Slot,EvidenceJSON\n" + body, encoding="utf-8")
+    before = path.read_bytes()
+    previous = csv.field_size_limit()
+    with pytest.raises(ValueError, match="Malformed CSV evidence|Incomplete CSV record"):
+        read_sources(tmp_path, {"inputs": {"physical": {"path": path.name}}})
+    assert csv.field_size_limit() == previous
+    assert path.read_bytes() == before
 
 
 def test_read_path_escape_refused(tmp_path):

@@ -1,0 +1,26 @@
+# Machine-local execution request for the preserved 19-October H4 run.
+# No inheritance, current scenario defaults, PHY overrides or synthetic data.
+# Restores the original 100-slot configuration; next execution slot is 50.
+# This is diagnostic changed-source continuation, not primary study evidence.
+checkpoint_continuation:
+  contract: sixgr_checkpoint_continuation/v1
+  checkpoint: 'E:\SixGRResults\lls\h4_100_cdlc100_connected_impaired_40db_adaptation\.checkpoints\h4_100mhz_local_e_20261019_v3\after_slot_000049_c65d51ef-d31b-4172-82f3-ae0be4112336\state.mat'
+  state_sha256: b941df768a2e69939960f5ab6755871618192b975a932fec3b4fc330a47a1c25
+  config_hash: 9f8ed02945f015a4af9753e705d50d3d8cfb28a118bc7fd1f54e5a32bd9e4d10
+  repair_reason: >
+    Diagnostic continuation of the saved scientific configuration after
+    control-EVM publication, exact sample ownership and endpoint export
+    repairs. Preserve native channel, RF, RNG, HARQ and pending reception
+    state. Historical reporting-policy and measurement gaps remain visible.
+    No new YAML physics, sleep policy or measured samples replace the prefix.
+    Current-source whole-run and statistical qualification remain pending.
+  operational_settings:
+    run_control:
+      runtime_checkpoint_enable: true
+      checkpoint_first_slot: 49
+      checkpoint_every_slots: 3
+      # Preserve existing checkpoints throughout this bounded 100-slot run.
+      runtime_checkpoint_keep: 100
+    output:
+      live_csv_png_interval_slots: 5
+      execution_stage_profile_enabled: true

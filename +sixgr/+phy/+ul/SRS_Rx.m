@@ -32,6 +32,9 @@ ip.addParameter('ConfiguredNoiseVarianceSource', 'configured_awgn_derivation', @
 ip.addParameter('StrictNoiseVarianceRequired', [], @(x) isempty(x) || islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('TimingSearchWindowSamples',[],@(x)isempty(x)||(isnumeric(x)&&numel(x)==2));
 ip.addParameter('ReceivedExecutionEvidence',struct(),@(x)isstruct(x)&&isscalar(x));
+ip.addParameter('AntennaMeasurementObservation',[],@(x)isempty(x)||isa(x,'sixgr.phy.waveform.WaveformObservationBuffer'));
+ip.addParameter('AntennaMeasurementEvidence',struct(),@(x)isstruct(x)&&isscalar(x));
+ip.addParameter('AntennaMeasurementResource',struct(),@(x)isstruct(x)&&isscalar(x));
 ip.parse(varargin{:});
 opt = ip.Results;
 
@@ -225,30 +228,17 @@ rx.SRSInterPortLeakageWorst_dB = localFiniteMaximum(leakage);
 rx.SRSInterPortLeakageStatus = leakageStatus;
 rx.SRSInterPortLeakageSource = ...
     "received_per_re_srs_channel_estimate_independent_code_projection_not_antenna_crosstalk";
-rx.SRS_RSRP_dBm = NaN;
-rx.SRSRSRPPerReceiveAntenna_dBm = nan(size(rsrp.PerReceiveAntenna));
-rx.SRSAbsolutePowerStatus = "not_available_normalized_or_uncalibrated_sample_plane";
-if ~sixgr.rf.isNormalizedFixedSNRPowerReference(cfg)
-    powerContext = sixgr.util.structGet(cfg,'lls6g.runtimePowerContext',struct());
-    physical = string(sixgr.util.structGet(powerContext, ...
-        'WaveformAmplitudeUnit','')) == "sqrt_mW" && ...
-        logical(sixgr.util.structGet(powerContext,'PhysicalDevicePowerClaim',false)) && ...
-        ~logical(sixgr.util.structGet(opt.ReceivedExecutionEvidence, ...
-        'CompositeReceiverFrontEndApplied',false));
-    if physical
-        nfft = double(ofdmInfo.Nfft);
-        perRxW = double(rsrp.PerReceiveAntenna) ./ (nfft.^2 .* 1000);
-        validPower = isfinite(perRxW) & perRxW > 0;
-        rx.SRSRSRPPerReceiveAntenna_dBm(validPower) = ...
-            10 .* log10(perRxW(validPower)) + 30;
-        if any(validPower)
-            rx.SRS_RSRP_dBm = 10 .* log10(mean(perRxW(validPower))) + 30;
-            rx.SRSAbsolutePowerStatus = "available_calibrated_receiver_grid_sqrt_w";
-            rx.SRSRSRPSource = ...
-                "received_srs_channel_estimate_on_calibrated_sqrt_mw_waveform";
-        end
-    end
+% The normalized post-RF branch mean above remains an engineering receiver
+% diagnostic. Absolute UL SRS-RSRP is a SEPARATE antenna-plane measurement;
+% configuration power labels or inverse AGC cannot supply that observation.
+absolute=sixgr.phy.srs.measureSRSAntennaPower();
+if ~isempty(opt.AntennaMeasurementObservation)
+    absolute=sixgr.phy.srs.measureSRSAntennaPower(carrier,srs, ...
+        opt.AntennaMeasurementObservation,opt.ReceivedExecutionEvidence, ...
+        opt.TimingSearchWindowSamples,opt.AntennaMeasurementResource, ...
+        opt.AntennaMeasurementEvidence);
 end
+for field=string(fieldnames(absolute)).', rx.(field)=absolute.(field); end
 
 info = struct();
 info.CarrierInfo = cinfo;
@@ -418,9 +408,9 @@ if ~any(valid)
     return;
 end
 measurement.PerReceiveAntenna_dB(valid) = 10 .* log10(measurement.PerReceiveAntenna(valid));
-% Preserve the linear-power averaging order.  Averaging dB values or taking
-% the strongest branch would introduce an antenna-count/selection bias and
-% would not represent the receiver-observed SRS reference power.
+% Retain this legacy engineering branch mean, NOT the standardized gNB
+% diversity report. The independent absolute antenna-plane owner selects
+% the maximum branch to satisfy TS 38.215 V18.4.0 5.2.5's lower bound.
 measurement.Aggregate_dB = 10 .* log10(mean(measurement.PerReceiveAntenna(valid)));
 measurement.Source = "received_srs_channel_estimate_times_known_reference_symbols";
 measurement.Status = "observed";

@@ -9,9 +9,13 @@ stream.enqueue("a",chunk(a,0),1000);
 stream.enqueue("b",chunk(b,3),1000);
 expected=a;
 expected(4:8,:)=expected(4:8,:)+b;
-first=stream.readThrough(2);
-middle=stream.readThrough(6);
-last=stream.readThrough(8);
+[first,r1]=stream.readThrough(2);
+[middle,r2]=stream.readThrough(6);
+[last,r3]=stream.readThrough(8);
+assert(r1.CompleteContributorList && r1.CompositeInputSHA256==first.SHA256 && ...
+    numel(r1.Components)==1 && r1.Components.ComponentID=="a" && ...
+    r1.Components.NonzeroSampleCount==4 && numel(r2.Components)==2 && ...
+    sum([r1.Components.NonzeroSampleCount r2.Components.NonzeroSampleCount r3.Components.NonzeroSampleCount])==26);
 assert(isequal([first.Samples;middle.Samples;last.Samples],expected));
 assert(first.StartSample==0 && first.EndSample==1 && ...
     middle.StartSample==2 && last.EndSample==7 && stream.NextSampleIndex==8);
@@ -23,7 +27,9 @@ localError(@() stream.enqueue("ports",chunk(a(:,1),8),1000),"WAVEFORM:InvalidPhy
 localError(@() stream.enqueue("precision",chunk(single(a),8),1000),"WAVEFORM:SamplePrecisionMismatch");
 assert(stream.NextSampleIndex==8,"Rejected operations must not mutate the consumed boundary.");
 stream.enqueue("future",chunk(b,10),1000);
-gap=stream.readThrough(10);
+[gap,idleReceipt]=stream.readThrough(10);
+assert(idleReceipt.CompleteContributorList && isempty(idleReceipt.Components) && ...
+    idleReceipt.StartSample==8 && idleReceipt.EndSampleExclusive==10);
 assert(isequal(gap.Samples,complex(zeros(2,2))));
 future=stream.readThrough(15);
 assert(isequal(future.Samples,b));

@@ -117,6 +117,27 @@ assert(any(trace.ReasonCode == "target_flexible_symbols_unresolved") && ...
     any(trace.ReasonCode == "insufficient_n2_processing_time"));
 localAssertULTimingAdvanceBoundary(engine,harq,rHARQ);
 localAssertULTimingAdvanceBoundary(engine,mixed,rMixed);
+% Legal K0=0 frequency-separated reception is not UL preparation. Keep
+% signed overlap in the trace; never round it into fake processing slack.
+buffered=localRequest("same-slot-buffered-pdsch","PDSCH", ...
+    sourceControl,"DL0","DL0",0,0,14,0);
+rBuffered=engine.resolvePDSCH(buffered);
+assert(rBuffered.Valid && rBuffered.BufferedSameSlotPDSCH && ...
+    rBuffered.ProcessingGapTicks<0 && rBuffered.MinimumProcessingTicks==0);
+delayed=buffered; delayed.MinimumProcessingSymbols=1;
+rDelayed=engine.resolvePDSCH(delayed);
+assert(~rDelayed.Valid && ~rDelayed.BufferedSameSlotPDSCH && ...
+    rDelayed.ReasonCode=="insufficient_control_to_data_processing_time");
+past=buffered;
+past.SourceTime=sourceControl.plusSymbols(12,dl0);
+past.TargetNumSymbols=2;
+rPast=engine.resolvePDSCH(past);
+assert(~rPast.Valid && rPast.ReasonCode=="target_time_in_past");
+badUL=buffered; badUL.TargetBWPID="UL0"; badUL.K2=0;
+badUL=rmfield(badUL,'K0');
+% K2=0 is not in this fixture's configured list: do not reinterpret as DL.
+rBadUL=engine.resolvePUSCH(badUL);
+assert(~rBadUL.Valid && ~rBadUL.BufferedSameSlotPDSCH);
 
 % Exhaust the pinned timing catalogs across every supported processing
 % capability numerology.  K0/K2 come from every selected TDRA catalog row;

@@ -1,0 +1,42 @@
+inherits:
+  - ./lls_tdd_received_csi_application_coexistence_fixture.yaml
+  - ../channels/awgn.yaml
+  - ../mimo/shared_four_port_control.yaml
+
+meta:
+  scenario_id: lls_tdd_four_port_received_rank_transition_fixture
+  description: Four-port physical rank stimulus with received CSI/SRS and normally scheduled data.
+  purpose: Bounded deterministic integration experiment with declared initial connected context and TAG; not random access, n40, fading statistics or guaranteed rank selection.
+  research_class: optional_research_experiment
+
+# The test installs one finite initial TAG covering this duration before TX.
+# It never refreshes that declared component input during the episode.
+run_control:
+  total_slots: 50
+  measurement_slots: 50
+  total_time_ms: 50
+  measurement_time_ms: 50
+
+# Keep the inherited high-margin configured-SNR point, original seed, RF,
+# control gates, five-slot CSI/SRS calendars and disjoint PUSCH/SRS/PUCCH
+# symbols. Rank confirmation remains the normal two-report policy.
+link_adaptation:
+  rank_increase_confirmation_reports: 2
+
+channels:
+  shared_identity_awgn_enabled: false
+  # Explicit lab operator, RX rows by TX columns, with no renormalization.
+  # H4 = I4. H2 is the projector onto two real Hadamard directions, so
+  # every physical TX/RX branch remains connected. H_UL = H_DL.' on the
+  # same shared sample clock. These matrices are CHANNEL STIMULI ONLY:
+  # neither matrix, its rank nor a desired RI is supplied to the receiver,
+  # report decoder, rank-confirmation reducer or scheduler.
+  awgn_spatial_matrix_dl_real: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+  # Reuse the existing sample-bounded episode operator. Its historical
+  # field name does not make this a beam-failure/recovery qualification.
+  # Zero-based slots [20,35) use H2; all other samples use H4.
+  awgn_beam_failure_recovery_enabled: true
+  awgn_beam_failure_start_slot: 20
+  awgn_beam_failure_end_slot_exclusive: 35
+  awgn_beam_failure_matrix_dl_real: [0.5, 0, 0.5, 0, 0, 0.5, 0, 0.5, 0.5, 0, 0.5, 0, 0, 0.5, 0, 0.5]
+  awgn_beam_failure_detection_threshold_db: 3

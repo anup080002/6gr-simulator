@@ -239,6 +239,48 @@ end
 
 grid = double(portGrid(:, activeSymbols, :));
 totalGridEnergy = sum(abs(grid).^2, "all", "omitnan");
+isPDSCH=isfield(txInfo,'PDSCHPowerReference') || ...
+    string(sixgr.util.structGet(txInfo,'PowerNormalizationSignal',""))=="PDSCH" || ...
+    string(sixgr.util.structGet(txInfo,'DelegationTarget',""))=="sixgr.pdsch.PDSCHTransmitter" || ...
+    string(sixgr.util.structGet(txInfo,'TxContext.ContractVersion',""))=="PDSCH_TxContext/v1";
+if isPDSCH
+    assert(isfield(txInfo,'PDSCHPowerReference') && ...
+        isa(txInfo.PDSCHPowerReference,'sixgr.phy.dl.PDSCHFullBWPReference') && ...
+        isscalar(txInfo.PDSCHPowerReference), ...
+        'sixgr:rf:PDSCHPowerReferenceAuthority', ...
+        'PDSCH fixed-EPRE scaling requires its original TX-owned power reference.');
+    [referencePower,receipt]=txInfo.PDSCHPowerReference.validate( ...
+        x,txInfo,portGrid,activeSymbols);
+    % Independent Parseval check of the actual native samples. This checks
+    % the applied transform; it does NOT define Q=I from realized symbols.
+    expectedInput=totalGridEnergy/(numel(activeSymbols)*receipt.OFDMContract.Nfft^2);
+    tolerance=2e-10; if isa(x,'single'), tolerance=3e-6; end
+    assert(isfinite(expectedInput) && expectedInput>0 && ...
+        abs(double(inputTotal_mW)-expectedInput)<=tolerance*max(expectedInput,realmin), ...
+        'sixgr:rf:PDSCHPowerReferenceTransformMismatch', ...
+        'Original useful-sample power does not match the declared native IFFT transform.');
+    normalization.ReferenceInputPower_mW=referencePower;
+    normalization.FullBWPActivityFactor=double(inputTotal_mW)/referencePower;
+    normalization.Equation="x_scaled=x*sqrt(Pscheduled_preRF_mW/Pdeclared_full_BWP_PDSCH_QI_no_RS_native_ifft)";
+    info.NormalizationGridSource=char(gridSource);
+    info.NormalizationGridSubcarrierCount=double(nSubcarriers);
+    info.NormalizationGridActiveSymbolCount=double(numel(activeSymbols));
+    info.NormalizationGridMeanEnergyPerRE=totalGridEnergy/(nSubcarriers*numel(activeSymbols));
+    info.PowerReferenceContract=receipt;
+    info.PowerReferenceSource="original_PDSCH_TX_declared_full_BWP_covariance";
+    info.PowerReferenceMeasured=false;
+    info.PowerReferenceNormativeEquation=false;
+    info.NormalizationReferenceBWPSubcarrierCount=12*receipt.BWPNumPRB;
+    info.NormalizationActualCompositeGridEnergy=totalGridEnergy;
+    info.NormalizationExpectedReferenceGridEnergy=receipt.ExpectedFullBWPGridEnergy;
+    return;
+end
+% Existing non-PDSCH signal callers retain their separate unit-total-grid
+% reference. Do not claim that this PDSCH covariance repair qualifies their
+% common-signal reference or reinterpret their port count as PDSCH rank.
+info.PowerReferenceSource="legacy_non_PDSCH_unit_total_carrier_RE_reference";
+info.PowerReferenceMeasured=false;
+info.PowerReferenceNormativeEquation=false;
 meanEnergyPerRE = totalGridEnergy / ...
     max(1, nSubcarriers * numel(activeSymbols));
 if ~(isfinite(meanEnergyPerRE) && meanEnergyPerRE > 0)
@@ -352,7 +394,13 @@ if ~(isfinite(inputTotal_mW) && inputTotal_mW > 0)
     return;
 end
 normScale = sqrt(max(double(inputTotal_mW), realmin));
-[runtimeProfile,canonical] = sixgr.rf.runtime.PAProfile.fromConfiguration(cfg);
+[runtimeProfile,canonical] = sixgr.rf.runtime.PAProfile.fromConfiguration(cfg,ctx.Direction);
+if canonical && string(runtimeProfile.ReferenceDomain)=="absolute_endpoint_rms"
+    % The PA saturation is already in physical sqrt(mW), fixed per endpoint.
+    % Normalizing this input by its current burst power would change the
+    % operating point and disagree with the shared RF stream execution.
+    normScale=1;
+end
 if canonical
     [yn,paEvidence] = sixgr.rf.runtime.PAProfile.apply( ...
         x ./ cast(normScale, "like", x),runtimeProfile);

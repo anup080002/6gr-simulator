@@ -119,6 +119,28 @@ for channelFolder = ["ra_received_observations","rar_monitoring_observations", .
         'Capture publication left a partial staging file.');
 end
 disp('MAT_CAPTURE_LONG_PATH_ROUNDTRIP_PASS');
+
+% A checkpoint includes nested live handle owners, often with large arrays.
+% Inventory validation must not deserialize another copy of those owners
+% alongside the active runtime. Explicit LOAD below still verifies content
+% and preservation of shared identity; this is not a waveform performance test.
+objectTarget=fullfile(root,"hdf5","nested_runtime_owner.mat");
+owner=MatSaveLoadProbe(complex(reshape(1:2^18,2^10,[]), ...
+    reshape(2^18:-1:1,2^10,[])));
+objectPayload=struct('payload',struct('Owner',owner,'SameOwner',owner, ...
+    'Observation',table(46,NaN,'VariableNames',{'Slot','Unavailable'})));
+MatSaveLoadProbe.loadCount("reset");
+sixgr.util.matSave(objectTarget,objectPayload, ...
+    'UseArtifactStore',false,'ForceV73',true);
+assert(MatSaveLoadProbe.loadCount("read")==0, ...
+    'MAT publication must not reconstruct the live object graph just to inventory its variables.');
+loadedObject=load(objectTarget);
+assert(MatSaveLoadProbe.loadCount("read")>0 && ...
+    loadedObject.payload.Owner==loadedObject.payload.SameOwner && ...
+    isequal(loadedObject.payload.Owner.Samples,owner.Samples) && ...
+    isequaln(loadedObject.payload.Observation,objectPayload.payload.Observation), ...
+    'Explicit checkpoint reload must preserve samples, shared handles and unavailable measurements.');
+disp('MAT_OBJECT_INVENTORY_NO_RECONSTRUCTION_PASS');
 ok = true;
 end
 

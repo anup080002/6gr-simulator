@@ -32,6 +32,41 @@ options=struct('PhysicalMeasurementGrid',grid,'PhysicalMeasurementOFDMInfo',ofdm
     'PhysicalMeasurementSource',"actual_CSI_only_OFDM_component_capture");
 actual=sixgr.phy.refsig.receiveCSIRSFromGrid(carrier,cfg,received,options);
 assert(actual.CSIRSObservation.Observed && actual.CSIRSObservation.ChannelEstimateAvailable);
+% Resource identifiers are not zero-based positions in an installed set.
+% Both scalar and explicit vector configuration forms must preserve ID 17
+% while reporting the only configured resource as CRI ordinal zero.
+scalarIDCfg=cfg; scalarIDCfg.phy.csirs.resourceID=17;
+singleSetCfg=cfg;
+singleSetCfg.phy.csirs.resourceIDs=17;
+singleSetCfg.phy.csirs.rowNumbers=4;
+singleSetCfg.phy.csirs.symbolLocationsByResource=6;
+singleSetCfg.phy.csirs.subcarrierLocationsByResource=0;
+singleSetCfg.phy.csirs.rbOffsetsByResource=0;
+singleSetCfg.phy.csirs.numRBsByResource=nPRB;
+scalarID=sixgr.phy.refsig.receiveCSIRSFromGrid(carrier,scalarIDCfg,received,options);
+singleSet=sixgr.phy.refsig.receiveCSIRSFromGrid(carrier,singleSetCfg,received,options);
+assert(scalarID.CSIMeasurementState.ResourceID=="CSI-RS-17" && ...
+    singleSet.CSIMeasurementState.ResourceID=="CSI-RS-17" && ...
+    scalarID.CSIMeasurementState.ResourceOrdinal==0 && ...
+    singleSet.CSIMeasurementState.ResourceOrdinal==0 && ...
+    singleSet.CSIRSChannelEstimation.SelectedResourceOrdinal==1 && ...
+    isequaln(scalarID.CSIRSChannelEstimate,singleSet.CSIRSChannelEstimate), ...
+    'test:CSISingletonIdentity','Scalar/set resource IDs must not become CRI ordinals.');
+[setIndices,setSymbols,setInfo,setConfig]=sixgr.phy.refsig.csirs(carrier,singleSetCfg);
+assert(isequal(indices,setIndices) && isequal(symbols,setSymbols), ...
+    'This identity-only regression requires identical actual reference REs.');
+for identityField=["ResourceID","ResourceIDs"]
+    poisoned=options;
+    poisoned.CSIRSIndices=setIndices; poisoned.CSIRSSymbols=setSymbols;
+    poisoned.CSIRSInfo=setInfo; poisoned.CSIRSConfig=setConfig;
+    poisoned.CSIRSInfo.(identityField)=18;
+    try
+        sixgr.phy.refsig.receiveCSIRSFromGrid(carrier,singleSetCfg,received,poisoned);
+        error('test:MissingCSIIdentityGuard','Conflicting singleton resource identities must be rejected.');
+    catch cause
+        assert(strcmp(cause.identifier,'sixgr:refsig:CSIResourceIdentityMismatch'));
+    end
+end
 assert(actual.CSIRSObservation.CSIMeasurementStateAvailable && ...
     actual.CSIRSObservation.HestRxPorts==2 && actual.CSIRSObservation.HestTxPorts==4);
 assert(isfinite(actual.CSIRSObservation.ReferenceMeasuredSINR_dB));

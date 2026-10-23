@@ -9,7 +9,8 @@ ip = inputParser;
 ip.addParameter("CurrentLayout", struct(), @(x) isempty(x) || isstruct(x));
 ip.addParameter("PriorLayout", struct(), @(x) isempty(x) || isstruct(x) || iscell(x));
 ip.addParameter("HARQKey", "", @(x) ischar(x) || isstring(x));
-ip.addParameter("CodewordIndex", 1, @(x) isnumeric(x) && isscalar(x));
+ip.addParameter("CodewordIndex", 1, @(x) isnumeric(x) && isscalar(x) && ...
+    isreal(x) && isfinite(x) && x>=1 && x==fix(x));
 ip.parse(varargin{:});
 opt = ip.Results;
 
@@ -147,12 +148,14 @@ end
 if isstruct(prior)
     soft = localStructGet(prior, "SoftBuffer", struct());
     if isstruct(soft) && isfield(soft, "LLRSum") && isfield(soft, "ObservationWeight")
+        localAssertPriorCodeword(soft, opt);
         buffer = localNormalizeSoftBuffer(soft);
         status.Valid = true;
         status.Reason = "";
         return;
     end
     if isfield(prior, "LLRSum") && isfield(prior, "ObservationWeight")
+        localAssertPriorCodeword(prior, opt);
         buffer = localNormalizeSoftBuffer(prior);
         status.Valid = true;
         status.Reason = "";
@@ -164,6 +167,17 @@ if isstruct(prior)
     prior = localStructGet(prior, "LLR", localStructGet(prior, "RateRecoveredLLR", []));
 end
 [buffer, status] = localBuildSoftBuffer(localEnsureLLRMatrix(prior), priorLayout, opt, "prior");
+end
+
+function localAssertPriorCodeword(buffer, opt)
+% Canonical retained buffers carry a one-based codeword identity. Shape and
+% coding-layout hashes alone cannot distinguish equal-layout codewords.
+assert(isscalar(buffer) && isfield(buffer,"CodewordIndex") && ...
+    isnumeric(buffer.CodewordIndex) && isscalar(buffer.CodewordIndex) && ...
+    isreal(buffer.CodewordIndex) && isfinite(buffer.CodewordIndex) && ...
+    double(buffer.CodewordIndex)==double(opt.CodewordIndex), ...
+    "sixgr:phy:harq:SoftBufferCodewordMismatch", ...
+    "Retained HARQ soft buffer must belong to the requested one-based codeword.");
 end
 
 function [buffer, status] = localBuildSoftBuffer(llr, layout, opt, source)

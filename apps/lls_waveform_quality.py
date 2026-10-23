@@ -48,7 +48,13 @@ def waveform_quality_fields(key: str, row: dict[str, Any]) -> dict[str, Any]:
         "EVM status": ("EVMValueStatus",),
         "NMSE dB": ("NMSE_dB",),
         "NMSE scoring available": ("NMSEScoringAvailable",),
-        "NMSE reference source": ("NMSEReferenceSource", "NMSESource"),
+        "NMSE reference source": ("NMSEReferenceSource", "NMSESource", "ChannelNMSESource"),
+        "NMSE reference plane": ("ChannelNMSEReferencePlane", "NMSEReferencePlane"),
+        "NMSE compared complex values": ("ChannelNMSEComparedComplexValues",),
+        "NMSE pilot resource count": ("ChannelNMSEPilotResourceCount",),
+        "NMSE qualification mode": ("ChannelNMSEQualificationMode",),
+        "NMSE reference includes RF impairments": ("ChannelNMSEReferenceIncludesRFImpairments",),
+        "NMSE reference used by receiver": ("ChannelNMSEReferenceUsedByReceiver",),
         "Channel estimate available": ("ChannelEstimateAvailable",),
         "Channel estimate source": ("ChannelEstimateSource", "ChannelEstimator"),
         "Channel estimate applicable": ("ChannelEstimateApplicable",),
@@ -134,6 +140,39 @@ def waveform_quality_fields(key: str, row: dict[str, Any]) -> dict[str, Any]:
     elif key == "pucch_trials" and _value(row, "PUCCHWaveformHash") is not None:
         put("Waveform hash", "PUCCHWaveformHash")
         result["Waveform hash plane"] = "prepared PUCCH TX waveform"
+    if key == "pdcch_trials":
+        put("PDCCH receiver attempted", "PDCCHReceiverTrialExecuted")
+        put("Measurement attempted", "MeasurementAttempted")
+        if _value(row, "RuntimeMaterializationStatus") == (
+            "active_integrated_pdcch_pretransmission_admission_disposition"
+        ):
+            # This is an actual scheduler disposition, not a failed or
+            # missing receiver. Separate it only with explicit no-execution
+            # evidence; legacy blanks and real receiver failures stay visible.
+            put("Admission blocker", "FailureReason")
+            flags = [_number(row.get(name)) for name in (
+                "RuntimeStageWaveformsUsed", "PDCCHReceiverTrialExecuted", "MeasurementAttempted")]
+            def retained(name: str) -> bool:
+                value = _value(row, name)
+                return value is not None and not str(value).startswith("not_applicable_for_active_")
+
+            # Even malformed values/hashes must remain visible for review.
+            # A nonfinite metric is not permission to hide its receiver row.
+            measured = any(retained(name) for name in (
+                "EVM_rms", "ReceiverEVMPercent", "EVMPercent", "NMSE_dB"))
+            received_hash = any(retained(name) for name in (
+                "ReceiverObservationSHA256", "RxRFOutputWaveformSHA256"))
+            observed = measured or received_hash or coverage == "complete_contiguous_received_sample_buffer"
+            observed = observed or any(_number(row.get(name)) == 1 for name in (
+                "NMSEScoringAvailable", "ChannelEstimateAvailable", "EqualizationAvailable"))
+            if observed or any(value is not None and value != 0 for value in flags):
+                result["Receiver evidence scope"] = "conflicting_pretransmission_and_receiver_evidence"
+                notes.append("conflicting admission-only and receiver evidence; retained in receiver tables for review")
+            elif all(value == 0 for value in flags):
+                result["Receiver evidence scope"] = "pretransmission_admission_no_receiver"
+            else:
+                result["Receiver evidence scope"] = "pretransmission_disposition_execution_unverified"
+                notes.append("admission disposition lacks explicit no-reception flags; not excluded from receiver tables")
     if notes:
         result["Evidence notes"] = "; ".join(notes)
     return result
@@ -223,4 +262,88 @@ def qualification_criteria_fields(key: str, row: dict[str, Any]) -> dict[str, An
         result["Decode acceptance"] = ("detection and applicable UCI CRC; bit-match audit is separate"
                                        if _number(row["CRCApplicable"]) == 1
                                        else "detection; no UCI CRC for this payload")
+    return result
+
+
+def csi_feedback_evidence_fields(row: dict[str, Any]) -> dict[str, Any]:
+    """Classify this report only; a CQI mapping is not an executed data MCS.
+
+    The same retained table contains queued UE measurements, decoded DL
+    CSI-UCI, and gNB-local UL measurements. No PHY result or scheduler state
+    is created here, and a producer's raw fields remain available for audit.
+    """
+    if not any(k in row for k in ("Direction", "SourceSignal", "Processed", "MCSIndex")):
+        return {}
+
+    def token(key: str) -> str:
+        return str(_value(row, key) or "").strip()
+
+    def flag(key: str) -> int | None:
+        value = row.get(key)
+        if isinstance(value, str) and value.strip().lower() in {"true", "false"}:
+            return int(value.strip().lower() == "true")
+        number = _number(value)
+        return int(number) if number in (0, 1) else None
+
+    direction = token("Direction").upper()
+    signal = token("SourceSignal")
+    transport = token("CSIUCITransport")
+    processed = flag("Processed")
+    status = token("DeliveryStatus")
+    clocks = [_number(row.get(k)) for k in ("SourceSlot", "DueSlot", "DeliveredSlot")]
+    causal = (all(x is not None and x >= 0 and x.is_integer() for x in clocks)
+              and clocks[0] <= clocks[1] <= clocks[2])
+    delivered = processed == 1 and status == "delivered_to_runtime_scheduler" and causal
+    pending = processed == 0 and status.startswith("pending_")
+    scope = "feedback_delivery_unverified"
+    uci = "transport_evidence_unverified"
+    if direction == "UL" and signal in {"SRS", "PUSCH-DMRS"}:
+        if transport in {"", "not_scheduled"} and flag("CSIUCIDecodeOk") in (None, 0):
+            scope = ("delivered_gnb_local_ul_feedback" if delivered
+                     else "pending_gnb_local_ul_feedback" if pending
+                     else "gnb_local_ul_feedback_delivery_unverified")
+            uci = "not_applicable_gnb_local_ul_feedback"
+        else:
+            scope = "conflicting_ul_local_feedback_and_uci_transport"
+    elif direction == "DL":
+        if (delivered and signal == "received_CSI_UCI" and flag("CSIUCIDecodeOk") == 1
+                and transport in {"pucch_decoded", "pusch_decoded"}):
+            scope = "received_dl_csi_uci"
+            uci = "independently_decoded_dl_csi_feedback"
+        elif pending and flag("CSIUCIDecodeOk") == 0 and clocks[2] is None:
+            scope = "pending_report_not_received"
+            uci = "pending_transport_not_decode_failure"
+        elif processed == 1 and status in {"pucch_csi_decode_failed_not_delivered",
+                                          "pusch_csi_decode_unavailable_not_delivered",
+                                          "pucch_csi_omitted_not_delivered"}:
+            scope = "dl_csi_uci_not_delivered"
+            uci = status
+
+    result = {"Feedback evidence scope": scope, "UCI interpretation": uci,
+              "Stored MCS field": _value(row, "MCSIndex"), "Selected MCS": None,
+              "MCS decision status": "no_delivered_scheduler_decision"}
+    if scope not in {"received_dl_csi_uci", "delivered_gnb_local_ul_feedback"}:
+        return result
+    if flag("SchedulerSpatialDecisionDeferred") == 1:
+        result["MCS decision status"] = "held_spatial_operating_point"
+        return result
+    resolved_cqi = _number(row.get("SchedulerResolvedCQI"))
+    if resolved_cqi == 0:
+        result["MCS decision status"] = "measured_cqi_out_of_range"
+        return result
+    stored = _number(row.get("MCSIndex"))
+    adapted = _number(row.get("LinkAdaptationMCSIndex"))
+    reported_rank = _number(row.get("RI"))
+    accepted_rank = _number(row.get("SchedulerAcceptedRank"))
+    if (token("AdaptationDeliveryStatus") == "accepted_new_feedback_delivery"
+            and flag("SchedulerSpatialDecisionDeferred") == 0
+            and resolved_cqi is not None and resolved_cqi > 0
+            and reported_rank is not None and reported_rank >= 1 and reported_rank.is_integer()
+            and accepted_rank == reported_rank
+            and stored is not None and stored >= 0 and stored.is_integer()
+            and adapted == stored):
+        result["Selected MCS"] = int(stored)
+        result["MCS decision status"] = "accepted_for_future_grants_not_executed_trial"
+    else:
+        result["MCS decision status"] = "accepted_mcs_evidence_missing_or_conflicting"
     return result

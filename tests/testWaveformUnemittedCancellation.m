@@ -25,6 +25,20 @@ assert(receipt.TransmitterID=="ue_1" && receipt.CancelledAtSample==0);
 events.enqueue('ue_1','second',sixgr.phy.waveform.WaveformChunk(srs,0));
 events.commitTransmissionsThrough('ue_1',1);
 reject(@()events.cancelUnemittedComponent('ue_1','second'),'WAVEFORM:CommittedTransmission');
+% Late SRS power binding: actual zero prefix and unrelated signal unchanged.
+c=sixgr.phy.waveform.WaveformStreamComposer(1000,2,0);
+c.enqueue('srs',sixgr.phy.waveform.WaveformChunk(srs,0),1000);
+c.enqueue('other',sixgr.phy.waveform.WaveformChunk(other,0),1000);
+prefix=c.readThrough(8); originalHash=prefix.SHA256;
+r=c.replaceUnemittedComponent('srs',sixgr.phy.waveform.WaveformChunk(srs*2,0));
+assert(r.BoundAtSample==8 && r.ConsumedPrefixSamples==8 && ~r.PreviouslyConsumedSamplesChanged);
+one=c.readThrough(9);
+reject(@()c.replaceUnemittedComponent('srs',sixgr.phy.waveform.WaveformChunk(srs*3,0)), ...
+    'WAVEFORM:CannotReplaceEmittedComponent');
+tail=c.readThrough(12);
+assert(isequal([prefix.Samples;one.Samples;tail.Samples],other+2*srs) && prefix.SHA256==originalHash);
+reject(@()events.replaceUnemittedComponent('ue_1','second',sixgr.phy.waveform.WaveformChunk(srs*2,0)), ...
+    'WAVEFORM:CommittedTransmission');
 fprintf('WAVEFORM_UNEMITTED_CANCELLATION_PASS prefix_unchanged=1 other_component_unchanged=1 emitted_rejection=1\n');
 ok=true;
 end

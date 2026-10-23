@@ -13,7 +13,14 @@ end
 
 setup6GRSimToolkit("Verbose", false, "RunToolboxChecks", false);
 
-scfg = sixgr.lls6g.config.loadScenarioConfig(configPath);
+checkpointRequest=sixgr.runtime.CheckpointContinuationRequest.fromFile(configPath);
+if isempty(checkpointRequest)
+    scfg = sixgr.lls6g.config.loadScenarioConfig(configPath);
+else
+    assert(isempty(fieldnames(executionOptions)), ...
+        'sixgr:checkpoint:InvalidContinuationRequest','A saved checkpoint request cannot combine with other execution modes.');
+    scfg=checkpointRequest.preview(); % Routing only; native verification below.
+end
 if string(scfg.get("scenario.runner_profile")) == "lab_waveform_campaign"
     assert(isempty(fieldnames(executionOptions)), ...
         'sixgr:lab:UnsupportedExecutionOptions','Lab campaigns require a fresh run tag.');
@@ -31,6 +38,8 @@ leaf = localResolveLeaf(runTag);
 backend = lower(string(scfg.get("output.backend", "filesystem")));
 backendOverride = lower(strtrim(string(getenv("SIXGR_OUTPUT_BACKEND_OVERRIDE"))));
 if strlength(backendOverride) > 0
+    assert(isempty(checkpointRequest),'sixgr:checkpoint:RequestScienceOverride', ...
+        'A saved-configuration continuation cannot change its output backend through the environment.');
     if ~ismember(backendOverride, ["filesystem","mysql_web"])
         error("sixgr:lls6g:InvalidOutputBackendOverride", ...
             "SIXGR_OUTPUT_BACKEND_OVERRIDE must be filesystem or mysql_web, not '%s'.", char(backendOverride));
@@ -48,9 +57,13 @@ if strlength(slotCheckpoint)>0
     assert(~resumeExisting && backend=="filesystem", ...
         'sixgr:checkpoint:UnsupportedResumeBackend', ...
         'Slot resume requires filesystem output and cannot combine with finalization resume.');
-    [runFolder,checkpointLineage]=sixgr.runtime.SlotCheckpoint.prepareResume( ...
-        slotCheckpoint,scfg.toStruct(), ...
+    checkpointScenario=scfg.toStruct();
+    if ~isempty(checkpointRequest), checkpointScenario=checkpointRequest; end
+    [runFolder,checkpointLineage,checkpointLease]=sixgr.runtime.SlotCheckpoint.prepareResume( ...
+        slotCheckpoint,checkpointScenario, ...
         scfg.get('run_control.runtime_checkpoint_repair_reason',''),true);
+    checkpointLeaseCleanup=onCleanup(@()checkpointLease.release()); %#ok<NASGU>
+    executionOptions.SlotCheckpointLease=checkpointLease;
     logicalRunFolder=runFolder;
     [~,leaf]=fileparts(runFolder);
     executionOptions.SlotCheckpointPath=slotCheckpoint;
@@ -58,6 +71,8 @@ if strlength(slotCheckpoint)>0
         scfg.get('run_control.runtime_checkpoint_repair_reason',''));
     executionOptions.SlotCheckpointOperationalSettings= ...
         checkpointLineage.RequestedOperationalSettings;
+    executionOptions.CheckpointExecutionHorizon=sixgr.util.structGet( ...
+        checkpointLineage,'ExecutionHorizon',struct());
     % Preserve the exact original scientific/config identity for pending
     % received-control/HARQ bindings. Operational restart input is retained
     % separately in the lineage, not substituted for the original YAML hash.
@@ -188,6 +203,11 @@ totalSlots = max(1, round(double(sixgr.util.structGet(cfg, "run.totalSlots", ...
     sixgr.util.structGet(cfg, "run.numTTI", sixgr.util.structGet(cfg, "run.numFrames", 1))))));
 opt.LinkDuration_s = max(double(totalSlots) * slotDuration_s, ...
     double(scfg.get("simulation.min_duration_s")));
+if isfield(cfg.run,'executionHorizon')
+    % A separately recorded operator limit bounds this diagnostic prefix;
+    % the immutable scenario's original minimum duration stays unchanged.
+    opt.LinkDuration_s=double(totalSlots)*slotDuration_s;
+end
 opt.LinkMaxSimFrames = double(totalSlots);
 opt.LinkSNR_dB = double(cfg.channel.snr_dB);
 receiverNoiseMode = localUsesReceiverNoiseMeasurement(cfg);
@@ -277,6 +297,7 @@ opt.LinkAdaptiveSweepMaxPoints = double(tuning.AdaptiveSweepMaxPoints);
 opt.HARQDiagnosticsEnabled = logical(tuning.HARQDiagnosticsEnabled);
 opt.ResumeCompletedRuntimeFinalization = logical(sixgr.util.structGet( ...
     executionOptions, "ResumeCompletedRuntimeFinalization", false));
+opt.SlotCheckpointLease=sixgr.util.structGet(executionOptions,'SlotCheckpointLease',[]);
 if strlength(strtrim(string(sixgr.util.structGet(tuning, "Notes", "")))) > 0
     localDBLog("INFO", "Waveform bundle runtime tuning: policy=%s notes=%s", ...
         char(string(sixgr.util.structGet(tuning, "Policy", ""))), ...
@@ -2681,6 +2702,12 @@ cfg.run.runnerProfile = char(configuredProfile);
 cfg.run.scenarioID = char(string(scfg.ScenarioID));
 cfg.meta.scenarioID = char(string(scfg.ScenarioID));
 cfg.meta.configHash = char(string(scfg.ConfigHash));
+if isfield(executionOptions,'CheckpointExecutionHorizon')
+    cfg=sixgr.runtime.CheckpointExecutionHorizon.apply(cfg, ...
+        executionOptions.CheckpointExecutionHorizon);
+elseif logical(sixgr.util.structGet(executionOptions,'ResumeCompletedRuntimeFinalization',false))
+    cfg=sixgr.runtime.CheckpointExecutionHorizon.restorePublished(cfg,runFolder);
+end
 cfg = localEnsureExactMexAcceleration(cfg);
 if localIsSmokePublicationRun(scfg)
     cfg = localForceSerialSmokeExecution(cfg);
@@ -2739,16 +2766,29 @@ evidenceLifecycle = struct();
 try
     localDBLog("INFO", "Writing resolved snapshots.");
     localWriteResolvedSnapshots(layout, scfg);
+    if isfield(cfg.run,'executionHorizon')
+        sixgr.util.jsonWrite(fullfile(runFolder,'meta','continuation_execution_horizon.json'), ...
+            cfg.run.executionHorizon);
+        sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir,'continuation_execution_horizon.csv'), ...
+            struct2table(cfg.run.executionHorizon));
+        localDBLog('INFO','Bounded checkpoint continuation: original_slots=%d finish_after_slot=%d resumed_after_slot=%d; full terminal publication retained.', ...
+            cfg.run.executionHorizon.OriginalConfiguredSlots,cfg.run.totalSlots, ...
+            cfg.run.executionHorizon.ResumedAfterSlot);
+    end
     localDBLog("INFO", "Resolving exact DL/UL resource allocations before slot zero.");
     allocationTargets = localAllocationPreflightTargets(profile, scfg);
     [plannedAllocationT, allocationCheckT] = ...
         sixgr.truth.buildPlannedREAllocation(cfg, ...
         "TargetChannels", allocationTargets);
     frameCSVDir = layout.ComponentCSVDirs.frame_grid;
-    [plannedAllocationT,plannedPRACHNativeT]=sixgr.truth.splitREAllocationDomains(plannedAllocationT);
+    [plannedAllocationT,plannedPRACHNativeT,plannedSSBNativeT]=sixgr.truth.splitREAllocationDomains(plannedAllocationT);
     if ~isempty(plannedPRACHNativeT)
         sixgr.util.csvWriteTable(fullfile(frameCSVDir, ...
             'planned_prach_native_allocation.csv'),plannedPRACHNativeT,'PreserveSchema',true);
+    end
+    if ~isempty(plannedSSBNativeT)
+        sixgr.util.csvWriteTable(fullfile(frameCSVDir, ...
+            'planned_ssb_native_allocation.csv'),plannedSSBNativeT,'PreserveSchema',true);
     end
     sixgr.util.csvWriteTable(fullfile(frameCSVDir, ...
         "planned_re_allocation.csv"), plannedAllocationT, ...
@@ -3023,9 +3063,9 @@ try
                 ~logical(sixgr.util.structGet(runtimeEvidenceRefinalization, ...
                 "RawEvidencePresent", false))
             outage = sixgr.link.classifyCompletedAcquisitionOutage( ...
-                rawTrialContainer, double(scfg.get("run_control.total_slots", NaN)));
+                rawTrialContainer, double(cfg.run.totalSlots));
             noData = sixgr.link.classifyCompletedNoDataExecution( ...
-                rawTrialContainer, double(scfg.get("run_control.total_slots", NaN)));
+                rawTrialContainer, double(cfg.run.totalSlots));
             % Acquisition and data scheduling are separate physical facts.
             % Publish a completed no-grant point without claiming data or
             % scenario success, or hiding lost trials from an actual TX.
@@ -4160,6 +4200,10 @@ hash = string(sixgr.util.sha256Hex(fread(fid, Inf, "*uint8")));
 end
 
 function kind = localResolveScenarioSourceKind(scfg)
+if scfg.Kind=="checkpoint_continuation"
+    kind="verified_saved_checkpoint_configuration_not_current_yaml";
+    return;
+end
 resolved = scfg.toStruct();
 kind = string(sixgr.util.structGet(resolved, "SourceKind", ""));
 if strlength(strtrim(kind)) == 0
@@ -4187,12 +4231,17 @@ manifest.ScenarioID = char(string(scfg.ScenarioID));
 manifest.ConfigHash = char(string(scfg.ConfigHash));
 manifest.ConfigPath = char(string(scfg.ConfigPath));
 manifest.ScenarioYAML = char(string(scfg.ConfigPath));
+manifest.ConfigurationSourceKind=char(localResolveScenarioSourceKind(scfg));
 manifest.ConfigOverlay = char(string(configOverlay));
 manifest.ConfigOverlayPath = char(string(configOverlayPath));
 manifest.RunFolder = char(string(runFolder));
 checkpointLineagePath=fullfile(runFolder,'meta','checkpoint_resume.json');
 if isfile(checkpointLineagePath)
     manifest.CheckpointContinuation=jsondecode(fileread(checkpointLineagePath));
+    if isfield(manifest.CheckpointContinuation,'ExecutionHorizon') && ...
+            ~isempty(fieldnames(manifest.CheckpointContinuation.ExecutionHorizon))
+        manifest.ExecutionHorizon=manifest.CheckpointContinuation.ExecutionHorizon;
+    end
     manifest.PrimaryStudyEligible=false;
     manifest.QualificationScope='checkpoint_repair_validation_not_clean_source_qualification';
 end
@@ -4692,22 +4741,9 @@ profileName = strtrim(profileName);
 end
 
 function profile = localResolveEffectiveRunnerProfile(scfg, cfg, configuredProfile)
-profile = lower(strtrim(string(configuredProfile)));
-if strlength(profile) == 0
-    profile = lower(strtrim(string(scfg.get("scenario.runner_profile", ""))));
-end
-
-executionModel = lower(strtrim(string(sixgr.util.structGet(cfg, "lls6g.users.execution_model", ...
-    scfg.get("users.execution_model", "")))));
-controlRequired = any([ ...
-    logical(sixgr.util.structGet(cfg, "run.controlGating.pbchRequired", false)), ...
-    logical(sixgr.util.structGet(cfg, "run.controlGating.prachRequired", false)), ...
-    logical(sixgr.util.structGet(cfg, "run.controlGating.pdcchRequired", false)), ...
-    logical(sixgr.util.structGet(cfg, "run.controlGating.srsRequired", false)), ...
-    logical(sixgr.util.structGet(cfg, "run.controlGating.trsRequired", false))]);
-
-if profile == "system_level_lls" && executionModel == "slot_coupled_truth" && controlRequired
-    profile = "waveform_bundle";
+[profile, authority] = sixgr.lls6g.config.resolveEffectiveRunnerProfile( ...
+    scfg, cfg, configuredProfile);
+if authority.Promoted
     localDBLog("INFO", ...
         "Effective runner promoted from system_level_lls to waveform_bundle because users.execution_model=slot_coupled_truth and runtime control/reference gating is required.");
 end

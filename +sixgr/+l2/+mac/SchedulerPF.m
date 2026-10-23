@@ -39,6 +39,7 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
         end
 
         function [grants, info] = schedule(obj, slot, ueStates, budget)
+            stageScope=sixgr.runtime.ExecutionStageProfiler.scope("scheduler",upper(string(obj.Direction))+"_PF_total"); %#ok<NASGU>
             sixgr.runtime.RuntimeCallLedger.record("sixgr.l2.mac.SchedulerPF.schedule", ...
                 "SCHEDULER",obj.Direction,struct("Stage","schedule","Slot",slot));
             if nargin < 4

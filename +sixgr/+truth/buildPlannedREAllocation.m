@@ -45,6 +45,11 @@ if isSelected("PRACH")
         totalSlots = max(totalSlots, round(prachSlots));
     end
 end
+if isfield(cfg.run,'executionHorizon')
+    % A standalone PRACH campaign's legacy duration cannot extend a bounded
+    % connected-run grid beyond its explicit scheduling endpoint.
+    totalSlots=min(totalSlots,double(cfg.run.executionHorizon.FinishAfterSlot));
+end
 rows = repmat(localEmptyRow(), 0, 1);
 checks = repmat(localEmptyCheck(), 0, 1);
 
@@ -150,6 +155,10 @@ else
     slotsPerFrame = 10 * round(double(carrier.SlotsPerSubframe));
     T.sfn = floor(T.absolute_slot ./ slotsPerFrame);
     T.slot_within_frame = mod(T.absolute_slot, slotsPerFrame);
+    nativeSSB=T.grid_domain=="ssb_native_cp_ofdm";
+    nativeSlotsPerFrame=10*T.grid_subcarrier_spacing_hz(nativeSSB)/15000;
+    T.sfn(nativeSSB)=floor(T.absolute_slot(nativeSSB)./nativeSlotsPerFrame);
+    T.slot_within_frame(nativeSSB)=mod(T.absolute_slot(nativeSSB),nativeSlotsPerFrame);
     T = sortrows(T, ["absolute_slot","direction","symbol_index", ...
         "subcarrier_start","port_index","channel","component"]);
 end
@@ -167,6 +176,11 @@ out = localPayload(repmat(localEmptyRow(), 0, 1), 1, ...
 end
 
 function out = localSSB(cfg, carrier, totalSlots)
+timing=sixgr.phy.frame.SSBTimingResolver.resolveFromConfig(cfg);
+if timing.SSBSubcarrierSpacingKHz~=carrier.SubcarrierSpacing
+    out=localNativeSSB(cfg,carrier,totalSlots,timing);
+    return;
+end
 nCellID = double(carrier.NCellID);
 nCRB = double(sixgr.util.structGet(cfg, "phy.ssb.nCRBSSB", ...
     sixgr.util.structGet(cfg,"phy.ssb.NCRBSSB",NaN)));
@@ -210,6 +224,60 @@ if candidateCount == 0
 end
 out = localPayload(rows, sum([rows.re_count]), ...
     sprintf("%d active SS/PBCH candidate(s)",candidateCount));
+end
+
+function out=localNativeSSB(cfg,carrier,totalSlots,timing)
+% Planned native REs, not an expanded common-grid occupancy estimate.
+scs=double(timing.SSBSubcarrierSpacingKHz);
+active=double(cfg.phy.ssb.activeCandidateIndices0Based);
+spec=struct('SCSKHz',scs,'CyclicPrefix',"normal");
+ofdm=nrOFDMInfo(carrier); fs=double(ofdm.SampleRate);
+duration=double(totalSlots)/(1000*double(carrier.SlotsPerSubframe));
+period=double(timing.PeriodicityMs)*scs/15*14;
+assert(period>0 && period==fix(period),'sixgr:truth:InvalidNativeSSBPeriod','Native SSB period must resolve exactly.');
+low=double(timing.GridRelationship.SSBLowOffsetFromPointAHz- ...
+    timing.GridRelationship.CarrierLowOffsetFromPointAHz);
+bandwidth=12*double(carrier.NSizeGrid)*double(carrier.SubcarrierSpacing)*1000;
+indices={nrPSSIndices(),nrSSSIndices(),nrPBCHIndices(carrier.NCellID),nrPBCHDMRSIndices(carrier.NCellID)};
+labels=["PSS","SSS","PBCH","PBCH_DMRS"];
+rows=repmat(localEmptyRow(),0,1); candidates=0;
+for cycle=0:ceil(duration*1000/timing.PeriodicityMs)-1
+    for beam=reshape(active,1,[])
+        first=cycle*period+double(timing.CandidateStartSymbols(beam+1));
+        ending=sixgr.phy.frame.AbsoluteTime.fromAbsoluteSlotSymbol(floor((first+4)/14),mod(first+4,14),spec);
+        if ending.seconds()>duration+1e-12, continue; end
+        candidates=candidates+1;
+        for component=1:numel(labels)
+            coords=localSSBCoordinates(indices{component});
+            symbols=coords(:,2)+first;
+            for slot=reshape(unique(floor(symbols/14)),1,[])
+                selected=floor(symbols/14)==slot;
+                local=coords(selected,:); local(:,2)=mod(symbols(selected),14);
+                part=localRows(local,slot,"SSB_PBCH",labels(component),carrier.NCellID,NaN, ...
+                    "MIB_and_SSB_burst_configuration","native_nr_SS_PBCH_indices_and_CP_clock", ...
+                    "ssb_candidate_"+beam+"_cycle_"+cycle);
+                for k=1:numel(part)
+                    r=part(k); time=sixgr.phy.frame.AbsoluteTime.fromAbsoluteSlotSymbol(slot,r.symbol_index,spec);
+                    stop=time.plusSymbols(1,spec);
+                    r.grid_domain="ssb_native_cp_ofdm";
+                    r.grid_subcarrier_spacing_hz=scs*1000;
+                    r.grid_subcarrier_count=240; r.grid_symbol_count=14;
+                    r.coordinate_precision="exact_native_ssb_grid_run";
+                    r.cp_start_sample=round(time.seconds()*fs);
+                    r.useful_end_sample_exclusive=round(stop.seconds()*fs);
+                    r.useful_start_sample=r.useful_end_sample_exclusive-fs/(scs*1000);
+                    r.observation_sample_rate_hz=fs;
+                    r.frequency_first_hz=low-bandwidth/2+r.subcarrier_start*scs*1000;
+                    r.frequency_last_hz=r.frequency_first_hz+(r.subcarrier_count-1)*scs*1000;
+                    r.ssb_index0=beam;
+                    rows(end+1,1)=r; %#ok<AGROW>
+                end
+            end
+        end
+    end
+end
+assert(candidates>0,'sixgr:truth:NoActiveSSBOccasion','No complete native SSB occurs within the configured horizon.');
+out=localPayload(rows,sum([rows.re_count]),sprintf('%d native SS/PBCH candidates; no common-grid RE substitution',candidates));
 end
 
 function coords = localSSBCoordinates(linearIndices)
@@ -986,7 +1054,10 @@ row=struct("absolute_slot",NaN,"sfn",NaN,"slot_within_frame",NaN, ...
     "coordinate_precision","exact_contiguous_re_run", ...
     "evidence_scope","planned_config_not_runtime_observation", ...
     "grid_domain","carrier_cp_ofdm", "grid_subcarrier_spacing_hz",NaN, ...
-    "grid_subcarrier_count",NaN,"grid_symbol_count",NaN);
+    "grid_subcarrier_count",NaN,"grid_symbol_count",NaN, ...
+    "cp_start_sample",NaN,"useful_start_sample",NaN,"useful_end_sample_exclusive",NaN, ...
+    "observation_sample_rate_hz",NaN,"frequency_first_hz",NaN,"frequency_last_hz",NaN, ...
+    "ssb_index0",NaN);
 end
 
 function c=localEmptyCheck()

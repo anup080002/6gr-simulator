@@ -22,6 +22,7 @@ mkdir(fileparts(snapshotFile));
 copyfile(sourceFile,snapshotFile);
 snapshotHash=sixgr.util.sha256File(snapshotFile);
 paths=strings(1,3);
+sharedVersion="";
 for k=1:3
     payload=struct('RuntimeState',struct('CurrentSlot',5*k), ...
         'CompletedSlot',5*k,'RNG',rng,'ConfigHash',repmat('a',1,64));
@@ -34,6 +35,10 @@ for k=1:3
         'Immutable live samples must retain exact checksums without repeated full copies.');
     assert(isscalar(mutable) && strlength(string(mutable.Snapshot))>0, ...
         'Mutable primary CSVs still require recoverable snapshots.');
+    assert(record.SchemaVersion==2 && startsWith(string(mutable.Snapshot),"@objects/"));
+    if k==1, sharedVersion=string(mutable.Snapshot); end
+    assert(string(mutable.Snapshot)==sharedVersion, ...
+        'Unchanged large captures/tables must reuse an immutable version across checkpoints.');
 end
 assert(~isfile(paths(1)) && isfile(paths(2)) && isfile(paths(3)) && isfile(sourceFile), ...
     'Rolling retention must remove only old generated checkpoint snapshots.');

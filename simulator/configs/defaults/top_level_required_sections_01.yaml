@@ -16,6 +16,7 @@
     "seed": 11,
     "deterministic_mode": true,
     "runtime_checkpoint_enable": false,
+    "checkpoint_first_slot": 0,
     "runtime_checkpoint_keep": 3,
     "runtime_checkpoint_resume_from": "",
     "runtime_checkpoint_repair_reason": "",
@@ -277,6 +278,7 @@
     "srs_power_imbalance_model": "none"
   },
   "power_and_rf_frontend": {
+    "modeled_radiated_power": {"enabled": false},
     "bs_tx_power_dbm": 23,
     "ue_tx_power_dbm": 23,
     "ue_noise_figure_db": 5,

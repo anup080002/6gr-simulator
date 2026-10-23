@@ -64,7 +64,7 @@ elseif isstruct(cfgOrCsirs)
     % fail closed if one of the companion vectors is missing.
     if numResources > 1 || localHasConfiguredResourceSet(cfgOrCsirs)
         [csirsInd, csirsSym, info, csirs] = ...
-            localGenerateConfiguredResourceSet(carrier, cfgOrCsirs, opts.IndexBase, numResources);
+            localGenerateConfiguredResourceSet(carrier, cfgOrCsirs, opts.IndexBase, numResources, nargout>=3);
         info=localCalendarEvidence(info,scheduled,absoluteSlot0,periodicity,csirsInd,csirsSym);
         return;
     end
@@ -130,7 +130,9 @@ if isstruct(cfgOrCsirs)
     info.ResourceSetID = double(sixgr.util.structGet(cfgOrCsirs, 'phy.csirs.resourceSetID', 0));
 end
 info.NumResources = 1;
-info.ResourceMappingTable = localCSIRSResourceMappingTable(carrier, csirs, csirsInd, csirsSym, opts.IndexBase, resourceID);
+if nargout>=3
+    info.ResourceMappingTable = localCSIRSResourceMappingTable(carrier, csirs, csirsInd, csirsSym, opts.IndexBase, resourceID);
+end
 info.CausalMeasurementRole = "CSI-RS -> DL CSI/RI/PMI/CQI measurement producer";
 info.MeasurementStateContract = "ProducerSlot/AvailableSlot must be <= consuming grant slot; runtime estimator remains pilot-based";
 if isstruct(cfgOrCsirs)
@@ -140,7 +142,7 @@ end
 end
 
 function [combinedInd, combinedSym, info, primaryConfig] = ...
-        localGenerateConfiguredResourceSet(carrier, cfg, indexBase, numResources)
+        localGenerateConfiguredResourceSet(carrier, cfg, indexBase, numResources, collectEvidence)
 [scheduled,~]=sixgr.phy.refsig.csirsOccasion(cfg, ...
     double(carrier.NFrame)*double(carrier.SlotsPerFrame)+double(carrier.NSlot));
 resourceIDs = localRequiredResourceVector(cfg, 'phy.csirs.resourceIDs', numResources, ...
@@ -198,8 +200,11 @@ for ordinal = 1:numResources
         end
     end
     occupied{ordinal} = baseOne;
-    mapping = localCSIRSResourceMappingTable(carrier, resourceConfig, ...
-        indices, symbols, indexBase, resourceIDs(ordinal));
+    mapping = table();
+    if collectEvidence
+        mapping = localCSIRSResourceMappingTable(carrier, resourceConfig, ...
+            indices, symbols, indexBase, resourceIDs(ordinal));
+    end
     resources(ordinal).ResourceID = resourceIDs(ordinal);
     resources(ordinal).ResourceSetID = double(sixgr.util.structGet(cfg, ...
         'phy.csirs.resourceSetID', 0));
@@ -560,30 +565,20 @@ catch
 end
 P = max(1, round(P));
 N = min(numel(idxForSub), numel(sym));
-rows = repmat(localCSIRSResourceRow(), N, 1);
 if N == 0
-    T = struct2table(rows);
+    T = struct2table(repmat(localCSIRSResourceRow(),0,1));
     return;
 end
 [subcarrier, symbol, port] = ind2sub([K L P], double(idxForSub(1:N)));
-for ii = 1:N
-    rows(ii) = localCSIRSResourceRow();
-    rows(ii).Slot = double(carrier.NSlot);
-    rows(ii).ResourceID = double(resourceID);
-    rows(ii).Symbol = double(symbol(ii) - 1);
-    rows(ii).Subcarrier = double(subcarrier(ii) - 1);
-    rows(ii).PRB = double(floor((subcarrier(ii) - 1) / 12));
-    rows(ii).Port = double(port(ii) - 1);
-    rows(ii).RowNumber = double(csirs.RowNumber);
-    rows(ii).RBOffset = double(csirs.RBOffset);
-    rows(ii).NumRB = double(csirs.NumRB);
-    rows(ii).LinearIndex = double(idx(ii));
-    rows(ii).SymbolI = double(real(sym(ii)));
-    rows(ii).SymbolQ = double(imag(sym(ii)));
-    rows(ii).SourceSignal = "CSI-RS";
-    rows(ii).TruthStatus = "real_lls_evidence";
-end
-T = struct2table(rows, "AsArray", true);
+% Column-wise construction preserves every original sample/column and
+% avoids repeatedly allocating one struct per RE during grant planning.
+T=table(repmat(double(carrier.NSlot),N,1),double(symbol(:)-1), ...
+    double(subcarrier(:)-1),double(floor((subcarrier(:)-1)/12)),double(port(:)-1), ...
+    repmat(double(resourceID),N,1),repmat(double(csirs.RowNumber),N,1), ...
+    repmat(double(csirs.RBOffset),N,1),repmat(double(csirs.NumRB),N,1), ...
+    double(idx(1:N)),double(real(sym(1:N))),double(imag(sym(1:N))), ...
+    repmat("CSI-RS",N,1),repmat("real_lls_evidence",N,1), ...
+    'VariableNames',fieldnames(localCSIRSResourceRow()));
 end
 
 function idx = localFlattenIndex(ind)

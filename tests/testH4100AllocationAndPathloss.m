@@ -32,7 +32,10 @@ assert(budgetCfg.phy.fc_Hz==4e9 && budgetCfg.phy.carrier.NSizeGrid==273 && ...
 % Reproduce the retained slots' reduced bandwidth via the production
 % scheduler. SSB starts half a common PRB into PRB 126, covering 21 PRBs.
 % The next ordinary DL slot must not inherit that exclusion or a 126 cap.
-for slot=[41 42 43]
+% Slot 47 also exercises the full-band connected TRS sharing path that
+% consumed most of the measured PF scheduling interval. Exact allocation
+% checks remain required; this is not a grant/execution performance claim.
+for slot=[41 42 43 47]
     current=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,slot);
     sch=sixgr.l2.mac.SchedulerPF(current,'Direction','DL');
     budget=struct('ControlAbsoluteSlot',slot-1,'ControlSymbolAllocation',[0 2]);
@@ -54,6 +57,15 @@ for slot=[41 42 43]
     occupied=unique(mod(double([data(:);pilots(:)])-1,plane));
     assert(isempty(intersect(occupied,ssb.ReservedCarrierRE0)));
     assert(isequal(info.PRBSet,chunk) && isequal(info.SymbolAllocation,[2 12]));
+    if slot==47
+        plan=sixgr.phy.frame.CommonDLResourcePlan(current);
+        allocation=struct('PRBStart',0,'NumPRB',273, ...
+            'SymbolStart',2,'NumSymbols',12);
+        [free,referenceEvidence]=plan.checkConnectedPDSCH(allocation,slot-1);
+        assert(free && referenceEvidence.TRSRateMatchedRECount>0 && ...
+            isempty(referenceEvidence.ConflictingOwners), ...
+            'Slot 47 must retain verified exact TRS reservations over the full band.');
+    end
     fprintf('H4_ALLOCATION_CHECK slot=%d PRBs=%d data_RE=%d\n',slot,numel(chunk),numel(data));
 end
 

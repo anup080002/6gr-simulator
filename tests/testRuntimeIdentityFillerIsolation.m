@@ -18,6 +18,20 @@ assert(sixgr.truth.isImmutableIdentityField("RunUUID") && ...
     isequaln(uuid,sixgr.truth.fillBlankCategoricalColumns(uuid,"pbch")), ...
     'An absent RunUUID must not become a channel-specific identity token.');
 
+% A resumed run may append its first MAT-backed EVM observation to older
+% rows without paired samples. Schema union creates legitimate empty file
+% and contract fields on those older rows. Display decoration must never
+% turn them into apparent artifact authorities (the slot-50 export defect).
+bindings=table(["";"air_interface/mat/control_evm/"+string(repmat('a',1,64))+".mat"], ...
+    ["";"control_evm_pairs/v1"],[NaN;3], ...
+    'VariableNames',{'ControlEVMSamplesMATFile', ...
+    'ControlEVMSamplesStorageContract','ControlEVMSamplesCount'});
+for scope=["srs","trs","csirs"]
+    retained=sixgr.truth.fillBlankCategoricalColumns(bindings,scope);
+    assert(isequaln(retained,bindings), ...
+        'An absent paired-sample file or storage contract is not categorical display text.');
+end
+
 % Message and context hashes are producer evidence, including the absence
 % of a receiver-decoded message after a failed CRC. Exercise both export
 % passes and the actual CSV serialization (not only the name predicate).

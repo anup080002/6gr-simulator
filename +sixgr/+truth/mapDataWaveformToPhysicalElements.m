@@ -123,6 +123,13 @@ evidence = struct( ...
     "ElementDomainPrecodingAppliedBeforeSharedStream", ...
         logical(elementDomainApplied), ...
     "AdditionalProjectionApplied", waveformDomain == "logical_port");
+% Compare both actual sample populations, not just W^H*W or antenna counts.
+% Element-domain identity only proves this stage; it does not reconstruct
+% earlier layer/port powers or imply that nonlinear RF preserves covariance.
+if logical(sixgr.util.structGet(cfg,'rf.txSpatialPowerEnabled',false))
+    evidence.SpatialMappingPower=sixgr.rf.measureSpatialMappingPower( ...
+        waveform,samples,projection);
+end
 end
 
 function value = localPositiveInteger(data, fieldName)

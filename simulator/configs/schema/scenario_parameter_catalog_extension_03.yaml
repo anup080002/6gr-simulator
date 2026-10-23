@@ -158,7 +158,8 @@
       "target_energy_points": {"required": true, "type": "number_list", "min_items": 1},
       "aggregation_rules": {"required": true, "type": "string"}, "confidence_interval_policy": {"required": true, "type": "string"},
       "percentile_policy": {"required": true, "type": "string"}, "comparison_policy": {"required": true, "type": "string"},
-      "baseline_diff_policy": {"required": true, "type": "string"}
+      "baseline_diff_policy": {"required": true, "type": "string"},
+      "csi_selection_quality": {"required": false, "type": "struct", "nested_rule": "kpi_csi_selection_quality", "notes": "Private post-reception fixed-CRI nominal-channel study; never receiver/scheduler input or NR optimality/BLER qualification. Units and physical reference plane must come from actual execution."}
     }},
     "sweeps_and_matrix": {"required": true, "parameters": {
       "snr_sweep": {"required": true, "type": "struct"}, "sinr_sweep": {"required": true, "type": "struct"},
@@ -181,6 +182,20 @@
     }}
   },
   "nested_sections": {
+    "kpi_csi_selection_quality": {
+      "parameters": {
+        "enabled": {"required": true, "type": "boolean"},
+        "objective": {"required": true, "type": "string", "allowed_values": ["mean_support_sum_log2_one_plus_linear_mmse_sinr"]},
+        "receiver": {"required": true, "type": "string", "allowed_values": ["linear_mmse"]},
+        "power_normalization": {"required": true, "type": "string", "allowed_values": ["unit_physical_chain_grid_coefficient_power"]},
+        "power_factor": {"required": true, "type": "number", "min": 1, "max": 1},
+        "support": {"required": true, "type": "string", "allowed_values": ["selected_resource_pilot_union"]},
+        "research_class": {"required": true, "type": "string", "allowed_values": ["optional_research_experiment"]},
+        "classification": {"required": true, "type": "string", "allowed_values": ["IMPLEMENTATION_POLICY"]},
+        "tie_absolute_tolerance": {"required": true, "type": "number", "min": 0},
+        "physical_power_tolerance": {"required": true, "type": "number", "min": 0}
+      }
+    },
     "sweeps_fixed_link_calibration": {
       "parameters": {
         "enabled": {"required": false, "type": "boolean"},

@@ -6,6 +6,10 @@ classdef EnergyModelUE
 %   rxW          : receive power (W)
 %   txWPerWattRF : additional DC power per watt RF output (W/W)
 %   sleepW       : deep sleep (W)
+% These are explicitly assumed engineering-model operands, not 3GPP
+% device-power constants. Strict LLS resolves them from scenario YAML.
+% Invalid operands and RF output in a non-TX state are rejected; they must
+% not be clamped or silently discarded by a reporting consumer.
 %
 % Usage:
 %   m = sixgr.rf.EnergyModelUE(cfg);
@@ -13,10 +17,10 @@ classdef EnergyModelUE
 %   eJ = p.totalW * dt_s;
 
     properties
-        IdleW (1,1) double = 1.0
-        RxW (1,1) double = 1.5
-        TxWPerWattRF (1,1) double = 2.0
-        SleepW (1,1) double = 0.1
+        IdleW (1,1) double {mustBeReal,mustBeFinite,mustBeNonnegative} = 1.0
+        RxW (1,1) double {mustBeReal,mustBeFinite,mustBeNonnegative} = 1.5
+        TxWPerWattRF (1,1) double {mustBeReal,mustBeFinite,mustBePositive} = 2.0
+        SleepW (1,1) double {mustBeReal,mustBeFinite,mustBeNonnegative} = 0.1
     end
 
     methods
@@ -35,10 +39,15 @@ classdef EnergyModelUE
             arguments
                 obj
                 state (1,:) char
-                txPowerW (1,1) double = 0
+                txPowerW (1,1) double {mustBeReal,mustBeFinite,mustBeNonnegative} = 0
             end
 
             st = lower(string(state));
+            assert(any(st==["sleep","idle","rx","tx"]), ...
+                'EnergyModelUE:BadState','Unknown state: %s',state);
+            assert(st=="tx" || txPowerW==0, ...
+                'sixgr:rf:InvalidUEEnergyState', ...
+                'Receive, idle and sleep states cannot include transmitted RF output power.');
 
             switch st
                 case "sleep"
@@ -48,10 +57,12 @@ classdef EnergyModelUE
                 case "rx"
                     p = obj.RxW;
                 case "tx"
-                    p = obj.IdleW + obj.TxWPerWattRF * max(txPowerW,0);
+                    p = obj.IdleW + obj.TxWPerWattRF * txPowerW;
                 otherwise
                     error("EnergyModelUE:BadState","Unknown state: %s", state);
             end
+            assert(isfinite(p),'sixgr:rf:EnergyModelOverflow', ...
+                'Declared UE power operands exceed finite model arithmetic.');
 
             out = struct();
             out.totalW = p;

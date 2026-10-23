@@ -1,0 +1,4 @@
+interface:
+  display_name: "SixGR 3GPP / LLS Reviewer"
+  short_description: "Trace NR/6G requirements through code and measured results"
+  default_prompt: "Use $threegpp-lls-review to audit this scenario from versioned 3GPP requirements through YAML, core MATLAB, received feedback and CSV/PNG/WebGUI evidence; report RCA and scoped verification."

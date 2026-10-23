@@ -9,6 +9,9 @@ kinds=string({items.Kind});
 tx=ismember(kinds,["DataTX","PUCCHTX"]);
 srs=kinds=="SRS";
 pusch=kinds=="PUSCH";
-order=[find(tx),find(srs),find(pusch),find(~tx & ~srs & ~pusch)];
+power=kinds=="BindSRSPower";
+% Receiver/control reductions at this exact clock precede emission-time
+% power binding. Future commands remain excluded by the effective-time query.
+order=[find(tx),find(srs),find(pusch),find(~tx & ~srs & ~pusch & ~power),find(power)];
 items=items(order);
 end

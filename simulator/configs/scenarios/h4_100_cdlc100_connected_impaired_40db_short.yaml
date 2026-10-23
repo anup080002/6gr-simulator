@@ -1,5 +1,5 @@
 inherits:
-  - ./h4_100_cdlc100_connected_impaired_40db_gate.yaml
+  - ./h4_100_cdlc100_connected_impaired_40db_adaptation.yaml
 
 meta:
   scenario_id: h4_100_cdlc100_connected_impaired_40db_short
@@ -9,11 +9,15 @@ meta:
     adaptive rank, RF impairments and all enabled measurement exports.
     The horizon includes initial access; it is not 60 scheduled data slots.
     Actual data grants depend on received control and causal feedback.
+    Inherits the current 100-slot parent's causal AGC, checkpoint cadence,
+    profiling and complete publication settings; only the horizon is shorter.
+    With late attachment, CSI reports at 59 and 79 exceed this horizon for
+    two-report confirmation. Unobserved adaptation is not converted to PASS.
     This bounded diagnostic is not statistical BLER/HARQ qualification.
   purpose: Short connected DL/UL and terminal-publication check before the longer H4 campaign.
 
 # Keep every public duration alias on the same mu=1 clock. The inherited
-# 200-slot gate and eight-point campaign are intentionally unchanged.
+# 100-slot adaptation parent, 200-slot gate and eight-point campaign stay unchanged.
 # This is an experiment horizon, not an attach deadline. Access follows the
 # inherited SSB/SI/PRACH calendars and received response/timer events. A UE
 # still acquiring, waiting for a response, or backing off is right-censored.
@@ -38,3 +42,15 @@ random_access:
 
 output:
   profile: h4_100_cdlc100_connected_impaired_40db_short
+  publication_mode: full
+  # Terminal publication is unchanged: the live refresh interval does not
+  # decimate measurements or skip the final CSV/PNG/report materialization.
+  save_csv: true
+  save_mat: true
+  save_figures: true
+  save_png: true
+  save_yaml_snapshot: true
+  save_json_snapshot: true
+  generate_summary_plots: true
+  live_csv_png_enabled: true
+  emit_placeholder_artifacts: false

@@ -31,6 +31,58 @@ for ci=1:size(cases,1)
         [carrierRows,native]=sixgr.truth.splitREAllocationDomains(T);
         assert(isempty(carrierRows) && height(native)==height(T) && ...
             ~ismember('symbol_index',native.Properties.VariableNames));
+        % Without a recorded transmit origin, relative generator offsets
+        % cannot be published as absolute endpoint activity intervals.
+        localReject(@()sixgr.truth.prachNativeSampleIntervals(native,tx.Carrier), ...
+            'sixgr:truth:PRACHIntervalClock');
+        timed=tx;
+        timed.WaveformStartSample=round(originSlot*.001*tx.OFDMInfo.SampleRate);
+        timedRows=sixgr.truth.buildObservedREAllocation(timed,'Channel','PRACH','Direction','UL', ...
+            'AbsoluteSlot',originSlot,'CellID',1,'UEID',1,'AllocationID',"native_clock_fixture");
+        [~,timedNative]=sixgr.truth.splitREAllocationDomains(timedRows);
+        interval=sixgr.truth.prachNativeSampleIntervals(timedNative,tx.Carrier);
+        occupied=jsondecode(interval.ExecutedSampleIntervalsJSON);
+        assert(numel(occupied)==numel(unique(T.symbol_index)));
+        for oi=1:numel(occupied)
+            nativeSymbol=occupied(oi).NativeSymbolIndex0;
+            original=T(find(T.symbol_index==nativeSymbol,1),:);
+            assert(occupied(oi).StartSample==timed.WaveformStartSample+original.cp_start_sample_relative && ...
+                occupied(oi).EndSampleExclusive==timed.WaveformStartSample+original.useful_end_sample_exclusive_relative && ...
+                occupied(oi).SampleRateHz==tx.OFDMInfo.SampleRate);
+        end
+        assert(interval.NativeWaveformSHA256==string(sixgr.phy.waveform.WaveformHash.numeric(tx.Waveform)));
+        % Port duplication does not double resource duration or bandwidth.
+        doubled=sixgr.truth.prachNativeSampleIntervals([timedNative;timedNative],tx.Carrier);
+        assert(doubled.ExecutedSampleIntervalsJSON==interval.ExecutedSampleIntervalsJSON);
+        badNative=timedNative; badNative.frequency_first_hz(1)=badNative.frequency_first_hz(1)+scs*1000;
+        localReject(@()sixgr.truth.prachNativeSampleIntervals(badNative,tx.Carrier), ...
+            'sixgr:truth:PRACHIntervalFrequency');
+        % Exercise the production post-execution stage producer using an
+        % explicit completion-boundary fixture (not a decoded-RA claim).
+        stage=struct('StageName',"Msg1",'StageSlot',originSlot,'TxSampleCount',size(tx.Waveform,1), ...
+            'RxSampleCount',size(tx.Waveform,1),'TxPortCount',ports,'Direction',"UL", ...
+            'ObservationStartSample',timed.WaveformStartSample, ...
+            'ObservationEndSampleExclusive',timed.WaveformStartSample+size(tx.Waveform,1));
+        result=struct('RunId',"native_clock_fixture",'CellId',1,'UEId',1,'AttemptId',1, ...
+            'RuntimeStageRows',struct2table(stage));
+        result=sixgr.phy.ra.appendObservedStageAllocation(result,timed,stage);
+        assert(result.Msg1SampleIntervalEvidence.ExecutedSampleIntervalsJSON==interval.ExecutedSampleIntervalsJSON);
+        configHash=string(repmat('a',1,64)); sourceHash=string(repmat('b',1,64));
+        timedNative.ConfigHash=repmat(configHash,height(timedNative),1);
+        timedNative.ra_stage=repmat("Msg1",height(timedNative),1);
+        timedNative.ra_attempt_id=ones(height(timedNative),1);
+        raw=table(1,1,1,originSlot,"absolute_zero_based",configHash, ...
+            'VariableNames',{'RACellId','RAUEId','RAAttemptId','Msg1ScheduledSlot','RASlotTimeBase','ConfigHash'});
+        accountCfg.phy.carrier=struct('NSizeGrid',nrb,'SubcarrierSpacing',15,'CyclicPrefix',"normal");
+        [bound,binding]=sixgr.truth.bindPRACHNativeResourcesToTrials(raw,accountCfg,timedNative,configHash,sourceHash);
+        assert(binding.NativeRows==height(timedNative) && ...
+            bound.ExecutedSampleIntervalsJSON==interval.ExecutedSampleIntervalsJSON);
+        expanded=sixgr.truth.expandExecutedSampleIntervals(bound,accountCfg);
+        assert(height(expanded)==numel(occupied) && ...
+            isequal(expanded.EnergyIntervalStartSample,[occupied.StartSample].'));
+        wrong=raw; wrong.RAAttemptId=2;
+        [~,binding]=sixgr.truth.bindPRACHNativeResourcesToTrials(wrong,accountCfg,timedNative,configHash,sourceHash);
+        assert(binding.NativeRows==0);
         % Independently inspect FFT bins at the exported useful intervals.
         for s=unique(T.symbol_index).'
             one=T(find(T.symbol_index==s,1),:); nfft=tx.OFDMInfo.Nfft;

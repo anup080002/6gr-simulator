@@ -30,21 +30,38 @@ for k=1:size(cases,1)
     assert(isequaln(decision,sixgr.link.resolveULHARQReceiverOutcome(current,combined)), ...
         'TX-reference disagreement cannot override the actual combined receiver CRC.');
     if info.C>1
-        % Valid LDPC parity and valid TB CRC cannot rescue a failed CB CRC.
         % Corrupt only a CB CRC bit, then re-encode the LDPC codeword.
+        % Canonical MATLAB TB acceptance is TB-CRC based; the separate CB
+        % failure must remain visible without overriding that TB verdict.
         cb=nrCodeBlockSegmentLDPC(nrCRCEncode(bits,info.CRC),info.BGN);
         lastBinary=find(cb(:,1)>=0,1,'last');
         cb(lastBinary,1)=1-cb(lastBinary,1);
         badCode=nrLDPCEncode(cb,info.BGN);
         badLLR=20*(1-2*double(badCode)); badLLR(badCode<0)=Inf;
-        [badPass,~,badBits]=sixgr.phy.harq.decodeCombinedULSCH(own,badLLR,cfg);
-        assert(~badPass && isequal(badBits,bits), ...
-            'Failed code-block CRC must reject the combined TB even when the TB CRC remains valid.');
-        rejected=sixgr.link.resolveULHARQReceiverOutcome(current, ...
-            struct('CRCPass',badPass,'TransportBlock',badBits,'ExpectedBits',bits));
-        assert(~rejected.CombinedDecodeOK && ~rejected.SelectedCombinedDecode, ...
-            'Exact reference content cannot rescue a failed combined receiver CRC.');
+        [badPass,~,badBits,badDiagnostics]=sixgr.phy.harq.decodeCombinedULSCH(own,badLLR,cfg);
+        [publicBits,publicError,publicInfo]=localPublicDecode(badCode,A,rate,info,2);
+        assert(badPass==~publicError && ~publicError && isequal(badBits,bits) && ...
+            isequal(publicBits,bits) && any(publicInfo.CodeBlockError{1}) && ...
+            badDiagnostics.TransportBlockCRCPass && any(badDiagnostics.CodeBlockCRCError));
+        accepted=sixgr.link.resolveULHARQReceiverOutcome(current, ...
+            struct('CRCPass',badPass,'TransportBlock',badBits,'ExpectedBits',1-bits));
+        assert(accepted.CombinedDecodeOK && accepted.SelectedCombinedDecode && ...
+            isequal(accepted.DecodedTransportBlockBits,bits));
     end
+    % Keep the no-reference-rescue negative, now with an actually failing
+    % TB CRC and recomputed valid CB CRCs. Payload bits themselves are intact.
+    badTB=nrCRCEncode(bits,info.CRC); badTB(end)=1-badTB(end);
+    badTBCode=nrLDPCEncode(nrCodeBlockSegmentLDPC(badTB,info.BGN),info.BGN);
+    badTBLLR=20*(1-2*double(badTBCode)); badTBLLR(badTBCode<0)=Inf;
+    [tbPass,~,tbBits,tbDiagnostics]=sixgr.phy.harq.decodeCombinedULSCH(own,badTBLLR,cfg);
+    [publicTBBits,publicTBError]=localPublicDecode(badTBCode,A,rate,info,2);
+    assert(~tbPass && publicTBError && isequal(tbBits,bits) && isequal(publicTBBits,bits) && ...
+        ~tbDiagnostics.TransportBlockCRCPass && tbDiagnostics.TransportBlockCRCError && ...
+        ~any(tbDiagnostics.CodeBlockCRCError));
+    rejected=sixgr.link.resolveULHARQReceiverOutcome(current, ...
+        struct('CRCPass',tbPass,'TransportBlock',tbBits,'ExpectedBits',bits));
+    assert(~rejected.CombinedDecodeOK && ~rejected.SelectedCombinedDecode, ...
+        'Exact reference content cannot rescue a genuinely failed combined TB CRC.');
     localReject(@()sixgr.phy.harq.decodeCombinedULSCH(own,llr(1:end-1,:),cfg), ...
         'sixgr:phy:harq:ULCombinedLLRShapeMismatch');
     invalid=own; invalid.TBCRCType='24B';
@@ -55,6 +72,16 @@ end
 localReject(@()sixgr.phy.harq.decodeCombinedULSCH(struct('TransportBlock',bits),llr,cfg), ...
     'sixgr:phy:harq:ULReceiverCodingLayoutRequired');
 ok=true;
+end
+
+function [bits,err,diagnostics]=localPublicDecode(coded,A,rate,sch,rv)
+G=6*ceil(2*sch.N*sch.C/6);
+matched=nrRateMatchLDPC(coded,G,rv,'64QAM',1);
+decoder=nrULSCHDecoder('MultipleHARQProcesses',false,'TargetCodeRate',rate, ...
+    'TransportBlockLength',A,'LDPCDecodingAlgorithm','Normalized min-sum', ...
+    'MaximumLDPCIterationCount',25);
+[bits,err]=decoder(20*(1-2*double(matched)),'64QAM',1,rv);
+diagnostics=info(decoder);
 end
 
 function localReject(fn,id)

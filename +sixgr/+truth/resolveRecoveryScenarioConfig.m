@@ -218,7 +218,12 @@ catch ME
         contains(string(ME.message), "'interval_method'");
     legacyInactiveFeedbackDelayGap = ...
         localLegacyInactiveFeedbackDelayGap(data, ME);
-    if ~(legacyIntervalGap || legacyInactiveFeedbackDelayGap)
+    legacyEnergyIdleFractionGap = ...
+        string(ME.identifier) == "sixgr:lls6g:config:MissingField" && ...
+        contains(string(ME.message), "'energy_efficiency.bs_rf_chain_idle_power_fraction'") && ...
+        isfield(data,'energy_efficiency') && ...
+        ~isfield(data.energy_efficiency,'bs_rf_chain_idle_power_fraction');
+    if ~(legacyIntervalGap || legacyInactiveFeedbackDelayGap || legacyEnergyIdleFractionGap)
         rethrow(ME);
     end
     % The snapshot is immutable execution evidence, not a candidate for a
@@ -231,9 +236,15 @@ catch ME
     compatibility.Ok = false;
     if legacyIntervalGap
         compatibility.Status = "legacy_fixed_link_interval_method_missing";
-    else
+    elseif legacyInactiveFeedbackDelayGap
         compatibility.Status = ...
             "legacy_inactive_link_adaptation_feedback_delay_missing";
+    else
+        % Old physical evidence remains recoverable, but does NOT acquire a
+        % new hardware-power assumption. resolveLLSEnergyModelConfig reports
+        % its missing operand and withholds endpoint-energy qualification.
+        % New launches still require the full current scenario schema.
+        compatibility.Status = "legacy_energy_idle_power_fraction_missing";
     end
     compatibility.Identifier = string(ME.identifier);
     compatibility.Message = string(ME.message);

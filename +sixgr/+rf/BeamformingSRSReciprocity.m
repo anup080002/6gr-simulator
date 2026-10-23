@@ -8,10 +8,12 @@ classdef BeamformingSRSReciprocity
 % Design goals:
 % - Reuse 5G Toolbox estimation functions (nrSRS/nrSRSIndices/nrChannelEstimate)
 % - Keep a small, clean API for the rest of the simulator
-% - Provide a robust fallback when channel estimate is already available
+% - Accept an explicitly supplied channel estimate without a fallback oracle
 %
 % NOTE: This is not a full NR procedure implementation. It is a beamformer
-% building block used by Link-level and Hybrid simulation.
+% building block used by Link-level and Hybrid simulation. Reciprocity assumes
+% calibrated TDD RF (or an explicitly ideal RF model); this is not a CSI PMI
+% codebook, and coherent wideband averaging is not a per-PRB estimator.
 
     methods(Static)
 
@@ -57,7 +59,7 @@ classdef BeamformingSRSReciprocity
                 [Hest, nVar] = nrChannelEstimate(carrier, rxGrid, refInd, refSym, "CDMLengths", opts.cdmLengths);
             end
 
-            out = BeamformingSRSReciprocity.fromHest(Hest, opts.nLayers, opts.method);
+            out = sixgr.rf.BeamformingSRSReciprocity.fromHest(Hest, opts.nLayers, opts.method);
             out.NoiseVar = nVar;
             out.RefInd = refInd;
             out.RefSym = refSym;
@@ -81,10 +83,10 @@ classdef BeamformingSRSReciprocity
                 method (1,:) char = "SVD"
             end
 
-            Hbar = BeamformingSRSReciprocity.averageHest(Hest);
+            Hbar = sixgr.rf.BeamformingSRSReciprocity.averageHest(Hest);
             Hdl = Hbar.'; % Reciprocity mapping (UE Rx x gNB Tx)
 
-            W = BeamformingSRSReciprocity.computePrecoderFromHdl(Hdl, nLayers, method);
+            W = sixgr.rf.BeamformingSRSReciprocity.computePrecoderFromHdl(Hdl, nLayers, method);
 
             out = struct();
             out.W = W;
@@ -92,6 +94,10 @@ classdef BeamformingSRSReciprocity
             out.nLayers = nLayers;
             out.Hbar = Hbar;
             out.Hdl = Hdl;
+            out.ChannelReduction = "coherent_wideband_mean_of_received_estimate";
+            out.ReciprocityAssumption = "calibrated_TDD_RF_or_explicit_ideal_reciprocity";
+            out.PowerNormalization = "unit_norm_per_layer_column_not_total_transmit_power";
+            out.PrecoderFamily = "non_codebook_linear_beamformer_not_NR_PMI";
         end
 
         function out = fromMeasuredSRS(measurement, cfg, currentSlot)
@@ -131,19 +137,14 @@ classdef BeamformingSRSReciprocity
         function Hbar = averageHest(Hest)
             %AVERAGEHEST Average channel estimate over subcarriers and OFDM symbols.
 
-            sz = size(Hest);
-            if numel(sz) < 4
-                error("BeamformingSRSReciprocity:BadHest","Hest must be at least 4-D: [Nsc x Nsym x Nr x Nt].");
+            if ~(isnumeric(Hest) && ~isempty(Hest) && ndims(Hest)<=4 ...
+                    && all(isfinite(Hest),'all'))
+                error("BeamformingSRSReciprocity:BadHest", ...
+                    "Hest must be finite [Nsc x Nsym x Nr x Nt], with implicit trailing singleton dimensions allowed.");
             end
-
-            % Average over first two dimensions
-            Hbar = squeeze(mean(mean(Hest, 1), 2)); % [Nr x Nt]
-            if ~ismatrix(Hbar)
-                % If squeeze produced unexpected dims, force reshape
-                Nr = sz(3);
-                Nt = sz(4);
-                Hbar = reshape(Hbar, [Nr Nt]);
-            end
+            % MATLAB omits trailing singleton dimensions. squeeze additionally
+            % transposes the intended shape when Nr=1 and Nt>1. Keep axes.
+            Hbar = reshape(mean(mean(Hest,1),2),size(Hest,3),size(Hest,4));
         end
 
         function W = computePrecoderFromHdl(Hdl, nLayers, method)
@@ -160,29 +161,38 @@ classdef BeamformingSRSReciprocity
 
             m = upper(string(method));
             [NrUE, Ntx] = size(Hdl);
-
+            if ~ismatrix(Hdl) || isempty(Hdl) || any(~isfinite(Hdl),'all')
+                error("BeamformingSRSReciprocity:BadChannel", ...
+                    "Hdl must be a finite nonempty receiver-by-transmitter matrix.");
+            end
             if nLayers > min(NrUE, Ntx)
-                warning("BeamformingSRSReciprocity:ReduceLayers", ...
-                    "Requested nLayers=%d exceeds min(NrUE,Ntx)=%d. Clipping.", nLayers, min(NrUE,Ntx));
-                nLayers = min(NrUE, Ntx);
+                error("BeamformingSRSReciprocity:InvalidLayers", ...
+                    "Requested nLayers=%d exceeds min(NrUE,Ntx)=%d; rank selection must occur upstream.", nLayers, min(NrUE,Ntx));
             end
 
             switch m
-                case {"SVD","MRT"}
+                case "SVD"
                     % Dominant right singular vectors of Hdl
-                    [~,~,V] = svd(Hdl, "econ");
-                    W = V(:, 1:nLayers);
-
-                case "ZF"
-                    % Simple ZF precoder (single-user): W = H^H (H H^H)^-1
-                    G = Hdl * Hdl';
-                    Wfull = (Hdl') / (G + 1e-12*eye(size(G)));
-                    % Use first nLayers columns
-                    if size(Wfull,2) >= nLayers
-                        W = Wfull(:, 1:nLayers);
-                    else
-                        W = Wfull;
+                    [~,D,V] = svd(Hdl, "econ");
+                    if D(nLayers,nLayers) <= max(size(Hdl))*eps(norm(Hdl,2))
+                        error("BeamformingSRSReciprocity:RankDeficientSVD", ...
+                            "Requested SVD stream is in the numerical channel nullspace.");
                     end
+                    W = V(:, 1:nLayers);
+                case "MRT"
+                    % Matched transmission to the selected receive streams.
+                    % Unlike SVD this does not promise inter-stream nulling.
+                    W = Hdl(1:nLayers,:)';
+                case "ZF"
+                    % Hsel*Wraw=I. No hidden diagonal loading: regularized ZF
+                    % is a different receiver-policy choice and needs a name.
+                    selected = Hdl(1:nLayers,:);
+                    if rank(selected) < nLayers
+                        error("BeamformingSRSReciprocity:RankDeficientZF", ...
+                            "Selected channel rows cannot support the requested ZF streams.");
+                    end
+                    [Q,R] = qr(selected',0);
+                    W = Q/R';
 
                 otherwise
                     error("BeamformingSRSReciprocity:BadMethod","Unknown method: %s", method);
@@ -191,9 +201,11 @@ classdef BeamformingSRSReciprocity
             % Normalize columns
             for i = 1:size(W,2)
                 ni = norm(W(:,i));
-                if ni > 0
-                    W(:,i) = W(:,i) ./ ni;
+                if ~(isfinite(ni) && ni > 0)
+                    error("BeamformingSRSReciprocity:ZeroPrecoder", ...
+                        "Requested stream has no finite nonzero precoding vector.");
                 end
+                W(:,i) = W(:,i) ./ ni;
             end
         end
 

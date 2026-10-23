@@ -1,20 +1,352 @@
 # SixGR Foundation v2
 
+## 23 October 2026: consolidated core repairs and verification boundary
+
+All implementation work is in this main checkout. Production MATLAB code lives
+under `+sixgr/`; `+sixgr/+truth/` is the shared waveform/runtime orchestration
+package, not a second simulator or a replacement for the PHY in `+sixgr/+phy/`.
+
+Recent repairs include the canonical pending-CSI clock schema in
+[`CoupledTruthRuntime.m`](+sixgr/+truth/CoupledTruthRuntime.m), executed-carrier
+SFN in the CSI-RS trial producers, and public clock/EVM/estimator provenance in
+[`buildLLSPublicOutputTables.m`](+sixgr/+truth/buildLLSPublicOutputTables.m).
+Receiver observations and prior failed runs are not rewritten to make tests pass.
+
+JSON files have different roles: runtime manifests and observation receipts
+identify their original samples/parameters; test receipts under `logs/` record
+pass/fail outcomes, source hashes, evidence paths and qualification limits.
+Documentation JSON files supply the HTML guide's catalogs. None of these is a
+substitute for a production implementation or a decoded physical measurement.
+Generated logs, IQ, results and test receipts remain local under the existing
+ignore rules; source, YAML, tests, documentation and the issue ledger are versioned.
+
+Latest bounded verification: nine public clock/measurement groups and two
+adjacent export regressions pass; actual independent CSI-RS reception/clock
+checks pass; all 15 UL quality/spatial-age cases pass; the periodic CSI refresh
+after UL quality regression passes (v146, terminal exit 0). The retained v141
+physical run has one rank-4/MCS-28 PUSCH CRC success, then a later CSI refresh
+failure. Its repaired full transition sequence has **not** been rerun.
+
+**Not a release qualification:** the old embedded-CSI calibration harness still
+lacks the explicit selected precoder required by strict multi-port operation.
+Full n40 execution, all P0 closure, statistical accuracy and full SLS acceptance
+remain open. See the [row-by-row HTML status](docs/lls/lls_gap_status_20261023.html)
+and [RCA ledger](docs/lls/h4_100mhz_20261015_issue_status.csv).
+
+Focused checks (no scenario campaign and no `testAll`):
+
+```powershell
+matlab -batch "setup6GRSimToolkit('Verbose',false); assert(testPeriodicCSIRefreshAfterULQuality()); assert(testULSpatialQualityFeedbackIsolation()); assert(testLLSPublicClockAndMeasurementProvenance());"
+```
+
+The no-argument public-table test uses declared adapter inputs. Supply the
+original retained CSV explicitly to that test for its additional hash-checked
+v140 replay; do not create substitute historical data. Full-band/scenario and
+statistical commands elsewhere in this README are not claims of completed runs.
+
+## Repository 3GPP / LLS review agent
+
+The project-local [`threegpp_lls`](.codex/agents/threegpp_lls.toml) agent uses
+[`$threegpp-lls-review`](.agents/skills/threegpp-lls-review/SKILL.md) for
+versioned standards-to-implementation reviews. Ask Codex:
+
+> Use the threegpp_lls agent to audit this YAML and its retained run. Trace
+> NR/6G requirements, antennas/ports/layers, PHY, MAC/RLC/PDCP/RRC, received
+> feedback, measurements and CSV/PNG/WebGUI outputs. Return prioritized RCA,
+> exact production files, missing wiring and evidence required for closure.
+
+The reusable skill can also be invoked directly with `$threegpp-lls-review`.
+It includes a [standards discovery index](.agents/skills/threegpp-lls-review/references/standards.csv),
+an [execution and parameter map](.agents/skills/threegpp-lls-review/references/execution-review.md)
+and [Chair-note coverage guidance](.agents/skills/threegpp-lls-review/references/chair-note-coverage.md).
+All remain in this checkout. The agent inherits the session's model/tools and
+permissions; no separate simulator, service or external API key is installed.
+Review is read-only unless repair or test execution is explicitly assigned.
+Use affected tests only under the current user instruction; no automatic testAll.
+
+This is a review capability, **not certification or a claim that all features
+are implemented**. It distinguishes normative NR, 3GPP models, 6G study
+agreements/candidates, MATLAB behavior and simulator policies. The versioned
+reference map points to authoritative documents; it does not embed every spec.
+Current 6G radio work must be checked against its actual study/draft status,
+not relabelled as completed normative NR/6G behavior.
+
+The supplied RAN1#126 Chair notes match the source hash recorded in
+[`ran1_126_100mhz_output_requirements_source.json`](docs/lls/ran1_126_100mhz_output_requirements_source.json).
+The [37-family requirements map](docs/lls/ran1_126_100mhz_output_requirements.csv)
+specifies content and evidence, but its dated readiness comments are historical.
+One 20-MHz LLS run cannot supply all those studies: selective CBG, no-signal
+detectors, multi-cell SLS, multi-carrier/CLI, WUS, NTN and ISAC need their own
+configured execution and qualification. The older `ran1_126bis_4ghz_only`
+campaign explicitly implements Stage 0 only. No all-scenarios-ready claim is made.
+
+## TX/RX and feedback integration agent
+
+The project-local [`integrator`](.codex/agents/integrator.toml) checks both
+gNB-TX/UE-RX and UE-TX/gNB-RX, then follows decoded feedback into later grants.
+It coordinates with the implementation, 3GPP-review and result-integrity peers.
+Ask Codex:
+
+> Use integrator to review this YAML before a long run. Check every enabled
+> transmitter, independent receiver, feedback consumer and later grant. Trace
+> band/bandwidth/SCS, RE mapping, FFT/CP, clocks, identities, ports/layers,
+> codebooks, coding, HARQ, power and CSV/PNG/WebGUI contracts. Coordinate with
+> the other reviewers; return exact defects, required core repairs and bounded
+> regression coverage. Do not launch a campaign or testAll.
+
+The role uses the [surveyed implementation map](docs/lls/lls_sls_implementation_map.csv)
+and existing issue ledgers, inspecting current production code rather than
+assuming complete repository knowledge. Supported configuration changes must
+remain consistent at both ends; unsupported combinations must be identified
+before execution. LLS waveform results and calibrated SLS estimates stay distinct.
+Its checks distinguish software/interface failures from valid CRC failures,
+misses and DTX. Review reduces integration risk; it does not guarantee every
+decode passes or certify all configurations. Repairs and MATLAB execution need
+explicit assignment and coordinated file ownership. Everything stays in this
+checkout; the role inherits the session's model and permissions.
+
+Custom role files follow the [official Codex subagent format](https://learn.chatgpt.com/docs/agent-configuration/subagents).
+
+## 22 October 2026: n40 / 20 MHz / uniform 30 kHz local TDD configuration
+
+The current requested child is
+[`lls_tdd_n40_20mhz_64txru_4rx_cdlc100_impaired.yaml`](simulator/configs/scenarios/lls_tdd_n40_20mhz_64txru_4rx_cdlc100_impaired.yaml).
+The user selected **2.350 GHz / standard terrestrial NR TDD band n40** instead
+of an exact 2.000 GHz research carrier. The older 4 GHz child is retained as
+a reusable configuration, not launched or silently relabelled.
+The selected SSB, common control, DL/UL BWP, reference signals and short B4
+PRACH all use **30 kHz**. Mixed SSB30/data15 is legal NR but is not the selected
+run. n40's synchronization raster specifies 30-kHz Case C, so forcing a 15-kHz
+SSB is not the standard n40 configuration. The all-15-kHz option would require
+a different suitable band and access configuration, not just one changed key.
+It is a **fresh 60-slot / 30-ms integration run**, not a continuation of the 100 MHz
+checkpoint. Earlier dated statuses below describe historical attempts.
+
+**Uniform-30-kHz focused checks pass:** `test20MHzConnectedTDDConfiguration`,
+`test20MHzFullSymbolDataAllocation` (ranks 1/2/4, including the SSB collision
+guard) and `test20MHzUniformNumerologyBroadcast` (real PBCH, SI-RNTI DCI and
+SIB1 decoding on a declared wired observation). Receipts are
+`logs/20mhz_uniform30_preflight_20261022_v1.log` (configuration pass; the two
+old test assumptions failed) and `logs/20mhz_uniform30_preflight_20261022_v2.log`
+(both corrected affected checks pass). Neither receiver thresholds nor
+production collision guards were relaxed. The full 60-slot fading/RF run,
+adaptation and final publication remain unverified; the command below is not
+an accepted run receipt.
+
+**Absolute-power gate (22 October):** SRS now uses its dedicated configured
+SSB reference, decoded SIB1 reference power and UE-filtered received RSRP,
+not generated geometry loss. Four focused reference/export tests pass in
+`logs/srs_absolute_power_20261022_v1.log`. The one-transmission waveform check
+is bounded evidence, not full access qualification. Repeated-grant PUSCH/SRS
+closed-loop correction-state continuity is still an identified core gap
+(`N40-PWR-03` in the issue ledger); the new absolute-power run has not been
+launched or declared ready. No testAll was run.
+
+**HARQ timing repair:** the production adapter previously reused the pos0
+N1 allowance for allocations with additional DM-RS. The retained reproducer
+(`logs/20mhz_n1_reproducer_20261022.log`) shows 10 instead of the required 13
+nominal-symbol units at 30 kHz. `pdschProcessingTime.m` now derives N1 and
+d1,1 from the scheduled mapping/DM-RS, and `TimingRelationEngine.m` applies
+that budget including the actual timing advance. All five focused timing
+checks pass in `logs/20mhz_n1_repair_20261022_v1.log`, including an exact-deadline
+case and a one-Tc-too-early rejection. The YAML's `dmrs-pos0` capability profile
+identifies the catalog base; it does not override the allocation-dependent
+deadline. This implements [TS 38.214 V18.7.0 §5.3/Table 5.3-1](https://www.etsi.org/deliver/etsi_ts/138200_138299/138214/18.07.00_60/ts_138214v180700p.pdf)
+for the declared capability-1 scope, not a measured decoder-latency claim.
+
+| Setting | Executable configuration |
+|---|---|
+| Carrier/grid | 2.350 GHz, n40, NR-ARFCN 470000; 20 MHz, 51 PRBs, normal CP; SSB/data/common SCS 30 kHz |
+| Sampling/frame | FFT 1024, 30.72 MSa/s, 0.5 ms slots; repeating 2.5-ms D,D,D,S(10D/2G/2U),U |
+| Array/layers | 64 gNB TXRU, four-chain UE; measured DL/UL adaptation up to rank 4 |
+| Access | Four active SS/PBCH beams in eight candidate positions, 30 kHz Case C; GSCN 5875 (SSREF 2349.850 MHz); common/SIB1 and B4 PRACH also 30 kHz |
+| DL allocation | Symbols 0–13 (full DL) or 0–9 (special DL); installed CORESET-only unavailable-resource pattern, plus exact reference/common-signal exclusions |
+| UL allocation | Symbols 0–12; SRS at symbol 13, 48/51 PRBs sounded; PUCCH reservations and duplex/processing guards remain |
+| CSI/rank | Eight CSI-RS resources every 10 slots (5 ms), offset 5; reports at offset 8 use the latest causally eligible observation under n_CSI_ref; one valid decoded RI report can authorize a rank increase; no forced rank or transmitter-oracle feedback |
+| Channel/RF | CDL-C/100 ns, configured Doppler, CFO, phase noise, PA, IQ imbalance, timing offset, DAC/ADC and causal AGC retained |
+| Power | Absolute sqrt(mW), 30 dBm gNB full-BWP pre-RF budget / 23 dBm UE limit, UMa NLOS path loss, thermal noise with UE NF 7 dB / gNB NF 5 dB; no forced 40-dB SNR |
+| Output/restart | CSV, MAT, PNG, IQ and final publication retained; live PNG refresh every 10 slots; **runtime checkpoints disabled** |
+
+The grid and n40 SSB follow [TS 38.104 V18.8.0 Tables 5.3.2-1 and 5.4.3.3-1](https://www.etsi.org/deliver/etsi_ts/138100_138199/138104/18.08.00_60/ts_138104v180800p.pdf).
+Type-0 uses the **{30,30} kHz** table, not the mixed-numerology table:
+[TS 38.213 V18.7.0 Table 13-4](https://www.etsi.org/deliver/etsi_ts/138200_138299/138213/18.07.00_60/ts_138213v180700p.pdf).
+Short B4 PRACH and the 48-PRB SRS choice follow
+[TS 38.211 V18.8.0 Tables 6.3.3.1-2 and 6.4.1.4.3-1](https://www.etsi.org/deliver/etsi_ts/138200_138299/138211/18.08.00_60/ts_138211v180800p.pdf).
+The CORESET exclusion uses the configured unavailable-resource mechanism
+in [TS 38.214 §5.1.4.1](https://www.etsi.org/deliver/etsi_ts/138200_138299/138214/18.08.00_60/ts_138214v180800p.pdf),
+not post-coding puncturing. Faster reporting, one-report rank confirmation,
+and CQI smoothing alpha 1 are explicit **simulator scheduling policies**, not
+mandatory NR rules. The latest absolute-power configuration replaces the
+earlier normalized 40-dB operating point; earlier focused receiver receipts
+do not qualify this changed link budget. The power budgets, noise figures,
+12-dB DAC range headroom and 8-dB PA saturation headroom are study assumptions,
+not mandated 3GPP values. Actual post-RF emitted power is measured separately;
+PA compression is not restored. See the [absolute-power documentation](docs/lls/h4_100mhz_guide/index.html#absolute-power-n40)
+for formulas, reference planes and remaining acceptance boundaries. SSB15/common30 or
+SSB30/common15 regression support does not change this selected uniform-SCS YAML.
+
+Compatible physical channels/features remain enabled. Physical beam-failure
+recovery is still unsupported and is not silently claimed by setting a flag.
+This short run cannot establish statistical BLER/HARQ/detector qualification,
+full MAC/RRC conformance, or Keysight hardware readiness.
+
+Windows Command Prompt (use a **new run tag/log name** for every fresh attempt):
+
+```bat
+set "SIXGR_RESULTS_ROOT=E:\SixGRResults"
+set "SIXGR_OUTPUT_BACKEND_OVERRIDE=filesystem"
+cd /d "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main" && "C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -wait -logfile "logs\lls_n40_20mhz_30khz_manual_01.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/lls_tdd_n40_20mhz_64txru_4rx_cdlc100_impaired.yaml','E:\SixGRResults','lls_n40_20mhz_30khz_manual_01'); disp(out); fprintf('RUN_FOLDER=%s\n',char(out.RunFolder)); assert(out.Ok,'Scenario acceptance failed; preserve all evidence.');"
+```
+
+Results are under `E:\SixGRResults\lls\lls_tdd_n40_20mhz_64txru_4rx_cdlc100_impaired\<run tag>`.
+Use the run selector at `http://127.0.0.1:62906/live`. A running/finished PHY
+stage is not final publication acceptance. No `testAll` is authorized for this
+repair; verification is limited to affected tests.
+
+## 21 October 2026: current LLS repair status
+
+All edits remain in this checkout on `main`. The latest retained 4 GHz /
+100 MHz TDD continuation failed at **slot 58 publication**, after 12 DL CRC
+passes through slot 57 and two UL CRC passes at slots 50/55. Its latest
+saved checkpoint is **55**, with **56** as its next slot. That checkpoint
+contains the old CSI/feedback state; it is not an automatically valid restart
+for the subsequent receiver repairs. PID 5716 was already absent when checked.
+Historical IQ/results/logs/checkpoints are preserved. No `testAll` or new
+full scenario was launched for this repair batch. Older dated entries below
+describe earlier attempts, not the latest run status.
+
+### Requested 60-slot run with complete publication
+
+**Selected by the user: continue the existing run, then publish at slot 60.**
+Use [`h4_100_checkpoint45_finish60.yaml`](simulator/configs/runs/h4_100_checkpoint45_finish60.yaml)
+after the affected continuation checks pass. This request restores checkpoint
+45 (next slot 46), before the affected CSI observation; checkpoint 55 is newer
+but contains the unrepaired CSI/feedback state. It explicitly sets
+`finish_after_slot: 60` without changing the saved 100-slot configuration,
+its hash, feedback calendars, or physical samples. The earlier attempt is
+preserved by the verified checkpoint-restoration mechanism, not deleted.
+The execution limit is exported separately in
+`meta/continuation_execution_horizon.json` and
+`reports/csv/continuation_execution_horizon.csv`, and included in the manifest.
+Reports use the bounded execution duration; future feedback is censored, not
+counted as a successful delivery. Actual final receive tails are drained.
+
+```bat
+cd /d "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main" && "C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -wait -logfile "logs\h4_100mhz_checkpoint45_finish60_20261021.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/runs/h4_100_checkpoint45_finish60.yaml','E:\SixGRResults','h4_100mhz_local_e_20261019_v3'); disp(out); fprintf('RUN_FOLDER=%s\n',char(out.RunFolder)); if ~out.Ok, warning('Bounded repair run retained incomplete or failed acceptance checks.'); end;"
+```
+
+This keeps the existing visible run folder:
+`E:\SixGRResults\lls\h4_100_cdlc100_connected_impaired_40db_adaptation\h4_100mhz_local_e_20261019_v3`.
+It is changed-source diagnostic continuation, not a completed 100-slot study
+or statistical qualification. Do not launch it twice concurrently.
+
+For a **fresh** 60-slot run instead (not the selected continuation):
+
+Use the existing
+[`h4_100_cdlc100_connected_impaired_40db_short.yaml`](simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_short.yaml).
+It now inherits the current adaptation scenario, including causal AGC,
+64 gNB elements/four UE chains, adaptive DL/UL rank up to four, 4 GHz,
+100 MHz, 30 kHz SCS, TDD, CDL-C and the enabled RF/measurement paths.
+Only its horizon is shortened: **60 total radio slots = 30 ms**, including
+initial access, not 60 connected-data slots. All duration aliases agree.
+
+CSV, MAT, PNG, summary plots, configuration snapshots, raw IQ, channel
+snapshots and constellations remain enabled. The normal terminal publication
+and analytics pipeline runs after the configured horizon; live plots update
+every five slots without dropping measurements or skipping final exports.
+Final artifact completeness still requires the actual run to finish and its
+publication checks to pass. Measurements for events that never execute are
+not synthesized. The 60-slot YAML has no forced attachment deadline or
+relaxed adaptation/qualification thresholds.
+
+Windows Command Prompt, **fresh run only** (choose a new tag if already used;
+launch after the focused repair checks are accepted):
+
+```bat
+cd /d "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main" && "C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -wait -logfile "logs\h4_100mhz_60slots_20261021_01.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_short.yaml','E:\SixGRResults','h4_100mhz_60slots_20261021_01'); disp(out); fprintf('RUN_FOLDER=%s\n',char(out.RunFolder)); if ~out.Ok, warning('Retained run has failed or incomplete acceptance checks; inspect its reports.'); end;"
+```
+
+Results share one run folder under
+`E:\SixGRResults\lls\h4_100_cdlc100_connected_impaired_40db_short\h4_100mhz_60slots_20261021_01\`,
+with channel-specific subfolders and the normal manifests/reports. The launcher
+log stays in the main checkout's `logs` folder. This command does **not** resume
+or overwrite the saved 100-slot run. Its immutable checkpoints cannot simply
+be loaded with a different 60-slot scientific configuration.
+
+**Scope limitation:** for the retained access timing, post-attach CSI reports
+fall at slots 59 and 79. The unchanged two-report rank-increase policy cannot
+be demonstrated by ending at 60; slot 60 is UL, so the first late report also
+does not prove a subsequent adapted DL grant. Short-run publication is useful
+for repair/measurement coverage, not sustained adaptive-throughput or
+statistical BLER qualification. The 100-slot parent remains available for that
+longer verification.
+
+Focused verification: the five configuration/allocation/cadence/mapping
+checks in `logs/lls_repairs/h4_60slot_publication_config_20261021_v1.log`
+pass, including nine native full-band DL/UL transmit mappings at ranks 1/2/4.
+The final full-publication configuration recheck also passes in
+`logs/lls_repairs/h4_60slot_publication_config_final_20261021.log`.
+The receiver repairs pass ten affected checks in
+`logs/lls_repairs/h4_csi_alias_after_20261021_v1.log`; six 273-PRB,
+64-TX/four-RX CSI waveform observations recover the test channels' ranks
+1/2/4 and respect two-report admission. Those observations use explicitly
+declared static channels and decoded-report API delivery, **not physical UCI
+or a complete scenario**. End-to-end CDL/RF feedback-to-data acceptance and
+the new run's final files remain pending. No full suite was executed.
+
+Array geometry, polarization, logical-port/layer contracts and codebook
+checks are recorded in the [issue ledger](docs/lls/h4_100mhz_20261015_issue_status.csv).
+Eight affected power/configuration/accounting checks now pass. The core PA
+efficiency clamp is removed, the RF-chain awake power fraction is configurable
+in YAML, and load-independent energy equations no longer require invented
+PRB occupancy. Circuit-power coefficients remain engineering assumptions,
+not measured hardware or mandatory 3GPP values. Complete elapsed-time
+always-awake accounting, sustained decoded-feedback adaptation, final
+publication and statistical qualification remain pending.
+
+The latest follow-up batch passes **nine affected checks**
+(`logs/lls_repairs/h4_awake_binding_after_20261021.log`). The actual H4 family
+now inherits `energy/always_awake_baseline.yaml`; an earlier correction to a
+different causal-access YAML did not reach this TDD inheritance chain.
+`EnergyModelUE.m` also rejects negative/nonfinite power and contradictory
+non-TX states instead of clamping or ignoring those inputs. Valid TX
+arithmetic is unchanged. This new configured policy does **not** overwrite
+checkpoint 49 or supply missing historical energy observations.
+
+Four affected checkpoint tests also pass, including exact native CDL/RF/noise
+and LDPC/HARQ continuation. New checkpoints have a checksum-bound small
+configuration preflight; this does not migrate checkpoint 49 or waive its
+scientific-configuration guard. The guide passes 27 Python checks and a
+47-chapter Chromium check with 172 source links and no browser errors.
+
+The [HTML guide](docs/lls/h4_100mhz_guide/README.md) documents the exact
+implementation, standards links, configurable model equation and remaining
+boundaries. The dated execution notes below are historical, not current
+process status or permission to resume a changed scientific configuration.
+
 ## 20 October 2026: consolidated main codebase and current H4 commands
 
-This is the current status; older dated sections below are retained as history.
+This section retains the 20 October status and commands as history.
 All MATLAB, Python, YAML, tests and documentation use the **single `main`
 checkout**. External drives hold simulation evidence, not a second codebase.
 Committing these repairs is **not** a claim of complete scenario acceptance.
 
-**Latest execution update (20 October, observed 10:01 UTC):** a repaired
-checkpoint-45 continuation has completed restoration and entered slot **46**.
-This is a dated observation, not a live completion receipt; integrated slot50,
-sustained adaptation and terminal acceptance remain pending. Its launcher is
-`logs/lls_repairs/h4_checkpoint45_resume_20261020_v2/launcher.log`.
-During restoration the WebGUI could still show the previous attempt's slot50
-failure because the visible run folder had not yet been switched. Do not
-erase that failure or mistake file restoration for completed PHY slots.
+**Latest execution update (20 October, 14:43 UTC):** checkpoint **46** was
+committed and independently SHA-256 verified before stopping MATLAB PID24156
+at the requested repair boundary. The next slot is **47**. No evidence was
+deleted. The 13,048,376,626-byte state has SHA-256
+`cf991457d1aff3812d0d3a6afe61b95772dd1e220c817fd30356cec22e4b5fa9`.
+Its launcher is `logs/lls_repairs/h4_checkpoint45_resume_20261020_v3/launcher_external_root.log`.
+Scheduling/checkpoint/live-publication repairs pass **19 affected MATLAB
+tests** across `h4_checkpoint46_performance_20261020_v1` and
+`h4_checkpoint46_followup_20261020_v1` under `logs/lls_repairs`, plus
+**87 Python documentation/slot-window checks**. At15:06 UTC the same run
+was relaunched from checkpoint46 using
+`logs/lls_repairs/h4_checkpoint46_performance_20261020_v1/resume.yaml`;
+launcher: `resume_launcher.log` beside it. Launching/restoring is not a
+completed slot47. No `testAll` was run. Actual integrated speed/memory,
+slot50, sustained adaptation, final exports and statistical qualification
+remain pending.
 
 **Earlier attempt:** the checkpoint-45 continuation failed at slot 50 with
 `sixgr:truth:LateSharedPUCCHFeedback`. Its recovery
@@ -97,16 +429,34 @@ application-file links explicitly open committed GitHub main.
   [measurement/export planes](http://127.0.0.1:62907/#measurement-contract),
   [checkpoint restoration](http://127.0.0.1:62907/#restart-flow) and
   [PASS/FAIL authority](http://127.0.0.1:62907/#threshold-authority).
+- [Explain the realtime dashboard](http://127.0.0.1:62907/#dashboard-reading):
+  row populations, field meanings, units, causal clocks, blanks, detection,
+  decoded feedback, actual rank, QCL/TCI, RF and evidence limitations.
+- [CSV/PNG output atlas](http://127.0.0.1:62907/#output-atlas) and
+  [plot interpretation](http://127.0.0.1:62907/#result-reading):
+  searchable exact column mappings, raw versus plotted CSVs, live/final
+  lineage and a dated retained-file inventory. Presence is not qualification.
+- [3GPP link-level reference crosswalk](http://127.0.0.1:62907/#standards-crosswalk):
+  18 areas connect pinned specification clauses to MATLAB/SixGR flows,
+  production filenames, structural matches, design choices and remaining
+  verification. Includes TR 38.901 link-level models, applicable BS FRC
+  references and independent MATLAB DL/UL throughput example workflows.
+- [Symbol-allocation efficiency and deferred repairs](http://127.0.0.1:62907/#resource-efficiency):
+  explains why the installed DL/UL lengths are legal but conservative.
+  OPEN items H4-196–198 cover early-symbol reuse, occasion-dependent UL
+  allocation and measured efficiency verification; the active run is unchanged.
 
 The source-linked [guide README](docs/lls/h4_100mhz_guide/README.md) explains
 configuration catalogs, snapshot refresh and focused browser verification.
 The guide's learning calculators do not generate or overwrite measured CSVs.
-Verification: **41 chapters**, approximately **24,400 words**, **42 documented
-methods**, **15 detailed walkthroughs**, **148 verified local source links**,
-and zero browser errors. **437 focused Python checks passed**, including 22
-documentation checks. Existing MATLAB repair receipts remain scope-labelled;
-this documentation/consolidation update did not launch `testAll` or another
-MATLAB scenario.
+The expanded guide has **46 chapters**, **42 documented methods**,
+**15 detailed walkthroughs** and **19 dashboard interpretation families**.
+The 20 October documentation check passed **27 Python checks** and browser
+navigation/filter/source checks with **161 local source links** and no browser
+errors. The earlier **437-test focused consolidation receipt** is a separate,
+historical verification scope, not a new PHY result. Existing MATLAB repair
+receipts remain scope-labelled; this documentation update did not launch
+`testAll` or another MATLAB scenario.
 
 ### Fresh 100 MHz run: Windows Command Prompt
 
@@ -174,20 +524,37 @@ Checkpoint restoration verifies large retained files before PHY progression;
 the observed checkpoint-45 dependency set contains 1,196 files totaling 41.51 GiB.
 Do not start a second MATLAB writer because the startup log is temporarily quiet.
 
-The adaptation YAML now requests a checkpoint after **every completed slot**
-for subsequent launches/resumes. The failed continuation had loaded
-the earlier five-slot interval; editing YAML did not hot-reconfigure it or
-create an already-passed slot-49 checkpoint. More frequent saves add hashing
-and serialization time, but preserve the radio/channel/RF/RNG behavior.
+The adaptation YAML now requests checkpoints at **49, 52, 55, …**:
+
+```yaml
+run_control:
+  runtime_checkpoint_enable: true
+  checkpoint_first_slot: 49
+  checkpoint_every_slots: 3
+```
+
+The anchor is one-based completed-slot numbering, not multiples of three.
+`checkpoint_first_slot: 0` retains the legacy multiples-of-period convention.
+This is recovery policy, not a 3GPP radio parameter. Existing loaded processes
+are not hot-reconfigured. After-slot-46 continues with47; no saved49 is claimed.
 The restart binding now explicitly carries requested operational controls
 past restoration of the canonical original configuration. Previously that
 restoration discarded the new cadence. The original scientific/config hash
 still owns pending grants; applied operational settings are recorded separately
 in `meta/checkpoint_resume.json` and the internal runtime configuration.
-The updated YAML/launcher guards pass **79 Python checks**. The affected
-MATLAB timing/configuration preflight now passes, including the resolved
-every-slot checkpoint binding. This is not proof of an actually saved
-slot-49 checkpoint. No extra MATLAB process was started alongside the scenario.
+The new cadence and performance changes need their own affected-test receipts;
+earlier every-slot checks do not qualify this changed policy. Schema-v2
+checkpoints share checksum-verified private file versions under their
+`objects` directory; mutable producers are never hard-linked to snapshots.
+Legacy schema-v1 checkpoints remain readable. Rolling state retention does
+not garbage-collect shared objects: preserve them with all dependent receipts.
+The compression default remains unchanged; benchmark results are not a claim
+of full-band continuation equivalence or a measured whole-run speedup.
+The isolated273-PRB/64-port native-OFDM fixture measured11.65s compressed
+versus5.83s uncompressed save/verified publication, with115.5/120.1MiB files
+and1.64/1.65GiB OS process peak commit. This comparison used C:, not the
+full13GB checkpoint on E:. See
+[scope, timings and memory methodology](docs/lls/h4_checkpoint45_repairs_20261020.md#checkpoint46-completed-subsequent-performance-repairs).
 
 For the external results tree, start the GUI in a **separate Command Prompt**
 from this same checkout, only if port 62906 is not already serving it:
@@ -1894,7 +2261,8 @@ do not start a duplicate while an adaptation run is active.
 #### Completed-slot restart checkpoints
 
 The adaptation YAML enables `run_control.runtime_checkpoint_enable` with
-`checkpoint_every_slots: 1` for new launches/resumes. The default
+`checkpoint_first_slot: 49` and `checkpoint_every_slots: 3`: completed slots
+49, 52, 55, and so on. The default
 `runtime_checkpoint_keep: 3` retains the latest three completed save points.
 A failure during one-based slot 50 can continue from the saved **end of
 slot 49**, provided that checkpoint finished writing and passed its integrity
@@ -1913,8 +2281,9 @@ The previous failed attempt is preserved under a `recovery_*` directory in
 that private checkpoint store; it is not overwritten or deleted. Rolling
 retention removes only older generated checkpoint snapshots, not run evidence.
 
-To continue, stop the failed process first, then set the following in the
-same YAML and invoke the same `run_6g_phy_lls_single` command:
+For an unchanged scientific configuration, stop the failed process first,
+then set the following in the same YAML and invoke the same
+`run_6g_phy_lls_single` command:
 
 ```yaml
 run_control:
@@ -1932,6 +2301,42 @@ attempt location are recorded in `meta/checkpoint_resume.json` and the scenario
 manifest. Changes to bandwidth, channel, seeds, antenna/RF parameters, traffic,
 timing or the scheduling horizon require a fresh run. Do not use a checkpoint
 that already contains state produced by the defect being repaired.
+
+If current YAML defaults/inheritance have changed, use an explicit
+[saved-configuration continuation request](simulator/configs/templates/checkpoint_continuation.yaml)
+instead of merging new scientific settings into the old run. This request
+pins the original checkpoint-state SHA-256 and configuration hash. The runner
+verifies the immutable resolved-config artifacts, native saved configuration,
+MATLAB/source identity and every checkpoint dependency before restoring the
+run folder. It loads native state once. Only the existing operational
+allow-list (checkpoint retention/cadence, live publication cadence and stage
+profiling) may change. Antenna, channel, RF, traffic, energy policy, seeds and
+slot horizon cannot be overridden through this request.
+
+The machine-local request for the preserved E: run is
+[`h4_100_checkpoint49_repair.yaml`](simulator/configs/runs/h4_100_checkpoint49_repair.yaml).
+It resumes execution at slot 50, saves at completed slots 52/55/etc., and
+retains up to 100 checkpoint generations to preserve the existing checkpoints
+during this bounded 100-slot diagnostic. Do not launch it while another owner
+of that run is active. Windows Command Prompt, from this repository:
+
+```bat
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -wait -logfile "logs\h4_checkpoint49_saved_config_manual.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/runs/h4_100_checkpoint49_repair.yaml','E:/SixGRResults','h4_checkpoint49_saved_config'); disp(out);"
+```
+
+The checkpoint's original run folder/tag remain authoritative; this does not
+start a second scenario or codebase. Use a new launcher-log filename for each
+attempt. This request is machine-local: the checkpoint contains absolute
+run/archive paths. Do not assume copying it to a server relocates native
+state. A server needs the checkpoint **and all its dependencies at their
+recorded locations**, or a separately verified relocation procedure. See the
+server handoff instructions above for fresh execution and evidence transfer.
+Saved-configuration replay does **not** adopt the new always-awake YAML or
+repair missing historical measurements. It is not final-source or statistical
+qualification. Seven affected checkpoint checks passed, with final reruns of
+the request-integrity and native CDL/RF/HARQ tests plus a read-only build of
+the real saved 100 MHz configuration on 21 October 2026; integrated replay
+and whole-run publication still require their own acceptance.
 
 Production restart also requires the actual runtime-call ledger captured at
 the same completed-slot boundary. Checkpoint creation now flushes this

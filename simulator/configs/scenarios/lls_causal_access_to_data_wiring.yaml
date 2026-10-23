@@ -4921,6 +4921,9 @@ energy_efficiency:
   rf_chain_count: 2
   bs_static_power_w: 200
   bs_per_rf_chain_power_w: 10
+  # Explicit engineering idle-state operand, matching the energy catalog;
+  # not a measured device value or a 3GPP-mandated circuit-power fraction.
+  bs_rf_chain_idle_power_fraction: 0.2
   bs_sleep_power_w: 20
   bs_pa_efficiency: 0.35
   ue_idle_power_w: 1
@@ -4931,7 +4934,9 @@ energy_efficiency:
   ue_tx_power_dbm: 23
   bs_rf_chain_count: 2
   ue_rf_chain_count: 2
-  sleep_state_model: "micro_sleep"
+  # Keep the legacy surface consistent with the authored no-sleep baseline
+  # in energy_and_complexity. Sleep experiments override both via aliases.
+  sleep_state_model: "none"
   duty_cycle_logging: true
   energy_per_bit_reporting: true
   ai_compute_energy_per_flop_score: 1.0e-06
@@ -4942,7 +4947,7 @@ energy_efficiency:
   blind_decode_reduction_enabled: false
   cross_slot_scheduling_enabled: false
   active_sleep_tracking_enabled: false
-  race_to_sleep_enabled: true
+  race_to_sleep_enabled: false
   per_block_processing_energy_enabled: true
   rf_chain_energy_enabled: true
   wideband_narrowband_tradeoff_enabled: false

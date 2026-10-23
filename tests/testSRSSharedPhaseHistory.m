@@ -1,6 +1,8 @@
 function [ok,receptions]=testSRSSharedPhaseHistory()
-% Two physically generated SRS occasions through the production completion
-% helper. Declared aligned identity link, not acquired access/RF qualification.
+% Two native SRS received-IQ COMPONENT occasions on a declared aligned link.
+% The practical receiver and phase-history arithmetic are real; this fixture
+% has no original shared physical owner/dependency proof. It must not qualify
+% composite LS as isolated SRS truth or emit qualified SRS EVM pairs.
 setup6GRSimToolkit('Verbose',false);
 source=sixgr.lls6g.config.loadScenarioConfig( ...
     'simulator/configs/scenarios/lls_tdd_5mhz_four_port_shared_awgn_12db.yaml');
@@ -9,9 +11,9 @@ mkdir(folder); base=sixgr.lls6g.buildInternalConfig(source,folder);
 base.phy.srs.runtimeChannelEstimator='nr_channel_estimate';
 multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
 state=sixgr.truth.CoupledTruthRuntime.initialize(base,folder,multi,struct(),40);
-state.SharedWaveformStream=struct('Physical',struct('ConfigurationEpoch','declared_SRS_component_epoch'));
 rows=table();
 receptions=cell(0,1);
+history=struct();
 for slot=[5 10]
     cfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(base,slot,1);
     args={'SlotIndex',slot,'TrialIndex',1,'SNR_dB',40,'TimingAdvanceSamples',0};
@@ -43,11 +45,18 @@ for slot=[5 10]
         'TransmitterObservation',buffer(x,p.StartSample,fs),'Replay',replay, ...
         'DesiredReferenceObservation',buffer(desired,p.ReceiveStartSample,fs), ...
         'DesiredReferenceEvidence',evidence,'ChannelState',struct('Source',"declared_identity_link"));
-    item=struct('UE',1,'Context',struct('Config',cfg,'Arguments',{args},'ServingCell',1));
-    before=state;
-    [state,out]=sixgr.truth.receiveSharedSRSMeasurement(state,item,input);
+    input.PilotPhaseContextID=sixgr.truth.srsPilotPhaseContextID(cfg,7,1,1);
+    input.PilotPhaseHistory=history;
+    out=sixgr.link.runSRSChannelEstimation(cfg,args{:},'ReceivedContext',input);
+    history=out.PilotPhaseTrackingState;
     receptions{end+1,1}=struct('Config',cfg,'Output',out); %#ok<AGROW>
     assert(out.ChannelEstimateAvailable && isnan(out.EstimatedDopplerHz) && isnan(out.InjectedDoppler_Hz));
+    assert(out.SRSRuntimeEvidenceUsable && out.StrictReceiverEvidenceOk && ...
+        isfinite(out.EstimatedRI) && isfinite(out.EstimatedTPMI) && ...
+        ~out.ChannelNMSEReferenceAvailable && ~out.TrueChannelOracleAvailable && ...
+        ~out.StrictOk && ~out.Ok && isnan(out.NMSE_dB) && isnan(out.TrueChannelNMSE_dB) && ...
+        isnan(out.EVM_rms) && isempty(out.PilotEVMPairs) && ...
+        isfinite(out.CompositeDesiredLinkNMSE_dB));
     row=struct2table(sixgr.link.srsPilotPhaseEvidence(out)); row.Slot=slot;
     if slot==5
         assert(isnan(out.PilotCommonPhaseRate_Hz) && out.PilotPhasePairCount==0);
@@ -57,7 +66,7 @@ for slot=[5 10]
         assert(abs(out.PilotPhaseObservationSeparation_s-.005)<2/fs);
         % Reference-scoring metadata cannot drive the measured rate.
         input.DesiredReferenceObservation=buffer(desired*1i,p.ReceiveStartSample,fs);
-        [~,poisoned]=sixgr.truth.receiveSharedSRSMeasurement(before,item,input);
+        poisoned=sixgr.link.runSRSChannelEstimation(cfg,args{:},'ReceivedContext',input);
         assert(poisoned.PilotCommonPhaseRate_Hz==out.PilotCommonPhaseRate_Hz);
     end
     state.CurrentSlot=slot+1;
@@ -71,7 +80,7 @@ for slot=[5 10]
 end
 sixgr.util.csvWriteTable(fullfile(folder,'srs_trials.csv'),rows,'PreserveSchema',true);
 sixgr.util.csvWriteTable(fullfile(folder,'reference_measurements.csv'),state.ReferenceSignalMeasurementTable,'PreserveSchema',true);
-fprintf('SRS_SHARED_PHASE_HISTORY_PASS occasions=2 common_rate=%g evidence=%s\n',out.PilotCommonPhaseRate_Hz,folder);
+fprintf('SRS_SHARED_PHASE_HISTORY_PASS declared_received_IQ_occasions=2 shared_owner=0 common_rate=%g evidence=%s\n',out.PilotCommonPhaseRate_Hz,folder);
 ok=true;
 end
 

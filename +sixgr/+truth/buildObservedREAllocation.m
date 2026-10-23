@@ -175,9 +175,18 @@ if ~isfinite(cellID)
 end
 ueID = double(p.Results.UEID);
 allocationID = strtrim(string(p.Results.AllocationID));
+assert(isscalar(allocationID) && ~ismissing(allocationID), ...
+    'sixgr:truth:InvalidObservedREAllocationID', ...
+    'An explicit allocation identifier must be one nonmissing string.');
 if strlength(allocationID) == 0
+    % Standalone PHY trials need not have a network UE-index binding.
+    % string(NaN) is <missing> and poisons the entire concatenated key.
+    % Keep ue_id unknown; this token identifies an unbound observation,
+    % not a guessed UE or an RNTI-to-UE mapping.
+    ueToken = "unbound";
+    if isfinite(ueID), ueToken = string(ueID); end
     allocationID = lower(channel) + "_slot_" + string(slot0) + ...
-        "_ue_" + string(ueID);
+        "_ue_" + ueToken;
 end
 
 rows = repmat(localEmptyRow(), 0, 1);

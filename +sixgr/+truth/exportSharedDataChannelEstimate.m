@@ -95,4 +95,9 @@ T.ChannelEstimateReferencePlane=evidence.ReferencePlane;
 T.ChannelEstimateReferenceRFImpairmentsIncluded=logical(evidence.RFImpairmentsIncluded);
 T.ChannelEstimateReferenceUsedByReceiver=false;
 T.ChannelEstimateComparedValues=score.ComparedComplexValueCount;
+for field=string(fieldnames(score)).'
+    if startsWith(field,"ChannelSGCS"), T.(field)=score.(field); end
+end
+T.ChannelSGCSReferencePlane=evidence.ReferencePlane;
+T.ChannelSGCSReferenceSource=evidence.Source;
 end

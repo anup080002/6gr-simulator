@@ -21,11 +21,12 @@ meta:
 # are retained; they are not shortened or bypassed to force adaptation.
 run_control:
   # Completed-slot checkpoints retain PHY/protocol state, not just CSVs.
-  # Save every completed slot: after slot 49 resumes with slot 50. This is
+  # Save after slots 49,52,55,...: after slot 49 resumes with slot 50. This is
   # an execution/recovery policy, not a change to channel/RF or radio clocks.
   # Already running MATLAB instances retain their loaded checkpoint cadence.
   runtime_checkpoint_enable: true
-  checkpoint_every_slots: 1
+  checkpoint_first_slot: 49
+  checkpoint_every_slots: 3
   total_slots: 100
   total_time_ms: 50
   measurement_slots: 100

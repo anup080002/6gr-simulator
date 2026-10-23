@@ -19,9 +19,10 @@ cfgRx = sixgr.phy.ra.localizeRAPUSCHConfig(cfg, raCfg, grant, ...
 rx = puschRx;
 rx.Info = info;
 if logical(puschRx.Ok)
-    payloadBits = int8(puschRx.TransportBlock( ...
-        1:double(tx.RRCSetupCompleteBitLength)));
-    message = sixgr.mac.ra.parseRRCSetupComplete(payloadBits);
+    % The bounded message carries its length in the received bytes. The
+    % parser consumes that message and ignores TB padding; UE TX bookkeeping
+    % must not delimit a successfully decoded gNB transport block.
+    message = sixgr.mac.ra.parseRRCSetupComplete(puschRx.TransportBlock);
 else
     message = struct();
 end

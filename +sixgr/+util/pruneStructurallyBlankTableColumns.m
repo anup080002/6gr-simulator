@@ -27,6 +27,20 @@ normalized = lower(strtrim(string(name)));
 if nargin < 2
     allNames = strings(0, 1);
 end
+% An explicitly unknown processing flag and blank provenance are evidence
+% boundaries, not false outcomes. Keep only supplied contract columns; do
+% not create a missing source or keep unrelated empty measurements.
+uciEvidence=lower(["UCIOnPUSCHFlag","UCIOnPUSCHFlagDefinition", ...
+    "UCIOnPUSCHFlagSource","UCIOnPUSCHFlagStatus", ...
+    "UCIOnPUSCHApplied","UCIOnPUSCHSource","UCIOnPUSCHEvidenceSource", ...
+    "InputUCIOnPUSCHFlag","InputUCIOnPUSCHFlagDefinition", ...
+    "InputUCIOnPUSCHFlagSource","InputUCIOnPUSCHFlagStatus"]);
+uciContext=lower(["PartialReception","CSIPresenceResolved","CSIReportDetected","CSIPart1Usable"]);
+if any(normalized==uciEvidence) || ...
+        (any(ismember(lower(string(allNames)),uciEvidence)) && any(normalized==uciContext))
+    tf=true;
+    return;
+end
 % A blank CRC result is meaningful beside explicit applicability (PRACH
 % has no TB CRC; an applicable but unavailable decode must remain auditable).
 % Preserve the pair without supplying a numeric result or keeping unrelated

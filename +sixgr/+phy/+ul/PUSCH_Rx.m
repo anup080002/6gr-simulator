@@ -19,6 +19,9 @@ function [rx, info] = PUSCH_Rx(rxWaveform, cfg, varargin)
 %     "MaxIterations": LDPC iterations
 %     "Algorithm"   : LDPC algorithm ("Normalized min-sum" by default)
 %     "PHYGrant"    : frozen canonical grant dimensional contract
+%     "HARQSoftBufferLLR", "HARQSoftBufferLayout": retained per-codeword
+%       mother-code state/layout; two-codeword inputs require ordered cells.
+%       The caller owns same-TB/process identity; this PHY API cannot infer it.
 %     "ReceiveCombiningMatrix": frozen Nrx-by-Nout MU receive projection
 %     "ReceiveCombiningMatrixSHA256": expected digest of that projection
 %     "TimingSearchWindowSamples": bounded search in an actual gNB capture
@@ -39,6 +42,9 @@ function [rx, info] = PUSCH_Rx(rxWaveform, cfg, varargin)
 %     RX.CRCError           : true if TB CRC fails
 %     RX.Ok                 : ~CRCError
 %     RX.CodewordLLR        : soft bits before rate recovery
+%     RX.ULSCHCodewordLLRCell: current rate-matched two-codeword observations
+%     RX.CombinedRateRecoveredLLRCell: actual two-codeword decoder inputs
+%     RX.HARQSoftBufferCell : retained two-codeword mother-code state
 %     RX.ChannelEstimate    : H estimate
 %     RX.NoiseVar           : used noise variance
 %     RX.NoiseVarStatus     : "OK" or "NOT_AVAILABLE"
@@ -77,8 +83,8 @@ ip.addParameter('UCIReportConfiguration', [], @(x) isempty(x) || ...
     (isa(x, 'sixgr.phy.mimo.CSIReportConfiguration') && isscalar(x)));
 ip.addParameter('InitialIMCSPerCodeword', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('PHYGrant', struct(), @(x) isempty(x) || isstruct(x));
-ip.addParameter('HARQSoftBufferLLR', [], @(x) isempty(x) || isnumeric(x) || isstruct(x));
-ip.addParameter('HARQSoftBufferLayout', struct(), @(x) isempty(x) || isstruct(x));
+ip.addParameter('HARQSoftBufferLLR', [], @(x) isempty(x) || isnumeric(x) || isstruct(x) || iscell(x));
+ip.addParameter('HARQSoftBufferLayout', struct(), @(x) isempty(x) || isstruct(x) || iscell(x));
 ip.addParameter('CodingLayout', struct(), @(x) isempty(x) || isstruct(x) || iscell(x));
 ip.addParameter('CompactOutput', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('FastAWGNPath', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
@@ -216,6 +222,10 @@ sixgr.config.assertRuntimeFeatureUse(cfg, "ptrs_cpe_correction", ...
 
 % Rx params
 nCodewords = double(pusch.NumCodewords);
+opt.HARQSoftBufferLLR = localHARQCodewordInput( ...
+    opt.HARQSoftBufferLLR, nCodewords, "HARQSoftBufferLLR");
+opt.HARQSoftBufferLayout = localHARQCodewordInput( ...
+    opt.HARQSoftBufferLayout, nCodewords, "HARQSoftBufferLayout");
 rv = opt.RV;
 if isempty(rv)
     rv = double(sixgr.util.structGet(cfg, 'phy.pusch.rv', []));
@@ -928,18 +938,16 @@ codewordLayerMapping = localBuildPUSCHRxCodewordLayerContract( ...
 if nCodewords == 2
     decodeProfileScope=sixgr.runtime.ExecutionStageProfiler.scope("decoding","PUSCH_two_codeword_ULSCH");
     decodeTic = tic;
-    decoder = nrULSCHDecoder( ...
-        "MultipleHARQProcesses", false, ...
-        "TargetCodeRate", targetCodeRate, ...
-        "TransportBlockLength", trBlkSize, ...
-        "LDPCDecodingAlgorithm", alg, ...
-        "MaximumLDPCIterationCount", maxIter);
-    [tbBitsCell, crcErr] = decoder(cwLLRForULSCH, ...
-        pusch.Modulation, pusch.NumLayers, rv);
+    % The same independent per-codeword decoder handles complete and partial
+    % received UCI layouts. A fresh nrULSCHDecoder cannot consume the caller's
+    % retained mother-code buffers and would silently discard their RV history.
+    dataReception = sixgr.phy.ul.pusch.decodeResolvedULSCH(cwLLRForULSCH, ...
+        true(1,nCodewords), transport, trBlkSize, targetCodeRate, rv, ...
+        codingLayouts, maxIter, alg, opt.HARQSoftBufferLLR, opt.HARQSoftBufferLayout);
     clear decodeProfileScope
     decodeLatency_s = toc(decodeTic);
-    tbBitsCell = reshape(tbBitsCell, 1, []);
-    crcErr = logical(crcErr(:).');
+    tbBitsCell = reshape(dataReception.TransportBlocks, 1, []);
+    crcErr = logical(dataReception.CRCError(:).');
     if numel(tbBitsCell) ~= 2 || numel(crcErr) ~= 2
         error("sixgr:phy:ul:PUSCHDecodedCodewordCountMismatch", ...
             "High-rank UL-SCH decoder did not return exactly two transport blocks.");
@@ -955,7 +963,7 @@ if nCodewords == 2
         receiverSINR, timingResolution, rawTimingEstimate, ...
         knownTimingDelaySamples, timingEstimateForCorrection, timingEstimateSource, ...
         decodeLatency_s, maxIter, alg, llrCSIInfo, uciOnPUSCH, ...
-        enablePTRSCPECorrection, opt.CompactOutput);
+        enablePTRSCPECorrection, opt.CompactOutput, dataReception);
     rx=localAnnotateNoiseAuthority(rx,nVar,nVarEst,noiseStatus,estInfo,useFastAWGNPath);
     rx.ReceiveTiming = receiveTiming;
     if hasPHYGrant
@@ -976,7 +984,10 @@ if nCodewords == 2
         "UCIOnPUSCH", uciOnPUSCH, ...
         "ReceiveCombiner", receiveCombinerInfo, ...
         "DecodeLatency_s", decodeLatency_s, ...
-        "ExecutionBackend", "nrPUSCHDecode_nrULSCHDecoder_two_codeword_truth");
+        "CodewordDecodeEvidence", {dataReception.CodewordEvidence}, ...
+        "HARQSoftCombiningPerCodeword", {rx.HARQSoftCombiningPerCodeword}, ...
+        "HARQSoftBufferCell", {rx.HARQSoftBufferCell}, ...
+        "ExecutionBackend", rx.ExecutionBackend);
     rx=localRetainChannelEstimatorInputs(rx,Hest,rxGrid,carrier,pusch, ...
         chEstDMRSInd,chEstDMRSSym,ofdmInfo,dmrsPowerInfo,opt.CompactOutput,receiverChannelOperator);
     return;
@@ -2394,19 +2405,20 @@ if isempty(Hport) || ndims(Hport) ~= 3 || isempty(pusch)
     return;
 end
 
-nLayers = localObjectFiniteScalar(pusch, "NumLayers", NaN);
-nPorts = localObjectFiniteScalar(pusch, "NumAntennaPorts", size(Hport, 3));
-tpmi = localObjectFiniteScalar(pusch, "TPMI", NaN);
-transformPrecoding = logical(localObjectValue(pusch, "TransformPrecoding", false));
+nLayers = localObjectValue(pusch, "NumLayers", NaN);
+nPorts = localObjectValue(pusch, "NumAntennaPorts", size(Hport, 3));
+tpmi = localObjectValue(pusch, "TPMI", NaN);
+transformPrecoding = localObjectValue(pusch, "TransformPrecoding", false);
 scheme = lower(strtrim(string(localObjectValue(pusch, "TransmissionScheme", ""))));
-if ~(isfinite(nLayers) && nLayers >= 1)
-    nLayers = 1;
+if scheme == "codebook"
+    localValidatePUSCHCodebookScalars(nLayers, nPorts, tpmi, transformPrecoding);
+else
+    if ~(isfinite(nLayers) && nLayers >= 1), nLayers = 1; end
+    if ~(isfinite(nPorts) && nPorts >= 1), nPorts = size(Hport, 3); end
+    nLayers = max(1, round(double(nLayers)));
+    nPorts = max(1, round(double(nPorts)));
 end
-if ~(isfinite(nPorts) && nPorts >= 1)
-    nPorts = size(Hport, 3);
-end
-nLayers = max(1, round(double(nLayers)));
-nPorts = max(1, round(double(nPorts)));
+transformPrecoding = logical(transformPrecoding);
 info.NumLayers = double(nLayers);
 info.NumPorts = double(nPorts);
 info.TPMI = double(tpmi);
@@ -2414,7 +2426,8 @@ if scheme ~= "codebook" || ~isfinite(tpmi) || size(Hport, 3) <= nLayers
     return;
 end
 
-[Wlayer, codebookStatus] = sixgr.phy.ul.puschCodebookProjectionMatrix(nLayers, nPorts, tpmi, transformPrecoding);
+[Wlayer, codebookStatus] = sixgr.phy.ul.puschCodebookProjectionMatrix( ...
+    nLayers, nPorts, tpmi, transformPrecoding, localObjectValue(pusch, "CodebookType", ""));
 if isempty(Wlayer)
     info.Status = codebookStatus;
     return;
@@ -2505,13 +2518,18 @@ end
 function [layerSym, info] = localResolvePUSCHLayerEqualizedSymbols(eqSym, puschRxSym, pusch)
 eqSym = localEnsureSymbolMatrix(eqSym);
 puschRxSym = localEnsureSymbolMatrix(puschRxSym);
-nLayers = localObjectFiniteScalar(pusch, "NumLayers", size(eqSym, 2));
-nPorts = localObjectFiniteScalar(pusch, "NumAntennaPorts", size(eqSym, 2));
-tpmi = localObjectFiniteScalar(pusch, "TPMI", NaN);
-transformPrecoding = logical(localObjectValue(pusch, "TransformPrecoding", false));
+nLayers = localObjectValue(pusch, "NumLayers", size(eqSym, 2));
+nPorts = localObjectValue(pusch, "NumAntennaPorts", size(eqSym, 2));
+tpmi = localObjectValue(pusch, "TPMI", NaN);
+transformPrecoding = localObjectValue(pusch, "TransformPrecoding", false);
 scheme = lower(strtrim(string(localObjectValue(pusch, "TransmissionScheme", ""))));
-nLayers = max(1, round(double(nLayers)));
-nPorts = max(1, round(double(nPorts)));
+if scheme == "codebook"
+    localValidatePUSCHCodebookScalars(nLayers, nPorts, tpmi, transformPrecoding);
+else
+    nLayers = max(1, round(double(nLayers)));
+    nPorts = max(1, round(double(nPorts)));
+end
+transformPrecoding = logical(transformPrecoding);
 info = struct( ...
     "Status", "native_equalizer_layer_symbols", ...
     "NumLayers", double(nLayers), ...
@@ -2528,7 +2546,8 @@ if ~isempty(puschRxSym) && size(puschRxSym, 2) == nLayers
     return;
 end
 if scheme == "codebook" && ~isempty(eqSym) && size(eqSym, 2) == nPorts && nPorts > nLayers
-    [~, status, ~, Winv] = sixgr.phy.ul.puschCodebookProjectionMatrix(nLayers, nPorts, tpmi, transformPrecoding);
+    [~, status, ~, Winv] = sixgr.phy.ul.puschCodebookProjectionMatrix( ...
+        nLayers, nPorts, tpmi, transformPrecoding, localObjectValue(pusch, "CodebookType", ""));
     if isempty(Winv)
         error("sixgr:phy:ul:PUSCHEqualizedDomainUnsupported", ...
             "Cannot derive layer-domain equalized PUSCH symbols: %s.", char(string(status)));
@@ -2540,6 +2559,21 @@ end
 error("sixgr:phy:ul:PUSCHEqualizedDomainMismatch", ...
     "PUSCH equalized symbol domain mismatch: equalized shape %s, decoder symbol shape %s, NumLayers=%d, NumPorts=%d.", ...
     mat2str(size(eqSym)), mat2str(size(puschRxSym)), nLayers, nPorts);
+end
+
+function localValidatePUSCHCodebookScalars(layers, ports, tpmi, transform)
+valid = true;
+values = {layers, ports, tpmi};
+minimum = [1 1 0];
+for k = 1:numel(values)
+    value = values{k};
+    valid = valid && isnumeric(value) && isreal(value) && isscalar(value) && ...
+        isfinite(value) && value >= minimum(k) && value == fix(value);
+end
+valid = valid && (isnumeric(transform) || islogical(transform)) && ...
+    isreal(transform) && isscalar(transform) && isfinite(transform) && any(transform == [0 1]);
+assert(valid, 'sixgr:phy:ul:PUSCHCodebookProjection:BadParameters', ...
+    'Receiver codebook projection requires exact integer geometry/TPMI and a scalar boolean transform mode.');
 end
 
 function [rxPUSCH, rxPUSCHInd, rxDMRSInd, rxDMRSSym, info] = ...
@@ -3183,6 +3217,21 @@ for cw = 1:nCodewords
 end
 end
 
+function value = localHARQCodewordInput(value, count, label)
+% Cell positions are one-based codeword authority, never scalar broadcast.
+if isempty(value) || (isstruct(value) && isscalar(value) && isempty(fieldnames(value)))
+    if count > 1, value = cell(1,count); end
+elseif iscell(value)
+    assert(numel(value)==count, 'sixgr:pusch:MissingPerCodewordCodingAuthority', ...
+        '%s requires exactly one entry per received codeword.', label);
+    value = reshape(value,1,[]);
+    if count==1, value=value{1}; end
+elseif count > 1
+    error('sixgr:pusch:MissingPerCodewordCodingAuthority', ...
+        '%s cannot broadcast a scalar prior across received codewords.', label);
+end
+end
+
 function localAssertCodingLayoutMatches(layout, trBlkSize, rv, modulation, numLayers, rateMatchedBits)
 if double(layout.TransportBlockSize) ~= double(trBlkSize) || ...
         double(layout.RV) ~= double(rv) || ...
@@ -3482,11 +3531,11 @@ function rx = localBuildHighRankPUSCHRx( ...
         receiverSINR, timingResolution, rawTimingEstimate, ...
         knownTimingDelaySamples, timingEstimateForCorrection, timingEstimateSource, ...
         decodeLatency_s, maxIter, alg, llrCSIInfo, uci, ...
-        enablePTRSCPECorrection, compactOutput)
+        enablePTRSCPECorrection, compactOutput, dataReception)
 tbBitsCell = reshape(tbBitsCell, 1, []);
 ulschLLRCell = reshape(ulschLLRCell, 1, []);
 rx = struct();
-rx.ExecutionBackend = "nrPUSCHDecode_nrULSCHDecoder_two_codeword_truth";
+rx.ExecutionBackend = "nrPUSCHDecode_independent_ULSCH_primitives_two_codeword_truth";
 rx.ApproximationMode = "none";
 rx.TransportBlockSize = double(trBlkSize);
 rx.TransportBlocks = cellfun(@(x) int8(x(:)), tbBitsCell, "UniformOutput", false);
@@ -3520,9 +3569,28 @@ rx.FailureReason = "";
 rx.DecodeLatency_s = double(decodeLatency_s);
 rx.MaxDecoderIterations = double(maxIter);
 rx.LDPCDecodingAlgorithm = char(string(alg));
-rx.HARQSoftCombiningApplied = false;
-rx.HARQSoftCombiningPositionAware = false;
-rx.HARQSoftCombiningReason = "no_prior_high_rank_soft_buffer_supplied";
+rx.CodewordDecodeEvidence = dataReception.CodewordEvidence;
+rx.TransportBlockDecodeAttempted = dataReception.DecodeAttempted;
+rx.TransportBlockCRCAvailable = dataReception.CRCAvailable;
+rx.TransportBlockCRCPassPerCodeword = dataReception.CRCPass;
+rx.TransportBlockCRCErrorPerCodeword = dataReception.CRCError;
+rx.HARQSoftCombiningPerCodeword = cellfun(@(e)e.HARQCombining, ...
+    dataReception.CodewordEvidence, "UniformOutput", false);
+rx.HARQSoftBufferCell = cellfun(@(e)e.SoftBuffer, ...
+    rx.HARQSoftCombiningPerCodeword, "UniformOutput", false);
+% ULSCHCodewordLLRCell above remains the CURRENT rate-matched observation.
+% These arrays are the actual combined mother-code decoder inputs. Do not
+% expose them as a scalar/current RateRecoveredLLR that an outer caller may
+% combine again. A current-only CRC requires a separate no-prior invocation.
+rx.CombinedRateRecoveredLLRCell = cellfun(@(b)b.LLR, ...
+    rx.HARQSoftBufferCell, "UniformOutput", false);
+rx.HARQSoftCombiningAppliedPerCodeword = cellfun(@(e)logical(e.Applied), ...
+    rx.HARQSoftCombiningPerCodeword);
+rx.HARQSoftCombiningApplied = any(rx.HARQSoftCombiningAppliedPerCodeword);
+rx.HARQSoftCombiningPositionAware = rx.HARQSoftCombiningApplied && ...
+    all(cellfun(@(e)~e.Applied || e.PositionAware, rx.HARQSoftCombiningPerCodeword));
+rx.HARQSoftCombiningReason = "per_codeword_evidence";
+rx.CRCDecisionInput = "current_plus_compatible_prior_mother_code_llr_per_codeword";
 rx.NoiseVar = double(nVar);
 rx.PreEqualizationNoiseVar = double(nVar);
 rx.DecoderNoiseVar = double(nVarForDecode);

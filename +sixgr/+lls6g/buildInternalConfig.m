@@ -10,6 +10,14 @@ catalog = sixgr.lls6g.config.loadParameterCatalog("scenario");
 
 cfg = sixgr.config.defaultConfig();
 
+% Only an authored/resolved policy can enable this private post-reception
+% study. Directly built legacy scenario structs with no block remain off.
+cfg.measurements.csiSelectionQuality=sixgr.lls6g.config.resolveCSISelectionQualityPolicy();
+if isfield(s,'kpi_spec') && isfield(s.kpi_spec,'csi_selection_quality')
+    cfg.measurements.csiSelectionQuality=sixgr.lls6g.config.resolveCSISelectionQualityPolicy( ...
+        s.kpi_spec.csi_selection_quality);
+end
+
 cfg.meta.loadedFrom = char(string(s.meta.scenario_id));
 schemaVersionText = char(string(localGetNested(s, "meta.schema_version", ...
     localGetNested(s, "meta.schemaVersion", sixgr.lls6g.config.currentVersion()))));
@@ -231,6 +239,9 @@ cfg.run.totalSlots = runTiming.TotalSlots;
 cfg.run.warmupSlots = runTiming.WarmupSlots;
 cfg.run.measurementSlots = runTiming.MeasurementSlots;
 cfg.run.checkpointEverySlots = runTiming.CheckpointEverySlots;
+cfg.run.checkpointFirstSlot = double(localGetNested(s,"run_control.checkpoint_first_slot",0));
+validateattributes(cfg.run.checkpointFirstSlot,{'numeric'}, ...
+    {'scalar','integer','nonnegative','finite'});
 cfg.run.runtimeCheckpointEnabled = logical(localGetNested(s, ...
     "run_control.runtime_checkpoint_enable", false));
 cfg.run.runtimeCheckpointResumeFrom = string(localGetNested(s, ...
@@ -2473,6 +2484,19 @@ cfg = sixgr.util.structSet(cfg, "phy.rx.useIdealTimingSync", logical(localRequir
 cfg.phy.nTxAnt = double(s.mimo.n_tx_ant);
 cfg.phy.nRxAnt = double(s.mimo.n_rx_ant);
 cfg = localApplyRuntimeAntennaConfig(cfg, s);
+bsReference=localGetNested(s,"power_and_rf_frontend.bs_reference",[]);
+cfg.rf.txSpatialPowerEnabled=logical(localGetNested(s, ...
+    "power_and_rf_frontend.tx_spatial_power_enabled",false));
+cfg.rf.modeledRadiatedPower=sixgr.rf.resolveModeledRadiationPolicy(localGetNested(s, ...
+    "power_and_rf_frontend.modeled_radiated_power",struct('enabled',false)));
+if ~isempty(bsReference)
+    cfg.rf.bsPowerReference=sixgr.rf.resolveBSRFReference(bsReference, ...
+        cfg.antenna.bs.numTxRFChains,cfg.antenna.bs.numRxRFChains);
+end
+if cfg.rf.modeledRadiatedPower.Enabled
+    assert(cfg.rf.txSpatialPowerEnabled&&isfield(cfg.rf,'bsPowerReference'), ...
+        'RF:ModeledRadiationDependencies','Require original BS reference and actual TX spatial-power producer.');
+end
 cfg = sixgr.util.structSet(cfg, "phy.impairments.cfoHz", double(cfoHz));
 cfg = sixgr.util.structSet(cfg, "phy.impairments.configuredCFOHz", ...
     double(cfoConfiguredHz));
@@ -3001,6 +3025,11 @@ end
 cfg = sixgr.util.structSet(cfg, "lls6g.impairments", s.impairments);
 cfg = sixgr.util.structSet(cfg, "lls6g.ai_ml", s.ai_ml);
 cfg = sixgr.util.structSet(cfg, "lls6g.energy_efficiency", s.energy_efficiency);
+if isfield(s,'energy_and_complexity')
+    % Preserve both validated policy surfaces at the runtime/export boundary.
+    % Do not make the exporter reconstruct the missing half from defaults.
+    cfg = sixgr.util.structSet(cfg, "lls6g.energy_and_complexity", s.energy_and_complexity);
+end
 cfg = sixgr.util.structSet(cfg, "lls6g.kpis", s.kpis);
 cfg = sixgr.util.structSet(cfg, "lls6g.logging", s.logging);
 cfg = sixgr.util.structSet(cfg, "lls6g.scenario", s.scenario);
@@ -3108,6 +3137,9 @@ elseif isstruct(strictControl) && isfield(strictControl,'dci_context')
 end
 sixgr.phy.refsig.validateCSIRSSSBSeparation(cfg);
 sixgr.phy.pucch.validateUEReportBindings(cfg);
+% Bootstrap rank alone does not exercise the DM-RS groups needed by later
+% received CSI. Validate the installed executable domain without changing it.
+sixgr.phy.grant.validatePDSCHDMRSRankDomain(cfg);
 end
 
 function cfg = localApplyScenarioAuditExtensions(cfg, s)
@@ -3374,6 +3406,75 @@ end
 cfg = localApplyValidationRunClass(cfg, s);
 
 cfg = localApplyConfigDrivenPHYRuntimeSurfaces(cfg, s);
+cfg = localBindCSISelectionQualityDomain(cfg, s);
+end
+
+function cfg = localBindCSISelectionQualityDomain(cfg, s)
+% Validate the optional audit against the actual installed receiver, not a
+% dormant YAML tuple. No waveform, channel or receiver state is constructed.
+if ~logical(cfg.measurements.csiSelectionQuality.Enabled), return; end
+id='sixgr:lls6g:config:CSISelectionQualityCompatibility';
+assert(logical(sixgr.util.structGet(cfg,'phy.csirs.enable',false)) && ...
+    logical(sixgr.util.structGet(cfg,'phy.csi.reportCSI',false)),id, ...
+    'kpi_spec.csi_selection_quality.enabled requires enabled CSI-RS and CSI reporting.');
+assert(logical(sixgr.util.structGet(cfg,'mimo.strict', ...
+    sixgr.util.structGet(cfg,'phy.mimo.strict',false))),id, ...
+    ['kpi_spec.csi_selection_quality.enabled requires the strict measured CSI receiver contract; ' ...
+     'the non-strict receiver does not retain the required frozen selection fields.']);
+% The validated scenario owns user/profile selection until its lls6g
+% aliases are populated. The physical gates already have runtime authority.
+[~,runnerAuthority]=sixgr.lls6g.config.resolveEffectiveRunnerProfile(s,cfg);
+assert(runnerAuthority.SharedWaveformOwner,id, ...
+    ['kpi_spec.csi_selection_quality.enabled requires an effective waveform_bundle runner with ' ...
+     'users.execution_model=slot_coupled_truth and enabled shared users; system_level_lls is eligible ' ...
+     'only through its existing physical control/reference-gated promotion.']);
+request=sixgr.util.structGet(cfg,'phy.csi.reportConfiguration',struct());
+assert(isstruct(request) && isscalar(request) && ...
+    all(isfield(request,{'AllowedRanks','Ports','CodebookType','FrequencyGranularity'})),id, ...
+    'kpi_spec.csi_selection_quality requires an installed report request with explicit AllowedRanks and ports.');
+assert(strcmpi(string(request.CodebookType),'typei-singlepanel') && ...
+    strcmpi(string(request.FrequencyGranularity),'wideband'),id, ...
+    'kpi_spec.csi_selection_quality supports only wideband Type-I single-panel reports; Type-II/subband scoring is not implemented.');
+ranks=double(sixgr.util.structGet(cfg,'phy.csi.rankDomain',[]));
+numRx=double(sixgr.util.structGet(cfg,'antenna.ue.numRxRFChains', ...
+    sixgr.util.structGet(cfg,'phy.nRxAnt',NaN)));
+assert(isrow(ranks) && ~isempty(ranks) && isequal(ranks,unique(ranks,'sorted')) && ...
+    all(isfinite(ranks) & ranks==fix(ranks) & ranks>=1 & ranks<=min(numRx,request.Ports)) && ...
+    isequal(double(request.AllowedRanks),ranks),id, ...
+    ['kpi_spec.csi_selection_quality requires exact installed AllowedRanks=phy.csi.rankDomain, ' ...
+     'within the actual receive-chain/CSI-port dimensions; do not clip the search domain.']);
+rankPolicy=sixgr.mimo.resolveRankPolicy(cfg);
+if rankPolicy.FixedRankAnchor
+    fixedRank=double(sixgr.util.structGet(cfg,'phy.pdsch.numLayers',NaN));
+    assert(isequal(ranks,fixedRank),id, ...
+        ['kpi_spec.csi_selection_quality with fixed rank requires the installed AllowedRanks ' ...
+         'to equal that single executed rank; a wider installed domain is not scored by this receiver.']);
+end
+if request.Ports==2
+    for field=["CodebookSubsetRestriction","I2Restriction"]
+        assert(~isfield(request,field) || isempty(request.(field)),id, ...
+            'kpi_spec.csi_selection_quality does not support two-port %s.',field);
+    end
+    authored=sixgr.util.structGet(cfg,'phy.mimo.codebookSubsetRestriction',[]);
+    assert(isempty(authored) || ((ischar(authored)||isstring(authored)) && ...
+        isscalar(string(authored)) && strlength(strtrim(string(authored)))==0),id, ...
+        'kpi_spec.csi_selection_quality does not support authored two-port mimo.codebook_subset_restriction.');
+end
+% These are the installed strict profile's enumeration identity, not an
+% inferred profile, a replacement rank policy or a different receiver.
+request.ProfileID=string(cfg.phy.mimo.profileID);
+request.Direction=string(cfg.phy.mimo.direction);
+request.RankDomain=ranks;
+for rankValue=ranks
+    candidate=request; candidate.Rank=rankValue;
+    try
+        sixgr.phy.mimo.CodebookEngine.enumerate(candidate);
+    catch cause
+        error(id,'kpi_spec.csi_selection_quality cannot enumerate installed rank %g: %s (%s).', ...
+            rankValue,cause.message,cause.identifier);
+    end
+end
+cfg.phy.csi.reportConfiguration=request;
 end
 
 function localValidateSRSFirstMeasurementLiveness(cfg, s)
@@ -4786,6 +4887,7 @@ if ~enabled
             "O2",double(localGetNested(geometry,"o2",NaN)), ...
             "Panels",double(localGetNested(geometry,"panels",NaN)), ...
             "MaxRank",activeRank, ...
+            "AllowedRanks",1:activeRank, ... % Existing generic search domain, not a new restriction.
             "Ports",activePorts, ...
             "Rank",activeRank, ...
             "ReportQuantity",reportQuantity, ...
@@ -6048,6 +6150,21 @@ cfg = sixgr.util.structSet(cfg, "scenario.ue.numTxRFChains", double(ueTxRUs));
 cfg = sixgr.util.structSet(cfg, "scenario.ue.numRxRFChains", double(ueRxRUs));
 cfg = sixgr.util.structSet(cfg, "antenna.ue.panelCount", double(uePanelCount));
 cfg = sixgr.util.structSet(cfg, "antenna.ue.source", "browser_yaml_antenna_and_array");
+for endpoint = ["bs", "ue"]
+    hPath = "antenna_and_array." + endpoint + "_panel_center_spacing_horizontal_lambda";
+    vPath = "antenna_and_array." + endpoint + "_panel_center_spacing_vertical_lambda";
+    h = localGetNested(s, hPath, []);
+    v = localGetNested(s, vPath, []);
+    if ~isempty(h) || ~isempty(v)
+        if ~(isnumeric(h) && isreal(h) && isscalar(h) && isfinite(h) && h > 0 && ...
+                isnumeric(v) && isreal(v) && isscalar(v) && isfinite(v) && v > 0)
+            error("sixgr:lls6g:config:InvalidPanelCenterSpacing", ...
+                "%s and %s must both be finite positive wavelength ratios.", hPath, vPath);
+        end
+        cfg = sixgr.util.structSet(cfg, "antenna." + endpoint + ".panelCenterSpacingLambda", ...
+            double([h v]));
+    end
+end
 cfg = localApplyRuntimeAntennaElementPattern(cfg, s, "bs");
 cfg = localApplyRuntimeAntennaElementPattern(cfg, s, "ue");
 cfg = localApplySSBPrecoderCodebook(cfg, s);
@@ -6524,10 +6641,13 @@ tciCodepoints = double(localGetNested(section,"csi_rs_resource_to_tci_codepoints
 nSSB = double(sixgr.util.structGet(cfg,"phy.ssb.nBeams",NaN));
 nCSI = double(sixgr.util.structGet(cfg,"phy.csirs.numResources",NaN));
 if ~(isvector(ssbMap) && numel(ssbMap)==nSSB && all(isfinite(ssbMap)) && ...
-        all(ssbMap==fix(ssbMap)) && all(ssbMap>=0) && all(ssbMap<nCSI))
+        all(ssbMap==fix(ssbMap)) && all(ssbMap>=0))
     error("sixgr:lls6g:config:InvalidSSBToCSIResourceMap", ...
         "ssb_to_initial_csi_resource_ids must map every active SSB beam to a configured CSI-RS resource.");
 end
+% This authored map contains resource IDs, not CRI ordinals. Validate
+% membership without sorting the configured resource/precoder/TCI lists.
+sixgr.phy.refsig.resolveCSIResourceIdentity(cfg, ssbMap, "resource_id");
 if ~(isvector(tciStates) && numel(tciStates)==nCSI && ...
         all(isfinite(tciStates)) && all(tciStates==fix(tciStates)) && ...
         all(tciStates>=0) && all(tciStates<=127) && ...

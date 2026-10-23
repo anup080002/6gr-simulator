@@ -73,18 +73,25 @@ def test_large_constellation_memory_excludes_python_row_population(tmp_path):
         _, peak = tracemalloc.get_traced_memory()
     finally:
         tracemalloc.stop()
-    # This fixture is below the default file-spill threshold and exercises
-    # the small byte-result compatibility path. Larger outputs are covered
-    # separately by the file-backed publication memory/identity tests.
-    assert peak < 2*len(result["csv_bytes"])+8*1024*1024, (peak, len(result["csv_bytes"]))
-    plotted = csv.DictReader(io.StringIO(result["csv_bytes"].decode()))
-    for actual, expected in zip(plotted, fixture_rows(count), strict=True):
-        assert float(actual["x_value"]) == expected["RawEqualizedReal"]
-        assert int(actual["sample_index"]) == expected["SampleIndex"]
-        assert int(actual["sweep_point_index"]) == expected["SweepPointIndex"]
+    # Expanded lossless metadata may cross the real file-spill threshold.
+    # Exercise either supported payload without materializing a second copy
+    # of the complete CSV. Keep the original memory ceiling and exact rows.
+    payload = result["csv_file"] if "csv_file" in result else result["csv_bytes"]
+    size = m._payload_size(payload)
+    assert peak < 2*size+8*1024*1024, (peak, size)
+    with m._payload_reader(payload) as binary:
+        source_text = io.TextIOWrapper(binary, encoding="utf-8", newline="")
+        try:
+            plotted = csv.DictReader(source_text)
+            for actual, expected in zip(plotted, fixture_rows(count), strict=True):
+                assert float(actual["x_value"]) == expected["RawEqualizedReal"]
+                assert int(actual["sample_index"]) == expected["SampleIndex"]
+                assert int(actual["sweep_point_index"]) == expected["SweepPointIndex"]
+        finally:
+            source_text.detach()  # The payload reader owns verification and lifetime.
     assert result["source_row_count"] == count
     assert all(s.closed for s in opened)
-    print(f"CONSTELLATION_STREAM rows={count} output_bytes={len(result['csv_bytes'])} python_peak={peak}")
+    print(f"CONSTELLATION_STREAM rows={count} output_bytes={size} python_peak={peak}")
 
 
 def test_reference_caption_is_a_cap_not_fake_qpsk_cardinality():

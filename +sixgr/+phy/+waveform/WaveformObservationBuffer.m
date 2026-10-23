@@ -13,6 +13,7 @@ classdef WaveformObservationBuffer < handle
         SampleClass (1,1) string = ""
         CompleteSampleHash (1,1) string = ""
         CompleteSamples = []
+        CompletedArchive = struct()
     end
     methods
         function obj=WaveformObservationBuffer(startSample,endSampleExclusive,sampleRateHz,numRx)
@@ -73,7 +74,10 @@ classdef WaveformObservationBuffer < handle
                     "Only samples through %.0f have arrived; acquisition needs samples through %.0f.", ...
                     obj.ReceivedThroughSample,obj.EndSampleExclusive);
             end
-            if ~isempty(obj.CompleteSamples)
+            if ~isempty(fieldnames(obj.CompletedArchive))
+                samples=sixgr.phy.waveform.CompletedSampleArchive.read(obj.CompletedArchive);
+                return;
+            elseif ~isempty(obj.CompleteSamples)
                 samples=obj.CompleteSamples;
                 return;
             elseif numel(obj.Parts)==1
@@ -91,18 +95,43 @@ classdef WaveformObservationBuffer < handle
         end
 
         function digest=sampleHash(obj)
-            samples=obj.readComplete(); % Incomplete captures never get hashes.
+            assert(obj.isComplete(),'WAVEFORM:IncompleteObservation', ...
+                'Incomplete captures never get hashes.');
+            if ~isempty(fieldnames(obj.CompletedArchive)) && strlength(obj.CompleteSampleHash)>0
+                verified=sixgr.phy.waveform.CompletedSampleArchive.verifyFile(obj.CompletedArchive);
+                assert(verified==obj.CompleteSampleHash,'WAVEFORM:ArchiveIdentity', ...
+                    'Cached sample identity must match its validated archive.');
+                digest=obj.CompleteSampleHash;
+                return;
+            end
             if strlength(obj.CompleteSampleHash)==0
+                samples=obj.readComplete();
                 obj.CompleteSampleHash=sixgr.phy.waveform.WaveformHash.runtimeArray(samples);
             end
             digest=obj.CompleteSampleHash;
+        end
+
+        function receipt=archiveCompleted(obj,root)
+            % Keep incomplete observations in the live owner. The archive
+            % is independently read back before releasing complete arrays.
+            if ~isempty(fieldnames(obj.CompletedArchive))
+                receipt=obj.CompletedArchive;
+                return;
+            end
+            samples=obj.readComplete();
+            receipt=sixgr.phy.waveform.CompletedSampleArchive.write(root,samples);
+            obj.CompletedArchive=receipt;
+            obj.CompleteSampleHash=receipt.Manifest.SampleSHA256;
+            obj.Parts=cell(0,1);
+            obj.CompleteSamples=[];
         end
 
         function info=storageInfo(obj)
             info=struct('RetainedArrays',numel(obj.Parts)+double(~isempty(obj.CompleteSamples)), ...
                 'ReceivedSamples',obj.ReceivedThroughSample-obj.StartSample, ...
                 'SampleClass',obj.SampleClass,'Complete',obj.isComplete(), ...
-                'HashCached',strlength(obj.CompleteSampleHash)>0);
+                'HashCached',strlength(obj.CompleteSampleHash)>0, ...
+                'Archived',~isempty(fieldnames(obj.CompletedArchive)));
         end
     end
 end

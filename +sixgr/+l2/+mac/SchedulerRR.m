@@ -379,6 +379,10 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                 g.RIUsed = double(plan.NumLayers);
                 g.Rank = double(plan.NumLayers);
                 g.RankIndicator = double(plan.NumLayers);
+                % Type-I scalar PMI/CRI are the admitted receiver decision,
+                % just as in PF; copy them before the first immutable freeze.
+                g.PMI=double(sixgr.util.structGet(ueStates(k),'PMI',NaN));
+                g.CRI=double(sixgr.util.structGet(ueStates(k),'CRI',NaN));
                 receivedCSI=sixgr.util.structGet(ueStates(k),'ReceivedCSIReport',struct());
                 if isDL && isstruct(receivedCSI) && ~isempty(fieldnames(receivedCSI))
                     g.ReceivedCSIReport=receivedCSI;

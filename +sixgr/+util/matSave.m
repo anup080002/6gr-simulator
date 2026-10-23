@@ -8,6 +8,7 @@ arguments
     data
     options.UseArtifactStore (1,1) logical = true
     options.ForceV73 (1,1) logical = false
+    options.Compression (1,1) logical = true
     options.TimeChunkedVariables (1,:) string = strings(1,0)
 end
 
@@ -22,15 +23,27 @@ end
 % MAT file incrementally inside a synchronised result tree (for example a
 % OneDrive workspace) can expose the still-open HDF5 file to the sync
 % provider and has produced reproducible MATLAB:save:unableToWriteToMatFile
-% failures.  Only a fully closed, reloadable file is published below.
+% failures. Only a closed file with a native MATLAB variable inventory and
+% verified complete byte readbacks is published below. Inventory is not a
+% substitute for the consumer's full reload/continuation validation.
 tmpPath = char(string(tempname()) + ".mat");
 cleanupTmp = onCleanup(@() localDeleteIfExists(tmpPath)); %#ok<NASGU>
 
-payloadInfo = whos("data");
-useV73 = logical(options.ForceV73) || ~isempty(options.TimeChunkedVariables) || ...
-    (~isempty(payloadInfo) && double(payloadInfo.bytes) >= 1.75 * 1024^3);
+assert(options.Compression || isempty(options.TimeChunkedVariables), ...
+    'sixgr:util:matSave:CompressionPolicyConflict', ...
+    'Time-chunked archives own their compression policy; do not combine overrides.');
+useV73 = logical(options.ForceV73) || ~options.Compression || ~isempty(options.TimeChunkedVariables);
+if ~useV73
+    payloadInfo = whos("data");
+    useV73 = ~isempty(payloadInfo) && double(payloadInfo.bytes) >= 1.75 * 1024^3;
+end
+if builtin("isstruct", data) && isscalar(data)
+    expectedVariables = fieldnames(data);
+else
+    expectedVariables = {'data'};
+end
 try
-    localSavePayload(tmpPath, data, useV73, options.TimeChunkedVariables);
+    localSavePayload(tmpPath, data, useV73, options.TimeChunkedVariables,options.Compression);
 catch firstME
     if useV73
         rethrow(firstME);
@@ -40,7 +53,7 @@ catch firstME
     % exact payload with HDF5-backed v7.3 instead of dropping run evidence.
     localDeleteIfExists(tmpPath);
     try
-        localSavePayload(tmpPath, data, true, options.TimeChunkedVariables);
+        localSavePayload(tmpPath, data, true, options.TimeChunkedVariables,options.Compression);
     catch secondME
         secondME = addCause(secondME, firstME);
         rethrow(secondME);
@@ -52,7 +65,7 @@ end
 sourceInfo = dir(tmpPath);
 sourceBytes = localFileBytes(sourceInfo);
 sourceHash = string(sixgr.util.sha256File(tmpPath));
-localValidateSavedPayload(tmpPath, 1);
+localValidateSavedPayload(tmpPath, expectedVariables, 1);
 if localFileBytes(dir(tmpPath)) ~= sourceBytes || ...
         string(sixgr.util.sha256File(tmpPath)) ~= sourceHash
     error("sixgr:util:matSave:ValidatedSourceChanged", ...
@@ -72,7 +85,8 @@ end
 localPublishValidatedCopy(tmpPath, filePath, sourceBytes, sourceHash);
 end
 
-function localSavePayload(filePath, data, useV73, timeChunkedVariables)
+function localSavePayload(filePath, data, useV73, timeChunkedVariables,compression)
+serializationScope=sixgr.runtime.ExecutionStageProfiler.scope("serialization","MAT_native_save"); %#ok<NASGU>
 if ~isempty(timeChunkedVariables)
     % Compression selection is explicit and applies only to the immutable
     % local staging file. All inventory, byte-hash and destination-readback
@@ -83,6 +97,7 @@ end
 args = {};
 if useV73
     args = {"-v7.3"};
+    if ~compression, args{end+1}="-nocompression"; end
 end
 
 if builtin("isstruct", data) && isscalar(data)
@@ -92,15 +107,27 @@ else
 end
 end
 
-function localValidateSavedPayload(filePath, maxAttempts)
-if nargin < 2
+function localValidateSavedPayload(filePath, expectedVariables, maxAttempts)
+if nargin < 3
     maxAttempts = 1;
 end
 maxAttempts = max(1, round(double(maxAttempts)));
 lastME = [];
 for attempt = 1:maxAttempts
     try
-        payloadInventory = whos("-file", filePath); %#ok<NASGU>
+        % WHOS -file can call LOADOBJ while calculating nested sizes/types.
+        % For live checkpoints this reconstructs the channel/decoder/window
+        % graph beside the active owners and can exhaust process memory.
+        % WHO is MATLAB's native names-only inventory: reopen the MAT and
+        % require the exact intended variables without constructing owners.
+        % Keep every source/destination byte/hash check below unchanged.
+        % Actual state restoration still uses LOAD and is covered by exact
+        % CDL/RF/RNG/pending-observation/HARQ continuation regressions.
+        payloadInventory = who("-file", filePath);
+        if ~isequal(sort(payloadInventory(:)), sort(expectedVariables(:)))
+            error("sixgr:util:matSave:VariableInventoryMismatch", ...
+                "Serialized MAT inventory does not match the intended variables.");
+        end
         return;
     catch ME
         lastME = ME;

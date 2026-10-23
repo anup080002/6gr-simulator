@@ -5526,6 +5526,13 @@
           "type": "number",
           "min": 0
         },
+        "bs_rf_chain_idle_power_fraction": {
+          "required": true,
+          "type": "number",
+          "min": 0,
+          "max": 1,
+          "description": "Engineering-model RF-chain awake floor relative to full-load chain watts; not a 3GPP value or measured hardware parameter."
+        },
         "bs_sleep_power_w": {
           "required": false,
           "type": "number",
@@ -5574,6 +5581,24 @@
           "required": true,
           "type": "integer",
           "min": 1
+        },
+        "rf_inventory_source": {
+          "required": false,
+          "type": "string",
+          "allowed_values": [
+            "explicit_energy_counts",
+            "declared_endpoint_inventory"
+          ],
+          "description": "Explicit energy counts or the independently configured endpoint RF-chain pool; never antenna elements or data layers."
+        },
+        "operating_state_policy": {
+          "required": false,
+          "type": "string",
+          "allowed_values": [
+            "represented_intervals",
+            "always_awake"
+          ],
+          "description": "Engineering accounting assumption; always_awake requires no sleep savings and complete committed-time coverage."
         },
         "sleep_state_model": {
           "required": true,
@@ -6177,6 +6202,11 @@
           "required": false,
           "type": "integer",
           "min": 1
+        },
+        "checkpoint_first_slot": {
+          "required": false,
+          "type": "integer",
+          "min": 0
         },
         "runtime_checkpoint_enable": {
           "required": false,
@@ -7437,6 +7467,30 @@
           "required": true,
           "type": "number",
           "min": 0
+        },
+        "bs_panel_center_spacing_horizontal_lambda": {
+          "required": false,
+          "type": "number",
+          "min": 0,
+          "description": "Horizontal panel-center spacing in wavelengths; paired with the vertical field. Engineering array geometry, not an NR-mandated value."
+        },
+        "bs_panel_center_spacing_vertical_lambda": {
+          "required": false,
+          "type": "number",
+          "min": 0,
+          "description": "Vertical panel-center spacing in wavelengths; must exceed the panel aperture when multiple panels use this axis."
+        },
+        "ue_panel_center_spacing_horizontal_lambda": {
+          "required": false,
+          "type": "number",
+          "min": 0,
+          "description": "Horizontal UE panel-center spacing in wavelengths; paired with the vertical field."
+        },
+        "ue_panel_center_spacing_vertical_lambda": {
+          "required": false,
+          "type": "number",
+          "min": 0,
+          "description": "Vertical UE panel-center spacing in wavelengths; not an element spacing or edge-to-edge gap."
         },
         "element_spacing_h": {
           "required": true,

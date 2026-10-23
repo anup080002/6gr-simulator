@@ -2,6 +2,15 @@ function tf=isAppliedChannelReference(r)
 % Accept only explicitly identified executed-channel scoring representations.
 source=string(sixgr.util.structGet(r,'Source',''));
 tf=isscalar(source) && source=="same_executed_NR_channel_path_gains_and_filters";
+if isscalar(source) && source=="executed_piecewise_matrix_AWGN_operator"
+    tf=sixgr.channel.PiecewiseAWGNReference.metadataValid(r) && isfield(r,'PathGains');
+    if tf
+        tf=sixgr.channel.PiecewiseAWGNReference.blockValid(r,r.PathGains, ...
+            {1:(r.EndSampleExclusive-r.StartSample),1, ...
+             1:r.NumTransmitAntennas,1:r.NumReceiveAntennas});
+    end
+    return;
+end
 if isscalar(source) && source=="executed_fixed_matrix_AWGN_operator"
     H=sixgr.util.structGet(r,'SpatialMatrix',[]);
     n=sixgr.util.structGet(r,'NumTransmitAntennas',NaN);

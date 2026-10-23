@@ -288,6 +288,14 @@ controllers={@sixgr.rf.runtime.PUSCHPowerController.resolve, ...
     @sixgr.rf.runtime.PRACHPowerController.resolve};
 for k=1:numel(channels)
     request=localPowerRequest(channels(k));
+    if channels(k)=="SRS"
+        % The generic fixture deliberately has PUSCH DeltaTF=1. SRS
+        % has no such term (38.213 7.3.1): reproduce its rejection,
+        % then check the legal SRS equation against the numeric oracle.
+        verifyError(t,@()controllers{k}(state,request), ...
+            "RF:SRSDeltaTFNotApplicable");
+        request.DeltaTF_dB=0;
+    end
     result=controllers{k}(state,request);
     oracle=sixgr.rf.runtime.oracle.PowerControlSpec.resolve( ...
         request.Mu,request.MRB,request.P0_dBm,request.Alpha, ...

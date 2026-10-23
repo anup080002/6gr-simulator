@@ -77,5 +77,54 @@ assert(isequaln(previous,state));
 assert(state.CfgMobility.phy.pdsch.numLayers==1, ...
     'Per-UE adaptation must not mutate the installed initial rank or other UEs.');
 fprintf('CSI_RANK_CONFIRMATION_HANDOFF_PASS reports=6 accepted_ranks=1,2,2,1,1,2\n');
+localFourPortQualityIsolation(cfg);
 ok=true;
+end
+
+function localFourPortQualityIsolation(cfg)
+% Authored decoded-report boundary values, NOT a waveform/BLER campaign.
+% CQI is conditional on the reported rank/PMI/CRI. An unconfirmed higher
+% rank must not pollute the current-rank filter; a newly accepted point
+% starts with its own admitted CQI rather than old-rank quality.
+cfg.phy.pdsch.maxLayers=4;
+cfg.phy.nTxAnt=4; cfg.phy.nRxAnt=4;
+state=struct('CfgMobility',cfg,'NumUsers',1,'DLSchedulers',{{}}, ...
+    'ULSchedulers',{{}},'DLLinkAdaptationState',{{struct()}}, ...
+    'ULLinkAdaptationState',{{struct()}},'SlotDuration_s',.001);
+ranks=[1 2 2 4 4 2 1];
+cqi=[3 14 14 12 12 10 8];
+accepted=[1 1 2 2 4 2 1];
+deferred=[false true false true false false false];
+for k=1:numel(ranks)
+    previous=state.DLLinkAdaptationState{1};
+    report=struct('SourceSignal',"CSI-RS",'CQI',cqi(k),'RI',ranks(k), ...
+        'PMI',0,'CRI',0,'SINR_dB',NaN,'SourceSlot',5*k-1, ...
+        'DueSlot',5*k,'DeliveredSlot',5*k,'ServingCell',1, ...
+        'ReportIdentity',"declared_four_port_csi_"+k);
+    [state,out]=sixgr.truth.CoupledTruthRuntime.applyDeliveredCSIAdaptationRuntime( ...
+        state,report,1,'DL',struct());
+    current=state.DLLinkAdaptationState{1};
+    assert(out.SchedulerAcceptedRank==accepted(k) && ...
+        out.SchedulerSpatialDecisionDeferred==deferred(k));
+    assert(out.RI==ranks(k) && out.CQI==cqi(k),'Raw decoded feedback must not be rewritten.');
+    if deferred(k)
+        assert(isequaln(current.SmoothedCQI,previous.SmoothedCQI) && ...
+            current.CQIObservationCount==previous.CQIObservationCount, ...
+            'sixgr:test:DLCandidateRankQualityMixed', ...
+            'Candidate-rank CQI must not change the executable rank quality filter.');
+    else
+        assert(abs(current.SmoothedCQI-out.SchedulerResolvedCQI)<1e-12, ...
+            'sixgr:test:DLRankQualityFilterNotRebased', ...
+            'Each newly accepted spatial point must use its own admitted CQI.');
+    end
+    if k==1
+        state.DLLinkAdaptationState{1}.DeltaMCS=1.25;
+        state.DLLinkAdaptationState{1}.OLLAUpdateCount=3;
+    else
+        assert(current.DeltaMCS==1.25 && current.OLLAUpdateCount==3 && ...
+            ~out.OLLAUpdateAppliedAtThisEvent, ...
+            'CSI delivery must not erase or apply the HARQ-owned OLLA state.');
+    end
+end
+fprintf('DL_FOUR_PORT_QUALITY_HANDOFF_PASS accepted_ranks=1,1,2,2,4,2,1 waveform_qualification=0\n');
 end

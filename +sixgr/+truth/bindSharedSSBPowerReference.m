@@ -1,7 +1,8 @@
-function [cfg,decision]=bindSharedSSBPowerReference(cfg,state,ue,slot,selected)
+function [cfg,decision]=bindSharedSSBPowerReference(cfg,state,ue,slot,selected,channel)
 % TS 38.213 clause 7: decoded referenceSignalPower minus UE-filtered RSRP.
 % TX EPRE and physical pathloss are diagnostics, never UE input authority.
 % Freshness and preconnection filtering are explicit implementation policy.
+if nargin<6, channel="PUSCH"; end
 validateattributes(ue,{'numeric'},{'scalar','integer','positive','finite'});
 validateattributes(slot,{'numeric'},{'scalar','integer','positive','finite'});
 if slot~=state.CurrentSlot
@@ -16,7 +17,8 @@ end
 age=sixgr.util.structGet(cfg,'phy.pusch.powerControl.maxPathlossMeasurementAgeSlots', ...
     sixgr.util.structGet(cfg,'phy.pusch.power_control.max_pathloss_measurement_age_slots',Inf));
 validateattributes(age,{'numeric'},{'scalar','real','nonnegative','nonnan'});
-configured=sixgr.phy.refsig.resolveConfiguredPathlossReference(cfg);
+configured=sixgr.phy.refsig.resolveConfiguredPathlossReference(cfg,channel);
+if string(channel)=="SRS", age=Inf; end
 if configured.Available, age=min(age,configured.MaximumAgeSlots); end
 epoch=sixgr.util.structGet(cfg,'initial_access.configuration_epoch',NaN);
 policy=sixgr.rrc.resolvePreconnectionRSRPFilter(cfg);

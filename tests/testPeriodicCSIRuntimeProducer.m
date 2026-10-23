@@ -46,6 +46,7 @@ assert(isequaln(unchanged.PendingCSITable,state.PendingCSITable),'A slot callbac
 % configuration/occasion identity. No PDSCH or source-slot period is involved.
 newer=measurement; newer.Slot=3; newer.CQI=11;
 state=sixgr.truth.CoupledTruthRuntime.applyCSIRSTrial(state,1,newer);
+verifyRefreshAfterReceiverSchemaExpansion(state,report);
 state=sixgr.truth.CoupledTruthRuntime.refreshPeriodicCSIReportsRuntime(state);
 assert(height(state.PendingCSITable)==1 && state.PendingCSITable.SourceSlot==3 && ...
     state.PendingCSITable.CQI==11 && state.PendingCSITable.ReportIdentity==report.ReportIdentity);
@@ -85,4 +86,44 @@ assert(isequal(roundtrip.DueSlot,[9;14]) && isequal(roundtrip.SourceSlot,[3;8]))
 save(fullfile(folder,'periodic_producer.mat'),'cfg','measurement','newer','tooNew','report','roundtrip');
 fprintf('PERIODIC_CSI_RUNTIME_PRODUCER_PASS report_slots=9,14 sources=3,8 AMC_delay_ignored=90 PDSCH_executions=0 CSI_RF_executions=0 folder=%s\n',folder);
 ok=true;
+end
+
+function verifyRefreshAfterReceiverSchemaExpansion(state,original)
+% Representation regression for the actual post-slot16 failure in v31.
+% These are declared audit values, NOT received measurements or primary rows.
+% A previous decoded report expands PendingCSITable; a different, still
+% pending occasion must refresh without borrowing any of that RX evidence.
+text=["ObservationID","ReceiverContextDigest","ReceiverClockDomain","DecodedCSIFieldsJSON"];
+number=["AvailableAtSample","ReceiverClockEpoch","ObservationStartSample", ...
+    "ObservationEndSampleExclusive","ObservationSampleRateHz"];
+pending=state.PendingCSITable;
+for name=text, pending.(name)=strings(height(pending),1); end
+for name=number, pending.(name)=nan(height(pending),1); end
+prior=pending(1,:);
+prior.ReportIdentity="declared_previous_receiver_audit";
+prior.Processed=true; prior.CSIUCIDecodeOk=true;
+for name=text, prior.(name)="declared_audit_"+name; end
+for name=number, prior.(name)=123; end
+probe=state; probe.PendingCSITable=[prior;pending];
+refreshed=sixgr.truth.CoupledTruthRuntime.refreshPeriodicCSIReportsRuntime(probe);
+assert(isequaln(refreshed.PendingCSITable(1,:),prior), ...
+    'A new UE payload must not overwrite the earlier receiver audit.');
+row=refreshed.PendingCSITable(2,:);
+assert(row.ReportIdentity==original.ReportIdentity && row.SourceSlot==3 && row.CQI==11);
+for name=text, assert(strlength(row.(name))==0); end
+for name=number, assert(isnan(row.(name))); end
+assert(~row.Processed && ~row.CSIUCIDecodeOk && ...
+    isempty(sixgr.util.structGet(refreshed,'SharedGNBCSIReportTable',table())), ...
+    'A refreshed UE report is not a new gNB reception.');
+% Keep the generic row-replacement contract strict: an unknown destination
+% measurement is not filled or silently discarded to make refresh succeed.
+bad=probe; bad.PendingCSITable.UndeclaredReceiverEvidence=ones(height(bad.PendingCSITable),1);
+try
+    sixgr.truth.CoupledTruthRuntime.refreshPeriodicCSIReportsRuntime(bad);
+catch err
+    assert(strcmp(err.identifier,'sixgr:truth:IncompleteCompatibleTableRow'));
+    fprintf('PERIODIC_CSI_REFRESH_SCHEMA_PASS prior_audit_preserved=1 pending_RX_empty=1 unknown_schema_rejected=1 RF_executions=0\n');
+    return;
+end
+error('test:MissingSchemaRejection','Unknown receiver evidence must remain a strict schema error.');
 end

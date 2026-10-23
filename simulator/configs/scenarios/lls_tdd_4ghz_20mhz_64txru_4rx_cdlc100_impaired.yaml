@@ -1,16 +1,16 @@
 inherits:
   - ./h4_100_cdlc100_connected_impaired_40db_adaptation.yaml
-  - ../bands/n77_20mhz_30khz_tdd.yaml
+  - ../bands/n77_20mhz_15khz_tdd.yaml
 
 meta:
   scenario_id: lls_tdd_4ghz_20mhz_64txru_4rx_cdlc100_impaired
   description: >
     Local 20 MHz TDD companion to the server's 100 MHz connected run.
-    Nominal 4 GHz, 51 PRBs, 30 kHz SCS, normal CP, 1024 FFT and 30.72 MSa/s;
+    Nominal 4 GHz, 106 PRBs, 15 kHz data SCS, normal CP, 2048 FFT and 30.72 MSa/s;
     two-panel 64-TXRU gNB and four-chain UE with measured adaptive DL/UL rank
     up to four. Retains physical access, four SSB and eight CSI-RS beams,
     TCI/QCL, CSI/SRS, ILLA/OLLA, HARQ, CDL-C/100 ns and declared RF treatment.
-    100 slots include access; no attachment deadline or forced rank increase.
+    60 one-ms slots include access; no checkpoints, attachment deadline or forced rank increase.
     Configured 40 dB is normalized occupied-RE Es/N0, not measured SINR/dBm.
     RF impairment values are study assumptions, not 3GPP conformance limits.
   purpose: Local full-chain integration and measurement verification at 20 MHz.
@@ -19,21 +19,61 @@ meta:
   scenario_group: connected_tdd_bandwidth_validation
   tags: [lls, truth, tdd, fr1, 4ghz, 20mhz, cdl-c, adaptive_rank, no_proxy]
 
-# Inherit the parent's symbol clock and event-based access/feedback timing.
-# Shrinking the BWP must not leave 273-RB scheduler or reference resources.
+run_control:
+  runtime_checkpoint_enable: false
+  total_slots: 60
+  total_time_ms: 60
+  measurement_slots: 60
+  measurement_time_ms: 60
+simulation:
+  n_frames: 6
+  n_slots: 60
+  n_subframes: 60
+  min_duration_s: 0.06
+
+tdd_timing:
+  capability_profile_id: 38.214-v18.8.0-cap1-dmrs-pos0-mu0
+  n1_pdsch_processing_time_symbols: 8
+  n2_pusch_preparation_time_symbols: 10
+  dl_to_ul_guard_time_us: 16.276
+
+# Exact TBS and final grant validation remain mandatory.
 system:
   scheduler:
-    maxPRBAllocationPerUE: 51
+    maxPRBAllocationPerUE: 106
 scheduler:
-  max_prbs_per_grant: 51
+  max_prbs_per_grant: 106
+
+pdsch:
+  start_symbol: 0
+  num_symbols: 14
+  time_domain_allocations: [[0, 0, 14, 0], [1, 0, 10, 0]]
+  # Explicitly installed unavailable-resource pattern, shared by TX/RX.
+  # Only the CORESET frequency region is excluded in its control symbols.
+  rate_matching_pattern: [connected_coreset]
+pusch:
+  start_symbol: 0
+  num_symbols: 13
+  time_domain_allocations: [[0, 0, 13, 4], [1, 0, 13, 4]]
+
+# These are implementation policies, not mandatory 3GPP smoothing rules.
+# Apply a newly decoded, valid RI immediately, never a transmitter/oracle RI.
+link_adaptation:
+  rank_increase_confirmation_reports: 1
+  cqi_smoothing_mode: fixed
+  cqi_smoothing_alpha: 1
+  outage_recovery_max_gap_slots: 10
 
 initial_access:
   ssb:
-    # FR1 Point-A reference is 15 kHz. NCRBSSB=31 puts the 20-PRB
-    # SS/PBCH block at carrier PRB 15.5; reserved PRBs are 15:35.
-    # CORESET0 index 0 begins at carrier PRB 15 and spans 24 PRBs.
-    n_crb_ssb: 31
+    case: Case C
+    # Type-0 SI for the four active beams ends in common slot 8 (mu=0).
+    observation_subframes: 9
+    # A 30-kHz SS/PBCH block spans 40 PRBs on the 15-kHz carrier.
+    n_crb_ssb: 33
     k_ssb: 0
+  sib1:
+    observation_subframes: 9
 
 control:
   # The inherited 48-PRB dedicated CORESET fits only after relocation.
@@ -41,33 +81,50 @@ control:
   coreset_rb_start: 0
 
 reference_signals:
-  csi_rs_resource_num_rbs: [51, 51, 51, 51, 51, 51, 51, 51]
+  csi_rs_periodicity_slots: 10
+  csi_rs_offset_slots: 1
+  csi_rs_resource_num_rbs: [106, 106, 106, 106, 106, 106, 106, 106]
+  csi_report_periodicity_slots: 10
+  nzp_csi_rs:
+    periodicity: 10ms
+    periodicity_slots: 10
   csi_im:
-    # Configured frequency occupation is a multiple of four CRBs; its
-    # intersection with the 51-PRB active carrier is measured explicitly.
-    num_rbs: 52
+    num_rbs: 108
+    period_slots: 10
+    offset_slots: 1
   srs:
-    # TS 38.211 Table 6.4.1.4.3-1: C_SRS=13/B_SRS=0 occupies 48 PRBs.
-    # Do not pretend 51 PRBs are sounded. Keep the three unsounded PRBs
-    # visible in the coverage result and declare the intended tolerance.
-    c_srs: 13
+    # Keep SRS at the end of the UL slot, allowing data symbols 0:12.
+    symbol_start: 13
+    c_srs: 25
     b_srs: 0
-    num_rb: 51
-    expected_num_rb: 51
-    expected_bandwidth_coverage_percent: 94.11764705882354
-    full_carrier_coverage_tolerance_rb: 3
+    num_rb: 106
+    expected_num_rb: 106
+    expected_bandwidth_coverage_percent: 98.11320754716981
+    full_carrier_coverage_tolerance_rb: 2
+  trs_periodicity_slots: 10
   trs:
-    num_rb: 51
+    num_rb: 106
+    periodicity: '10'
+    periodicity_slots: 10
+    period_offset: 2
+
+csi_acquisition_and_reporting:
+  csi_report_periodicity_slots: 10
+  csi_report_offset_slots: 8
+  report_periodicity: 10ms
 
 random_access:
+  num_slots: 60
+  num_subframes: 60
   msg2_pdsch:
-    prb_start: 15
+    prb_start: 31
   msg4_pdsch:
-    prb_start: 15
+    prb_start: 31
 
 # Keep the integer receiver-clock impairment at one sample. At the new
 # rate it represents 32.552 ns (not the parent's 8.138 ns). No unsupported
 # fractional-delay approximation is inserted to preserve a physical delay.
 output:
   profile: lls_tdd_4ghz_20mhz_64txru_4rx_cdlc100_impaired
-  phy_signal_diagnostic_fft_length: 1024
+  phy_signal_diagnostic_fft_length: 2048
+  live_csv_png_interval_slots: 10

@@ -13,6 +13,45 @@ planes=struct('ReceiverID',{"gnb:post_rf","ue:tx"},'Observation',{post,post},'Se
 ref=sixgr.truth.sharedArrivalTimingReference(planes,1011);
 assert(ref.ExpectedArrivalOffset_samples==21.5 && ref.ChannelFilterDelay_samples==7 && ...
     ~ref.ReceiverEstimatorInput && ref.AdditionalChannelExecutions==0);
+% Scoring metadata must not overwrite the practical receiver result. The
+% strongest pilot-correlation peak can differ from the earliest fading path.
+timing=struct('TimingOffsetSamples',23,'AppliedTimingCorrectionSamples',23, ...
+    'TimingSource',"received_reference_correlation_bounded_search", ...
+    'OracleTimingUsed',false,'ReceiverZeroPaddingUsed',false);
+physical=struct('TransmitStartSample',1011,'ReceiveStartSample',1000, ...
+    'ReceiveSearchGuardSamples',25);
+row=sixgr.truth.bindReceivedSRSTimingEvidence(table(),timing,physical);
+row.TransmitStartSample=1011;
+row.TrueTimingOffset_samples=0; % Reproduce the old unbound collector default.
+row.TimingScoringReferenceSource="unavailable";
+row.InjectedTimingOffset_samples=NaN;
+row.TimingError_samples=NaN;
+row.ResidualTimingError_PostCorrection_samples=NaN;
+row.EstimatedCFO_Hz=401;
+before=row;
+scored=sixgr.truth.bindSRSArrivalTimingReference(row,planes,physical);
+assert(scored.SRSArrivalTimingReferenceAvailable && ...
+    scored.TrueTimingOffset_samples==-3.5 && ...
+    scored.SRSExpectedEarliestArrivalSample==1021.5 && ...
+    scored.SRSExpectedEarliestArrivalCaptureOffset_samples==21.5 && ...
+    scored.SRSSelectedPeakMinusEarliestArrival_samples==1.5 && ...
+    scored.SRSReceiveTimingOffset_samples==-2 && ...
+    scored.AppliedTimingCorrection_samples==23);
+unchanged=setdiff(string(before.Properties.VariableNames), ...
+    ["TrueTimingOffset_samples","TimingScoringReferenceSource"],'stable');
+assert(isequaln(scored(:,unchanged),before(:,unchanged)), ...
+    'Earliest-path scoring cannot alter estimates, applied corrections or invent injected/residual values.');
+decoded=jsondecode(scored.TimingScoringReferenceJSON);
+assert(~decoded.ReceiverEstimatorInput && decoded.AdditionalChannelExecutions==0 && ...
+    decoded.ExpectedArrivalRelativeToScheduledCenter_samples==-3.5 && ...
+    string(decoded.ScoringRole)== ...
+    "earliest_path_reference_not_strongest_peak_error_or_post_correction_residual");
+for field=["TransmitStartSample","ReceiveStartSample","ReceiveSearchGuardSamples"]
+    wrong=physical; wrong.(field)=wrong.(field)+1;
+    rejectSRSBinding(row,planes,wrong);
+end
+wrong=row; wrong.SRSReceiveTimingOffset_samples=99;
+rejectSRSBinding(wrong,planes,physical);
 % TA advances the actual TX clock; receiver pre-roll is not propagation.
 advanced=sixgr.truth.sharedArrivalTimingReference(planes,1011-32);
 assert(advanced.ExpectedArrivalOffset_samples==ref.ExpectedArrivalOffset_samples-32);
@@ -48,6 +87,17 @@ bad=planes; second=s; second.Execution.RX.Replay.InjectedTimingOffset_samples=3;
 bad(1).Segments={s,second};
 reject(bad,'sixgr:truth:TimeVaryingArrivalTiming');
 ok=true; disp('SHARED_ARRIVAL_TIMING_REFERENCE_PASS');
+end
+
+function rejectSRSBinding(row,planes,physical)
+try
+    sixgr.truth.bindSRSArrivalTimingReference(row,planes,physical);
+catch cause
+    assert(strcmp(cause.identifier,'sixgr:truth:SRSArrivalTimingBindingMismatch'), ...
+        'Unexpected SRS timing-binding failure: %s.',cause.identifier);
+    return;
+end
+error('test:MissingSRSBindingError','Expected contradictory SRS receive/transmit timing to be rejected.');
 end
 
 function reject(planes,id)

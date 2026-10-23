@@ -20,6 +20,38 @@ sys.path.insert(0, str(REPO_ROOT / "apps"))
 import lls_contract_materializer as materializer  # noqa: E402
 
 
+def test_energy_histogram_does_not_redivide_nonadditive_channel_windows() -> None:
+    path = "rf/csv/energy_timeline_trace.csv"
+    existing = {path: {"artifact_id": 1, "logical_path": path, "artifact_kind": "table_csv"}}
+    payload = materializer._encode_csv(
+        ["Energy_J", "SuccessfulBits", "AccountingRole"],
+        [[1, 1000, "nonadditive_channel_attribution_use_endpoint_timeline_for_totals"],
+         [1, 1000, "nonadditive_channel_attribution_use_endpoint_timeline_for_totals"]],
+    )
+    result = materializer._runtime_energy_histogram_chart(
+        "energy per bit histogram", existing, lambda _: payload, 1)
+    assert result is None
+
+
+@pytest.mark.parametrize("chart_name", ["power vs throughput", "power vs BLER", "PAPR vs power"])
+def test_power_relation_never_averages_channel_models_into_rf_power(chart_name: str) -> None:
+    energy_path = "rf/csv/energy_timeline_trace.csv"
+    trial_path = "air_interface/csv/dl_pdsch_trials.csv"
+    existing = {
+        energy_path: {"artifact_id": 1, "logical_path": energy_path},
+        trial_path: {"artifact_id": 2, "logical_path": trial_path},
+    }
+    payloads = {
+        1: materializer._encode_rows_from_dicts([dict(
+            Direction="DL", Frame=1, Slot=1, State="active_tx", Power_W=100,
+            AccountingRole="nonadditive_channel_attribution_use_endpoint_timeline_for_totals")]),
+        2: materializer._encode_rows_from_dicts([dict(
+            Direction="DL", Frame=1, Slot=1, Goodput_Mbps=10, BLER=0, PAPR_dB=8)]),
+    }
+    assert materializer._runtime_energy_relation_chart(
+        chart_name, existing, payloads.__getitem__, 1) is None
+
+
 @pytest.mark.parametrize("missing", [False, True])
 def test_availability_audit_uses_complete_inventory_not_failure_list(monkeypatch, missing) -> None:
     specs = [dict(section_slug="fixture", table_name=name) for name in ("a", "b", "disabled")]

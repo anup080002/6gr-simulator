@@ -35,7 +35,8 @@ classdef SlotCheckpoint
                 end
             end
             fields={'runtime_checkpoint_enable','runtime_checkpoint_resume_from', ...
-                'runtime_checkpoint_repair_reason','runtime_checkpoint_keep','checkpoint_every_slots'};
+                'runtime_checkpoint_repair_reason','runtime_checkpoint_keep', ...
+                'checkpoint_every_slots','checkpoint_first_slot'};
             for k=1:numel(fields)
                 if isfield(data.run_control,fields{k})
                     data.run_control=rmfield(data.run_control,fields{k});
@@ -65,7 +66,7 @@ classdef SlotCheckpoint
         function settings = operationalSettings(scenario)
             % Kept separately from the original scientific/config hash.
             settings=struct('run_control',struct(),'output',struct());
-            for name=["runtime_checkpoint_enable","checkpoint_every_slots","runtime_checkpoint_keep"]
+            for name=["runtime_checkpoint_enable","checkpoint_every_slots","checkpoint_first_slot","runtime_checkpoint_keep"]
                 if isfield(scenario.run_control,name)
                     settings.run_control.(name)=scenario.run_control.(name);
                 end
@@ -84,10 +85,11 @@ classdef SlotCheckpoint
             assert(isstruct(settings) && isscalar(settings) && ...
                 all(ismember(fieldnames(settings),{'run_control','output'})), ...
                 'sixgr:checkpoint:InvalidOperationalSettings','Unexpected operational settings.');
-            allowed=struct('run_control',{{'runtime_checkpoint_enable','checkpoint_every_slots','runtime_checkpoint_keep'}}, ...
+            allowed=struct('run_control',{{'runtime_checkpoint_enable','checkpoint_every_slots','checkpoint_first_slot','runtime_checkpoint_keep'}}, ...
                 'output',{{'live_csv_png_interval_slots','execution_stage_profile_enabled'}});
             mapping=struct('runtime_checkpoint_enable','run.runtimeCheckpointEnabled', ...
                 'checkpoint_every_slots','run.checkpointEverySlots', ...
+                'checkpoint_first_slot','run.checkpointFirstSlot', ...
                 'live_csv_png_interval_slots','outputs.liveCSVPNGIntervalSlots', ...
                 'execution_stage_profile_enabled','outputs.executionStageProfileEnabled');
             scenario=cfg.run.runtimeCheckpointScenario;
@@ -100,7 +102,7 @@ classdef SlotCheckpoint
                     value=values.(name);
                     if any(name==["runtime_checkpoint_enable","execution_stage_profile_enabled"])
                         validateattributes(value,{'logical'},{'scalar'});
-                    elseif name=="checkpoint_every_slots"
+                    elseif any(name==["checkpoint_every_slots","checkpoint_first_slot"])
                         validateattributes(value,{'numeric'},{'scalar','integer','nonnegative','finite'});
                     else
                         validateattributes(value,{'numeric'},{'scalar','integer','positive','finite'});
@@ -158,8 +160,8 @@ classdef SlotCheckpoint
                 if startsWith(replace(rel,'\','/'),'checkpoints/'), continue; end
                 localWithinRun(file,root);
                 snapshot="";
-                % Mutable CSV/JSON/report/MAT outputs must be copied even
-                % when large. Only explicit binary streams use watermarks.
+                % Mutable outputs require versioned recoverable bytes, not
+                % a new copy of unchanged bytes for every generation.
                 [~,~,extension]=fileparts(file);
                 immutableChannel=~isempty(regexp(char(replace(rel,'\','/')), ...
                     '^channel/mat/(channel_observation_|effch_)[a-f0-9]{64}\.mat$','once'));
@@ -169,9 +171,7 @@ classdef SlotCheckpoint
                     '^air_interface/mat/receive_only_observation_[a-f0-9]{64}\.mat$','once'));
                 if files(k).bytes<=1024*1024 || ...
                         (~strcmpi(extension,'.bin') && ~immutableChannel && ~immutablePlot && ~immutableReceiveOnly)
-                    snapshot=string(fullfile('small_files',sprintf('%08d.bin',numel(records)+1)));
-                    copyfile(file,fullfile(folder,snapshot));
-                    hash=sixgr.util.sha256File(fullfile(folder,snapshot));
+                    [snapshot,hash]=sixgr.runtime.CheckpointFileStore.capture(base,file);
                 else
                     % Large IQ/channel files are append-only or immutable.
                     % Keep a verified prefix watermark; never copy gigabytes
@@ -183,6 +183,13 @@ classdef SlotCheckpoint
             end
             payload.Scenario=sixgr.runtime.SlotCheckpoint.scientificScenario(scenario);
             payload.FullScenario=scenario;
+            % A small exact-type mirror permits a scientific-config reject
+            % before deserializing large channel/RF/HARQ handle graphs.
+            % It never replaces the comparison against the native payload.
+            scenarioPath=fullfile(folder,'scientific_scenario.mat');
+            sixgr.util.matSave(scenarioPath,struct('ScientificScenario',payload.Scenario), ...
+                'UseArtifactStore',false);
+            scenarioHash=sixgr.util.sha256File(scenarioPath);
             path=fullfile(folder,'state.mat');
             % HDF5 cannot reliably serialize directly into a long Windows
             % or synchronised result path. Use the existing byte-validated
@@ -190,9 +197,11 @@ classdef SlotCheckpoint
             sixgr.util.matSave(path,struct('payload',payload), ...
                 'UseArtifactStore',false,'ForceV73',true);
             stateHash=sixgr.util.sha256File(path);
-            receipt=struct('SchemaVersion',1,'Status','complete','Generation',generation, ...
+            receipt=struct('SchemaVersion',2,'Status','complete','Generation',generation, ...
                 'RunFolder',root,'CompletedSlotOneBased',slot,'NextSlotOneBased',slot+1, ...
                 'MATLABVersion',version,'StateSHA256',stateHash,'Source',source, ...
+                'ScientificScenarioFile','scientific_scenario.mat', ...
+                'ScientificScenarioSHA256',scenarioHash, ...
                 'Files',records,'RuntimeCallLedgerRequired',ledgerRequired, ...
                 'PrimaryStudyEligible',false, ...
                 'EvidenceScope','exact_state_checkpoint_not_performance_qualification');
@@ -242,22 +251,20 @@ classdef SlotCheckpoint
         end
 
         function [payload,receipt] = read(path,scenario,repairReason)
-            path=localCanonical(path);
-            receiptPath=fullfile(fileparts(path),'checkpoint.json');
-            assert(isfile(path) && isfile(receiptPath), ...
-                'sixgr:checkpoint:Incomplete','No committed state/receipt pair exists at %s.',path);
-            receipt=jsondecode(fileread(receiptPath));
-            assert(receipt.SchemaVersion==1 && string(receipt.Status)=="complete" && ...
-                string(receipt.StateSHA256)==sixgr.util.sha256File(path), ...
-                'sixgr:checkpoint:StateIntegrity','Checkpoint schema/status/hash mismatch.');
-            assert(string(receipt.MATLABVersion)==string(version), ...
-                'sixgr:checkpoint:MATLABVersion','Restore requires the same MATLAB version.');
-            current=sixgr.runtime.SlotCheckpoint.sourceIdentity();
-            changed=string(current.SHA256)~=string(receipt.Source.SHA256);
-            assert(~changed || strlength(strtrim(string(repairReason)))>0, ...
-                'sixgr:checkpoint:SourceChanged', ...
-                ['Source changed. Review whether the repair affects prefix state; ' ...
-                 'declare runtime_checkpoint_repair_reason for diagnostic replay only.']);
+            preflight=sixgr.runtime.SlotCheckpoint.preflightScenario(path,scenario);
+            receipt=sixgr.runtime.SlotCheckpoint.verify(path,repairReason);
+            % Neither metadata nor the mirror may change between preflight
+            % and the full verified state read. Legacy checkpoints continue
+            % to use the original exact native-state comparison below.
+            if preflight.Available
+                assert(isfield(receipt,'ScientificScenarioFile') && ...
+                    string(receipt.ScientificScenarioFile)=="scientific_scenario.mat" && ...
+                    isfield(receipt,'ScientificScenarioSHA256') && ...
+                    string(receipt.ScientificScenarioSHA256)==preflight.SHA256, ...
+                    'sixgr:checkpoint:ScenarioPreflightChanged', ...
+                    'Checkpoint configuration preflight changed during restore.');
+            end
+            nativeLoadScope=sixgr.runtime.ExecutionStageProfiler.scope("checkpoint","deserialize_native_state"); %#ok<NASGU>
             saved=sixgr.util.loadVerifiedMAT(string(path), ...
                 string(receipt.StateSHA256),"payload");
             payload=saved.payload;
@@ -269,18 +276,171 @@ classdef SlotCheckpoint
                 sixgr.runtime.SlotCheckpoint.scientificScenario(scenario)), ...
                 'sixgr:checkpoint:ScenarioChanged', ...
                 'Scientific configuration changed: restart from slot zero.');
+            receipt.RequestedConfigInheritance=sixgr.util.structGet( ...
+                scenario,'config_inheritance',struct());
+            receipt.ScenarioPreflight=preflight;
+            receipt.RequestedOperationalSettings= ...
+                sixgr.runtime.SlotCheckpoint.operationalSettings(scenario);
+        end
+
+        function evidence = preflightScenario(path,scenario)
+            % No state deserialization, runtime mutation, artifact recovery
+            % or scientific-config migration. Old receipts remain supported.
+            path=localCanonical(path);
+            receiptPath=fullfile(fileparts(path),'checkpoint.json');
+            assert(isfile(path) && isfile(receiptPath), ...
+                'sixgr:checkpoint:Incomplete','No committed state/receipt pair exists at %s.',path);
+            receipt=jsondecode(fileread(receiptPath));
+            evidence=struct('Available',false,'SHA256',"", ...
+                'NativeStateLoaded',false,'Scope',"legacy_native_scenario_check_required");
+            fields=isfield(receipt,{'ScientificScenarioFile','ScientificScenarioSHA256'});
+            if ~any(fields), return; end
+            assert(all(fields) && isscalar(receipt) && ...
+                any(receipt.SchemaVersion==[1 2]) && string(receipt.Status)=="complete" && ...
+                isscalar(string(receipt.ScientificScenarioFile)) && ...
+                string(receipt.ScientificScenarioFile)=="scientific_scenario.mat" && ...
+                isscalar(string(receipt.ScientificScenarioSHA256)) && ...
+                ~isempty(regexp(char(string(receipt.ScientificScenarioSHA256)), ...
+                    '^[a-f0-9]{64}$','once')), ...
+                'sixgr:checkpoint:ScenarioPreflightIntegrity', ...
+                'The exact scientific configuration mirror needs a valid file and checksum.');
+            mirror=fullfile(fileparts(path),'scientific_scenario.mat');
+            assert(isfile(mirror) && ...
+                string(sixgr.util.sha256File(mirror))==string(receipt.ScientificScenarioSHA256), ...
+                'sixgr:checkpoint:ScenarioPreflightIntegrity', ...
+                'The scientific configuration mirror is missing or changed.');
+            saved=sixgr.util.loadVerifiedMAT(string(mirror), ...
+                string(receipt.ScientificScenarioSHA256),"ScientificScenario");
+            assert(isequaln(saved.ScientificScenario, ...
+                sixgr.runtime.SlotCheckpoint.scientificScenario(scenario)), ...
+                'sixgr:checkpoint:ScenarioChanged', ...
+                'Scientific configuration changed: restart from slot zero. Native runtime state was not loaded.');
+            evidence.Available=true;
+            evidence.SHA256=string(receipt.ScientificScenarioSHA256);
+            evidence.Scope="verified_exact_config_mirror_not_a_replacement_for_native_state_validation";
+        end
+
+        function receipt = verify(path,repairReason)
+            % Byte/source checks without native MATLAB object reconstruction.
+            verifyScope=sixgr.runtime.ExecutionStageProfiler.scope("checkpoint","verify_state_bytes_and_source"); %#ok<NASGU>
+            path=localCanonical(path);
+            receiptPath=fullfile(fileparts(path),'checkpoint.json');
+            assert(isfile(path) && isfile(receiptPath), ...
+                'sixgr:checkpoint:Incomplete','No committed state/receipt pair exists at %s.',path);
+            receipt=jsondecode(fileread(receiptPath));
+            assert(any(receipt.SchemaVersion==[1 2]) && string(receipt.Status)=="complete" && ...
+                string(receipt.StateSHA256)==sixgr.util.sha256File(path), ...
+                'sixgr:checkpoint:StateIntegrity','Checkpoint schema/status/hash mismatch.');
+            assert(string(receipt.MATLABVersion)==string(version), ...
+                'sixgr:checkpoint:MATLABVersion','Restore requires the same MATLAB version.');
+            current=sixgr.runtime.SlotCheckpoint.sourceIdentity();
+            changed=string(current.SHA256)~=string(receipt.Source.SHA256);
+            assert(~changed || strlength(strtrim(string(repairReason)))>0, ...
+                'sixgr:checkpoint:SourceChanged', ...
+                ['Source changed. Review whether the repair affects prefix state; ' ...
+                 'declare runtime_checkpoint_repair_reason for diagnostic replay only.']);
             receipt.RestoredSource=current;
             receipt.SourceChanged=changed;
             receipt.RepairReason=string(repairReason);
-            receipt.RequestedConfigInheritance=sixgr.util.structGet( ...
-                scenario,'config_inheritance',struct());
-            receipt.RequestedOperationalSettings= ...
-                sixgr.runtime.SlotCheckpoint.operationalSettings(scenario);
             receipt.PrimaryStudyEligible=false;
             receipt.EvidenceScope='checkpoint_continuation_requires_full_source_qualification';
         end
 
-        function [root,lineage] = prepareResume(path,scenario,repairReason,requireRuntimeLedger)
+        function [data,metadata] = savedScenarioMetadata(path,expectedState,expectedConfig)
+            % Small, immutable checkpoint dependencies only. This does NOT
+            % authorize a resume or replace native-state/source validation.
+            path=localCanonical(path);
+            receiptPath=fullfile(fileparts(path),'checkpoint.json');
+            assert(isfile(path)&&isfile(receiptPath), ...
+                'sixgr:checkpoint:Incomplete','No completed state/receipt pair exists.');
+            receiptHash=string(sixgr.util.sha256File(receiptPath));
+            receipt=jsondecode(fileread(receiptPath));
+            assert(any(receipt.SchemaVersion==[1 2])&&string(receipt.Status)=="complete"&& ...
+                string(receipt.StateSHA256)==string(expectedState), ...
+                'sixgr:checkpoint:SavedIdentityMismatch','The selected checkpoint state identity differs from the request.');
+            paths=replace(string({receipt.Files.Path}),'\','/');
+            names=["meta/scenario_config_resolved.json","meta/scenario_config_identity.json"];
+            values=cell(2,1); sources=strings(2,1); hashes=strings(2,1);
+            for k=1:2
+                idx=find(paths==names(k));
+                assert(isscalar(idx),'sixgr:checkpoint:SavedMetadataMissing', ...
+                    'Checkpoint must retain exactly one %s.',names(k));
+                record=receipt.Files(idx);
+                assert(strlength(string(record.Snapshot))>0, ...
+                    'sixgr:checkpoint:SavedMetadataMissing','Saved configuration must be an immutable checkpoint version.');
+                sources(k)=string(localSource(record,path,receipt.RunFolder));
+                info=dir(sources(k));
+                assert(isscalar(info)&&info.bytes==record.Bytes&& ...
+                    string(sixgr.util.sha256File(sources(k)))==string(record.SHA256), ...
+                    'sixgr:checkpoint:SavedMetadataIntegrity','Saved configuration dependency changed: %s.',names(k));
+                values{k}=jsondecode(fileread(sources(k))); hashes(k)=string(record.SHA256);
+                assert(string(sixgr.util.sha256File(sources(k)))==hashes(k), ...
+                    'sixgr:checkpoint:SavedMetadataIntegrity','Saved configuration changed during read.');
+            end
+            data=values{1}; identity=values{2};
+            assert(isstruct(data)&&isscalar(data)&&isstruct(identity)&&isscalar(identity)&& ...
+                all(isfield(identity,{'SchemaVersion','ScenarioID','ConfigHash','ResolvedJSONSHA256'}))&& ...
+                string(identity.SchemaVersion)=="sixgr_resolved_config_identity/v1"&& ...
+                string(identity.ConfigHash)==string(expectedConfig)&& ...
+                string(identity.ResolvedJSONSHA256)==hashes(1)&& ...
+                string(identity.ScenarioID)==string(sixgr.util.structGet(data,'meta.scenario_id',"")), ...
+                'sixgr:checkpoint:SavedIdentityMismatch','Saved scenario identity and immutable configuration disagree.');
+            assert(string(sixgr.util.sha256File(receiptPath))==receiptHash, ...
+                'sixgr:checkpoint:SavedMetadataChanged','Checkpoint receipt changed during metadata read.');
+            metadata=struct('ReceiptSHA256',receiptHash,'ResolvedSource',sources(1), ...
+                'ResolvedSHA256',hashes(1),'IdentitySHA256',hashes(2), ...
+                'ConfigHash',string(identity.ConfigHash),'StateSHA256',string(receipt.StateSHA256), ...
+                'CompletedSlot',double(receipt.CompletedSlotOneBased));
+        end
+
+        function [payload,lineage,scenario] = readSavedContinuation(request)
+            assert(isa(request,'sixgr.runtime.CheckpointContinuationRequest'), ...
+                'sixgr:checkpoint:InvalidContinuationRequest','An explicit saved-configuration request is required.');
+            [archived,metadata]=request.verifiedMetadata();
+            lineage=sixgr.runtime.SlotCheckpoint.verify(request.Path,request.RepairReason);
+            saved=sixgr.util.loadVerifiedMAT(request.Path,string(lineage.StateSHA256),"payload");
+            payload=saved.payload;
+            assert(all(isfield(payload,{'FullScenario','Scenario','ConfigHash'}))&& ...
+                string(payload.ConfigHash)==request.ExpectedConfigHash&& ...
+                isequaln(sixgr.runtime.SlotCheckpoint.scientificScenario(payload.FullScenario), ...
+                    sixgr.runtime.SlotCheckpoint.scientificScenario(payload.Scenario)), ...
+                'sixgr:checkpoint:SavedIdentityMismatch','Native scientific state/configuration identity is inconsistent.');
+            % JSON is only the portable comparison plane, never the source
+            % of a reconstructed native runtime/config. Its exact bytes were
+            % checked above; native FullScenario retains original MATLAB types.
+            nativePortable=jsondecode(jsonencode(payload.FullScenario));
+            assert(isequaln(sixgr.runtime.SlotCheckpoint.scientificScenario(nativePortable), ...
+                sixgr.runtime.SlotCheckpoint.scientificScenario(archived)), ...
+                'sixgr:checkpoint:SavedScenarioMismatch', ...
+                'Native saved scenario differs from its immutable published configuration.');
+            % A mirror, when present, remains an integrity dependency even
+            % though this mode takes the scientific values from native state.
+            lineage.ScenarioPreflight=sixgr.runtime.SlotCheckpoint.preflightScenario( ...
+                request.Path,payload.FullScenario);
+            request.verifiedMetadata();
+            stream=sixgr.util.structGet(payload,'RuntimeState.SharedWaveformStream',[]);
+            if isa(stream,'sixgr.truth.CoupledWaveformStream'), stream.compactBroadcastContexts(); end
+            scenario=request.applyOperational(payload.FullScenario);
+            % The same exact native scientific comparison used by ordinary
+            % YAML resumes still applies. No ignored new scientific fields.
+            assert(isequaln(sixgr.runtime.SlotCheckpoint.scientificScenario(payload.Scenario), ...
+                sixgr.runtime.SlotCheckpoint.scientificScenario(scenario)), ...
+                'sixgr:checkpoint:ScenarioChanged','A continuation cannot change saved science.');
+            lineage.RequestedOperationalSettings=sixgr.runtime.SlotCheckpoint.operationalSettings(scenario);
+            lineage.RequestedConfigInheritance=sixgr.util.structGet(scenario,'config_inheritance',struct());
+            lineage.ConfigurationSource="immutable_checkpoint_native_scenario_no_current_defaults_or_inheritance";
+            lineage.SavedConfigurationMetadata=metadata;
+            lineage.ContinuationRequestPath=request.RequestPath;
+            lineage.ContinuationRequestSHA256=request.RequestSHA256;
+            lineage.ExecutionHorizon=request.ExecutionHorizon;
+            if ~isempty(fieldnames(request.ExecutionHorizon))
+                probe.run.executionHorizon=request.ExecutionHorizon;
+                sixgr.runtime.CheckpointExecutionHorizon.assertResume(payload,probe, ...
+                    request.ExecutionHorizon.FinishAfterSlot,payload.SNRGrid);
+            end
+        end
+
+        function [root,lineage,lease] = prepareResume(path,scenario,repairReason,requireRuntimeLedger)
             % Preflight ALL dependencies before moving anything. The old run
             % is retained under checkpoints/recovery_*, never deleted.
             if nargin<4, requireRuntimeLedger=false; end
@@ -296,21 +456,40 @@ classdef SlotCheckpoint
                      'Restart from a checkpoint containing it or begin a new execution; ' ...
                      'do not reconstruct historical calls or replace the existing run.']);
             end
-            [saved,lineage]=sixgr.runtime.SlotCheckpoint.read(path,scenario,repairReason);
+            stateReadTimer=tic;
+            if isa(scenario,'sixgr.runtime.CheckpointContinuationRequest')
+                assert(string(localCanonical(path))==scenario.Path&&string(repairReason)==scenario.RepairReason, ...
+                    'sixgr:checkpoint:SavedIdentityMismatch','Continuation path and repair declaration must match the request.');
+                [saved,lineage,scenario]=sixgr.runtime.SlotCheckpoint.readSavedContinuation(scenario);
+            else
+                [saved,lineage]=sixgr.runtime.SlotCheckpoint.read(path,scenario,repairReason);
+            end
+            lineage.ResumePreparationTiming=struct('StateReadAndValidationSeconds',toc(stateReadTimer), ...
+                'NativeDeserializations',1,'ExternalDependencyValidationSeconds',NaN, ...
+                'ArtifactRestorationSeconds',NaN);
             lineage.CanonicalScenario=saved.FullScenario;
             lineage.CanonicalConfigHash=saved.ConfigHash;
-            clear saved;
+            lease=[];
+            % Only the production single-owner handoff retains native state.
+            % Two-output legacy/report callers keep their prior memory scope.
+            if nargout<3, clear saved; end
             root=localCanonical(lineage.RunFolder);
             archiveStorage=localArchiveStorage(root);
             base=sixgr.runtime.SlotCheckpoint.storageRoot(root);
             localWithin(path,base);
             records=lineage.Files;
+            dependencyTimer=tic;
+            dependencyScope=sixgr.runtime.ExecutionStageProfiler.scope("checkpoint","verify_external_dependencies");
             for k=1:numel(records)
                 source=localSource(records(k),path,root);
                 assert(localPrefix(source,records(k).Bytes,"")==string(records(k).SHA256), ...
                     'sixgr:checkpoint:ArtifactIntegrity', ...
                     'Checkpoint dependency was removed or changed: %s.',records(k).Path);
             end
+            clear dependencyScope
+            lineage.ResumePreparationTiming.ExternalDependencyValidationSeconds=toc(dependencyTimer);
+            restorationTimer=tic;
+            restorationScope=sixgr.runtime.ExecutionStageProfiler.scope("checkpoint","restore_artifact_prefix"); %#ok<NASGU>
             history=fullfile(base, ...
                 ['recovery_' char(java.util.UUID.randomUUID)]);
             staging=fullfile(base,['restore_' char(java.util.UUID.randomUUID)]);
@@ -358,11 +537,15 @@ classdef SlotCheckpoint
             end
             lineage.PreservedFailedAttempt=history;
             lineage.Checkpoint=localCanonical(path);
+            lineage.ResumePreparationTiming.ArtifactRestorationSeconds=toc(restorationTimer);
             sixgr.util.jsonWrite(fullfile(root,'meta','checkpoint_resume.json'),lineage);
             sixgr.util.jsonWrite(fullfile(root,'meta','latest_slot_checkpoint.json'), ...
                 struct('Checkpoint',lineage.Checkpoint, ...
                 'CompletedSlotOneBased',lineage.CompletedSlotOneBased, ...
                 'NextSlotOneBased',lineage.NextSlotOneBased));
+            if nargout>=3
+                lease=sixgr.runtime.CheckpointResumeLease(path,saved,lineage);
+            end
         end
     end
 end
@@ -378,7 +561,9 @@ assert(startsWith(lower(path),lower(root+filesep)), ...
 end
 
 function path=localSource(record,checkpoint,root)
-if strlength(string(record.Snapshot))>0
+if startsWith(string(record.Snapshot),"@objects/")
+    path=sixgr.runtime.CheckpointFileStore.resolve(fileparts(fileparts(checkpoint)),record.Snapshot);
+elseif strlength(string(record.Snapshot))>0
     root=fileparts(checkpoint); path=fullfile(root,record.Snapshot);
     localWithin(path,root);
 else

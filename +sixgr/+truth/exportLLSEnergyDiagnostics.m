@@ -1,4 +1,4 @@
-function artifacts = exportLLSEnergyDiagnostics(cfg, airInterfaceRunFolder, rawTrials)
+function artifacts = exportLLSEnergyDiagnostics(cfg, airInterfaceRunFolder, rawTrials, resourceEvidence)
 %EXPORTLLSENERGYDIAGNOSTICS Emit measured/model-backed RF and energy tables for LLS.
 
 artifacts = struct("CSV", "", "TimelineCSV", "", "ModelTermsCSV", "", ...
@@ -8,6 +8,85 @@ artifacts = struct("CSV", "", "TimelineCSV", "", "ModelTermsCSV", "", ...
 rootRunFolder = fileparts(char(string(airInterfaceRunFolder)));
 layout = sixgr.report.resultLayout(rootRunFolder);
 sixgr.util.ensureFolder(layout.RFCSVDir);
+artifacts.RFExecution=sixgr.truth.publishRFEndpointExecutionLedger(cfg,airInterfaceRunFolder,rawTrials);
+if nargin<4
+    [resourceEvidence,rawTrials,loadAudit]=sixgr.truth.loadLLSEnergyResourceEvidence(cfg,airInterfaceRunFolder,rawTrials);
+    artifacts.ResourceLoadAudit=loadAudit;
+end
+if ~isempty(resourceEvidence)
+    carrierMissing=false;
+    if isempty(resourceEvidence.Intervals)
+        binding=table('Size',[0 1],'VariableTypes',{'double'},'VariableNames',{'BoundIntervalCount'});
+        unbound=resourceEvidence.Intervals;
+        for name=["DL","UL","PDCCH","PUCCH","SRS","CSIRS","TRS"]
+            carrierMissing=carrierMissing || ~isempty(sixgr.util.structGet(rawTrials,name,table()));
+        end
+        if sixgr.util.structGet(cfg,'phy.ssb.scs_kHz',cfg.phy.carrier.SubcarrierSpacing)==cfg.phy.carrier.SubcarrierSpacing
+            carrierMissing=carrierMissing || ~isempty(sixgr.util.structGet(rawTrials,'PBCH',table()));
+        end
+    else
+    [rawTrials,binding,unbound]=sixgr.truth.bindObservedResourcesToTrials(rawTrials,cfg, ...
+        resourceEvidence.Intervals,resourceEvidence.ConfigHash,resourceEvidence.SourceSHA256);
+    end
+    [common,commonBinding,unbound]=sixgr.truth.buildCommonSignalEnergyObservations( ...
+        rawTrials,cfg,unbound,resourceEvidence.ConfigHash,resourceEvidence.SourceSHA256);
+    rawTrials.CommonEnergyObservations=common;
+    artifacts.CommonSignalObservations=common;
+    artifacts.CommonResourceBindingTable=commonBinding;
+    artifacts.CommonSignalObservationsCSV=fullfile(layout.RFCSVDir,'energy_common_signal_observations.csv');
+    artifacts.CommonResourceBindingCSV=fullfile(layout.RFCSVDir,'energy_common_resource_binding.csv');
+    sixgr.util.csvWriteTable(artifacts.CommonSignalObservationsCSV,common);
+    sixgr.util.csvWriteTable(artifacts.CommonResourceBindingCSV,commonBinding);
+    artifacts.ResourceBindingCSV=fullfile(layout.RFCSVDir,'energy_resource_binding.csv');
+    artifacts.UnboundResourcesCSV=fullfile(layout.RFCSVDir,'energy_unbound_executed_resources.csv');
+    sixgr.util.csvWriteTable(artifacts.ResourceBindingCSV,binding);
+    sixgr.util.csvWriteTable(artifacts.UnboundResourcesCSV,unbound);
+    artifacts.ResourceBindingTable=binding;
+    artifacts.UnboundResourceTable=unbound;
+    artifacts.ResourceCoverageScope="supplied_executed_occupancy_ledgers_not_complete_run";
+    artifacts.ResourceCoverageComplete=~carrierMissing && isempty(unbound) && all(binding.BoundIntervalCount>0);
+    if isfield(resourceEvidence,'NativePRACH')
+        nativeBinding=table(); nativeUsed=strings(0,1);
+        if isfield(rawTrials,'PRACH') && ~isempty(rawTrials.PRACH)
+            [rawTrials.PRACH,nativeBinding]=sixgr.truth.bindPRACHNativeResourcesToTrials( ...
+                rawTrials.PRACH,cfg,resourceEvidence.NativePRACH,resourceEvidence.ConfigHash,resourceEvidence.NativeSourceSHA256);
+            nativeUsed=string(nativeBinding.AllocationID(nativeBinding.NativeRows>0));
+        end
+        nativeUnbound=resourceEvidence.NativePRACH(~ismember(string(resourceEvidence.NativePRACH.allocation_id),nativeUsed),:);
+        artifacts.NativeResourceBindingTable=nativeBinding;
+        artifacts.NativeResourceBindingCSV=fullfile(layout.RFCSVDir,'energy_native_resource_binding.csv');
+        sixgr.util.csvWriteTable(artifacts.NativeResourceBindingCSV,nativeBinding);
+        artifacts.UnboundNativeResourceTable=nativeUnbound;
+        artifacts.UnboundNativeResourceCSV=fullfile(layout.RFCSVDir,'energy_unbound_native_resources.csv');
+        sixgr.util.csvWriteTable(artifacts.UnboundNativeResourceCSV,nativeUnbound);
+        nativeComplete=isempty(nativeUnbound);
+        if ~isempty(nativeBinding), nativeComplete=nativeComplete && all(nativeBinding.NativeRows>0); end
+        artifacts.ResourceCoverageComplete=artifacts.ResourceCoverageComplete && nativeComplete;
+    elseif isfield(rawTrials,'PRACH') && ~isempty(rawTrials.PRACH)
+        artifacts.ResourceCoverageComplete=false;
+    end
+    if isfield(resourceEvidence,'NativeSSB')
+        ssbBinding=table(); ssbUsed=strings(0,1);
+        if isfield(rawTrials,'PBCH') && ~isempty(rawTrials.PBCH)
+            [rawTrials.PBCH,ssbBinding]=sixgr.truth.bindSSBNativeResourcesToTrials( ...
+                rawTrials.PBCH,cfg,resourceEvidence.NativeSSB,resourceEvidence.ConfigHash,resourceEvidence.NativeSSBSourceSHA256);
+            ssbUsed=string(ssbBinding.AllocationID(ssbBinding.NativeRows>0));
+        end
+        ssbUnbound=resourceEvidence.NativeSSB(~ismember(string(resourceEvidence.NativeSSB.allocation_id),ssbUsed),:);
+        artifacts.NativeSSBResourceBindingTable=ssbBinding;
+        artifacts.NativeSSBResourceBindingCSV=fullfile(layout.RFCSVDir,'energy_native_ssb_resource_binding.csv');
+        sixgr.util.csvWriteTable(artifacts.NativeSSBResourceBindingCSV,ssbBinding);
+        artifacts.UnboundNativeSSBResourceTable=ssbUnbound;
+        artifacts.UnboundNativeSSBResourceCSV=fullfile(layout.RFCSVDir,'energy_unbound_native_ssb_resources.csv');
+        sixgr.util.csvWriteTable(artifacts.UnboundNativeSSBResourceCSV,ssbUnbound);
+        complete=isempty(ssbUnbound);
+        if ~isempty(ssbBinding), complete=complete && all(ssbBinding.NativeRows>0); end
+        artifacts.ResourceCoverageComplete=artifacts.ResourceCoverageComplete && complete;
+    elseif ~isempty(sixgr.util.structGet(rawTrials,'PBCH',table())) && ...
+            sixgr.util.structGet(cfg,'phy.ssb.scs_kHz',cfg.phy.carrier.SubcarrierSpacing)~=cfg.phy.carrier.SubcarrierSpacing
+        artifacts.ResourceCoverageComplete=false;
+    end
+end
 
 % Shared observations carry the real RF sample clock independently of the
 % modeled energy rows below. Export their union without equating an observed
@@ -23,25 +102,74 @@ artifacts.RFObservationTable=rfObservations;
 artifacts.RFIntervalUnionTable=rfIntervals;
 artifacts.RFIntervalCoverageTable=rfCoverage;
 
-model = sixgr.truth.resolveLLSEnergyModelConfig(cfg);
+model = sixgr.truth.resolveLLSEnergyModelConfig(cfg, ...
+    RFInventoryPolicy="bind_declared_inventory");
+% A live/repair prefix is not the planned full run. Bind its committed
+% radio boundary only in the reporting copy, never mutate physical config.
+summaryCfg=cfg;
+completed=sixgr.util.structGet(rawTrials,'CoupledRuntime.CompletedCanonicalSlots',NaN);
+artifacts.MeasurementWindowSource="existing_declared_or_observed_duration";
+if isfinite(completed)
+    validateattributes(completed,{'numeric'},{'scalar','integer','nonnegative'});
+    if completed>0
+        summaryCfg.run.measurementWindow_s=double(completed)*localSlotDuration(cfg);
+        artifacts.MeasurementWindowSource="committed_runtime_completed_canonical_slots";
+    end
+end
 modelTermsPath = fullfile(layout.RFCSVDir, "energy_model_terms.csv");
 sixgr.util.csvWriteTable(modelTermsPath, model.TermTable);
 artifacts.ModelTermsCSV = modelTermsPath;
 artifacts.ModelTermsTable = model.TermTable;
 artifacts.Available = logical(model.Available);
+artifacts.ModelAvailable = logical(model.Available);
 artifacts.FailureReason = string(model.FailureReason);
 
 if model.Available
     timelineT = localBuildEnergyTimeline(cfg, rawTrials, model.ModelConfig, model.ModelVersion);
-    summaryT = localBuildEnergySummary(cfg, timelineT, model.ModelVersion);
+    endpointT = sixgr.truth.integrateLLSEndpointEnergy(timelineT,model.ModelConfig);
+    summaryT = localBuildEnergySummary(summaryCfg, timelineT, endpointT, model.ModelVersion);
+    artifacts.EndpointTotalsAvailable=~isempty(endpointT) && ...
+        all(endpointT.Availability=="AVAILABLE");
+    if ~isempty(endpointT) && ~artifacts.EndpointTotalsAvailable
+        artifacts.Available=false;
+        artifacts.FailureReason=strjoin(unique(endpointT.Status( ...
+            endpointT.Availability~="AVAILABLE"),'stable'),";");
+    end
 else
     timelineT = table();
+    endpointT = table();
     summaryT = localUnavailableEnergySummary(model.ModelVersion, model.FailureReason);
+    artifacts.EndpointTotalsAvailable=false;
+end
+if isfield(artifacts,'ResourceCoverageComplete') && ~artifacts.ResourceCoverageComplete
+    % Keep partial calculations in an explicitly scoped diagnostic artifact,
+    % not as primary endpoint totals when executed signals are unaccounted.
+    partial=summaryT;
+    partial.EvidenceScope=repmat("represented_receiver_intervals_only_incomplete_signal_coverage",height(partial),1);
+    artifacts.RepresentedIntervalSummaryTable=partial;
+    artifacts.RepresentedIntervalSummaryCSV=fullfile(layout.RFCSVDir,'energy_represented_interval_diagnostics.csv');
+    sixgr.util.csvWriteTable(artifacts.RepresentedIntervalSummaryCSV,partial);
+    totals=ismember(string(summaryT.MetricKey),["ue_energy_per_successful_bit", ...
+        "gnb_energy_per_successful_bit","ue_energy_per_slot_frame_burst", ...
+        "gnb_active_sleep_duty_cycle","rf_chain_active_time","bb_processing_energy", ...
+        "throughput_per_watt","energy_delay_product","energy_spectral_efficiency_tradeoff"]);
+    summaryT.Value(totals)=NaN;
+    summaryT.TextValue(totals)="";
+    summaryT.Availability(totals)="NOT_EVALUATED";
+    summaryT.Notes(totals)="Executed signal resources remain unbound; inspect energy_unbound_executed_resources and the separately scoped represented-interval diagnostics.";
+    artifacts.Available=false;
+    reasons=[artifacts.FailureReason,"unbound_executed_signal_resources"];
+    artifacts.FailureReason=strjoin(reasons(strlength(reasons)>0),";");
 end
 summaryT = sixgr.truth.finalizeProbeMetricTable(summaryT);
+summaryT.EnergyAccountingScope=repmat("represented_signal_intervals_not_complete_run_or_hardware_energy",height(summaryT),1);
+summaryT.MeasurementWindowSource=repmat(artifacts.MeasurementWindowSource,height(summaryT),1);
 
 timelinePath = fullfile(layout.RFCSVDir, "energy_timeline_trace.csv");
 summaryPath = fullfile(layout.RFCSVDir, "probe_rf_energy.csv");
+artifacts.EndpointTimelineCSV=fullfile(layout.RFCSVDir,"energy_endpoint_timeline.csv");
+artifacts.EndpointTimelineTable=endpointT;
+sixgr.util.csvWriteTable(artifacts.EndpointTimelineCSV,endpointT);
 sixgr.util.csvWriteTable(timelinePath, timelineT);
 sixgr.util.csvWriteTable(summaryPath, summaryT);
 
@@ -49,26 +177,46 @@ artifacts.CSV = summaryPath;
 artifacts.TimelineCSV = timelinePath;
 artifacts.SummaryTable = summaryT;
 artifacts.TimelineTable = timelineT;
+% EndpointTotalsAvailable concerns only represented receiver intervals. A
+% caller with the complete TX ledger must also inspect coverage; unbound SI,
+% RA or common signals cannot disappear from a complete-run energy claim.
+artifacts.EndpointTotalsScope="represented_receiver_intervals_not_complete_run_or_hardware_power";
+artifacts.CompleteRunEnergyAvailable=false;
 end
 
 function timelineT = localBuildEnergyTimeline(cfg, rawTrials, modelCfg, modelVersion)
+rawTrials=localBindSinglePopulationScope(rawTrials);
 ueModel = sixgr.rf.EnergyModelUE(modelCfg);
 bsModel = sixgr.rf.EnergyModelBS(modelCfg);
 slotDur_s = localSlotDuration(cfg);
 bsRfChains = double(sixgr.util.structGet(modelCfg, "powerAndRF.bsRFChainCount", NaN));
 ueRfChains = double(sixgr.util.structGet(modelCfg, "powerAndRF.ueRFChainCount", NaN));
+bsRfChains=localDirectionalRFInventory(modelCfg,"bs",bsRfChains);
+ueRfChains=localDirectionalRFInventory(modelCfg,"ue",ueRfChains);
 bsTxPowerW = localdBmToW(double(sixgr.util.structGet(modelCfg, "powerAndRF.bsTxPower_dBm", NaN)));
 ueTxPowerW = localdBmToW(double(sixgr.util.structGet(modelCfg, "powerAndRF.ueTxPower_dBm", NaN)));
 totalRBs = max(1, double(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", 1)));
 
 rows = repmat(localEmptyEnergyRow(), 0, 1);
-rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "DL", table())), "DL_data", "DL", slotDur_s, totalRBs, bsRfChains, ueRfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/dl_pdsch_trials.csv")]; %#ok<AGROW>
-rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "UL", table())), "UL_data", "UL", slotDur_s, totalRBs, bsRfChains, ueRfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/ul_pusch_trials.csv")]; %#ok<AGROW>
-rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "PDCCH", table())), "PDCCH_monitoring", "DL", slotDur_s, totalRBs, bsRfChains, ueRfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/pdcch_trials.csv")]; %#ok<AGROW>
-rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "PBCH", table())), "SSB_PBCH", "DL", slotDur_s, totalRBs, bsRfChains, ueRfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/pbch_trials.csv")]; %#ok<AGROW>
-rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "PRACH", table())), "PRACH", "UL", slotDur_s, totalRBs, bsRfChains, ueRfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/prach_trials.csv")]; %#ok<AGROW>
-rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "PUCCH", table())), "PUCCH", "UL", slotDur_s, totalRBs, bsRfChains, ueRfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/pucch_trials.csv")]; %#ok<AGROW>
-rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "SRS", table())), "SRS", "UL", slotDur_s, totalRBs, bsRfChains, ueRfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/srs_trials.csv")]; %#ok<AGROW>
+rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "DL", table())), "DL_data", "DL", slotDur_s, totalRBs, bsRfChains, ueRfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/dl_pdsch_trials.csv",cfg)]; %#ok<AGROW>
+rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "UL", table())), "UL_data", "UL", slotDur_s, totalRBs, bsRfChains, ueRfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/ul_pusch_trials.csv",cfg)]; %#ok<AGROW>
+rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "PDCCH", table())), "PDCCH_monitoring", "DL", slotDur_s, totalRBs, bsRfChains, ueRfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/pdcch_trials.csv",cfg)]; %#ok<AGROW>
+rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "PBCH", table())), "SSB_PBCH", "DL", slotDur_s, totalRBs, bsRfChains, ueRfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/pbch_trials.csv",cfg)]; %#ok<AGROW>
+rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "PRACH", table())), "PRACH", "UL", slotDur_s, totalRBs, bsRfChains, ueRfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/prach_trials.csv",cfg)]; %#ok<AGROW>
+rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "PUCCH", table())), "PUCCH", "UL", slotDur_s, totalRBs, bsRfChains, ueRfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/pucch_trials.csv",cfg)]; %#ok<AGROW>
+rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "SRS", table())), "SRS", "UL", slotDur_s, totalRBs, bsRfChains, ueRfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/srs_trials.csv",cfg)]; %#ok<AGROW>
+rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "CSIRS", table())), "CSI_RS", "DL", slotDur_s, totalRBs, bsRfChains, ueRfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/csi_rs_trials.csv",cfg)]; %#ok<AGROW>
+rows = [rows; localBuildRowsForTable(localResolveTrialTable(sixgr.util.structGet(rawTrials, "TRS", table())), "TRS", "DL", slotDur_s, totalRBs, bsRfChains, ueRfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, "air_interface/csv/trs_trials.csv",cfg)]; %#ok<AGROW>
+common=sixgr.util.structGet(rawTrials,'CommonEnergyObservations',table());
+if ~isempty(common)
+    for domain=reshape(unique(string(common.Domain),'stable'),1,[])
+        C=common(common.Domain==domain,:);
+        direction=unique(string(C.Direction)); source=unique(string(C.SourceArtifact));
+        assert(isscalar(direction)&&isscalar(source),'sixgr:truth:CommonEnergyDomain','Common domain must retain one direction and source.');
+        rows=[rows;localBuildRowsForTable(C,domain,direction,slotDur_s,totalRBs, ...
+            bsRfChains,ueRfChains,bsModel,ueModel,bsTxPowerW,ueTxPowerW,source,cfg)]; %#ok<AGROW>
+    end
+end
 
 if isempty(rows)
     timelineT = table();
@@ -77,34 +225,91 @@ else
     timelineT.EnergyModelVersion = repmat(string(modelVersion), height(timelineT), 1);
     timelineT.EvidenceType = repmat("runtime_state_conditioned_engineering_model", height(timelineT), 1);
     timelineT.Availability = repmat("AVAILABLE", height(timelineT), 1);
-    timelineT.PowerEquation = repmat("configured_state_power_w*observed_interval_s", height(timelineT), 1);
+    invalid=~isfinite(timelineT.Power_W) | ~isfinite(timelineT.Energy_J);
+    timelineT.Availability(invalid)="NOT_EVALUATED";
+    timelineT.PowerEquation = repmat("configured_state_power_w*declared_model_interval_s", height(timelineT), 1);
+    timelineT.PowerModelStatus=repmat("configured_channel_attribution_not_endpoint_total",height(timelineT),1);
+    timelineT.PowerModelStatus(invalid)="missing_observed_resource_load";
+    timelineT.AccountingRole=repmat("nonadditive_channel_attribution_use_endpoint_timeline_for_totals",height(timelineT),1);
 end
 end
 
-function rows = localBuildRowsForTable(T, domain, direction, slotDur_s, totalRBs, bsRfChains, ueRfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, sourceArtifact)
+function rows = localBuildRowsForTable(T, domain, direction, slotDur_s, totalRBs, bsRfChains, ueRfChains, bsModel, ueModel, bsTxPowerW, ueTxPowerW, sourceArtifact,cfg)
 rows = repmat(localEmptyEnergyRow(), 0, 1);
 if ~(istable(T) && ~isempty(T))
     return;
 end
+% Credit the original TB once before splitting its reporting intervals.
+% Otherwise a per-symbol duplicate could be mistaken for a HARQ attempt.
 isData=any(string(domain)==["DL_data","UL_data"]);
 if isData
-    if ismember('Direction',T.Properties.VariableNames)
-        assert(all(upper(string(T.Direction))==direction), ...
-            'sixgr:truth:EnergyDirectionMismatch','Raw-table direction must match its owning DL/UL population.');
-    else
+    if ~ismember('Direction',T.Properties.VariableNames)
         T.Direction=repmat(string(direction),height(T),1);
     end
+    assert(all(upper(string(T.Direction))==direction), ...
+        'sixgr:truth:EnergyDirectionMismatch','Raw-table direction must match its owning DL/UL population.');
     if ~ismember('UniqueDeliveredTBBits',T.Properties.VariableNames)
         T=sixgr.kpi.creditTransportGoodput(T);
     end
-    delivered=sixgr.kpi.transportGoodputBits(T);
+    % Validate once on receiver rows, before making nonadditive symbol
+    % attribution rows. These are not new first-delivery events.
+    T.EnergyReceiverGoodputBits=sixgr.kpi.transportGoodputBits(T);
+end
+if ismember('ExecutedResourceIntervalsJSON',T.Properties.VariableNames)
+    T=sixgr.truth.expandExecutedResourceIntervals(T,cfg);
+end
+T=sixgr.truth.expandExecutedSampleIntervals(T,cfg);
+if direction=="DL"
+    bsRfChains=bsRfChains.Tx; ueRfChains=ueRfChains.Rx;
+else
+    bsRfChains=bsRfChains.Rx; ueRfChains=ueRfChains.Tx;
+end
+if isData
+    delivered=double(T.EnergyReceiverGoodputBits);
 end
 
 for i = 1:height(T)
     load = 1;
     prbCount = localNumericField(T, i, ["PRBs","AllocatedPRBCount","PRBCount"], NaN);
+    loadSource="observed_allocation_PRB_count";
+    exactPRBs=string(localTableValue(T,i,"EnergyAllocatedPRBSetJSON",""));
+    intervalJSON=string(localTableValue(T,i,"ExecutedResourceIntervalsJSON",""));
+    nativeJSON=string(localTableValue(T,i,"ExecutedSampleIntervalsJSON",""));
+    hasExactPRBs=~ismissing(exactPRBs) && strlength(strtrim(exactPRBs))>0 && ...
+        ((~ismissing(intervalJSON) && strlength(strtrim(intervalJSON))>0) || ...
+        (~ismissing(nativeJSON) && strlength(strtrim(nativeJSON))>0));
+    if hasExactPRBs
+        prbs=jsondecode(exactPRBs);
+        validateattributes(prbs,{'numeric'},{'vector','nonempty','integer','nonnegative','<',totalRBs});
+        prbCount=numel(unique(prbs));
+        loadSource="executed_per_symbol_PRB_union";
+    elseif domain=="PDCCH_monitoring"
+        % The generic PRBStart/AllocatedPRBCount columns describe decoded
+        % DATA grants, not the transmitted control candidate.
+        prbCount=NaN;
+        if ismember("PDCCHAllocatedPRBSetJSON",string(T.Properties.VariableNames))
+            value=string(T.PDCCHAllocatedPRBSetJSON(i));
+            if ~ismissing(value) && strlength(strtrim(value))>0
+                prbs=jsondecode(value);
+                validateattributes(prbs,{'numeric'},{'vector','integer','nonnegative','<',totalRBs});
+                prbCount=numel(unique(prbs));
+                loadSource="transmitted_PDCCH_data_and_DMRS_PRB_union";
+            end
+        end
+    elseif domain=="PUCCH"
+        prbCount=localNumericField(T,i,"PUCCHPRBCount",prbCount);
+    elseif domain=="SRS"
+        prbCount=localNumericField(T,i,"SRSOccupiedPRBCount",prbCount);
+    end
     if isfinite(prbCount)
-        load = min(max(double(prbCount) / totalRBs, 0), 1);
+        assert(isreal(prbCount) && isscalar(prbCount) && prbCount==fix(prbCount) && ...
+            prbCount>=0 && prbCount<=totalRBs, ...
+            'sixgr:truth:EnergyPRBCountOutOfGrid', ...
+            'Observed resource count must be an integer in [0,NSizeGrid]; do not clamp it into a power-model load.');
+        load = double(prbCount) / totalRBs;
+    else
+        load=NaN;
+        loadSource="missing_observed_resource_load_no_full_band_substitute";
     end
     status = string(localTableValue(T, i, "Status", "NA"));
     successBits = 0;
@@ -125,8 +330,14 @@ for i = 1:height(T)
         'Exported Slot must agree with its executed absolute-slot clock.');
     symbolVal = localNumericField(T, i, ["SymbolStart"], NaN);
     ueId = localNumericField(T, i, ["UEIndex","UEID"], NaN);
-    cellId = localNumericField(T, i, ["CellID","BaseStationID"], NaN);
-    baseStationId = localNumericField(T, i, ["BaseStationID","CellID"], NaN);
+    cellId = localNumericField(T, i, ["CellID","ServingCell","BaseStationID"], NaN);
+    baseStationId = localNumericField(T, i, ["BaseStationID","CellID","ServingCell"], NaN);
+    configuredSites=sixgr.util.structGet(cfg,"scenario.layout.nSites",NaN);
+    configuredSectors=sixgr.util.structGet(cfg,"scenario.layout.nSectorsPerSite",NaN);
+    if configuredSites==1 && configuredSectors==1
+        if ~isfinite(cellId), cellId=1; end
+        if ~isfinite(baseStationId), baseStationId=1; end
+    end
     rnti = localNumericField(T, i, ["RNTI","UEID","UEIndex"], NaN);
     tbId = localTransportBlockId(T, i, direction);
     harqProcessId = localNumericField(T, i, ["HARQProcessId","HARQProcess"], NaN);
@@ -161,7 +372,7 @@ for i = 1:height(T)
     end
     switch upper(string(direction))
         case "DL"
-            bs = bsModel.power('active', bsRfChains, load, bsTxPowerW);
+            bs = localBSPower(bsModel,bsRfChains,load,bsTxPowerW);
             ue = ueModel.power('rx', 0);
             rows(end+1, 1) = localMakeEnergyRow("gNB", domain, direction, frameVal, slotVal, symbolVal, slotDur_s, bs.totalW, successBits, bsRfChains, bs.trxW * slotDur_s, sourceArtifact, status, ... %#ok<AGROW>
                 ueId, cellId, baseStationId, rnti, tbId, harqProcessId, ndi, rv, prbCount, load, layers, bsRfChains, 1, txPower_dBm, NaN, "active_tx", slotBase);
@@ -169,7 +380,7 @@ for i = 1:height(T)
                 ueId, cellId, baseStationId, rnti, tbId, harqProcessId, ndi, rv, prbCount, load, layers, 0, localControlMonitoringLoad(domain), NaN, rxPower_dBm, localUEEnergyState(domain, direction, "UE"), slotBase);
         otherwise
             ue = ueModel.power('tx', ueTxPowerW);
-            bs = bsModel.power('active', bsRfChains, load, 0);
+            bs = localBSPower(bsModel,bsRfChains,load,0);
             rows(end+1, 1) = localMakeEnergyRow("UE", domain, direction, frameVal, slotVal, symbolVal, slotDur_s, ue.totalW, successBits, ueRfChains, 0, sourceArtifact, status, ... %#ok<AGROW>
                 ueId, cellId, baseStationId, rnti, tbId, harqProcessId, ndi, rv, prbCount, load, layers, ueRfChains, localControlMonitoringLoad(domain), txPower_dBm, NaN, localUEEnergyState(domain, direction, "UE"), slotBase);
             rows(end+1, 1) = localMakeEnergyRow("gNB", domain, direction, frameVal, slotVal, symbolVal, slotDur_s, bs.totalW, successBits, bsRfChains, bs.trxW * slotDur_s, sourceArtifact, status, ... %#ok<AGROW>
@@ -183,6 +394,114 @@ for i = 1:height(T)
             rows(rowIndex).TransportGoodputStatus=string(T.TransportGoodputStatus(i));
         end
     end
+    for rowIndex=numel(rows)-1:numel(rows)
+        rows(rowIndex).ExecutedAllocationID=string(localTableValue(T,i,"AllocationID", ...
+            localTableValue(T,i,"ExecutedAllocationID","")));
+        rows(rowIndex).SourceObservationRow=localNumericField(T,i,"SourceRow",NaN);
+        rows(rowIndex).RecordedReceiverOutcomeField=string(localTableValue(T,i,"RecordedReceiverOutcomeField",""));
+        rows(rowIndex).RecordedReceiverOutcome=localNumericField(T,i,"RecordedReceiverOutcome",NaN);
+        rows(rowIndex).ObservationStartSample=localNumericField(T,i,"ObservationStartSample",NaN);
+        rows(rowIndex).ObservationEndSampleExclusive=localNumericField(T,i,"ObservationEndSampleExclusive",NaN);
+        rows(rowIndex).ObservationSampleRateHz=localNumericField(T,i,"ObservationSampleRateHz",NaN);
+        rows(rowIndex).ObservationPopulationKey=localPopulationKey(T,i,tbId);
+        rows(rowIndex).PopulationBindingSource=string(localTableValue(T,i, ...
+            "EnergyPopulationBindingSource","retained_row_identity"));
+        rows(rowIndex).LoadSource=loadSource;
+        rows(rowIndex).ResourcePRBSetJSON=string(localTableValue(T,i,"EnergyAllocatedPRBSetJSON",""));
+        if domain=="PDCCH_monitoring" && ~hasExactPRBs
+            rows(rowIndex).ResourcePRBSetJSON=string(localTableValue(T,i,"PDCCHAllocatedPRBSetJSON",""));
+        end
+        rows(rowIndex).ResourceGridPRBCount=totalRBs;
+        if rows(rowIndex).Entity=="gNB"
+            rows(rowIndex).EndpointModelTxPower_W=0;
+            if direction=="DL", rows(rowIndex).EndpointModelTxPower_W=bsTxPowerW; end
+        else
+            rows(rowIndex).EndpointModelTxPower_W=0;
+            if direction=="UL", rows(rowIndex).EndpointModelTxPower_W=ueTxPowerW; end
+        end
+        rows(rowIndex)=localBindResourceInterval(rows(rowIndex),T,i,cfg,domain,slotVal-slotBase);
+    end
+end
+end
+
+function power=localBSPower(model,chains,load,watts)
+if isfinite(load)
+    power=model.power('active',chains,load,watts);
+elseif model.PerTRxPW==0 || model.IdleRFChainPowerFraction==1
+    % The declared coefficient of load is exactly zero. Evaluate the
+    % constant equation, but keep occupancy unknown in the exported row.
+    % This is not permission to invent PRBs, active RF samples or a full-
+    % run interval. Nonconstant models still require observed load below.
+    power=model.power('active',chains,0,watts);
+    power.load=NaN;
+else
+    power=struct('totalW',NaN,'trxW',NaN);
+end
+end
+
+function row=localBindResourceInterval(row,T,i,cfg,domain,slot0)
+nativeStart=localNumericField(T,i,"EnergyIntervalStartSample",NaN);
+if isfinite(nativeStart)
+    nativeEnd=localNumericField(T,i,"EnergyIntervalEndSampleExclusive",NaN);
+    fs=localNumericField(T,i,"EnergyIntervalSampleRateHz",NaN);
+    assert(isfinite(nativeEnd)&&nativeEnd>nativeStart&&isfinite(fs)&&fs>0, ...
+        'sixgr:truth:EnergyNativeClock','Native sample interval must be explicit and positive.');
+    duration=(nativeEnd-nativeStart)/fs;
+    row.BBProcessingEnergy_J=row.BBProcessingEnergy_J*duration/row.Duration_s;
+    row.TimestampSim_ms=1000*nativeStart/fs; row.Duration_s=duration;
+    row.Symbol=NaN; % Native SSB/PRACH symbols are not carrier symbols.
+    row.NativeSymbolIndex0=localNumericField(T,i,"EnergyNativeSymbolIndex0",NaN);
+    row.ExecutedStartSample=nativeStart;
+    row.ExecutedEndSampleExclusive=nativeEnd;
+    row.ExecutedSampleRateHz=fs;
+    row.Energy_J=row.Power_W*duration;
+    row.TimestampReference="executed_native_TX_sample_clock_not_propagated_RX_arrival";
+    source=string(localTableValue(T,i,'ExecutedSampleIntervalSource',""));
+    if source=="executed_native_SSB_CP_useful_samples_not_RF_activity"
+        row.EnergyIntervalBasis="native_SSB_CP_and_useful_interval_engineering_power_model_not_RF_tails";
+    else
+        assert(source=="executed_native_PRACH_CP_useful_samples_not_RF_activity", ...
+            'sixgr:truth:EnergyNativeAuthority','Unknown native energy interval source.');
+        row.EnergyIntervalBasis="native_PRACH_CP_and_useful_interval_engineering_power_model_not_RF_tails";
+    end
+    return;
+end
+first=localNumericField(T,i,"SymbolStart",NaN);
+count=localNumericField(T,i,"NumSymbols",NaN);
+exact=string(localTableValue(T,i,"EnergyAllocatedPRBSetJSON",""));
+hasExact=~ismissing(exact) && strlength(strtrim(exact))>0 && ...
+    ismember('ExecutedResourceIntervalsJSON',T.Properties.VariableNames) && ...
+    strlength(string(T.ExecutedResourceIntervalsJSON(i)))>0;
+if domain=="PDCCH_monitoring" && ~hasExact
+    first=localNumericField(T,i,"PDCCHCORESETStartSymbol",NaN);
+    count=localNumericField(T,i,"PDCCHCORESETDuration",NaN);
+elseif domain=="PUCCH" && ~hasExact
+    first=localNumericField(T,i,"PUCCHSymbolStart",NaN);
+    count=localNumericField(T,i,"PUCCHNumSymbols",NaN);
+end
+if ~(isfinite(first)&&isfinite(count)), return; end
+spec=sixgr.phy.frame.AbsoluteTime.resolveNumerology(cfg.phy.carrier);
+validateattributes(first,{'numeric'},{'scalar','integer','nonnegative','<',spec.SymbolsPerSlot});
+validateattributes(count,{'numeric'},{'scalar','integer','positive','<=',spec.SymbolsPerSlot-first});
+start=sixgr.phy.frame.AbsoluteTime.fromAbsoluteSlotSymbol(slot0,first,spec);
+stop=start.plusSymbols(count,spec);
+ratio=(stop.seconds()-start.seconds())/row.Duration_s;
+row.Symbol=first;
+row.TimestampSim_ms=start.milliseconds();
+row.Duration_s=stop.seconds()-start.seconds();
+row.Energy_J=row.Power_W*row.Duration_s;
+row.BBProcessingEnergy_J=row.BBProcessingEnergy_J*ratio;
+row.TimestampReference="executed_resource_absolute_slot_symbol_clock_not_RF_propagation_time";
+row.EnergyIntervalBasis="CP_accurate_observed_resource_interval_engineering_power_model";
+end
+
+function counts=localDirectionalRFInventory(cfg,endpoint,pool)
+counts=struct('Tx',pool,'Rx',pool);
+for direction=["Tx","Rx"]
+    value=sixgr.util.structGet(cfg,"antenna."+endpoint+".num"+direction+"RFChains", ...
+        sixgr.util.structGet(cfg,"scenario."+endpoint+".num"+direction+"RFChains",pool));
+    validateattributes(value,{'numeric'},{'scalar','finite','integer','positive','<=',pool});
+    counts.(direction)=double(value);
 end
 end
 
@@ -221,6 +540,14 @@ row = struct( ...
     "Energy_J", double(powerW * duration_s), ...
     "SuccessfulBits", double(successBits), ...
     "TransportGoodputKey", "", "TransportGoodputStatus", "not_data_payload", ...
+    "ObservationPopulationKey", "", ...
+    "PopulationBindingSource", "", ...
+    "ExecutedAllocationID", "", "SourceObservationRow", NaN, ...
+    "RecordedReceiverOutcomeField", "", "RecordedReceiverOutcome", NaN, ...
+    "ObservationStartSample", NaN, "ObservationEndSampleExclusive", NaN, "ObservationSampleRateHz", NaN, ...
+    "NativeSymbolIndex0", NaN, "ExecutedStartSample", NaN, "ExecutedEndSampleExclusive", NaN, "ExecutedSampleRateHz", NaN, ...
+    "LoadSource", "", ...
+    "ResourcePRBSetJSON", "", "ResourceGridPRBCount", NaN, "EndpointModelTxPower_W", NaN, ...
     "RFChainCount", double(rfChains), ...
     "BBProcessingEnergy_J", double(bbEnergyJ), ...
     "SourceArtifact", string(sourceArtifact), ...
@@ -238,10 +565,18 @@ row = struct( ...
     "ControlMonitoringLoad", NaN, "TxPower_dBm", NaN, "RxPowerEst_dBm", NaN, "State", "", ...
     "Duration_s", NaN, "Power_W", NaN, "Energy_J", NaN, "SuccessfulBits", NaN, ...
     "TransportGoodputKey", "", "TransportGoodputStatus", "not_data_payload", ...
+    "ObservationPopulationKey", "", ...
+    "PopulationBindingSource", "", ...
+    "ExecutedAllocationID", "", "SourceObservationRow", NaN, ...
+    "RecordedReceiverOutcomeField", "", "RecordedReceiverOutcome", NaN, ...
+    "ObservationStartSample", NaN, "ObservationEndSampleExclusive", NaN, "ObservationSampleRateHz", NaN, ...
+    "NativeSymbolIndex0", NaN, "ExecutedStartSample", NaN, "ExecutedEndSampleExclusive", NaN, "ExecutedSampleRateHz", NaN, ...
+    "LoadSource", "", ...
+    "ResourcePRBSetJSON", "", "ResourceGridPRBCount", NaN, "EndpointModelTxPower_W", NaN, ...
     "RFChainCount", NaN, "BBProcessingEnergy_J", NaN, "SourceArtifact", "", "Status", "");
 end
 
-function summaryT = localBuildEnergySummary(cfg, timelineT, modelVersion)
+function summaryT = localBuildEnergySummary(cfg, timelineT, endpointT, modelVersion)
 summaryT = localEmptyProbeMetricTable();
 if ~(istable(timelineT) && ~isempty(timelineT))
     summaryT = localUnavailableEnergySummary(modelVersion, "runtime_energy_timeline_empty");
@@ -252,40 +587,21 @@ slotDur_s = localSlotDuration(cfg);
 numFrames = max(1, double(sixgr.util.structGet(cfg, "run.numFrames", 1)));
 scenarioDur = localScenarioMeasurementDuration(cfg, timelineT, numFrames, slotDur_s);
 [successBitsRaw, firstDeliveryCount] = localUniqueDeliveredBits(timelineT);
-ueMask = string(timelineT.Entity) == "UE";
-gnbMask = string(timelineT.Entity) == "gNB";
-ueEnergy = sum(double(timelineT.Energy_J(ueMask)), "omitnan");
-gnbEnergy = sum(double(timelineT.Energy_J(gnbMask)), "omitnan");
-bbEnergy = sum(double(timelineT.BBProcessingEnergy_J(gnbMask)), "omitnan");
-if localHasFixedLinkObservationIdentity(timelineT)
-    % Fixed-link campaign observations are independent executions that may
-    % intentionally reuse the same frame/slot coordinates.  Their durations
-    % are sequential campaign exposure, not overlapping connected-runtime
-    % intervals.
-    rfActiveTime = sum(double(timelineT.Duration_s(gnbMask)), "omitnan");
-    activeEntityCount = 1;
-else
-    % Connected-runtime rows are emitted per UE and per PHY domain.  Several
-    % rows can therefore describe the same gNB being active in one interval.
-    % A duty cycle is wall-clock occupancy, so use the union of intervals per
-    % gNB rather than summing simultaneous MU-MIMO/control observations.
-    [rfActiveTime, activeEntityCount] = localActiveIntervalUnionByEntity( ...
-        timelineT(gnbMask, :));
-end
+ueMask = string(endpointT.Entity) == "UE";
+gnbMask = string(endpointT.Entity) == "gNB";
+% A missing/ambiguous interval is unknown energy, not zero. Never omit NaN
+% here: doing so would make incomplete modeled coverage appear complete.
+ueEnergy = sum(double(endpointT.Energy_J(ueMask)));
+gnbEnergy = sum(double(endpointT.Energy_J(gnbMask)));
+bbEnergy = sum(double(endpointT.BBProcessingEnergy_J(gnbMask)));
+rfActiveTime = sum(double(endpointT.Duration_s(gnbMask)));
+activeEntityCount=max(1,numel(unique(endpointT.EntityID(gnbMask))));
 activeRatio = min(max(rfActiveTime / max(scenarioDur * activeEntityCount, eps), 0), 1);
 throughputMbps = (successBitsRaw / max(scenarioDur, eps)) / 1e6;
 avgPowerW = (ueEnergy + gnbEnergy) / max(scenarioDur, eps);
-sleepRatio = 1 - activeRatio;
-clusteringEnabled = logical(sixgr.util.structGet(cfg, "lls6g.energy_efficiency.common_signal_clustering_enabled", ...
-    sixgr.util.structGet(cfg, "signals_and_channels_common.common_signal_clustering.enable_flag", false))) || ...
-    logical(sixgr.util.structGet(cfg, "lls6g.random_access.beam_clustering_enabled", false)) || ...
-    logical(sixgr.util.structGet(cfg, "lls6g.random_access.ro_clustering_enabled", false));
-clusteringEffect = 0;
-clusteringNote = "Common-signal clustering disabled; energy delta is zero by construction.";
-if clusteringEnabled
-    clusteringEffect = localDomainEnergy(timelineT, "gNB", "SSB_PBCH") + localDomainEnergy(timelineT, "gNB", "PRACH");
-    clusteringNote = "Measured common-signal and PRACH energy while clustering is enabled.";
-end
+sleepRatio = NaN;
+clusteringEffect = NaN;
+clusteringNote = "NOT_EVALUATED: clustering energy delta requires a matched executed baseline; one trace is not a gain.";
 bandwidthAdaptMode = lower(string(sixgr.util.structGet(cfg, "lls6g.energy_efficiency.bandwidth_adaptation_mode", "none")));
 bandwidthAdaptEnabled = logical(sixgr.util.structGet(cfg, "lls6g.energy_efficiency.bandwidth_adaptation_enabled", ...
     sixgr.util.structGet(cfg, "bandwidth_operation.supports_bwp_like_operation", false))) || ...
@@ -297,18 +613,20 @@ bandwidthAdaptNote = "NOT_EVALUATED: requires a paired executed bandwidth-adapta
 raceToSleepGain = NaN;
 raceToSleepNote = "NOT_EVALUATED: requires explicit executed sleep-state transitions and a paired baseline; no proxy is emitted.";
 
-if successBitsRaw > 0
+if successBitsRaw > 0 && isfinite(ueEnergy) && isfinite(gnbEnergy)
     ueEnergyPerBit = ueEnergy / successBitsRaw;
     gnbEnergyPerBit = gnbEnergy / successBitsRaw;
     throughputPerWatt = throughputMbps / max(avgPowerW, eps);
     energyAvailability = "AVAILABLE";
-    energyNotes = "Runtime-conditioned configured energy model divided by unique first-success transport-block bits.";
+    energyNotes = "Nonoverlapping endpoint engineering-model intervals divided by unique first-success transport-block bits; not measured circuit power.";
 else
     ueEnergyPerBit = NaN;
     gnbEnergyPerBit = NaN;
     throughputPerWatt = NaN;
     energyAvailability = "NOT_EVALUATED";
-    if isfinite(successBitsRaw)
+    if ~isfinite(ueEnergy) || ~isfinite(gnbEnergy)
+        energyNotes = "Ambiguous overlapping endpoint power states; inspect energy_endpoint_timeline. No summed or maximum-power substitute is used.";
+    elseif isfinite(successBitsRaw)
         energyNotes = "No successful transport-block delivery exists; energy per bit is undefined.";
     else
         energyNotes = "Incomplete receiver CRC/TB identity evidence; delivered-bit denominator is unknown, not zero.";
@@ -320,15 +638,15 @@ summaryT = [summaryT; ... %#ok<AGROW>
     localProbeMetricRow("first_delivered_bits", "system", "total", successBitsRaw, "", "bit", "Unique first-success delivered bits used as energy denominator."); ...
     localProbeMetricRow("first_delivery_count", "system", "total", firstDeliveryCount, "", "count", "Unique first-success TB delivery events used by energy accounting."); ...
     localProbeMetricRow("measurement_window_duration", "system", "total", scenarioDur, "", "s", "Simulated measurement window used by energy and throughput-per-watt metrics."); ...
-    localProbeMetricRow("ue_energy_per_slot_frame_burst", "UE", "per_frame_mean", ueEnergy / numFrames, "", "J/frame", "Average UE energy per frame."); ...
+    localProbeMetricRow("ue_energy_per_slot_frame_burst", "UE", "per_frame_mean", ueEnergy / (scenarioDur/0.010), "", "J/frame", "Represented UE energy normalized to a 10 ms radio frame; partial frames are duration weighted, not counted as slots."); ...
     localProbeMetricRow("gnb_energy_per_successful_bit", "gNB", "mean", gnbEnergyPerBit, "", "J/bit", energyNotes, energyAvailability, "runtime_state_conditioned_engineering_model", modelVersion); ...
     localProbeMetricRow("gnb_active_sleep_duty_cycle", "gNB", "active_ratio", activeRatio, "", "fraction", "Mean gNB active-time ratio from the union of persisted runtime intervals per gNB."); ...
-    localProbeMetricRow("gnb_active_sleep_duty_cycle", "gNB", "sleep_ratio", sleepRatio, "", "fraction", "Residual mean gNB time not occupied by persisted active runtime intervals."); ...
+    localProbeMetricRow("gnb_active_sleep_duty_cycle", "gNB", "sleep_ratio", sleepRatio, "", "fraction", "Unobserved intervals are not executed sleep states.", "NOT_EVALUATED", "sleep_state_evidence_required", modelVersion); ...
     localProbeMetricRow("rf_chain_active_time", "gNB", "total", rfActiveTime, "", "s", "Union of gNB active runtime intervals, summed across distinct gNB entities."); ...
     localProbeMetricRow("bb_processing_energy", "gNB", "total", bbEnergy, "", "J", "Modeled TRX-chain processing energy in the RF energy model."); ...
-    localProbeMetricRow("pdcch_monitoring_energy_metric", "UE", "total", localDomainEnergy(timelineT, "UE", "PDCCH_monitoring"), "", "J", "UE receive energy while monitoring PDCCH."); ...
-    localProbeMetricRow("pdcch_monitoring_energy", "UE", "total", localDomainEnergy(timelineT, "UE", "PDCCH_monitoring"), "", "J", "UE receive energy while monitoring PDCCH."); ...
-    localProbeMetricRow("ssb_pbch_common_signal_energy", "gNB", "total", localDomainEnergy(timelineT, "gNB", "SSB_PBCH"), "", "J", "gNB common-signal transmit energy."); ...
+    localProbeMetricRow("pdcch_monitoring_energy_metric", "UE", "total", localDomainEnergy(timelineT, "UE", "PDCCH_monitoring",cfg), "", "J", "Nonadditive monitoring-window modeled energy; overlaps data receive energy."); ...
+    localProbeMetricRow("pdcch_monitoring_energy", "UE", "total", localDomainEnergy(timelineT, "UE", "PDCCH_monitoring",cfg), "", "J", "Nonadditive monitoring-window modeled energy; not incremental control cost."); ...
+    localProbeMetricRow("ssb_pbch_common_signal_energy", "gNB", "total", localDomainEnergy(timelineT, "gNB", "SSB_PBCH",cfg), "", "J", "Nonadditive common-signal-window modeled energy; not isolated signal RF energy."); ...
     localProbeMetricRow("prach_common_channel_clustering_energy_effect", "system", "delta_j", clusteringEffect, "", "J", clusteringNote); ...
     localProbeMetricRow("bandwidth_adaptation_energy_effect", "system", "delta_j", bandwidthAdaptEffect, "", "J", bandwidthAdaptNote, "NOT_EVALUATED", "paired_counterfactual_required", modelVersion); ...
     localProbeMetricRow("race_to_sleep_gains", "system", "fractional_gain", raceToSleepGain, "", "fraction", raceToSleepNote, "NOT_EVALUATED", "paired_counterfactual_required", modelVersion); ...
@@ -386,9 +704,68 @@ for i = 1:numel(ids)
 end
 end
 
-function value = localDomainEnergy(T, entity, domain)
+function value = localDomainEnergy(T, entity, domain, cfg)
 mask = string(T.Entity) == string(entity) & string(T.Domain) == string(domain);
-value = sum(double(T.Energy_J(mask)), "omitnan");
+resolved=sixgr.truth.resolveLLSEnergyModelConfig(cfg,RFInventoryPolicy="bind_declared_inventory");
+intervals=sixgr.truth.integrateLLSEndpointEnergy(T(mask,:),resolved.ModelConfig);
+value = sum(double(intervals.Energy_J));
+end
+
+function key=localPopulationKey(T,i,tb)
+% Nominal radio slots can repeat across independent executions/sweep points.
+% Never union them as simultaneous observations in one physical clock.
+key="";
+for name=["RunID","ExecutionID","SweepPointIndex","SweepRealizationIndex"]
+    raw=string(localTableValue(T,i,"EnergyScope_"+name,localTableValue(T,i,name,"")));
+    if ~isscalar(raw) || ismissing(raw), raw=""; end
+    key=key+"|"+name+"="+raw;
+end
+if startsWith(tb,"FIXED|")
+    key=key+"|"+tb+"|attempt="+string(localNumericField(T,i, ...
+        ["FixedLinkAttemptIndex","AttemptIndex","HARQTransmissionNumber","RV"],0));
+end
+end
+
+function raw=localBindSinglePopulationScope(raw)
+% Join optional identity columns only when the supplied raw population has
+% exactly one explicit value. This repairs sparse channel schemas without
+% guessing a sweep identity when several independent points are present.
+domains=["DL","UL","PDCCH","PBCH","PRACH","PUCCH","SRS","CSIRS","TRS","CommonEnergyObservations"];
+for field=["RunID","ExecutionID","SweepPointIndex","SweepRealizationIndex"]
+    values=strings(0,1);
+    for domain=domains
+        T=sixgr.util.structGet(raw,domain,table());
+        if ~istable(T)||isempty(T)||~ismember(field,string(T.Properties.VariableNames)), continue; end
+        current=string(T.(field));
+        present=~ismissing(current)&strlength(strtrim(current))>0&lower(current)~="nan";
+        values=[values;current(present)]; %#ok<AGROW>
+    end
+    values=unique(values);
+    if numel(values)~=1, continue; end
+    for domain=domains
+        T=sixgr.util.structGet(raw,domain,table());
+        if ~istable(T)||isempty(T), continue; end
+        if ~ismember(field,string(T.Properties.VariableNames))
+            current=repmat(values,height(T),1);
+            filled=true(height(T),1);
+        else
+            current=string(T.(field));
+            filled=ismissing(current)|strlength(strtrim(current))==0|lower(current)=="nan";
+            current(filled)=values;
+        end
+        % A model-only join must never rewrite the scientific identity
+        % columns which own already-issued causal transport-goodput credit.
+        T.("EnergyScope_"+field)=current;
+        if any(filled)
+            if ~ismember("EnergyPopulationBindingSource",string(T.Properties.VariableNames))
+                T.EnergyPopulationBindingSource=repmat("retained_row_identity",height(T),1);
+            end
+            T.EnergyPopulationBindingSource(filled)=T.EnergyPopulationBindingSource(filled)+ ...
+                "|"+field+":unique_explicit_value_in_supplied_raw_population";
+        end
+        raw.(domain)=T;
+    end
+end
 end
 
 function value = localEnergySpectralEfficiency(cfg, throughputMbps, avgPowerW)
@@ -449,18 +826,33 @@ if ~(istable(T) && ~isempty(T))
 end
 txMask = (upper(string(T.Direction)) == "DL" & string(T.Entity) == "gNB") | ...
     (upper(string(T.Direction)) == "UL" & string(T.Entity) == "UE");
-seen = strings(0, 1);
-for i = find(txMask(:).')
-    key = localEnergyDeliveryKey(T, i);
-    if any(seen == key)
-        continue;
+% Per-symbol rows are attribution, not independent waveform trials. Union
+% all of an exposure's intervals instead of taking only its first symbol.
+% ObservationPopulationKey also retains the independent HARQ-attempt scope.
+indices=find(txMask); keys=strings(numel(indices),1);
+for k=1:numel(indices)
+    i=indices(k);
+    keys(k)=string(T.ObservationPopulationKey(i))+"|"+localEnergyDeliveryKey(T,i)+ ...
+        "|"+localIdentityNumericToken(T.EntityID(i))+"|"+string(T.Direction(i));
+end
+assert(~any(ismissing(keys)),'sixgr:truth:MissingFixedEnergyIdentity', ...
+    'Independent exposure identity must not collapse to a missing string.');
+for key=reshape(unique(keys,'stable'),1,[])
+    ids=indices(keys==key);
+    intervals=sortrows([double(T.TimestampSim_ms(ids))/1000, ...
+        double(T.TimestampSim_ms(ids))/1000+double(T.Duration_s(ids))]);
+    assert(all(isfinite(intervals),'all') && all(intervals(:,2)>intervals(:,1)), ...
+        'sixgr:truth:InvalidFixedEnergyInterval','Independent exposure needs valid actual intervals.');
+    start=intervals(1,1); stop=intervals(1,2);
+    for k=2:size(intervals,1)
+        if intervals(k,1)<=stop
+            stop=max(stop,intervals(k,2));
+        else
+            durationSec=durationSec+stop-start;
+            start=intervals(k,1); stop=intervals(k,2);
+        end
     end
-    duration = double(T.Duration_s(i));
-    if ~(isfinite(duration) && duration > 0)
-        continue;
-    end
-    seen(end+1, 1) = key; %#ok<AGROW>
-    durationSec = durationSec + duration;
+    durationSec=durationSec+stop-start;
 end
 end
 

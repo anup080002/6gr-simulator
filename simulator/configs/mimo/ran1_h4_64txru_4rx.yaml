@@ -82,6 +82,12 @@ antenna_and_array:
   ue_num_txrus: 4
   panels: 2
   panel_spacing: 0.5
+  # Explicit center-to-center distances, not the legacy ambiguous scalar.
+  # These preserve the formerly implicit phased-array geometry.
+  bs_panel_center_spacing_horizontal_lambda: 2.5
+  bs_panel_center_spacing_vertical_lambda: 2.5
+  ue_panel_center_spacing_horizontal_lambda: 1.5
+  ue_panel_center_spacing_vertical_lambda: 1.0
   element_spacing_h: 0.5
   element_spacing_v: 0.5
   bs_element_spacing_horizontal_lambda: 0.5

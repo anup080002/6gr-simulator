@@ -130,7 +130,7 @@ verifyEqual(testCase, rx.TransportBlocks{1}, tx.TransportBlocks{1});
 verifyEqual(testCase, rx.TransportBlocks{2}, tx.TransportBlocks{2});
 verifyEqual(testCase, string(rx.DecoderInputSymbolDomain), "layer");
 verifyEqual(testCase, string(info.ExecutionBackend), ...
-    "nrPUSCHDecode_nrULSCHDecoder_two_codeword_truth");
+    "nrPUSCHDecode_independent_ULSCH_primitives_two_codeword_truth");
 end
 
 function value = localReadStringTable(path)

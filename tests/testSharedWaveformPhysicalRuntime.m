@@ -40,6 +40,7 @@ whole=localOwner(dl,ul,state,fs,nt,nr,epoch);
 split=localOwner(dl,ul,sixgr.channel.ChannelFactory.forkRuntimeChannelState(state),fs,nt,nr,epoch);
 wholeEvent=localEvent(whole,fs,nt,nr);
 splitEvent=localEvent(split,fs,nt,nr);
+split.enableRFExecutionLedger();
 % Observer registration must not change any executed TX/RX samples or RNG.
 dlScoring=split.registerLinkScoringPlane(splitEvent,'serving','ue_rx');
 ulScoring=split.registerLinkScoringPlane(splitEvent,'serving','gnb_rx');
@@ -88,6 +89,11 @@ for last=unique([1 17 71 777 stop])
     event=splitEvent.advanceUntilEvent(last);
     assert(event.Execution.StartSample==next && event.Execution.EndSampleExclusive==last);
     assert(numel(event.Execution.Links)==1 && numel(event.Execution.RX)==2);
+    contribution=event.Execution.SignalContributions;
+    assert(isscalar(contribution) && contribution.LinkID=="serving" && ...
+        contribution.TX=="gnb" && contribution.RX=="ue_rx" && ...
+        contribution.SampleCount==(last-next)*nr && ...
+        event.Execution.ConfigurationEpoch==epoch && event.Execution.SampleRateHz==fs);
     a=max(next,3); b=min(last,41); references=event.Execution.ChannelReferences;
     wholeReferences=references(arrayfun(@(c)c.RX=="ue_rx" && ...
         c.Reference.ObservationStartSample==0 && ...
@@ -317,6 +323,13 @@ splitEvent.commitTransmissionsThrough('ue',stop+size(u,1)+1);
 afterCapture=splitEvent.advanceUntilEvent(stop+size(u,1)+1);
 assert(isempty(afterCapture.Execution.ChannelReferences), ...
     'The first actual interval after a completed capture must not retain new coefficients.');
+record=split.readRFExecutionLedger();
+assert(record.CompleteFromSampleZero && ~record.HardwareOperatingStateAvailable && ...
+    all(record.Coverage.ExecutedSamples==split.NextSampleIndex) && ...
+    all(record.Coverage.IntervalCount>1) && any(record.Intervals.InputIsAllZero), ...
+    'Every actual endpoint must retain RF execution, including intervals with no received observation.');
+assert(isempty(whole.readRFExecutionLedger()), ...
+    'The existing whole/split IQ comparison also verifies that enabling the ledger does not change PHY samples.');
 % Duplicate shared-state owners are rejected before consuming any sample.
 % The original 'whole' owner consumed state.Obj. Use a newly materialized
 % independent test channel for the duplicate-registration negative case.

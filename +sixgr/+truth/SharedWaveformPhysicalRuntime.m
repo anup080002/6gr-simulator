@@ -13,11 +13,12 @@ classdef SharedWaveformPhysicalRuntime < handle
     properties (Access=private)
         Busy (1,1) logical = false
         Started (1,1) logical = false
-        Transmitters = struct('ID',{},'RF',{})
-        Receivers = struct('ID',{},'RF',{},'NoiseVariance',{},'NoiseSeed',{},'NoiseState',{},'NoiseReplay',{},'AdditiveEVM',{},'EVMState',{})
-        Links = struct('ID',{},'TX',{},'RX',{},'State',{},'Config',{},'LossReplay',{},'TrailingIdleSamples',{})
+        Transmitters = struct('ID',{},'RF',{},'Radiation',{})
+        Receivers = struct('ID',{},'RF',{},'NoiseVariance',{},'NoiseSeed',{},'NoiseState',{},'NoiseReplay',{},'AdditiveEVM',{},'EVMState',{},'BranchLayout',{},'ElementLayout',{})
+        Links = struct('ID',{},'TX',{},'RX',{},'State',{},'Config',{},'LossReplay',{},'TrailingIdleSamples',{},'TXRadiationInstallation',{},'SignalDependency',{})
         ScoringPlanes = struct('ID',{},'LinkID',{},'RX',{})
         ChannelReferenceRequests = struct('LinkID',{},'RX',{},'Start',{},'End',{})
+        RFExecutionLedger = []
     end
     methods
         function obj=SharedWaveformPhysicalRuntime(fs,first,epoch)
@@ -30,15 +31,45 @@ classdef SharedWaveformPhysicalRuntime < handle
 
         function addTransmitter(obj,id,cfg,direction,nAnt,useLegacy)
             obj.assertRegistration(); id=obj.validID(id);
+            assert(isempty(obj.RFExecutionLedger),'sixgr:truth:RFExecutionInventoryFrozen', ...
+                'Register all RF endpoints before enabling their execution ledger.');
             obj.assertNewID(obj.Transmitters,id);
             rf=sixgr.rf.runtime.RFImpairmentStream(cfg,'tx',direction, ...
                 obj.SampleRateHz,nAnt,obj.NextSampleIndex,obj.ConfigurationEpoch,useLegacy);
-            obj.Transmitters(end+1)=struct('ID',id,'RF',rf);
+            [enabled,array,metadata,policy,reference]=localRadiationInstallation(cfg,direction);
+            binding=[];
+            if enabled
+                binding=sixgr.rf.InstalledTXRadiationBinding.freeze(array,metadata,rf,id,policy,reference);
+            end
+            obj.Transmitters(end+1)=struct('ID',id,'RF',rf,'Radiation',binding);
+        end
+
+        function validateTransmitterInstallation(obj,id,cfg,direction,nAnt)
+            k=obj.findID(obj.Transmitters,id); node=obj.Transmitters(k);
+            [enabled,array,metadata,policy,reference]=localRadiationInstallation(cfg,direction);
+            retained=isfield(node,'Radiation')&&~isempty(node.Radiation);
+            assert(enabled==retained&&string(direction)==string(node.RF.Chain.Direction)&& ...
+                nAnt==node.RF.NumAntennas,'RF:TXRadiationInstallationChanged', ...
+                'A shared transmitter cannot change its installed radiation policy or direction.');
+            if enabled
+                assert(isequaln(sixgr.util.structGet(cfg,'rf',struct()), ...
+                    sixgr.util.structGet(node.RF.Configuration,'rf',struct())), ...
+                    'RF:TXRadiationInstallationChanged','The retained TX RF policy cannot be replaced through a link.');
+                node.Radiation.validateInstallation(array,metadata,policy,reference);
+            end
         end
 
         function addReceiver(obj,id,cfg,direction,nAnt,useLegacy)
             obj.assertRegistration(); id=obj.validID(id);
+            assert(isempty(obj.RFExecutionLedger),'sixgr:truth:RFExecutionInventoryFrozen', ...
+                'Register all RF endpoints before enabling their execution ledger.');
             obj.assertNewID(obj.Receivers,id);
+            branchLayout=sixgr.rf.resolveReceiveBranchLayout( ...
+                cfg,id,direction,nAnt,obj.SampleRateHz,obj.ConfigurationEpoch);
+            % Reuse the original validated native installation even when
+            % no RF-type reference exists. This separate scope is internal
+            % element columns, never an invented qualified RF branch.
+            elementLayout=sixgr.rf.ReceiveElementLayout.freezeInstallation(branchLayout.Installation);
             rf=sixgr.rf.runtime.RFImpairmentStream(cfg,'rx',direction, ...
                 obj.SampleRateHz,nAnt,obj.NextSampleIndex,obj.ConfigurationEpoch,useLegacy);
             cfg=sixgr.util.structSet(cfg,'lls6g.userContext.RuntimeCurrentDirection',upper(string(direction)));
@@ -97,13 +128,41 @@ classdef SharedWaveformPhysicalRuntime < handle
             end
             obj.Receivers(end+1)=struct('ID',id,'RF',rf,'NoiseVariance',variance, ...
                 'NoiseSeed',noiseSeed,'NoiseState',struct(),'NoiseReplay',ledger, ...
-                'AdditiveEVM',evm,'EVMState',struct());
+                'AdditiveEVM',evm,'EVMState',struct(),'BranchLayout',branchLayout,'ElementLayout',elementLayout);
+        end
+
+        function binding=receiveBranchLayout(obj,id)
+            % Immutable installation only; actual intervals are in RX replay.
+            k=obj.findID(obj.Receivers,id);
+            binding=obj.Receivers(k).BranchLayout;
+        end
+
+        function binding=receiveElementLayout(obj,id)
+            k=obj.findID(obj.Receivers,id);
+            binding=sixgr.rf.ReceiveElementLayout.freezeInstallation(struct());
+            if isfield(obj.Receivers(k),'ElementLayout')
+                binding=obj.Receivers(k).ElementLayout;
+            end
+        end
+
+        function validateReceiverInstallation(obj,id,cfg,direction,nAnt)
+            k=obj.findID(obj.Receivers,id);
+            candidate=sixgr.rf.resolveReceiveBranchLayout( ...
+                cfg,id,direction,nAnt,obj.SampleRateHz,obj.ConfigurationEpoch);
+            assert(isequaln(candidate,obj.Receivers(k).BranchLayout), ...
+                'RF:ReceiveBranchOwnerMismatch', ...
+                'A shared receiver cannot change its installed array, order, RF reference or branch layout.');
+            if isfield(obj.Receivers(k),'ElementLayout')
+                element=sixgr.rf.ReceiveElementLayout.freezeInstallation(candidate.Installation);
+                assert(isequaln(element,obj.Receivers(k).ElementLayout), ...
+                    'RF:ReceiveElementOwnerMismatch','The original internal element layout cannot change.');
+            end
         end
 
         function addLink(obj,id,txID,rxID,state,cfg)
             obj.assertRegistration(); id=obj.validID(id); obj.assertNewID(obj.Links,id);
             tx=obj.findID(obj.Transmitters,txID); rx=obj.findID(obj.Receivers,rxID);
-            obj.validateLink(state,cfg,tx,rx);
+            radiation=obj.validateLink(state,cfg,tx,rx);
             for k=1:numel(obj.Links)
                 prior=obj.Links(k).State;
                 if string(prior.StateKey)==string(state.StateKey) || ...
@@ -113,8 +172,14 @@ classdef SharedWaveformPhysicalRuntime < handle
                 end
             end
             ledger=obj.resolveLoss(cfg,tx,rx);
+            dependency=sixgr.channel.ChannelSignalDependency.install(state,obj.ConfigurationEpoch);
+            % Old pre-start snapshots may have registered links but no
+            % original dependency receipts. Preserve their state and leave
+            % those receipts empty; only this newly installed link is known.
+            obj.Links=sixgr.truth.normalizeSharedLinkDependencyMetadata(obj.Links);
             obj.Links(end+1)=struct('ID',id,'TX',tx,'RX',rx,'State',state, ...
-                'Config',cfg,'LossReplay',ledger,'TrailingIdleSamples',0);
+                'Config',cfg,'LossReplay',ledger,'TrailingIdleSamples',0, ...
+                'TXRadiationInstallation',radiation,'SignalDependency',dependency);
         end
 
         function attach(obj,runtime,precision)
@@ -187,6 +252,7 @@ classdef SharedWaveformPhysicalRuntime < handle
             ledger=obj.resolveLoss(cfg,tx,rx);
             obj.Busy=true; unlock=onCleanup(@()obj.clearBusy()); %#ok<NASGU>
             try
+                beforeRetarget=sixgr.channel.ChannelSignalDependency.beforeRetarget(state);
                 state.Direction=char(direction);
                 state.LinkKey=char(nextKey);
                 if identity
@@ -212,10 +278,14 @@ classdef SharedWaveformPhysicalRuntime < handle
                 info=struct('OFDM',struct('SampleRate',obj.SampleRateHz));
                 state=sixgr.channel.ChannelFactory.materializeRuntimeChannelState( ...
                     state,cfg,complex(zeros(1,obj.Transmitters(tx).RF.NumAntennas)),info);
-                obj.validateLink(state,cfg,tx,rx);
+                radiation=obj.validateLink(state,cfg,tx,rx);
+                dependency=sixgr.channel.ChannelSignalDependency.afterRetarget( ...
+                    beforeRetarget,state,obj.ConfigurationEpoch,link.TrailingIdleSamples);
                 obj.Links(k).State=state; obj.Links(k).TX=tx; obj.Links(k).RX=rx;
                 obj.Links(k).Config=cfg; obj.Links(k).LossReplay=ledger;
                 obj.Links(k).TrailingIdleSamples=0;
+                obj.Links(k).TXRadiationInstallation=radiation;
+                obj.Links(k).SignalDependency=dependency;
             catch cause
                 obj.Faulted=true; rethrow(cause);
             end
@@ -262,6 +332,36 @@ classdef SharedWaveformPhysicalRuntime < handle
             obj.ChannelReferenceRequests(end+1)=struct('LinkID',string(linkID),'RX',rx,'Start',first,'End',stop);
         end
 
+        function enableRFExecutionLedger(obj)
+            % On an older checkpoint start at its actual retained clock.
+            % Never manufacture the unrecorded historical prefix.
+            obj.assertMutable();
+            if ~isempty(obj.RFExecutionLedger), return; end
+            inventory=table('Size',[0 4],'VariableTypes',{'string','string','string','double'}, ...
+                'VariableNames',{'EndpointID','Role','Direction','PhysicalPortCount'});
+            for node=obj.Transmitters
+                inventory(end+1,:)={node.ID,"TX",string(node.RF.Chain.Direction),node.RF.NumAntennas};
+            end
+            for node=obj.Receivers
+                inventory(end+1,:)={node.ID,"RX",string(node.RF.Chain.Direction),node.RF.NumAntennas};
+            end
+            obj.RFExecutionLedger=sixgr.truth.RFEndpointExecutionLedger( ...
+                obj.SampleRateHz,obj.NextSampleIndex,obj.ConfigurationEpoch,inventory);
+            library=struct('Installation',{},'Field',{});
+            for node=obj.Transmitters
+                if isfield(node,'Radiation')&&~isempty(node.Radiation)
+                    library(end+1)=struct('Installation',node.Radiation.capsule(), ...
+                        'Field',node.Radiation.fieldEvidence()); %#ok<AGROW>
+                end
+            end
+            obj.RFExecutionLedger.installRadiationLibrary(library);
+        end
+
+        function evidence=readRFExecutionLedger(obj)
+            evidence=[];
+            if ~isempty(obj.RFExecutionLedger), evidence=obj.RFExecutionLedger.read(); end
+        end
+
         function [outputs,execution,nextState]=process(obj,inputs,first,stop,unusedState) %#ok<INUSD>
             obj.assertMutable();
             obj.validateInterval(inputs,first,stop);
@@ -275,11 +375,32 @@ classdef SharedWaveformPhysicalRuntime < handle
                     'Links',struct('ID',{},'TX',{},'RX',{},'Replay',{},'LossReplay',{}), ...
                     'RX',struct('ID',{},'Replay',{}), ...
                     'ScoringPlanes',struct('ID',{},'LinkID',{},'TX',{},'RX',{},'Active',{},'Source',{}), ...
+                    'SignalContributions',struct('LinkID',{},'TX',{},'RX',{}, ...
+                        'NonzeroSampleCount',{},'SampleCount',{},'Source',{}), ...
+                    'ConfigurationEpoch',obj.ConfigurationEpoch,'SampleRateHz',obj.SampleRateHz, ...
                     'ChannelReferences',struct('LinkID',{},'TX',{},'RX',{},'Reference',{}));
                 txSamples=cell(numel(obj.Transmitters),1);
                 for k=1:numel(obj.Transmitters)
                     node=obj.Transmitters(k); index=obj.findID(inputs,node.ID);
                     actual=node.RF.apply(inputs(index).Chunk,obj.ConfigurationEpoch);
+                    % This owner accepts composed, already power-scaled
+                    % physical-chain samples. Prepared waveform ingress
+                    % validates the applied power contract before enqueue.
+                    power=sixgr.rf.PowerContext(node.RF.Configuration,node.RF.Chain.Direction);
+                    actual.Replay.WaveformAmplitudeUnit=string(power.WaveformAmplitudeUnit);
+                    actual.Replay.TXSpatialPowerEnabled=logical(sixgr.util.structGet( ...
+                        node.RF.Configuration,'rf.txSpatialPowerEnabled',false));
+                    if actual.Replay.TXSpatialPowerEnabled
+                        spatialScope=sixgr.runtime.ExecutionStageProfiler.scope("measurement","TX_spatial_power");
+                        actual.Replay.TXSpatialPower=sixgr.rf.measurePhysicalTXSpatialPower(actual.Waveform);
+                        clear spatialScope
+                    end
+                    if isfield(node,'Radiation')&&~isempty(node.Radiation)
+                        % Original strict binding, no extra RF/channel execution.
+                        % The immutable field was sampled once at registration.
+                        actual.Replay.ModeledRadiation=node.Radiation.bindExecution( ...
+                            inputs(index).Chunk,actual,node.RF,node.ID);
+                    end
                     txSamples{k}=actual.Waveform;
                     outputs(end+1)=struct('ID',node.ID+":tx",'Chunk',actual.Chunk); %#ok<AGROW>
                     execution.TX(end+1)=struct('ID',node.ID,'Replay',actual.Replay);
@@ -298,6 +419,12 @@ classdef SharedWaveformPhysicalRuntime < handle
                     [contribution,replay,state,reference]=sixgr.channel.ChannelFactory.applyRuntimeChannelState( ...
                         link.State,x,'OutputSampleAlignment','continuous_raw_samples', ...
                         'InputSampleDomain','materialized_channel_ports','CaptureChannelReference',~isempty(hits));
+                    replay.ChannelSignalDependency=sixgr.channel.ChannelSignalDependency.bind( ...
+                        sixgr.util.structGet(link,'SignalDependency',struct()), ...
+                        link.State,state,replay,first,stop);
+                    if isfield(link,'TXRadiationInstallation')&&~isempty(link.TXRadiationInstallation)
+                        replay.TXRadiationInstallation=link.TXRadiationInstallation;
+                    end
                     clear channelScope
                     for h=hits
                         request=requests(h); bounded=reference;
@@ -331,6 +458,13 @@ classdef SharedWaveformPhysicalRuntime < handle
                     lossReplay.GainStageMeasurement=sixgr.truth.measureWaveformGainEnergy( ...
                         beforeGain,contribution,obj.Receivers(link.RX).NoiseReplay.PowerContextAmplitudeUnit);
                     contributions{k}=contribution;
+                    % Exact nonzero count, without a detection threshold or
+                    % another waveform buffer. Includes channel/RF tails.
+                    execution.SignalContributions(end+1)=struct('LinkID',link.ID, ...
+                        'TX',obj.Transmitters(link.TX).ID,'RX',obj.Receivers(link.RX).ID, ...
+                        'NonzeroSampleCount',nnz(contribution), ...
+                        'SampleCount',numel(contribution), ...
+                        'Source',"actual_link_after_TX_RF_channel_loss_before_noise_RX_RF");
                     sums{link.RX}=sums{link.RX}+contribution;
                     lastNonzero=find(any(x~=0,2),1,'last');
                     if isempty(lastNonzero)
@@ -397,6 +531,26 @@ classdef SharedWaveformPhysicalRuntime < handle
                     outputs(end+1)=struct('ID',node.ID+":pre_rf",'Chunk',preChunk); %#ok<AGROW>
                     outputs(end+1)=struct('ID',node.ID+":post_rf",'Chunk',actual.Chunk); %#ok<AGROW>
                     replay=actual.Replay;
+                    replay.ReceiveElementLayoutStatus="unavailable_no_original_receive_element_installation";
+                    replay.ReceiveElementExecution=struct();
+                    if isfield(node,'ElementLayout')&&node.ElementLayout.Available
+                        % Bind the SAME preChunk supplied to the successful
+                        % RF call above. No array operation, IQ copy, rehash
+                        % or second physics execution is needed.
+                        replay.ReceiveElementExecution=sixgr.rf.ReceiveElementLayout.bindOriginalOwnerExecution( ...
+                            node.ElementLayout.Layout,preChunk,actual,node.RF,node.ID);
+                        replay.ReceiveElementLayoutStatus="executed_internal_receive_element_columns";
+                    end
+                    replay.ReceiveBranchLayoutStatus=node.BranchLayout.Status;
+                    replay.ReceiveBranchExecution=struct();
+                    if node.BranchLayout.Available
+                        % These are the SAME original physical-element and
+                        % RF-input samples. No identity matrix multiply or
+                        % second waveform/RF execution is performed.
+                        replay.ReceiveBranchExecution=sixgr.rf.ReceiveBranchLayout.bindOriginalOwnerExecution( ...
+                            node.BranchLayout.Layout,preChunk,preChunk,actual,node.RF,node.ID);
+                        replay.ReceiveBranchLayoutStatus="executed_identity_combined_receiver_branches";
+                    end
                     replay.AdditiveReceiverEVM=evmReplay;
                     replay.InjectedNoiseVariance=node.NoiseVariance;
                     replay.InjectedNoiseVarianceDomain='receiver_sample_waveform_pre_composite_front_end';
@@ -473,6 +627,9 @@ classdef SharedWaveformPhysicalRuntime < handle
                     execution.RX(end+1)=struct('ID',node.ID,'Replay',replay);
                 end
                 obj.ChannelReferenceRequests=obj.ChannelReferenceRequests([obj.ChannelReferenceRequests.End]>stop);
+                if ~isempty(obj.RFExecutionLedger)
+                    obj.RFExecutionLedger.append(execution);
+                end
                 obj.NextSampleIndex=stop; nextState=obj;
             catch cause
                 obj.Faulted=true; rethrow(cause);
@@ -507,7 +664,8 @@ classdef SharedWaveformPhysicalRuntime < handle
             end
         end
 
-        function validateLink(obj,state,cfg,tx,rx)
+        function radiation=validateLink(obj,state,cfg,tx,rx)
+            radiation=[];
             required={'Materialized','CurrentSampleIndex','SampleRate_Hz','NumTxAnt','NumRxAnt', ...
                 'StateKey','Direction','UseFading','Obj','ChannelPadSamples'};
             if ~isstruct(state) || ~isscalar(state) || ~all(isfield(state,required)) || ...
@@ -518,6 +676,40 @@ classdef SharedWaveformPhysicalRuntime < handle
                     string(state.Direction)~=obj.Transmitters(tx).RF.Chain.Direction || ...
                     string(state.Direction)~=obj.Receivers(rx).RF.Chain.Direction
                 error('WAVEFORM:PhysicalLinkAuthorityMismatch','Bind an actual materialized link at this clock and physical layout.');
+            end
+            transmitter=obj.Transmitters(tx);
+            obj.validateTransmitterInstallation(transmitter.ID,cfg,transmitter.RF.Chain.Direction,transmitter.RF.NumAntennas);
+            if isfield(transmitter,'Radiation')&&~isempty(transmitter.Radiation)
+                radiation=transmitter.Radiation.validateChannel(state,transmitter.ID);
+            end
+            node=obj.Receivers(rx);
+            obj.validateReceiverInstallation(node.ID,cfg,node.RF.Chain.Direction,node.RF.NumAntennas);
+            elementAvailable=isfield(node,'ElementLayout')&&node.ElementLayout.Available;
+            if (elementAvailable||node.BranchLayout.Available) && isa(state.Obj,'nrCDLChannel')
+                % R2026a's public getter already returns the CURRENT RX
+                % array after swapTransmitAndReceive (nrCDLChannel's
+                % get.ReceiveAntennaArray calls swapTxRx internally).
+                % A second swap here would inspect the transmitter array.
+                nativeArray=state.Obj.ReceiveAntennaArray;
+                layout=node.BranchLayout.Layout;
+                if elementAvailable, layout=node.ElementLayout.Layout; end
+                geometry=layout.Geometry;
+                actualConfig=node.RF.Configuration;
+                if layout.Identity.Role=="bs"
+                    arrayPath='lls6g.userContext.RuntimeServingBSAntenna';
+                else
+                    arrayPath='lls6g.userContext.RuntimeUEAntenna';
+                end
+                installedArray=sixgr.util.structGet(actualConfig,arrayPath,struct());
+                installedArray.ArrayObj=nativeArray;
+                actualConfig=sixgr.util.structSet(actualConfig,arrayPath,installedArray);
+                nativeInstallation=sixgr.rf.validateReceiveBranchInstallation( ...
+                    actualConfig,node.ID,node.RF.Chain.Direction,node.RF.NumAntennas, ...
+                    obj.SampleRateHz,obj.ConfigurationEpoch);
+                assert(isequaln(nativeInstallation.Geometry,geometry)&& ...
+                    double(state.Obj.CarrierFrequency)==geometry.CarrierFrequencyHz, ...
+                    'RF:ReceiveBranchChannelOrderMismatch', ...
+                    'The actual native CDL output array must retain the installed receiver element order and frequency.');
             end
             if isfinite(sixgr.util.structGet(cfg,'channel.interferenceSIR_dB',NaN))
                 error('WAVEFORM:RandomInterferenceProxyForbidden','Interference must be another physical transmitter/link, not a requested SIR draw.');
@@ -583,6 +775,34 @@ classdef SharedWaveformPhysicalRuntime < handle
             end
         end
     end
+end
+
+function [enabled,array,metadata,quadrature,reference]=localRadiationInstallation(cfg,direction)
+policy=sixgr.util.structGet(cfg,'rf.modeledRadiatedPower',struct('Enabled',false));
+assert(isstruct(policy)&&isscalar(policy)&&isfield(policy,'Enabled')&& ...
+    islogical(policy.Enabled)&&isscalar(policy.Enabled),'RF:ModeledRadiationPolicy','Require resolved radiation policy.');
+enabled=policy.Enabled; array=[]; metadata=[]; quadrature=[]; reference=[];
+if ~enabled, return; end
+assert(isequal(sixgr.util.structGet(cfg,'rf.txSpatialPowerEnabled',false),true), ...
+    'RF:ModeledRadiationDependencies','Enabled radiation requires the actual spatial-power producer.');
+assert(all(isfield(policy,{'Quadrature','Scope','CoordinateFrame','FrequencyScope','UEReference'}))&& ...
+    policy.Scope=="native_gain_pattern_post_tx_rf_model"&& ...
+    policy.CoordinateFrame=="installed_array_local_coordinates"&& ...
+    policy.FrequencyScope=="frequency_flat_installed_carrier_field_model", ...
+    'RF:ModeledRadiationPolicy','Require resolved local frequency-flat model scope.');
+u=sixgr.util.structGet(cfg,'lls6g.userContext',struct());
+if string(direction)=="DL"
+    array=sixgr.util.structGet(u,'RuntimeServingBSAntenna',[]);
+    metadata=sixgr.util.structGet(u,'RuntimeServingBSAntennaMeta',[]);
+    reference=sixgr.util.structGet(cfg,'rf.bsPowerReference',[]);
+elseif string(direction)=="UL"
+    array=sixgr.util.structGet(u,'RuntimeUEAntenna',[]);
+    metadata=sixgr.util.structGet(u,'RuntimeUEAntennaMeta',[]);
+    reference=policy.UEReference;
+else
+    error('RF:ModeledRadiationPolicy','Require explicit DL or UL direction.');
+end
+quadrature=policy.Quadrature;
 end
 
 function changed=localDifferingTopLevelFields(a,b)

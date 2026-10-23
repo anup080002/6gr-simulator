@@ -15,6 +15,7 @@ from pathlib import Path
 import re
 import shutil
 import tempfile
+import textwrap
 from datetime import datetime, timezone
 
 
@@ -408,6 +409,57 @@ STANDARD_MEASUREMENT_FIELDS = [
     "ValueNumeric", "ValueText", "Unit", "SourceArtifact", "Notes",
 ]
 
+# Optional original publisher metadata. Legacy schemas remain valid; absence
+# never licenses reconstruction of a reference plane or cross-point cohort.
+MEASUREMENT_POPULATION_FIELDS = [
+    "PopulationID", "PopulationJSON", "SupportConfigurationJSON",
+    "PopulationSeriesID", "PopulationSeriesJSON",
+]
+MEASUREMENT_OPERATING_POINT_FIELDS = [
+    "PublishedOperatingPoint_dB", "PublishedOperatingPointField", "PublishedOperatingPointRole",
+]
+
+
+def _is_nmse_measurement(row):
+    return (str(row.get("MetricKey", "")) in {"nmse", "ce_nmse", "dmrs_estimation_quality", "srs_port_scaling_impact"}
+            and str(row.get("Unit", "")).lower() == "db"
+            and str(row.get("Statistic", "")) in {"mean", "p05", "p95", "max", "pooled_error_reference_ratio"})
+
+
+def _source_operating_point(row):
+    result = {field: "" for field in MEASUREMENT_OPERATING_POINT_FIELDS}
+    token = str(row.get("PopulationJSON", ""))
+    if not token.strip():
+        return result
+    try:
+        population = json.loads(token)
+    except (ValueError, TypeError) as exc:
+        raise ValueError("Original PopulationJSON is malformed; no operating point can be inferred") from exc
+    if not isinstance(population, dict):
+        raise ValueError("Original PopulationJSON must retain a scalar object")
+    # Configured and legacy source SNR remain distinct metadata roles, neither
+    # is measured SINR. JSON null is explicit unavailable, never numeric zero.
+    candidates = []
+    for field in ("ConfiguredSNR_dB", "SNR_dB"):
+        if field not in population or population[field] is None:
+            continue
+        value = population[field]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            raise ValueError(f"Original {field} requires a finite numeric scalar or explicit null")
+        candidates.append((field, value))
+    if candidates:
+        field, value = candidates[0]
+        result.update(PublishedOperatingPoint_dB=value, PublishedOperatingPointField=field,
+                      PublishedOperatingPointRole=("source_configured_operating_point_metadata"
+                                                   if field == "ConfiguredSNR_dB" else
+                                                   "source_SNR_metadata_not_measured_SINR"))
+    return result
+
+
+def _plot_operating_point(row):
+    value = number(row.get("PublishedOperatingPoint_dB"))
+    return value if value is not None else number(row.get("ConfiguredSNR_dB"))
+
 
 def _is_true(value):
     return str(value).strip().lower() in {"1", "true", "yes"}
@@ -425,8 +477,9 @@ def standardized_measurement_rows(progress):
 
     The child output tables are the scientific owners of metric definitions and
     populations.  This function only adds sweep provenance.  Configuration-only,
-    unavailable and non-finite rows remain in the availability ledger but are
-    excluded from the measured-value table and plots.
+    unavailable rows remain in the availability ledger. Original negative-
+    infinity NMSE (exact zero error) remains a published value, but is annotated
+    separately on plots: no arbitrary finite floor is a measurement.
     """
     availability_rows = []
     measured_rows = []
@@ -451,21 +504,86 @@ def standardized_measurement_rows(progress):
                             "ConfiguredSNR_dB": point["configured_snr_db"],
                             "PointStatus": point["status"],
                             **{field: source.get(field, "") for field in STANDARD_MEASUREMENT_FIELDS},
+                            **{field: source.get(field, "") for field in MEASUREMENT_POPULATION_FIELDS},
                             "SourceOutputTable": f"sweeps/{Path(point['run_folder']).name}/{relative}",
                             "SourceOutputRow": source_row_index,
                             "EvidenceClass": "runtime_published_standardized_measurement_row",
                         }
+                        row.update(_source_operating_point(row))
+                        _measurement_series_key(row)  # Validate supplied pairs even on unavailable rows.
                         availability_rows.append(row)
                         value = number(source.get("ValueNumeric"))
-                        if (str(source.get("Availability", "")).strip().lower() == "observed"
+                        nmse = _is_nmse_measurement(source)
+                        if nmse and str(source.get("ValueNumeric", "")).strip().lower() in {"-inf", "-infinity"}:
+                            value = -math.inf
+                        state = str(source.get("Availability", "")).strip().lower()
+                        # Named NMSE report reductions are legitimately derived
+                        # from original producer observations. This is not a
+                        # generic promotion of all derived/proxy report values.
+                        derived_nmse = (state == "derived" and nmse and
+                                        source.get("SourceArtifact", "") == "reports/csv/channel_nmse_population_summary.csv")
+                        if ((state == "observed" or derived_nmse)
                                 and _is_true(source.get("CountsTowardCoverage"))
                                 and value is not None):
                             row = dict(row)
                             row["ValueNumeric"] = value
+                            if derived_nmse:
+                                row["EvidenceClass"] = "original_producer_contract_NMSE_report_reduction_not_new_PHY_execution"
                             measured_rows.append(row)
             except (OSError, csv.Error):
                 raise
     return availability_rows, measured_rows
+
+
+def _measurement_series_key(row):
+    base = (str(row.get("Entity", "")).strip() or "all",
+            str(row.get("Statistic", "")).strip() or "value")
+    series_id = str(row.get("PopulationSeriesID", "")).strip()
+    series_json = str(row.get("PopulationSeriesJSON", "")).strip()
+    if bool(series_id) != bool(series_json):
+        raise ValueError("An explicit population series requires its original ID and definition together")
+    if series_id:
+        # The producer excludes ONLY declared operating-point coordinates.
+        # Run/config/seed/reference/support compatibility remains explicit.
+        return (*base, "publisher_series", series_id, series_json,
+                str(row.get("SupportConfigurationJSON", "")),
+                str(row.get("PublishedOperatingPointField", "")))
+    population = tuple(str(row.get(field, "")) for field in MEASUREMENT_POPULATION_FIELDS[:3])
+    if any(population):
+        # A point-scoped population hash cannot be converted into cross-point
+        # compatibility. Preserve its complete supplied definition and scope.
+        return (*base, "point_population", *population,
+                str(row.get("PointIndex", "")), str(row.get("ConfiguredSNR_dB", "")))
+    if _is_nmse_measurement(row):
+        # Historical report rows do not declare compatible supports/planes.
+        # Preserve their original scalars, without a mean of dB means or a
+        # cross-point line that would imply unretained cohort equivalence.
+        return (*base, "legacy_source_row", str(row.get("SourceOutputTable", "")),
+                str(row.get("SourceOutputRow", "")), str(row.get("PointIndex", "")),
+                str(row.get("ConfiguredSNR_dB", "")))
+    return base
+
+
+def _stagger_overlapping_measurement_ticks(fig, ax):
+    """Move only label text vertically; retain every original tick/value."""
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    accepted = []
+    for label in ax.get_xticklabels():
+        bounds = label.get_window_extent(renderer)
+        if bounds.x1 > fig.bbox.x1 - 8:
+            label.set_horizontalalignment("right")
+        elif bounds.x0 < fig.bbox.x0 + 8:
+            label.set_horizontalalignment("left")
+        step = 1.35 * label.get_fontsize() * fig.dpi / 72 / ax.bbox.height
+        while True:
+            bounds = label.get_window_extent(renderer).expanded(1.03, 1.08)
+            if not any(bounds.overlaps(other) for other in accepted):
+                accepted.append(bounds)
+                break
+            x, y = label.get_position()
+            label.set_position((x, y - step))
+    fig.canvas.draw()
 
 
 def _plot_standardized_metric(path, progress, rows, title, unit):
@@ -473,12 +591,44 @@ def _plot_standardized_metric(path, progress, rows, title, unit):
 
     fig, ax = plt.subplots(figsize=(10, 5.8), constrained_layout=True)
     series = {}
+    zero_error_rows = []
+    unplaced_rows = []
     for row in rows:
-        key = (str(row.get("Entity", "")).strip() or "all",
-               str(row.get("Statistic", "")).strip() or "value")
-        series.setdefault(key, {}).setdefault(float(row["ConfiguredSNR_dB"]), []).append(
+        key = _measurement_series_key(row)
+        coordinate = _plot_operating_point(row)
+        if coordinate is None:
+            unplaced_rows.append(row)
+            series.setdefault(key, {})
+            continue
+        if _is_nmse_measurement(row) and float(row["ValueNumeric"]) == -math.inf:
+            zero_error_rows.append(row)
+            series.setdefault(key, {}).setdefault(coordinate, [])
+            continue
+        series.setdefault(key, {}).setdefault(coordinate, []).append(
             float(row["ValueNumeric"]))
-    if len(series) <= 12:
+    scoped = any(len(key) > 2 for key in series) or bool(unplaced_rows)
+    if scoped:
+        # Already reduced NMSE statistics are not fresh linear observations.
+        # Plot every original scalar; never average dB means or distinct scopes,
+        # including the high-cardinality case. Exact identities remain in CSV.
+        for index, (key, by_snr) in enumerate(sorted(series.items(), key=lambda item: str(item[0])), 1):
+            if not any(by_snr.values()):
+                continue
+            # NaN is only a renderer gap at an original -Inf observation;
+            # source/companion CSV keeps -Inf, and the annotation explains it.
+            points = [(snr, value) for snr in sorted(by_snr)
+                      for value in (by_snr[snr] or [math.nan])]
+            xs, ys = zip(*points)
+            label = " | ".join(key[:2])
+            if len(key) > 2:
+                label += f" | {key[2]} {index}: {key[3][:12]}"
+            if len(series) > 12:
+                label = "_nolegend_"
+            # Duplicate x coordinates remain separate points, not a vertical
+            # interpolated curve or an invented per-point mean.
+            mode = "o-" if len(set(xs)) == len(xs) else "o"
+            ax.plot(xs, ys, mode, linewidth=1.2, markersize=4, label=label)
+    elif len(series) <= 12:
         for key, by_snr in sorted(series.items(), key=lambda item: str(item[0])):
             xs = sorted(by_snr)
             means = [sum(by_snr[x]) / len(by_snr[x]) for x in xs]
@@ -508,22 +658,48 @@ def _plot_standardized_metric(path, progress, rows, title, unit):
                 color="black", label=f"population mean ({len(series)} published series)")
         ax.fill_between(xs, lows, highs, alpha=0.12, color="tab:blue",
                         label="population min-max")
-    configured = sorted({point["configured_snr_db"] for point in progress["points"]
-                         if point["configured_snr_db"] is not None})
+    configured = sorted({value for row in rows if (value := _plot_operating_point(row)) is not None})
     ax.set_xticks(configured)
-    ax.set_xlabel("Configured occupied-RE reference SNR (dB)")
+    if scoped:
+        ax.set_xticklabels([format(value, ".17g") for value in configured])
+    roles = {str(row.get("PublishedOperatingPointField", "")) for row in rows}
+    ax.set_xlabel("Source operating-point SNR metadata (dB; not measured SINR)"
+                  if "SNR_dB" in roles else "Configured operating-point SNR (dB)")
     ax.set_ylabel(unit or "Published measurement value")
     ax.set_title(title)
     ax.grid(True, alpha=0.25)
-    if series:
+    if ax.get_legend_handles_labels()[0] and not (scoped and len(series) > 12):
         ax.legend(fontsize=7, loc="best")
-    else:
+    elif not series:
         ax.text(0.5, 0.5, "No observed runtime-published values.",
                 ha="center", va="center", transform=ax.transAxes)
-    ax.text(0.01, 0.01,
-            "Markers are per-point arithmetic means of matching published rows; shaded range is min-max. "
-            "Exact rows are retained in the companion CSV; missing points are gaps.",
-            transform=ax.transAxes, fontsize=8, va="bottom", wrap=True)
+    header_notes = []
+    if zero_error_rows:
+        zero_points = ", ".join(sorted({str(_plot_operating_point(row)) for row in zero_error_rows}))
+        header_notes.append(f"Exact-zero NMSE: {len(zero_error_rows)} original -Inf dB values; "
+                            f"operating-point SNR(s): {zero_points}. "
+                            "Retained in CSV by population; no finite plotted floor.")
+    if unplaced_rows:
+        header_notes.append(f"{len(unplaced_rows)} original values have no finite source/wrapper operating-point coordinate; retained in CSV.")
+    scope_note = (f"Original published scalars; {len(series)} distinct supplied population series, no additional averaging. "
+                  "Cross-point connections require the same explicit publisher series definition. "
+                  if scoped else
+                  "Markers are per-point arithmetic means of matching published rows; shaded range is min-max. ")
+    footer = scope_note + "Exact rows and identities are retained in the companion CSV; missing points are gaps."
+    if scoped:
+        # Reserve actual figure space; evidence notes must not cover samples.
+        # Manual wrapping is deterministic and makes rendered extents testable.
+        fig.set_layout_engine(None)
+        header = "\n".join(textwrap.fill(note, width=115) for note in header_notes)
+        header_lines = len(header.splitlines())
+        top = .91 - header_lines * 10 / (fig.get_figheight() * 72)
+        fig.subplots_adjust(left=.10, right=.97, bottom=.28, top=top)
+        if header:
+            fig.text(.10, .98, header, fontsize=8, va="top")
+        fig.text(.10, .025, textwrap.fill(footer, width=115), fontsize=8, va="bottom")
+        _stagger_overlapping_measurement_ticks(fig, ax)
+    else:
+        ax.text(0.01, 0.01, footer, transform=ax.transAxes, fontsize=8, va="bottom", wrap=True)
     atomic_write(path, lambda output: fig.savefig(output, dpi=300))
     plt.close(fig)
 
@@ -532,7 +708,7 @@ def export_standardized_measurement_curves(root, progress, *, save_images=True):
     """Publish one cross-point CSV/PNG per observed standardized metric."""
     availability, measured = standardized_measurement_rows(progress)
     fields = ["PointIndex", "Label", "ConfiguredSNR_dB", "PointStatus",
-              *STANDARD_MEASUREMENT_FIELDS, "SourceOutputTable", "SourceOutputRow",
+              *STANDARD_MEASUREMENT_FIELDS, *MEASUREMENT_POPULATION_FIELDS, *MEASUREMENT_OPERATING_POINT_FIELDS, "SourceOutputTable", "SourceOutputRow",
               "EvidenceClass"]
     write_csv(root / "reports/csv/sweep_measurement_availability.csv", fields, availability)
     write_csv(root / "reports/csv/sweep_measurement_values.csv", fields, measured)
@@ -562,7 +738,7 @@ def export_standardized_measurement_curves(root, progress, *, save_images=True):
             "ObservedPointIndices": "|".join(map(str, sorted(observed_points))),
             "MissingTerminalPointIndices": "|".join(map(str, sorted(terminal - observed_points))),
             "IncompletePointIndices": "|".join(map(str, sorted(incomplete))),
-            "SeriesCount": len({(row.get("Entity", ""), row.get("Statistic", "")) for row in rows}),
+            "SeriesCount": len({_measurement_series_key(row) for row in rows}),
             "CampaignCSV": metric_csv,
             "CampaignPNG": metric_png if save_images else "",
             "EvidenceClass": "cross_run_runtime_published_observed_measurements",
@@ -601,7 +777,7 @@ def _write_common_campaign_exports(root, progress, config, measurement_manifest,
 
     _, measured = standardized_measurement_rows(progress)
     metric_fields = ["CenterFrequencyHz", "PointIndex", "Label", "ConfiguredSNR_dB",
-                     "PointStatus", *STANDARD_MEASUREMENT_FIELDS, "SourceOutputTable",
+                     "PointStatus", *STANDARD_MEASUREMENT_FIELDS, *MEASUREMENT_POPULATION_FIELDS, *MEASUREMENT_OPERATING_POINT_FIELDS, "SourceOutputTable",
                      "SourceOutputRow", "EvidenceClass"]
     write_csv(out_csv / "metrics_long.csv", metric_fields, [
         {"CenterFrequencyHz": center_frequency_hz, **row} for row in measured

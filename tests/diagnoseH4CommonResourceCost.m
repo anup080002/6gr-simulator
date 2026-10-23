@@ -1,0 +1,63 @@
+function report=diagnoseH4CommonResourceCost(outputFolder,scenarioPath,slot)
+% Bounded configuration-owned scheduling diagnostic, not a PHY campaign.
+% Run only when the large scenario is stopped. It does not load or mutate
+% checkpoint state, issue grants, decode a waveform or consume channel RNG.
+arguments
+    outputFolder (1,1) string
+    scenarioPath (1,1) string
+    slot (1,1) double {mustBeInteger,mustBePositive} = 47
+end
+setup6GRSimToolkit('Verbose',false);
+assert(~isfolder(outputFolder), 'test:DiagnosticFolderExists', ...
+    'Use a fresh diagnostic output directory; do not overwrite evidence.');
+profilerStatus=profile('status');
+assert(strcmp(profilerStatus.ProfilerStatus,'off'), ...
+    'test:ProfilerAlreadyRunning','Do not replace another active profile.');
+scenario=sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
+cfg=sixgr.lls6g.buildInternalConfig(scenario,outputFolder);
+cfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,slot);
+carrier=sixgr.phy.grid.makeCarrier(cfg);
+assert(carrier.NSizeGrid==273 && carrier.SubcarrierSpacing==30 && ...
+    cfg.phy.fc_Hz==4e9 && sixgr.phy.frame.resolveDuplexMode(cfg)=="TDD", ...
+    'test:WrongH4DiagnosticScope','This diagnostic requires the authored H4 100 MHz TDD case.');
+symbols=[double(scenario.get('pdsch.start_symbol')) ...
+    double(scenario.get('pdsch.num_symbols'))];
+budget=struct('ControlAbsoluteSlot',slot-1, ...
+    'ControlSymbolAllocation',[0 double(scenario.get('control.coreset_duration'))]);
+inputPRBs=0:carrier.NSizeGrid-1;
+scheduler=sixgr.l2.mac.SchedulerPF(cfg,'Direction','DL');
+source=sixgr.runtime.SlotCheckpoint.sourceIdentity();
+initialRNG=rng;
+profile clear
+profile on
+cleanup=onCleanup(@()profile('off')); %#ok<NASGU>
+timer=tic;
+[available,evidence]=scheduler.ssbSafePRBSet(slot,budget,inputPRBs,symbols);
+elapsed=toc(timer);
+profile off
+details=profile('info');
+assert(isequaln(rng,initialRNG), ...
+    'test:SchedulingDiagnosticRNGChanged','Resource ownership must not consume scientific RNG.');
+report=struct('ScenarioPath',scenarioPath,'ConfigHash',string(scenario.ConfigHash), ...
+    'SourceSHA256',string(source.SHA256),'SlotOneBased',slot, ...
+    'ElapsedSeconds',elapsed,'InputPRBs',inputPRBs,'AvailablePRBs',available, ...
+    'SymbolAllocation',symbols,'ControlBudget',budget,'ConflictEvidence',evidence, ...
+    'ProfilerEnabled',true,'ScientificRNGUnchanged',true, ...
+    'PrimaryStudyEligible',false, ...
+    'EvidenceScope',"configured_common_resource_cost_not_PHY_or_performance_qualification");
+functions=details.FunctionTable;
+rows=repmat(struct('Function',"",'File',"",'Calls',0,'TotalSeconds',0),numel(functions),1);
+for k=1:numel(functions)
+    rows(k)=struct('Function',string(functions(k).FunctionName), ...
+        'File',string(functions(k).FileName),'Calls',double(functions(k).NumCalls), ...
+        'TotalSeconds',double(functions(k).TotalTime));
+end
+mkdir(outputFolder);
+sixgr.util.csvWriteTable(fullfile(outputFolder,'common_resource_profile.csv'), ...
+    sortrows(struct2table(rows),'TotalSeconds','descend'));
+sixgr.util.matSave(fullfile(outputFolder,'common_resource_profile.mat'), ...
+    struct('Report',report,'Profile',details,'Source',source, ...
+    'ResolvedScenario',scenario.toStruct()),'UseArtifactStore',false,'ForceV73',true);
+fprintf('H4_COMMON_RESOURCE_DIAGNOSTIC slot=%d elapsed_s=%.6f prbs=%d/%d output=%s\n', ...
+    slot,elapsed,numel(available),numel(inputPRBs),outputFolder);
+end

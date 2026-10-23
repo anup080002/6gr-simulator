@@ -12,6 +12,76 @@ if nargin < 7 || isempty(scenarioStatus)
     scenarioStatus = struct();
 end
 ctx = localBuildContext(runFolder, layout, scfg, cfg, result, manifest, runtimeSummary, scenarioStatus);
+[ctx.CompletedSCHPopulations,schOutcomeAudit]=localCollectCompletedSCHOutcomes(ctx);
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir,'completed_sch_decode_attempt_observations.csv'), ...
+    schOutcomeAudit,'PreserveSchema',true,'RoundTripNumericText',true);
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir,'completed_sch_decode_attempt_populations.csv'), ...
+    ctx.CompletedSCHPopulations,'PreserveSchema',true,'RoundTripNumericText',true);
+[ctx.SRSChannelStatistics,srsDiagnostics]=sixgr.report.summarizeSRSChannelReport(ctx.Tables.SRS);
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir,'srs_channel_qualification_diagnostics.csv'), ...
+    struct2table(srsDiagnostics,'AsArray',true),'PreserveSchema',true,'RoundTripNumericText',true);
+nmseSummaries=cell(4,1); nmseAudits=cell(4,1);
+for k=1:4
+    names=["DL","UL","TRS","CSIRS"]; signals=["DL","UL","TRS","CSI-RS"];
+    [nmseSummaries{k},nmseAudits{k}]=sixgr.report.summarizeChannelNMSEReport(ctx.Tables.(names(k)),signals(k));
+end
+ctx.ChannelNMSESummary=vertcat(nmseSummaries{:});
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir,'channel_nmse_population_summary.csv'), ...
+    ctx.ChannelNMSESummary,'PreserveSchema',true,'RoundTripNumericText',true);
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir,'channel_nmse_source_audit.csv'), ...
+    vertcat(nmseAudits{:}),'PreserveSchema',true,'RoundTripNumericText',true);
+[dlEnergy,ulEnergy]=localCollectLinkEnergyEvidence(ctx);
+% Diagnostic operands/availability, not a replacement for generic Es/N0 or
+% an independent-trial/performance population. Every original row survives.
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir,'link_energy_ratio_observations.csv'), ...
+    [dlEnergy;ulEnergy],'PreserveSchema',true,'RoundTripNumericText',true);
+[ctx.LDPCAttempts,ctx.LDPCBlocks]=localCollectLDPCEvidence(ctx);
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir,'ldpc_rate_match_attempts.csv'), ...
+    ctx.LDPCAttempts,'PreserveSchema',true,'RoundTripNumericText',true);
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir,'ldpc_rate_match_blocks.csv'), ...
+    ctx.LDPCBlocks,'PreserveSchema',true,'RoundTripNumericText',true);
+% One post-reception readback per report invocation, shared by both coverage
+% passes. The joint CSV retains each point/observation and its paired-source
+% hash. A header-only table is honest when no channel archive was retained.
+ctx.ChannelSGCSObservations = sixgr.report.collectChannelSGCSEvidence( ...
+    runFolder, ctx.Tables.DL, ctx.Tables.UL);
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, 'channel_sgcs_observations.csv'), ...
+    ctx.ChannelSGCSObservations, 'PreserveSchema', true, 'RoundTripNumericText', true);
+ctx.CSIReportLatency=sixgr.report.collectCSIReportLatency(ctx.Tables.ReceivedCSI,ctx.Tables.CSIRS);
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir,'csi_report_latency_observations.csv'), ...
+    ctx.CSIReportLatency,'PreserveSchema',true,'RoundTripNumericText',true);
+ctx.CSIDeliveryEvidence=sixgr.report.collectCSIReportDeliveryEvidence(ctx.Tables.ReceivedCSI);
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir,'csi_report_delivery_observations.csv'), ...
+    ctx.CSIDeliveryEvidence,'PreserveSchema',true,'RoundTripNumericText',true);
+% Existing private nominal scoring is a diagnostic, never a substitute for
+% PMI/RI accuracy, coded-rank performance, delivery or grant qualification.
+ctx.CSINominalSelectionQuality=sixgr.report.collectCSISelectionQualityEvidence(runFolder,ctx.Tables.CSIRS);
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir,'csi_nominal_selection_quality_observations.csv'), ...
+    ctx.CSINominalSelectionQuality,'PreserveSchema',true,'RoundTripNumericText',true);
+[ctx.ChannelEstimatorObservations,ctx.ChannelEstimatorPairs]= ...
+    sixgr.report.collectDMRSCSIRSComparisonEvidence(runFolder,ctx.Tables.DL,ctx.Tables.CSIRS);
+ctx.SharedChannelEstimatorPairs=sixgr.report.collectSharedDMRSCSIRSPairs(runFolder,ctx.Tables.DL);
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir,'channel_estimator_observations.csv'), ...
+    ctx.ChannelEstimatorObservations,'PreserveSchema',true,'RoundTripNumericText',true);
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir,'dmrs_csirs_comparison_pairs.csv'), ...
+    ctx.ChannelEstimatorPairs,'PreserveSchema',true,'RoundTripNumericText',true);
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir,'same_capture_dmrs_csirs_pairs.csv'), ...
+    ctx.SharedChannelEstimatorPairs,'PreserveSchema',true,'RoundTripNumericText',true);
+ctx.AdaptationApplication=[sixgr.report.collectAdaptationApplicationEvidence(ctx.Tables.DL,"DL"); ...
+    sixgr.report.collectAdaptationApplicationEvidence(ctx.Tables.UL,"UL")];
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir,'adaptation_application_observations.csv'), ...
+    ctx.AdaptationApplication,'PreserveSchema',true,'RoundTripNumericText',true);
+[ctx.SimultaneousULPairs,ctx.SimultaneousULPopulation,ctx.SimultaneousULTrials,ctx.SimultaneousULCohorts]= ...
+    sixgr.report.collectSimultaneousULTransmitEvidence(ctx.Tables.UL,ctx.Tables.PUCCH);
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir,'simultaneous_ul_transmit_pairs.csv'), ...
+    ctx.SimultaneousULPairs,'PreserveSchema',true,'RoundTripNumericText',true);
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir,'simultaneous_ul_transmit_trials.csv'), ...
+    ctx.SimultaneousULTrials,'PreserveSchema',true,'RoundTripNumericText',true);
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir,'simultaneous_ul_transmit_cohorts.csv'), ...
+    ctx.SimultaneousULCohorts,'PreserveSchema',true,'RoundTripNumericText',true);
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir,'simultaneous_ul_transmit_population.csv'), ...
+    struct2table(ctx.SimultaneousULPopulation,'AsArray',true), ...
+    'PreserveSchema',true,'RoundTripNumericText',true);
 ctx.VisualArtifactContractEnforcement = sixgr.visual.enforceVisualArtifactContract(runFolder, ...
     "StrictMode", localStrictVisualArtifactMode(ctx), ...
     "CreateUnavailableCards", false);
@@ -204,6 +274,7 @@ ctx.Tables.PDCCH = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "p
 ctx.Tables.PUCCH = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "pucch_trials.csv"));
 ctx.Tables.CSIRS = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "csi_rs_trials.csv"));
 ctx.Tables.CSIFeedback = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "csi_feedback_reports.csv"));
+ctx.Tables.ReceivedCSI = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "received_csi_reports.csv"));
 ctx.Tables.SRS = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "srs_trials.csv"));
 ctx.Tables.TRS = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "trs_trials.csv"));
 ctx.Tables.InitialAccessLifecycle = localReadOptionalTable(fullfile(layout.ControlCSVDir, "initial_access_lifecycle_trace.csv"));
@@ -544,7 +615,7 @@ switch key
     case "ber_vs_snr_sinr_esn0"
         T = localMeasuredCurveMetricRows(cat, metric, ctx, "BER", "fraction");
     case "fer_tb_error_rate"
-        T = [T; localFailureRateRows(cat, metric, ctx.Tables.DL, "DL"); localFailureRateRows(cat, metric, ctx.Tables.UL, "UL")];
+        T = localCompletedSCHCRCMetricRows(cat,metric,ctx);
     case "code_block_bler"
         T = [T; ...
             localRatioSummaryRows(cat, metric, ctx.Tables.DL, "CodeBlockErrors", "CodeBlockCount", "DL", "fraction", "air_interface/csv/dl_pdsch_trials.csv", ""); ...
@@ -565,7 +636,11 @@ switch key
         T = localOracleFreeUnsupportedSNRRows(cat, metric, ["DL","UL"], ...
             "Geometry-driven oracle-free LLS derives receiver SINR from pathloss, shadow fading, fading channel, and equalisation. Required injected-SNR targets are intentionally not estimated.");
     case "outage_probability"
-        T = [T; localFailureRateRows(cat, metric, ctx.Tables.DL, "DL"); localFailureRateRows(cat, metric, ctx.Tables.UL, "UL")];
+        for direction=["DL","UL"]
+            T=[T;localMetricTableRow(cat,metric,direction,"probability","not_available",NaN,"","fraction", ...
+                localDefaultSource(direction), ...
+                "No original outage-event definition, threshold, observation window and eligible opportunity population is retained by this report adapter. Completed SCH CRC errors are separately reported; they are not outage observations. Execution failures remain in completed_sch_decode_attempt_observations.csv.")]; %#ok<AGROW>
+        end
     case "error_floor_region_characterization"
         T = [T; ...
             localMeasuredErrorFloorRows(cat, metric, ctx.Tables.DLMeasuredSINRBLER, "DL", "air_interface/csv/dl_measured_sinr_bler_curve.csv"); ...
@@ -676,13 +751,11 @@ switch key
             localSegmentationRows(cat, metric, ctx.Tables.DL, "DL", "air_interface/csv/dl_pdsch_trials.csv"); ...
             localSegmentationRows(cat, metric, ctx.Tables.UL, "UL", "air_interface/csv/ul_pusch_trials.csv")];
     case "puncturing_shortening_statistics"
-        T = [T; ...
-            localPuncturingRows(cat, metric, ctx.Tables.DL, "DL", "air_interface/csv/dl_pdsch_trials.csv"); ...
-            localPuncturingRows(cat, metric, ctx.Tables.UL, "UL", "air_interface/csv/ul_pusch_trials.csv")];
+        T = localPuncturingRows(cat,metric,ctx.LDPCAttempts);
     case "ce_nmse"
         T = [T; ...
-            localNumericTrialSummaryRows(cat, metric, ctx.Tables.SRS, "NMSE_dB", "SRS", "dB"); ...
-            localNumericTrialSummaryRows(cat, metric, ctx.Tables.TRS, "NMSE_dB", "TRS", "dB")];
+            localSRSChannelNMSEMetricRows(cat,metric,ctx.SRSChannelStatistics); ...
+            localIndependentChannelNMSERows(cat,metric,ctx.ChannelNMSESummary,"TRS")];
     case "cfo_rmse"
         T = localRMSETrialRows(cat, metric, ctx.Tables.PBCH, "CFOError_Hz", "PBCH", "Hz", "air_interface/csv/pbch_trials.csv");
     case "to_rmse"
@@ -785,19 +858,25 @@ switch key
         T = localPerRankThroughputRows(cat, metric, ctx.Tables.DL);
     case "equalizer_output_sinr"
         T = localNumericTrialSummaryRows(cat, metric, ctx.Tables.DL, "PostEqSINR_dB", "DL", "dB");
-    case "residual_interference_power"
+    case {"decision_residual_symbol_power","residual_interference_power"}
         % Legacy request name is not an external-interference measurement.
         % Keep its routing compatibility, but publish the actual metric name
         % and dimensionless equalized-symbol reference in the output rows.
-        T = localNumericTrialSummaryRows(cat, "decision_residual_symbol_power", ...
+        residualMetric = metric;
+        residualMetric.key = "decision_residual_symbol_power";
+        residualMetric.label = "Decision residual symbol power";
+        T = localNumericTrialSummaryRows(cat, residualMetric, ...
             ctx.Tables.DL, "DecisionResidualSymbolPower_dB", "DL", ...
             "dB_relative_equalized_symbol_unit");
+        if ~isempty(T)
+            T.Notes(:) = "Decision-directed residual in equalized-symbol units; not a measurement of external interference power.";
+        end
     case "beam_precoder_gain"
         T = localNumericTrialSummaryRows(cat, metric, ctx.Tables.Beam, "ChannelGain_dB", "beamforming", "dB");
     case "harq_gain_per_retransmission"
         T = localProbeMetricRows(cat, metric, ctx.Tables.HARQSummary, "harq_gain_per_retransmission", ctx);
     case "rate_matching_overhead"
-        T = localRateMatchingOverheadRows(cat, metric, ctx.Tables.DL, "DL");
+        T = localRateMatchingOverheadRows(cat,metric,ctx.LDPCAttempts);
     case "rs_overhead_contribution"
         T = localNumericTrialSummaryRows(cat, metric, ctx.Tables.DL, "RSOverheadFraction", "DL", "fraction");
     case "mtrp_gain"
@@ -821,9 +900,8 @@ switch key
     case "power_control_convergence"
         T = localPowerControlConvergenceRows(cat, metric, ctx);
     case "dmrs_estimation_quality"
-        T = [T; ...
-            localNumericTrialSummaryRows(cat, metric, ctx.Tables.UL, "NMSE_dB", "UL", "dB"); ...
-            localNumericTrialSummaryRows(cat, metric, ctx.Tables.SRS, "NMSE_dB", "SRS", "dB")];
+        % SRS is not a DM-RS estimate or a replacement for missing DM-RS.
+        T = localIndependentChannelNMSERows(cat,metric,ctx.ChannelNMSESummary,"UL");
     case "msg3_specific_success_metrics"
         T = localMsg3SpecificSuccessRows(cat, metric, ctx);
     case "uci_block_error_rate"
@@ -834,16 +912,10 @@ switch key
         T = localPUCCHConfusionRows(cat, metric, ctx.Tables.PUCCH, "DTX_TO_ACK");
     case "uplink_drop_probability"
         T = localUplinkDropRows(cat, metric, ctx);
-    case "cqi_accuracy"
-        T = localCQIAccuracyRows(cat, metric, ctx);
-    case "pmi_accuracy"
-        T = localPMIAccuracyRows(cat, metric, ctx);
-    case "ri_accuracy"
-        T = localRIAccuracyRows(cat, metric, ctx);
-    case "l1_sinr_accuracy"
-        T = localL1SINRAccuracyRows(cat, metric, ctx);
-    case "rsrp_accuracy"
-        T = localRSRPAccuracyRows(cat, metric, ctx);
+    case {"cqi_accuracy","pmi_accuracy","ri_accuracy","l1_sinr_accuracy","rsrp_accuracy"}
+        T = localCSIIndependentAccuracyRequirementRows(cat,metric);
+    case {"cqi_field_delivery","pmi_field_delivery","ri_field_delivery","cri_field_delivery","csi_bit_delivery"}
+        T = localCSIFieldDeliveryRows(cat,metric,ctx);
     case "csi_report_size"
         T = [T; ...
             localNumericTrialSummaryRows(cat, metric, ctx.Tables.DL, "CSIPayloadBitLength", "DL", "bits"); ...
@@ -864,10 +936,12 @@ switch key
         T = localSGCSRows(cat, metric, ctx);
     case "nmse"
         T = [T; ...
-            localNumericTrialSummaryRows(cat, metric, ctx.Tables.SRS, "NMSE_dB", "SRS", "dB"); ...
-            localNumericTrialSummaryRows(cat, metric, ctx.Tables.TRS, "NMSE_dB", "TRS", "dB")];
+            localSRSChannelNMSEMetricRows(cat,metric,ctx.SRSChannelStatistics); ...
+            localIndependentChannelNMSERows(cat,metric,ctx.ChannelNMSESummary,"TRS")];
     case "dmrs_vs_csirs_comparison"
         T = localDMRSVsCSIRSComparisonRows(cat, metric, ctx);
+    case {"dmrs_channel_estimation_observations","csirs_channel_estimation_observations"}
+        T = localChannelEstimatorObservationRows(cat,metric,ctx);
     case "srs_port_scaling_impact"
         T = localSRSPortScalingImpactRows(cat, metric, ctx);
     case "reciprocity_mismatch_impact"
@@ -1239,6 +1313,279 @@ for i = 1:size(colCandidates, 1)
 end
 end
 
+function [populations,audit]=localCollectCompletedSCHOutcomes(ctx)
+% Row-level producer-contract projection, not archive revalidation or a
+% statistical independence claim. Never recover receiver outcomes from Status,
+% TBS, rank, CountsTowardCoverage, or successful waveform preparation.
+observation=struct('Entity',"",'SourceArtifact',"",'SourceSHA256',"",'SourceRow',NaN, ...
+    'PopulationID',"",'PopulationJSON',"",'ObservationIdentityJSON',"",'ReceiverEvidenceJSON',"", ...
+    'OriginalStatus',"",'OriginalCRCPass',NaN,'CompletedReceiverOutcomeAvailable',false, ...
+    'SuppliedSourceContractCompatible',false, ...
+    'CRCError',NaN,'ExecutionFailure',false,'ExclusionReason',"", ...
+    'CountsTowardCoverage',false,'StatisticalIndependenceClaimed',false);
+population=struct('Entity',"",'SourceArtifact',"",'SourceSHA256',"",'PopulationID',"",'PopulationJSON',"", ...
+    'SourceRowCount',0,'CompletedDecodeAttemptCount',0,'CRCErrorCount',0,'CRCErrorRate',NaN, ...
+    'ExecutionFailureCount',0,'ExcludedRowCount',0,'SourceRowsJSON',"", ...
+    'OutcomeDefinition',"one_original_completed_SCH_attempt_aggregate_CRC_outcome", ...
+    'CountsTowardCoverage',false,'StatisticalIndependenceClaimed',false);
+audit=struct2table(observation,'AsArray',true); audit=audit([],:);
+populations=struct2table(population,'AsArray',true); populations=populations([],:);
+flags=["FinalizedFlag","PartialRowFlag","Crash","IsWarmupFrame", ...
+    "DecodeAttempted","DecodeUsable","DLSCHDecodeAttempted","DLSCHDecodeAvailable", ...
+    "ULSCHDecodeAttempted","ULSCHDecodeAvailable","CRCApplicable","CRCPass"];
+% Incidental per-attempt Seed and observation IDs are provenance, not cohort
+% keys. Supplied configuration/operating-point/CRC-input domains remain split.
+cohortFields=["RunID","RunTag","ExecutionID","ScenarioID","ConfigHash", ...
+    "RandomSeed","ChannelSeed","SourceRandomSeed","SourceChannelSeed", ...
+    "PreparedRandomSeed","PreparedChannelSeed","SweepPointIndex","SweepAggregatePointIndex", ...
+    "PointIndex","ConfiguredSNR_dB","SNR_dB","UEIndex","UEID","RNTI","ServingCell","CellID", ...
+    "ReceiverID","ReceiverClockDomain","ReceiverClockEpoch","ConfigurationEpoch","RFConfigurationEpoch", ...
+    "ChannelModelApplied","ChannelModel","ChannelFadingApplied","DopplerHz", ...
+    "Layers","NumLayers","MCS","MCSIndex","Modulation","CodeRate", ...
+    "NumCodewords","ActualNumCodewords","DecoderCRCInputDomain", ...
+    "HARQSoftCombiningApplied","HARQCombiningApplied","IsRetransmission","HARQIsRetransmission","HARQRound", ...
+    "ExecutionProfile","ExecutionTaxonomy","ExecutionBackend","ApproximationMode", ...
+    "RuntimeEvidenceSource","RuntimeMaterializationStatus","E2EAirModel","Source","FallbackFlag","PlaceholderFlag"];
+identityFields=["Frame","Slot","Seed","ObservationID","ReceiverWindowID", ...
+    "ObservationStartSample","ObservationEndSampleExclusive","ObservationSampleRateHz", ...
+    "ReceiverObservationSHA256","GrantContextId","FrozenGrantContextId","TransmissionID", ...
+    "HARQProcessId","HARQProcess","NDI","HARQNDI","RV","HARQRV","TBId","LogicalTBID"];
+for entity=["DL","UL"]
+    source=ctx.Tables.(entity);
+    path=localDefaultSource(entity); fullPath=fullfile(ctx.RunFolder,char(path));
+    localValidateSCHAuthorityImport(fullPath,source,[flags,"FallbackFlag","PlaceholderFlag"]);
+    if isempty(source), continue; end
+    n=height(source); vars=string(source.Properties.VariableNames);
+    normalized=table(localSCHTextColumn(source,"Direction"),localSCHTextColumn(source,"Status"), ...
+        'VariableNames',{'Direction','Status'});
+    for field=flags, normalized.(field)=localSCHFlagColumn(source,field); end
+    suppliedDirection=upper(strtrim(normalized.Direction));
+    assert(all(suppliedDirection=="" | suppliedDirection==entity), ...
+        'sixgr:report:SCHOutcomeDirection','%s trial source contains a different direction.',entity);
+    sourceCompatible=localSCHSourceCompatible(source,entity);
+    eligible=sixgr.util.linkTrialDecodeCoverage(normalized) & sourceCompatible;
+    status=upper(strtrim(normalized.Status));
+    executionFailure=normalized.Crash==1 | status=="CRASH";
+    digest=""; if isfile(fullPath), digest=string(sixgr.util.sha256File(fullPath)); end
+    entityRows=repmat(observation,n,1);
+    for row=1:n
+        r=observation; r.Entity=entity; r.SourceArtifact=path; r.SourceSHA256=digest; r.SourceRow=row;
+        r.PopulationJSON=localSCHProjection(source(row,:),cohortFields);
+        r.PopulationID=string(sixgr.util.sha256Hex(char(entity+"|"+r.PopulationJSON)));
+        r.ObservationIdentityJSON=localSCHProjection(source(row,:),identityFields);
+        r.ReceiverEvidenceJSON=localSCHProjection(source(row,:),["Direction","Status",flags, ...
+            "RuntimeEvidenceSource","RuntimeMaterializationStatus","CountsTowardCoverage", ...
+            "FallbackFlag","PlaceholderFlag","ExecutionBackend","ApproximationMode","E2EAirModel","Source"]);
+        r.OriginalStatus=normalized.Status(row); r.OriginalCRCPass=normalized.CRCPass(row);
+        r.CompletedReceiverOutcomeAvailable=eligible(row); r.ExecutionFailure=executionFailure(row);
+        r.SuppliedSourceContractCompatible=sourceCompatible(row);
+        if eligible(row)
+            r.CRCError=1-normalized.CRCPass(row);
+        elseif executionFailure(row)
+            r.ExclusionReason="execution_failure_not_radio_decode_failure";
+        elseif ~sourceCompatible(row)
+            r.ExclusionReason="supplied_source_contract_not_supported_for_waveform_receiver_outcome";
+        elseif ~all(ismember(["Direction","Status",flags(1:7),"CRCApplicable","CRCPass"],vars))
+            r.ExclusionReason="missing_original_receiver_lifecycle_authority";
+        elseif normalized.FinalizedFlag(row)~=1 || normalized.PartialRowFlag(row)~=0
+            r.ExclusionReason="partial_unfinalized_or_unknown_lifecycle";
+        elseif normalized.IsWarmupFrame(row)~=0
+            r.ExclusionReason="warmup_or_unknown_warmup_scope";
+        else
+            r.ExclusionReason="unavailable_or_inapplicable_completed_SCH_CRC";
+        end
+        entityRows(row)=r;
+    end
+    audit=[audit;struct2table(entityRows,'AsArray',true)]; %#ok<AGROW>
+end
+for id=unique(audit.PopulationID,'stable').'
+    rows=audit(audit.PopulationID==id,:); counted=rows.CompletedReceiverOutcomeAvailable;
+    r=population; r.Entity=rows.Entity(1); r.SourceArtifact=rows.SourceArtifact(1); r.SourceSHA256=rows.SourceSHA256(1);
+    r.PopulationID=id; r.PopulationJSON=rows.PopulationJSON(1); r.SourceRowCount=height(rows);
+    r.CompletedDecodeAttemptCount=nnz(counted); r.CRCErrorCount=sum(rows.CRCError(counted));
+    if r.CompletedDecodeAttemptCount>0, r.CRCErrorRate=r.CRCErrorCount/r.CompletedDecodeAttemptCount; end
+    r.ExecutionFailureCount=nnz(rows.ExecutionFailure); r.ExcludedRowCount=nnz(~counted);
+    r.SourceRowsJSON=string(jsonencode(rows.SourceRow.'));
+    populations=[populations;struct2table(r,'AsArray',true)]; %#ok<AGROW>
+end
+end
+
+function localValidateSCHAuthorityImport(path,source,flags)
+% Numeric type inference can replace an invalid original token with NaN.
+% Validate just the original authority columns as text before accepting the
+% normal table import. Do not duplicate the full wide trial table or alter
+% its types, values, rows, or the shared CSV reader's policy.
+if ~isfile(path)
+    assert(isempty(source),'sixgr:report:SCHOutcomeImportMismatch', ...
+        'A populated SCH source must retain its original CSV.');
+    return;
+end
+header=localSCHOriginalHeader(path);
+assert(isequal(header,string(source.Properties.VariableNames)), ...
+    'sixgr:report:SCHOutcomeImportMismatch', ...
+    'Original SCH headers must survive the normal import without renaming or omission.');
+options=detectImportOptions(path,'FileType','text','Delimiter',',', ...
+    'NumHeaderLines',0,'VariableNamingRule','preserve');
+options.VariableNamesLine=1; options.DataLines=[2 Inf];
+assert(isequal(string(options.VariableNames),header), ...
+    'sixgr:report:SCHOutcomeImportMismatch','Authority import changed original SCH headers.');
+selected=header(ismember(header,flags));
+% Even historical sources without authority fields must preserve row count.
+if isempty(selected), selected=header(1); end
+options=setvartype(options,cellstr(selected),'string');
+options=setvaropts(options,cellstr(selected),'WhitespaceRule','preserve', ...
+    'TreatAsMissing',{},'EmptyFieldRule','missing');
+options.SelectedVariableNames=cellstr(selected);
+options.ExtraColumnsRule='error'; options.ImportErrorRule='error';
+original=readtable(path,options);
+assert(height(original)==height(source), ...
+    'sixgr:report:SCHOutcomeImportMismatch', ...
+    'Original SCH authority rows and normal import must have identical populations.');
+for field=selected(ismember(selected,flags))
+    expected=localSCHFlagColumn(original,field);
+    actual=localSCHFlagColumn(source,field);
+    assert(isequaln(expected,actual), ...
+        'sixgr:report:SCHOutcomeImportMismatch', ...
+        'Normal import changed original SCH authority values in %s.',field);
+end
+end
+
+function names=localSCHOriginalHeader(path)
+% Parse the original single CSV header, including quoted commas/escaped
+% quotes. Never replace duplicate or ambiguous supplied names with guesses.
+fid=fopen(path,'r','n','UTF-8');
+assert(fid>=0,'sixgr:report:SCHOutcomeHeader','Cannot open original SCH CSV.');
+cleanup=onCleanup(@()fclose(fid));
+line=fgetl(fid); clear cleanup
+assert(ischar(line),'sixgr:report:SCHOutcomeHeader','Original SCH CSV needs a header.');
+if ~isempty(line) && double(line(1))==65279, line=line(2:end); end
+names=strings(1,0); token=''; state=0; k=1;
+while k<=numel(line)
+    character=line(k);
+    if state==1
+        if character=='"'
+            if k<numel(line) && line(k+1)=='"'
+                token(end+1)='"'; k=k+1; %#ok<AGROW>
+            else
+                state=2;
+            end
+        else
+            token(end+1)=character; %#ok<AGROW>
+        end
+    elseif character==','
+        names(end+1)=string(token); token=''; state=0; %#ok<AGROW>
+    elseif state==2
+        error('sixgr:report:SCHOutcomeHeader','Unexpected text after a quoted SCH header.');
+    elseif character=='"'
+        assert(isempty(token),'sixgr:report:SCHOutcomeHeader','Ambiguous quoted SCH header.');
+        state=1;
+    else
+        token(end+1)=character; %#ok<AGROW>
+    end
+    k=k+1;
+end
+assert(state~=1,'sixgr:report:SCHOutcomeHeader','Unterminated quoted SCH header.');
+names(end+1)=string(token);
+assert(all(strlength(names)>0) && all(names==strtrim(names)) && numel(unique(names))==numel(names), ...
+    'sixgr:report:SCHOutcomeHeader','Original SCH headers must be nonempty, unambiguous and unique.');
+end
+
+function compatible=localSCHSourceCompatible(T,entity)
+% Optional source labels never create positive receiver authority. Explicit
+% incompatible/proxy labels cannot be overruled by otherwise positive flags.
+% Missing labels are retained as missing; this row-contract adapter does not
+% claim independent archive/PHY verification or connected scheduler ownership.
+compatible=true(height(T),1); vars=string(T.Properties.VariableNames);
+for field=["FallbackFlag","PlaceholderFlag"]
+    if ismember(field,vars), compatible=compatible & localSCHFlagColumn(T,field)==0; end
+end
+allowedBackends=["scheduler_shared_stream_receiver","scheduler_grant_waveform_chain"];
+allowedRuntime="active_waveform_pdsch_runtime";
+returnedSource="sixgr.link.runDLPDSCHThroughput_returned_receiver";
+if entity=="DL"
+    allowedBackends=[allowedBackends,"canonical_pdsch_compatibility_facades","legacy_pdsch_calibration_facades"];
+else
+    allowedBackends=[allowedBackends,"canonical_pusch_waveform_chain"];
+    allowedRuntime="active_waveform_pusch_runtime";
+    returnedSource="sixgr.link.runULPUSCHThroughput_returned_receiver";
+end
+for entry={"ApproximationMode","none"; "ExecutionBackend",allowedBackends; ...
+        "RuntimeEvidenceSource",returnedSource; "RuntimeMaterializationStatus",allowedRuntime}.'
+    value=localSCHTextColumn(T,entry{1});
+    compatible=compatible & (strlength(value)==0 | ismember(value,entry{2}));
+end
+% Source/E2EAirModel vary across other producers. Reject exact declared
+% approximation tokens, rather than trusting broad source-name substrings.
+for field=["Source","E2EAirModel"]
+    value=lower(strtrim(localSCHTextColumn(T,field)));
+    incompatible=ismember(value,["lut","logistic","fast_proxy","synthetic","fallback"]) | ...
+        startsWith(value,["synthetic_from_fast_kernel","fast_proxy_"]);
+    compatible=compatible & ~incompatible;
+end
+end
+
+function values=localSCHFlagColumn(T,field)
+values=nan(height(T),1);
+if ~ismember(field,string(T.Properties.VariableNames)), return; end
+raw=T.(field);
+assert(size(raw,1)==height(T) && size(raw,2)==1, ...
+    'sixgr:report:SCHOutcomeColumnShape','%s must retain exactly one flag per source row.',field);
+if isstring(raw) || iscellstr(raw)
+    raw=string(raw); raw(strcmpi(raw,"true"))="1"; raw(strcmpi(raw,"false"))="0";
+end
+values=sixgr.truth.numericMeasurementColumn(raw,field);
+assert(all(isnan(values) | values==0 | values==1), ...
+    'sixgr:report:SCHOutcomeFlagValue','%s requires original 0/1 or unavailable NaN, not a coerced truth value.',field);
+end
+
+function values=localSCHTextColumn(T,field)
+values=repmat("",height(T),1);
+if ~ismember(field,string(T.Properties.VariableNames)), return; end
+values=string(T.(field));
+assert(size(values,1)==height(T) && size(values,2)==1, ...
+    'sixgr:report:SCHOutcomeColumnShape','%s must retain exactly one text value per source row.',field);
+values(ismissing(values))="";
+end
+
+function token=localSCHProjection(T,fields)
+original=struct();
+for name=fields
+    if ~ismember(name,string(T.Properties.VariableNames)), continue; end
+    value=T.(name); if iscell(value)&&isscalar(value), value=value{1}; end
+    if ischar(value), value=string(value); end
+    original.(name)=value;
+end
+token=string(jsonencode(sixgr.util.jsonSafeValue(original)));
+end
+
+function T=localCompletedSCHCRCMetricRows(cat,metric,ctx)
+T=localEmptyMetricTable();
+% The legacy catalog key covers FER/TB. The actual scalar is per receiver
+% attempt and can aggregate multiple codewords; never call it radio-frame FER
+% or a per-codeword, first-transmission, residual-HARQ or unique-TB rate.
+metric.label="Completed SCH decode-attempt aggregate CRC error rate";
+note="One original completed SCH receiver attempt is one observation; failures use original CRCPass=0, not Status=FAIL. This is not radio-frame FER, outage, per-layer/per-codeword BLER, unique-TB residual BLER or an independent-population claim. Retries/combining domains are separated when supplied; missing historical domains are not reconstructed. Execution failures and exclusions remain in reports/csv/completed_sch_decode_attempt_observations.csv.";
+source="reports/csv/completed_sch_decode_attempt_populations.csv";
+for entity=["DL","UL"]
+    populations=ctx.CompletedSCHPopulations(ctx.CompletedSCHPopulations.Entity==entity,:);
+    if isempty(populations)
+        T=[T;localMetricTableRow(cat,metric,entity,"rate","not_available",NaN,"","fraction",source,note)]; %#ok<AGROW>
+    end
+    for k=1:height(populations)
+        p=populations(k,:); available=p.CompletedDecodeAttemptCount>0;
+        if available
+            rows=[localMetricTableRow(cat,metric,entity,"rate","derived",p.CRCErrorRate,"","fraction",source,note); ...
+                localMetricTableRow(cat,metric,entity,"error_count","derived",p.CRCErrorCount,"","count",source,note); ...
+                localMetricTableRow(cat,metric,entity,"decoded_attempt_count","derived",p.CompletedDecodeAttemptCount,"","count",source,note)];
+        else
+            rows=localMetricTableRow(cat,metric,entity,"rate","not_available",NaN,"","fraction",source,note);
+        end
+        rows.PopulationID(:)=p.PopulationID; rows.PopulationJSON(:)=p.PopulationJSON;
+        T=[T;rows]; %#ok<AGROW>
+    end
+end
+end
+
 function T = localFailureRateRows(cat, metric, trialT, entity)
 T = localEmptyMetricTable();
 if ~(istable(trialT) && ~isempty(trialT) && ismember("Status", string(trialT.Properties.VariableNames)))
@@ -1326,6 +1673,63 @@ T = [T; ...
     localMetricTableRow(cat, metric, entity, "max", "available", max(x), "", unit, localDefaultSource(entity), "")];
 end
 
+function T=localIndependentChannelNMSERows(cat,metric,summary,signal)
+T=localEmptyMetricTable();
+summary=summary(summary.Signal==signal,:);
+source="reports/csv/channel_nmse_population_summary.csv";
+for k=1:height(summary)
+    row=summary(k,:);
+    entity=signal;
+    firstRow=height(T)+1;
+    note="Producer-contract measurements; not independent archive replay or threshold qualification. "+ ...
+        "Mean="+row.MeanDefinition+"; quantiles="+row.PercentileDefinition+ ...
+        "; reference="+row.ReferencePlane+"; source="+row.ReferenceSource+ ...
+        "; original observations="+row.SourceObservationRowsJSON+ ...
+        "; population="+row.PopulationJSON+"; support="+row.SupportConfigurationJSON+ ...
+        ". No independent-trial or confidence-interval claim.";
+    values=[row.MeanNMSE_dB,row.P95NMSE_dB,row.MaxNMSE_dB]; labels=["mean","p95","max"];
+    for j=1:3
+        textValue=""; if values(j)==-Inf, textValue="-Inf"; end
+        T=[T;localMetricTableRow(cat,metric,entity,labels(j),"available", ...
+            values(j),textValue,"dB",source,note)]; %#ok<AGROW>
+    end
+    if row.PooledEnergyAvailable
+        textValue=""; if row.PooledNMSE_dB==-Inf, textValue="-Inf"; end
+        T=[T;localMetricTableRow(cat,metric,entity,"pooled_error_reference_ratio", ...
+            "available",row.PooledNMSE_dB,textValue,"dB",source, ...
+            note+" Pooled definition="+row.PooledDefinition+"; not the equal-observation mean.")]; %#ok<AGROW>
+    end
+    T.PopulationID(firstRow:end)=row.PopulationID;
+    T.PopulationJSON(firstRow:end)=row.PopulationJSON;
+    T.SupportConfigurationJSON(firstRow:end)=row.SupportConfigurationJSON;
+    T.PopulationSeriesID(firstRow:end)=row.PopulationSeriesID;
+    T.PopulationSeriesJSON(firstRow:end)=row.PopulationSeriesJSON;
+end
+end
+
+function T=localSRSChannelNMSEMetricRows(cat,metric,statistics)
+source="air_interface/csv/srs_trials.csv";
+note="Only explicit original ChannelNMSEReferenceAvailable=1 enters SRS NMSE. " + ...
+    "Mean="+statistics.NMSEAggregation+"; p95="+statistics.P95Definition+ ...
+    "; max=largest_original_normalized_error_power. Referenced failed measurements remain measured; " + ...
+    "measurement availability is not threshold qualification. No independent-trial or confidence-interval claim. " + ...
+    "Reference and qualification counts are separate in reports/csv/srs_channel_qualification_diagnostics.csv.";
+if ~statistics.MeasurementAvailable
+    T=localMetricTableRow(cat,metric,"SRS","independent_reference","not_available", ...
+        NaN,"","dB",source,note);
+    return;
+end
+T=localEmptyMetricTable();
+names=["mean","p95","max"];
+values=[statistics.NMSE_dB,statistics.P95NMSE_dB,statistics.MaxNMSE_dB];
+for k=1:numel(names)
+    textValue="";
+    if values(k)==-Inf, textValue="-Inf"; end
+    T=[T;localMetricTableRow(cat,metric,"SRS",names(k),"derived", ...
+        values(k),textValue,"dB",source,note)]; %#ok<AGROW>
+end
+end
+
 function T = localRMSETrialRows(cat, metric, trialT, varName, entity, unit, source)
 T = localEmptyMetricTable();
 if ~(istable(trialT) && ~isempty(trialT) && ismember(varName, string(trialT.Properties.VariableNames)))
@@ -1389,110 +1793,243 @@ T = [T; ...
 end
 
 function T = localExplicitNoSignalFalseAlarmRows(cat, metric, trialT, entity, source)
-% A false-alarm denominator is an executed H0 population. Never mix ordinary
-% signal-present runtime rows into it and never turn a missing H0 campaign
-% into an observed zero probability.
+% Descriptive capture-level rates, not independent-trial qualification. A
+% target-absent capture with other signals/tails is not a noise-only trial.
 T = localEmptyMetricTable();
 if ~(istable(trialT) && ~isempty(trialT))
     return;
 end
 vars = string(trialT.Properties.VariableNames);
+kind = repmat("",height(trialT),1);
+if ismember("TrialType",vars), kind=lower(strtrim(string(trialT.TrialType))); end
+explicitEmpty = ismember(kind,["no_signal","noise_only","no_signal_before_receiver_noise_and_rf"]);
 if ismember("SignalPresent", vars)
     present = sixgr.truth.numericMeasurementColumn(trialT.SignalPresent, "SignalPresent");
-    noSignal = isfinite(present) & present == 0;
-elseif ismember("TrialType", vars)
-    kind = lower(strtrim(string(trialT.TrialType)));
-    noSignal = contains(kind,"no_signal") | contains(kind,"noise_only") | ...
-        contains(kind,"false_alarm");
+    assert(all(isnan(present) | present==0 | present==1), ...
+        'sixgr:truth:InvalidFalseAlarmPresence','Presence must be zero, one or unknown.');
+    absent = present==0;
 else
-    return;
+    absent = explicitEmpty;
 end
-if ~any(noSignal)
-    return;
+population = repmat("target_absent_receiver_background_unknown",height(trialT),1);
+population(explicitEmpty)="no_signal_before_receiver_noise_and_RF";
+population(kind=="target_absent_with_background")="target_absent_with_background";
+if ismember("PresenceScoringStatus",vars)
+    % A legacy/incomplete receipt cannot acquire a denominator from an old
+    % flag or a configured receive-only intention.
+    absent=absent & string(trialT.PresenceScoringStatus)=="observed_executed_component_presence";
 end
-if ismember("FalseAlarmFlag", vars)
+if ismember("PresenceReceiverBackground",vars)
+    background=string(trialT.PresenceReceiverBackground);
+    empty=background=="all_link_contributions_exactly_zero";
+    presentBackground=background=="nonzero_link_contribution_in_capture";
+    population(empty)="no_signal_before_receiver_noise_and_RF";
+    population(presentBackground)="target_absent_with_background";
+    population(~empty & ~presentBackground)="target_absent_receiver_background_unknown";
+end
+if ~any(absent), return; end
+event=nan(height(trialT),1);
+if upper(string(entity))=="PUCCH" && ismember("DetectionOutcome",vars)
+    outcome=string(trialT.DetectionOutcome);
+    event(outcome=="detected")=1; event(outcome=="dtx")=0;
+    if ismember("FalseAlarmFlag",vars)
+        flag=sixgr.truth.numericMeasurementColumn(trialT.FalseAlarmFlag,"FalseAlarmFlag");
+        compare=absent & isfinite(event) & isfinite(flag);
+        assert(all(event(compare)==flag(compare)), ...
+            'sixgr:truth:ConflictingFalseAlarmEvidence','False alarm flag conflicts with executed detection.');
+    end
+elseif ismember("FalseAlarmFlag", vars)
     event = sixgr.truth.numericMeasurementColumn(trialT.FalseAlarmFlag, "FalseAlarmFlag");
 elseif ismember("FalseAlarm", vars)
     event = sixgr.truth.numericMeasurementColumn(trialT.FalseAlarm, "FalseAlarm");
-elseif upper(string(entity)) == "PUCCH" && ismember("DTXFlag", vars)
-    dtx = sixgr.truth.numericMeasurementColumn(trialT.DTXFlag, "DTXFlag");
-    event = 1-dtx;
 elseif upper(string(entity)) == "PDCCH" && ismember("FalseCandidateCount", vars)
     count = sixgr.truth.numericMeasurementColumn(trialT.FalseCandidateCount, "FalseCandidateCount");
-    event = double(count>0);
+    event(isfinite(count)) = double(count(isfinite(count))>0);
 elseif ismember("DetectionSuccess", vars)
     event = sixgr.truth.numericMeasurementColumn(trialT.DetectionSuccess, "DetectionSuccess");
-else
-    return;
 end
-mask = noSignal & isfinite(event);
-if ~any(mask)
-    return;
+assert(all(isnan(event) | event==0 | event==1), ...
+    'sixgr:truth:InvalidFalseAlarmEvent','False detection must be zero, one or unavailable.');
+accepted=nan(height(trialT),1);
+if ismember("FalseAcceptanceFlag",vars)
+    accepted=sixgr.truth.numericMeasurementColumn(trialT.FalseAcceptanceFlag,"FalseAcceptanceFlag");
+    assert(all(isnan(accepted) | accepted==0 | accepted==1), ...
+        'sixgr:truth:InvalidFalseAcceptanceEvent','False UCI acceptance must be zero, one or unavailable.');
 end
-x = event(mask) ~= 0;
-note = "Measured only from explicitly labeled empty/no-signal physical receiver trials; signal-present rows are excluded from both numerator and denominator.";
-T = [T; ...
-    localMetricTableRow(cat, metric, entity, "rate", "available", mean(x), "", "fraction", source, note); ...
-    localMetricTableRow(cat, metric, entity, "count", "available", sum(x), "", "count", source, note); ...
-    localMetricTableRow(cat, metric, entity, "sample_count", "available", numel(x), "", "count", source, note)];
+% Keep operating points, detector policies, formats and receive schemas
+% separate. Context/assignment digests are per-occasion identities, so they
+% are fallback strata only when no stable resource/schema fields survive.
+strata=["RunId","RunID","run_id","ExecutionID","ScenarioID","ScenarioId","ScenarioPointID", ...
+    "ProbeMode","SweepPointIndex","SweepIndex","Seed","RandomSeed","ChannelSeed","RFSeed", ...
+    "SNR_dB","ConfiguredSNR_dB","ConfiguredSNRdB","ConfigurationEpoch","PresenceConfigurationEpoch", ...
+    "ConfigurationDigest","ConfigHash","ChannelModel","ChannelProfile","RFProfile", ...
+    "ReceiverPUCCHFormat","ResolvedFormat","RequestedFormat","PUCCHFormat", ...
+    "DetectionThreshold","DetectionThresholdSource","DetectionThresholdMode","DetectionMetricSource", ...
+    "ReceiverExpectedBitCount","ExpectedBitCount","PUCCHExpectedBitCount", ...
+    "ReceiverExpectedHARQBitCount","ReceiverExpectedSRBitCount", ...
+    "ReceiverExpectedCSIPart1BitCount","ReceiverExpectedCSIPart2BitCount", ...
+    "ReceiverPUCCHResourceId","PUCCHResourceId","ReceiverPUCCHPRBStart","ReceiverPUCCHPRBCount", ...
+    "ReceiverPUCCHSymbolStart","ReceiverPUCCHNumSymbols","ReceiverPUCCHIntraSlotHopping", ...
+    "ReceiverPUCCHSecondHopStartPRB","ReceiverBitLayoutDigest","UCIConfigurationDigest", ...
+    "PresenceReceiverSchemaDigest","PresenceReceiverResourceDigest", ...
+    "CSIReportConfigID","CRCApplicable","PresenceScoringSource", ...
+    "PresenceReceiverBackground","ExecutionBackend","ApproximationMode"];
+if ~any(ismember(["ReceiverExpectedBitCount","ExpectedBitCount","PUCCHExpectedBitCount"],vars))
+    strata=[strata,"PresenceReceiverContextDigest","ReceiverContextDigest"];
+end
+if ~any(ismember(["ReceiverPUCCHResourceId","PUCCHResourceId"],vars))
+    strata=[strata,"PresenceReceiverAssignmentDigest","ReceiverAssignmentDigest"];
+end
+strata=intersect(strata,vars,'stable');
+groupKey=strings(height(trialT),1); captureKey=groupKey;
+identity=intersect(["RunId","RunID","run_id","ExecutionID","ProbeMode", ...
+    "SweepPointIndex","SweepIndex","PresenceConfigurationEpoch","ConfigurationEpoch"],vars,'stable');
+clockNames=["PresenceRXStartSample","PresenceRXEndSampleExclusive","PresenceSampleRateHz"];
+if ~all(ismember(clockNames,vars))
+    clockNames=["ObservationStartSample","ObservationEndSampleExclusive","ObservationSampleRateHz"];
+end
+for r=find(absent).'
+    groupKey(r)=population(r)+"/"+rowKey(r,strata);
+    % UE/RNTI belong to a target hypothesis, not the physical gNB sample
+    % capture. Canonicalize the actual receiver endpoint across its aliases.
+    receiver="";
+    for name=["PresenceServingCell","ReceiverID","ServingCell","CellID"]
+        if ~ismember(name,vars), continue; end
+        if name~="ReceiverID"
+            cellID=sixgr.truth.numericMeasurementColumn(trialT.(name)(r),name);
+            if ~(isfinite(cellID) && cellID>=0 && cellID==fix(cellID)), continue; end
+            receiver="gnb_"+string(cellID)+"_rx";
+            break;
+        end
+        value=string(trialT.(name)(r));
+        if ismissing(value) || strlength(strtrim(value))==0 || ...
+                any(lower(value)==["nan","unknown","unavailable"]) || ...
+                startsWith(value,"not_recorded_by_active_"), continue; end
+        receiver=value;
+        break;
+    end
+    if all(ismember(clockNames,vars))
+        clock=zeros(1,3);
+        for c=1:3, clock(c)=sixgr.truth.numericMeasurementColumn(trialT.(clockNames(c))(r),clockNames(c)); end
+        if strlength(receiver)>0 && all(isfinite(clock)) && clock(1)>=0 && clock(2)>clock(1) && clock(3)>0
+            captureKey(r)=receiver+"/"+rowKey(r,[identity,clockNames]);
+        end
+    else
+        % Explicit legacy H0 can be retained only with an actual trial ID;
+        % row number and blind-hypothesis count are not capture identities.
+        for name=["PresenceObservationID","ObservationID","TrialID","TrialId"]
+            if ismember(name,vars)
+                value=string(trialT.(name)(r));
+                if ~ismissing(value) && strlength(value)>0 && value~="NaN"
+                    captureKey(r)=receiver+"/"+rowKey(r,[identity,name]); break;
+                end
+            end
+        end
+    end
+end
+valid=absent & strlength(captureKey)>0;
+groups=unique(groupKey(valid),'stable');
+for g=1:numel(groups)
+    rows=find(valid & groupKey==groups(g));
+    captures=unique(captureKey(rows),'stable');
+    events=nan(numel(captures),1); acceptances=events;
+    for c=1:numel(captures)
+        selected=rows(captureKey(rows)==captures(c));
+        % Several target/UE hypotheses on one capture form one any-detection
+        % event. Duplicate exports do not multiply that denominator.
+        events(c)=captureEvent(event(selected));
+        acceptances(c)=captureEvent(accepted(selected));
+    end
+    if ~any(isfinite(events)) && ~any(isfinite(acceptances)), continue; end
+    label=string(entity)+"/"+population(rows(1))+"/cohort_"+string(g);
+    note="Descriptive unique receiver captures; continuous samples are not established independent and are not statistically qualified. " + ...
+        "No-signal is defined before receiver noise/RF; continuous receiver RF state or tails are not certified empty. " + ...
+        "Signal-present and unknown-presence rows excluded. Receiver false detection, physical receiver acceptance and delivered CSI are distinct; no semantic acceptance or delivered false CSI is inferred. " + ...
+        "FalseAcceptanceFlag is the scored physical receiver gate, including retained receive-length checks, not CSI semantics or delivery. " + ...
+        "Unknown detector decisions are excluded from the decision denominator. Stratum="+groups(g);
+    T=[T; localMetricTableRow(cat,metric,label,"capture_count","available",numel(captures),"","count",source,note)]; %#ok<AGROW>
+    for outcomeIndex=1:2
+        x=events; prefix="";
+        if outcomeIndex==2, x=acceptances; prefix="physical_receiver_acceptance_"; end
+        x=x(isfinite(x));
+        if isempty(x), continue; end
+        T=[T; ... %#ok<AGROW>
+            localMetricTableRow(cat,metric,label,prefix+"rate","available",mean(x),"","fraction",source,note); ...
+            localMetricTableRow(cat,metric,label,prefix+"count","available",sum(x),"","count",source,note); ...
+            localMetricTableRow(cat,metric,label,prefix+"sample_count","available",numel(x),"","count",source,note)];
+    end
+end
+
+    function key=rowKey(row,names)
+        value=struct();
+        for n=names, value.(n)=trialT.(n)(row,:); end
+        key=string(jsonencode(value,'ConvertInfAndNaN',false));
+    end
+    function value=captureEvent(values)
+        value=NaN;
+        if any(values==1), value=1;
+        elseif all(values==0), value=0; end
+    end
 end
 
 function T = localPerLayerBLERRows(cat, metric, trialT)
-T = localEmptyMetricTable();
-requiredVars = ["Layers","Status"];
-if ~(istable(trialT) && ~isempty(trialT) && all(ismember(requiredVars, string(trialT.Properties.VariableNames))))
-    return;
-end
-layers = sixgr.truth.numericMeasurementColumn(trialT.Layers, "Layers");
-status = upper(strtrim(string(trialT.Status)));
-failMask = status == "FAIL" | status == "CRASH";
-valid = isfinite(layers) & layers >= 1;
-if ~any(valid)
-    return;
-end
-maxLayers = max(layers(valid));
-for idx = 1:maxLayers
-    mask = valid & layers >= idx;
-    if ~any(mask)
-        continue;
-    end
-    note = "Current LLS runtime exports aggregate TB outcome rows; PDSCH PHY supports one codeword for ranks 1-4 and two codewords for ranks 5-8, while per-layer BLER is attributed to each active layer in the configured layer map.";
-    T = [T; ... %#ok<AGROW>
-        localMetricTableRow(cat, metric, "layer_" + string(idx), "rate", "available", mean(failMask(mask)), "", "fraction", "air_interface/csv/dl_pdsch_trials.csv", note); ...
-        localMetricTableRow(cat, metric, "layer_" + string(idx), "sample_count", "available", sum(mask), "", "count", "air_interface/csv/dl_pdsch_trials.csv", note)];
-end
+% Layers are mapped symbol streams, not independently CRC-decoded blocks.
+% A TB/codeword outcome cannot be copied once for every active layer.
+T=localMetricTableRow(cat,metric,"DL","rate","not_available",NaN,"","fraction", ...
+    "air_interface/csv/dl_pdsch_trials.csv", ...
+    "No independently defined per-layer block outcome exists in the supplied aggregate trial schema. Layer count and TB CRC do not create per-layer BLER; no layer observations are synthesized.");
 end
 
 function T = localPerCodewordBLERRows(cat, metric, trialT)
-T = localEmptyMetricTable();
-if ~(istable(trialT) && ~isempty(trialT) && ismember("Status", string(trialT.Properties.VariableNames)))
-    return;
-end
-status = upper(strtrim(string(trialT.Status)));
-failMask = status == "FAIL" | status == "CRASH";
-note = "PHY PDSCH TX/RX supports one codeword for ranks 1-4 and two codewords for ranks 5-8; this aggregate trial table exposes TB status, so codeword_1 mirrors TB failure rate unless codeword-specific rows are present.";
-T = [T; ...
-    localMetricTableRow(cat, metric, "codeword_1", "rate", "available", mean(failMask), "", "fraction", "air_interface/csv/dl_pdsch_trials.csv", note); ...
-    localMetricTableRow(cat, metric, "codeword_1", "sample_count", "available", numel(failMask), "", "count", "air_interface/csv/dl_pdsch_trials.csv", note)];
+% PDSCH_Rx.DecodedBitLineagePerCodeword retains original individual CRCs,
+% but runDLPDSCHThroughput's generic trial CSV does not project that lineage.
+% Do not infer codeword_1 from rank, aggregate CRCPass or code-block counts.
+T=localMetricTableRow(cat,metric,"DL","rate","not_available",NaN,"","fraction", ...
+    "air_interface/csv/dl_pdsch_trials.csv", ...
+    "Original per-codeword decoder CRC/attempt identities are not retained by this aggregate trial-table adapter. PDSCH receiver lineage needs an explicit producer-to-CSV projection before per-codeword BLER can be reported; scalar TB/aggregate status is not substituted.");
 end
 
-function T = localRateMatchingOverheadRows(cat, metric, trialT, entity)
-T = localEmptyMetricTable();
-if ~(istable(trialT) && ~isempty(trialT))
-    return;
+function [dl,ul]=localCollectLinkEnergyEvidence(ctx)
+source="air_interface/csv/dl_pdsch_trials.csv";
+dl=sixgr.report.collectLinkEnergyRatioEvidence(ctx.Tables.DL,"DL",source,sourceHash(source));
+source="air_interface/csv/ul_pusch_trials.csv";
+ul=sixgr.report.collectLinkEnergyRatioEvidence(ctx.Tables.UL,"UL",source,sourceHash(source));
+    function digest=sourceHash(relative)
+        digest=""; path=fullfile(ctx.RunFolder,char(relative));
+        if isfile(path), digest=string(sixgr.util.sha256File(path)); end
+    end
 end
-vars = string(trialT.Properties.VariableNames);
-if all(ismember(["RateMatchedBits","RateMatchPunctureBits","RateMatchRepetitionBits"], vars))
-    rm = sixgr.truth.numericMeasurementColumn(trialT.RateMatchedBits, "RateMatchedBits");
-    punct = sixgr.truth.numericMeasurementColumn(trialT.RateMatchPunctureBits, "RateMatchPunctureBits");
-    rep = sixgr.truth.numericMeasurementColumn(trialT.RateMatchRepetitionBits, "RateMatchRepetitionBits");
-    mask = isfinite(rm) & isfinite(punct) & isfinite(rep) & rm > 0;
-    if any(mask)
-        overhead = (punct(mask) + rep(mask)) ./ rm(mask);
-        note = "Measured from actual rate-matching puncture and repetition bit counts.";
-        T = [T; ...
-            localMetricTableRow(cat, metric, entity, "mean_ratio", "available", mean(overhead, "omitnan"), "", "fraction", localDefaultSource(entity), note); ...
-            localMetricTableRow(cat, metric, entity, "p95_ratio", "available", prctile(overhead, 95), "", "fraction", localDefaultSource(entity), note)];
+
+function [attempts,blocks]=localCollectLDPCEvidence(ctx)
+source="air_interface/csv/dl_pdsch_trials.csv";
+[attempts,blocks]=sixgr.report.collectLDPCRateMatchEvidence(ctx.Tables.DL,"DL",source,sourceHash(source));
+source="air_interface/csv/ul_pusch_trials.csv";
+[ulAttempts,ulBlocks]=sixgr.report.collectLDPCRateMatchEvidence(ctx.Tables.UL,"UL",source,sourceHash(source));
+attempts=[attempts;ulAttempts]; blocks=[blocks;ulBlocks];
+    function digest=sourceHash(relative)
+        digest=""; path=fullfile(ctx.RunFolder,char(relative));
+        if isfile(path), digest=string(sixgr.util.sha256File(path)); end
+    end
+end
+
+function T = localRateMatchingOverheadRows(cat, metric, attempts)
+T = localEmptyMetricTable();
+source="reports/csv/ldpc_rate_match_attempts.csv";
+for k=1:height(attempts)
+    r=attempts(k,:); entity=r.Direction+"@coding_evidence="+r.EvidenceID;
+    note="Per-source-attempt selection accounting, not transmitted overhead, proof of RF emission or an independent-trial population. " + ...
+        "The repeated fraction uses selected output positions; the unselected fraction uses eligible buffer positions. " + ...
+        "CW/CB, retained RV/Nref and exact population are in ldpc_rate_match_blocks.csv. Identity="+r.InputIdentityJSON;
+    if ~r.SelectionAvailable
+        T=[T;localMetricTableRow(cat,metric,entity,"selection_accounting", ...
+            "not_available",NaN,r.Status,"",source,note)]; %#ok<AGROW>
+        continue;
+    end
+    for field=["RepeatedSelectionFraction","UnselectedEligibleFraction"]
+        if isfinite(r.(field))
+            T=[T;localMetricTableRow(cat,metric,entity,field,"derived",r.(field), ...
+                "","fraction",source,note)]; %#ok<AGROW>
+        end
     end
 end
 end
@@ -3027,30 +3564,28 @@ if ~isempty(pad)
 end
 end
 
-function T = localPuncturingRows(cat, metric, trialT, entity, source)
+function T = localPuncturingRows(cat, metric, attempts)
 T = localEmptyMetricTable();
-req = ["RateMatchPunctureBits","RateMatchRepetitionBits","SegmentationPaddingBits"];
-if ~(istable(trialT) && ~isempty(trialT) && all(ismember(req, string(trialT.Properties.VariableNames))))
-    return;
-end
-puncture = sixgr.truth.numericMeasurementColumn(trialT.RateMatchPunctureBits, "RateMatchPunctureBits");
-repeat = sixgr.truth.numericMeasurementColumn(trialT.RateMatchRepetitionBits, "RateMatchRepetitionBits");
-padding = sixgr.truth.numericMeasurementColumn(trialT.SegmentationPaddingBits, "SegmentationPaddingBits");
-puncture = puncture(isfinite(puncture));
-repeat = repeat(isfinite(repeat));
-padding = padding(isfinite(padding));
-if ~isempty(puncture)
-    T = [T; ...
-        localMetricTableRow(cat, metric, entity, "mean_puncture_bits", "available", mean(puncture, "omitnan"), "", "bits", source, ""); ...
-        localMetricTableRow(cat, metric, entity, "max_puncture_bits", "available", max(puncture), "", "bits", source, "")]; %#ok<AGROW>
-end
-if ~isempty(repeat)
-    T = [T; ...
-        localMetricTableRow(cat, metric, entity, "mean_repetition_bits", "available", mean(repeat, "omitnan"), "", "bits", source, ""); ...
-        localMetricTableRow(cat, metric, entity, "max_repetition_bits", "available", max(repeat), "", "bits", source, "")]; %#ok<AGROW>
-end
-if ~isempty(padding)
-    T = [T; localMetricTableRow(cat, metric, entity, "segmentation_padding_bits", "available", mean(padding, "omitnan"), "", "bits", source, "Exported as shortening/padding proxy because explicit shortening state is not emitted separately.")]; %#ok<AGROW>
+source="reports/csv/ldpc_rate_match_attempts.csv";
+for k=1:height(attempts)
+    r=attempts(k,:); entity=r.Direction+"@coding_evidence="+r.EvidenceID;
+    note="Retained v2 LDPC accounting for one source attempt; no pooling across attempts, RV, Nref, codewords or populations. " + ...
+        "InherentLDPCPuncturedBits is retained 2Zc puncturing; UnselectedEligiblePositions excludes buffer filler and buffer-limit exclusions. " + ...
+        "RepeatedSelections counts repeat selections; SegmentationPaddingBits is segmentation filler, not CB CRC or an inferred shortening mode. " + ...
+        "Trial totals are not apportioned to codewords without operands. Coding counts do not prove RF emission. Identity="+r.InputIdentityJSON;
+    if ~r.SelectionAvailable
+        T=[T;localMetricTableRow(cat,metric,entity,"selection_accounting", ...
+            "not_available",NaN,r.Status,"",source,note)]; %#ok<AGROW>
+        continue;
+    end
+    for field=["InherentLDPCPuncturedBits","UnselectedEligiblePositions","RepeatedSelections", ...
+            "SegmentationPaddingBits","BufferFillerPositions","ExcludedByBufferLimitPositions", ...
+            "SelectedPositions","UniqueSelectedPositions","EligibleBufferPositions","CBCRCBits"]
+        if isfinite(r.(field))
+            T=[T;localMetricTableRow(cat,metric,entity,field,"derived",r.(field), ...
+                "","bits",source,note)]; %#ok<AGROW>
+        end
+    end
 end
 end
 
@@ -3146,35 +3681,30 @@ end
 function T = localSimultaneousPUSCHPUCCHRows(cat, metric, ctx)
 T = localEmptyMetricTable();
 policy = localConfigString(ctx, ["pucch.simultaneous_pucch_pusch_policy", "pusch.simultaneous_pusch_pucch_policy"], "baseline");
-note = "Simultaneous behavior is measured from overlapping Frame/Slot observations between the actual PUSCH and PUCCH trial tables.";
+note = "Exact same-execution/point/UE/RNTI/cell/endpoint/clock coexistence of actual nonzero physical-chain contributions before node RF. Includes waveform window/tail samples; not RF-on activity, RE collision, NR simultaneous-policy conformance or power-sharing qualification. Coverage refers only to all supplied trial rows, not an emission census. Pair success requires actual PUSCH CRC and complete PUCCH payload delivery; crashes are unavailable, not measured failures.";
 T = [T; localMetricTableRow(cat, metric, "UL_control", "policy", "config_only", NaN, policy, "", "meta/scenario_config_resolved.json", note)]; %#ok<AGROW>
-if ~(istable(ctx.Tables.UL) && istable(ctx.Tables.PUCCH) && ~isempty(ctx.Tables.UL) && ~isempty(ctx.Tables.PUCCH) && ...
-        all(ismember(["Frame","Slot","Status"], string(ctx.Tables.UL.Properties.VariableNames))) && ...
-        all(ismember(["Frame","Slot","Status"], string(ctx.Tables.PUCCH.Properties.VariableNames))))
-    return;
+p=ctx.SimultaneousULPopulation;
+source="reports/csv/simultaneous_ul_transmit_population.csv";
+countState="not_available"; rateState="not_available"; successState="not_available";
+auditState="not_available";
+if p.CoverageComplete, countState="observed"; auditState="derived"; end
+if p.CoverageComplete && p.QualifiedPUSCHTransmissions+p.QualifiedPUCCHTransmissions==0
+    countState="not_exercised"; auditState="not_exercised";
 end
-ulKeys = string(ctx.Tables.UL.Frame) + "_" + string(ctx.Tables.UL.Slot);
-pucchKeys = string(ctx.Tables.PUCCH.Frame) + "_" + string(ctx.Tables.PUCCH.Slot);
-overlapKeys = intersect(unique(ulKeys), unique(pucchKeys), "stable");
-overlapCount = numel(overlapKeys);
-overlapRate = overlapCount / max(numel(unique(pucchKeys)), 1);
-successVals = NaN(overlapCount, 1);
-ulStatus = upper(strtrim(string(ctx.Tables.UL.Status)));
-pucchStatus = upper(strtrim(string(ctx.Tables.PUCCH.Status)));
-for i = 1:overlapCount
-    k = overlapKeys(i);
-    ulPass = any(ulStatus(ulKeys == k) == "PASS");
-    pucchPass = any(pucchStatus(pucchKeys == k) == "PASS");
-    successVals(i) = double(ulPass && pucchPass);
+if isfinite(p.OverlapRate), rateState="derived"; end
+if isfinite(p.ConditionalSuccessRate)
+    successState="derived";
+elseif p.CoverageComplete && p.ObservedOverlapCount==0
+    successState="not_exercised";
 end
-T = [T; ... %#ok<AGROW>
-    localMetricTableRow(cat, metric, "UL_control", "overlap_count", "available", overlapCount, "", "count", "air_interface/csv/pucch_trials.csv", note); ...
-    localMetricTableRow(cat, metric, "UL_control", "overlap_rate", "available", overlapRate, "", "fraction", "air_interface/csv/pucch_trials.csv", note)];
-if overlapCount > 0
-    T = [T; localMetricTableRow(cat, metric, "UL_control", "overlap_success_rate", "available", mean(successVals, "omitnan"), "", "fraction", "air_interface/csv/pucch_trials.csv", note)]; %#ok<AGROW>
-else
-    T = [T; localMetricTableRow(cat, metric, "UL_control", "overlap_success_rate", "available", 0, "", "fraction", "air_interface/csv/pucch_trials.csv", note + " No overlapping slots were scheduled in this scenario.")]; %#ok<AGROW>
-end
+T=[T; ... %#ok<AGROW>
+    localMetricTableRow(cat,metric,"UL_control","overlap_count",countState,p.ObservedOverlapCount,"","count",source,note); ...
+    localMetricTableRow(cat,metric,"UL_control","overlap_rate",rateState,p.OverlapRate,"","fraction",source,note+" Denominator: qualified PUCCH transmissions in the complete supplied population."); ...
+    localMetricTableRow(cat,metric,"UL_control","overlap_success_rate",successState,p.ConditionalSuccessRate,p.Status,"fraction",source,note); ...
+    localMetricTableRow(cat,metric,"UL_control","qualified_pair_count",auditState,p.QualifiedPairCount,"","count",source,note); ...
+    localMetricTableRow(cat,metric,"UL_control","outcome_pair_count",auditState,p.OutcomePairCount,"","count",source,note); ...
+    localMetricTableRow(cat,metric,"UL_control","unknown_outcome_pair_count",auditState,p.UnknownOutcomePairCount,"","count",source,note); ...
+    localMetricTableRow(cat,metric,"UL_control","unqualified_source_rows",auditState,p.UnqualifiedRows,"","count",source,note)];
 end
 
 function T = localPowerControlConvergenceRows(cat, metric, ctx)
@@ -3537,93 +4067,221 @@ T = [T; ... %#ok<AGROW>
     localMetricTableRow(cat, metric, "system", "delta_energy_j", "available", delta, "", "J", "rf/csv/probe_rf_energy.csv", note)];
 end
 
-function T = localCQIAccuracyRows(cat, metric, ctx)
-T = localEmptyMetricTable();
-note = "CQI accuracy is computed against the repo's SINR-to-CQI reference mapping from the actual measured SINR in each runtime trial.";
-T = [T; ... %#ok<AGROW>
-    localCQIAccuracyRowsForTable(cat, metric, ctx.Tables.DL, "DL", note); ...
-    localCQIAccuracyRowsForTable(cat, metric, ctx.Tables.UL, "UL", note)];
+function T = localCSIIndependentAccuracyRequirementRows(cat,metric)
+% Keep requested independent validations visible, but never manufacture
+% references from a different indicator namespace or signal/power plane.
+% Delivery evidence has separate metric keys and cannot close these gates.
+switch string(metric.key)
+    case "cqi_accuracy"
+        reason="Requires decoded reference-resource PDSCH populations for the configured CQI table, CRI/RI/PMI, EPRE and TB error criterion (TS 38.214 V18.9.0 sections 5.2.2.1 and 5.2.2.5.1). Current TB SINR mapped by a generic threshold table is not CQI calibration.";
+    case "pmi_accuracy"
+        reason="Requires the complete configured codebook/rank namespace, retained reference channel and disturbance plane, legal candidates and declared selection objective. Beam/CRI ordinals or configured PMI are not an independent optimal-PMI reference.";
+    case "ri_accuracy"
+        reason="Requires matched candidate-rank objectives under explicit power, noise, receiver and codebook assumptions. Numerical matrix rank or transmitted Layers is not an independent optimal-RI reference.";
+    case "l1_sinr_accuracy"
+        reason="Requires measured and independently scored signal and interference-plus-noise on the same resources and reference plane. ChannelGain_dB divided by an unrelated NoiseVariance is not a 38.215 SINR reference.";
+    case "rsrp_accuracy"
+        reason="Requires paired reference-signal RE power and receiver measurements under the applicable 38.215 port and reference-plane definition. Channel gain and beam gain are not RSRP operands.";
+end
+T=localUnavailableMetricRows(cat,metric,"CSI","independent_reference_required","",reason);
 end
 
-function T = localPMIAccuracyRows(cat, metric, ctx)
-T = localEmptyMetricTable();
-note = "PMI accuracy is computed against the best available codebook reference for each trial: best-beam index first, then selected beam, then configured PMI.";
-T = [T; ... %#ok<AGROW>
-    localPMIAccuracyRowsForTable(cat, metric, ctx.Tables.DL, "DL", note); ...
-    localPMIAccuracyRowsForTable(cat, metric, ctx.Tables.UL, "UL", note)];
+function T=localCSIFieldDeliveryRows(cat,metric,ctx)
+T=localEmptyMetricTable();
+observations=ctx.CSIDeliveryEvidence;
+source="reports/csv/csi_report_delivery_observations.csv";
+field=upper(extractBefore(string(metric.key),"_"));
+for k=1:height(observations)
+    row=observations(k,:);
+    % Source-row identity keeps all point/seed/report contexts distinct. No
+    % rate or confidence interval is pooled across these actual reports.
+    entity="CSI@Report="+string(row.ReportIdentity)+"@Observation="+ ...
+        string(row.ObservationID)+"@SourceRow="+string(row.ReportSourceRow);
+    for name=["RunID","ExecutionID","SweepPointIndex","RandomSeed"]
+        if ismember(name,string(row.Properties.VariableNames))
+            entity=entity+"@"+name+"="+string(row.(name));
+        end
+    end
+    note="Exact executed serialization versus independently decoded received bits; full rank-qualified PMI components, not beam ordinals. " + ...
+        "Per-report comparison conditional on accepted semantic decode; rejected or missing reports do not become an all-emission delivery-reliability denominator. " + ...
+        "Per-report observation, not CSI selection optimality, CQI BLER calibration, field availability or statistical qualification. " + ...
+        "Evidence="+string(row.EvidenceStatus)+"; population="+string(row.PopulationIdentityStatus)+". " + ...
+        "Zero-width fields do not count as transmitted or compared. Raw CSV preserves failed/unscorable reports and source/config/point context.";
+    if field=="CSI"
+        if ~row.BitComparisonAvailable, continue; end
+        for name=["ComparedBitCount","BitErrorCount","ReportBitsCorrect"]
+            unit="count"; if name=="ReportBitsCorrect", unit="bool"; end
+            T=[T;localMetricTableRow(cat,metric,entity,name,"derived", ...
+                row.(name),"",unit,source,note)]; %#ok<AGROW>
+        end
+        continue;
+    end
+    if ~row.EmissionVerified || ~row.(field+"Transmitted"), continue; end
+    T=[T;localMetricTableRow(cat,metric,entity,"transmitted_field_count","not_exercised", ...
+        1,"","count",source,note+" Emission alone does not establish decoded correctness.")]; %#ok<AGROW>
+    correctness=row.(field+"DeliveryCorrect");
+    if ~isfinite(correctness), continue; end
+    assert(ismember(correctness,[0 1]),'sixgr:report:InvalidCSIFieldAgreement', ...
+        'A compared CSI field must be an exact boolean agreement, not an indicator-distance score.');
+    T=[T;localMetricTableRow(cat,metric,entity,"decoded_field_agrees","derived", ...
+        correctness,"","bool",source,note); ...
+        localMetricTableRow(cat,metric,entity,"scheduler_delivery_projection_verified","derived", ...
+        double(row.DeliveredToScheduler && row.DecodedProjectionConsistent==1), ...
+        "","bool",source,note)]; %#ok<AGROW>
 end
-
-function T = localRIAccuracyRows(cat, metric, ctx)
-T = localEmptyMetricTable();
-note = "RI accuracy is computed against the runtime rank estimate, with configured layer count used as fallback when no separate rank estimate is available.";
-T = [T; ... %#ok<AGROW>
-    localRIAccuracyRowsForTable(cat, metric, ctx.Tables.DL, "DL", note); ...
-    localRIAccuracyRowsForTable(cat, metric, ctx.Tables.UL, "UL", note)];
-end
-
-function T = localL1SINRAccuracyRows(cat, metric, ctx)
-T = localEmptyMetricTable();
-note = "L1-SINR accuracy is measured against a channel-gain over noise reference derived from the actual runtime channel estimate summary.";
-T = [T; ... %#ok<AGROW>
-    localL1SINRAccuracyRowsForTable(cat, metric, ctx.Tables.DL, "DL", note); ...
-    localL1SINRAccuracyRowsForTable(cat, metric, ctx.Tables.UL, "UL", note)];
-end
-
-function T = localRSRPAccuracyRows(cat, metric, ctx)
-T = localEmptyMetricTable();
-note = "RSRP accuracy is exported as a receive-power proxy error between selected-beam RS power and wideband channel gain from the actual runtime trial.";
-T = [T; ... %#ok<AGROW>
-    localRSRPAccuracyRowsForTable(cat, metric, ctx.Tables.DL, "DL", note); ...
-    localRSRPAccuracyRowsForTable(cat, metric, ctx.Tables.UL, "UL", note)];
 end
 
 function T = localCSIReportLatencyRows(cat, metric, ctx)
 T = localEmptyMetricTable();
-slotDurMs = localConfigNumber(ctx, ["frame_timing.slot_duration_ms"], NaN);
-note = "CSI report latency is exported as radio-time reporting interval or TTI context when available. Compute decode latency is exported separately in complexity/runtime outputs.";
-if isfinite(slotDurMs)
-    T = [T; localMetricTableRow(cat, metric, "CSI", "application_step_ms", "available", slotDurMs, "", "ms", "", note)]; %#ok<AGROW>
+observations=ctx.CSIReportLatency;
+for k=find(observations.LatencyAvailable).'
+    row=observations(k,:);
+    entity="CSI@Report="+row.ReportIdentity+"@Observation="+row.ObservationID+ ...
+        "@Point="+string(row.SweepPointIndex)+"@Execution="+row.ExecutionID;
+    note="Post-hoc UE measurement / independently received UCI join on the shared sample clock. " + ...
+        "Not a configured period, radio TTI, CPU time or scheduler application latency. " + ...
+        "Conditional on successful delivery and an identity-bound retained UE audit; " + ...
+        "not an unconditional latency distribution or NR processing-compliance result. " + ...
+        "The source CSV retains every received report, including unavailable joins; " + ...
+        "configured omissions and pending occasions require their separate obligation trace.";
+    for field=["MeasurementCompletionDelay_ms","MeasurementAvailableToUCIObservationEnd_ms", ...
+            "UCIObservationDuration_ms","UCICompletionDelay_ms", ...
+            "MeasurementEndToDelivery_ms","MeasurementAvailableToDelivery_ms"]
+        T=[T;localMetricTableRow(cat,metric,entity,field,"derived", ...
+            row.(field),"","ms","reports/csv/csi_report_latency_observations.csv",note)]; %#ok<AGROW>
+    end
 end
-T = [T; ... %#ok<AGROW>
-    localCustomNumericSummaryRows(cat, metric, ctx.Tables.DL, "AirInterfaceTTI_ms", "DL_radio_tti", "ms", "air_interface/csv/dl_pdsch_trials.csv", note); ...
-    localCustomNumericSummaryRows(cat, metric, ctx.Tables.UL, "AirInterfaceTTI_ms", "UL_radio_tti", "ms", "air_interface/csv/ul_pusch_trials.csv", note)];
-if isempty(T)
-    T = localUnavailableMetricRows(cat, metric, "CSI", "report_interval", "air_interface/csv/dl_pdsch_trials.csv", ...
-        "No explicit CSI report interval or radio-time TTI samples are available in this LLS scope.");
-    return;
 end
-if ~isempty(T)
-    T.Notes(:) = note;
+
+function T=localAdaptationApplicationPopulationRows(cat,metric,observations,note)
+T=localEmptyMetricTable();
+for population=unique(observations.PopulationIdentity).'
+    group=observations(observations.PopulationIdentity==population,:);
+    eligible=group.JoinAvailable & ~group.RightCensored;
+    source="reports/csv/adaptation_application_observations.csv";
+    counts=struct('scheduled_decision_count',height(group), ...
+        'matched_clock_count',sum(group.JoinAvailable), ...
+        'right_censored_count',sum(group.RightCensored), ...
+        'eligible_decision_count',sum(eligible), ...
+        'observed_application_count',sum(group.ApplicationObserved & eligible));
+    for field=string(fieldnames(counts)).'
+        T=[T;localMetricTableRow(cat,metric,population,field,"not_exercised", ...
+            counts.(field),"","count",source,note+ ...
+            " Diagnostic population count alone does not qualify application evidence.")]; %#ok<AGROW>
+    end
+    if any(eligible)
+        T=[T;localMetricTableRow(cat,metric,population,"application_observed_fraction", ...
+            "derived",sum(group.ApplicationObserved & eligible)/sum(eligible), ...
+            "","fraction",source,note)]; %#ok<AGROW>
+    end
 end
 end
 
 function T = localSchedulerApplicationLossRows(cat, metric, ctx)
 T = localEmptyMetricTable();
-note = "LLS applies CSI-driven decisions inside the waveform loop; scheduler application loss is exported as the fraction of scheduled adaptation steps not yet applied in the same trial record.";
-T = [T; ... %#ok<AGROW>
-    localSchedulerApplicationLossRowsForTable(cat, metric, ctx.Tables.DL, "DL", note); ...
-    localSchedulerApplicationLossRowsForTable(cat, metric, ctx.Tables.UL, "UL", note)];
+observations=ctx.AdaptationApplication;
+note="Track scheduled feedback source to its actual later application within the same execution/point/receiver. " + ...
+    "No-observation is not proof of loss; cancellation or supersession needs its own event evidence. " + ...
+    "Beyond-horizon decisions are censored, not failures. Connected scheduler reports use a separate delivery owner.";
+T=localAdaptationApplicationPopulationRows(cat,metric,observations,note);
+for k=1:height(observations)
+    row=observations(k,:);
+    if ~row.JoinAvailable, continue; end
+    entity=row.DecisionIdentity;
+    source="reports/csv/adaptation_application_observations.csv";
+    T=[T;localMetricTableRow(cat,metric,entity,"right_censored","not_exercised", ...
+        double(row.RightCensored),"","bool",source,note)]; %#ok<AGROW>
+    if ~row.RightCensored
+        T=[T;localMetricTableRow(cat,metric,entity,"application_observed","derived", ...
+            double(row.ApplicationObserved),"","bool",source,note)]; %#ok<AGROW>
+    end
+end
 end
 
 function T = localSGCSRows(cat, metric, ctx)
 T = localEmptyMetricTable();
-note = "SGCS is exported as a normalized subspace-conditioning score derived from the actual wideband channel condition number. Higher is better.";
-T = [T; ... %#ok<AGROW>
-    localSGCSRowsForTable(cat, metric, ctx.Tables.DL, "DL", note); ...
-    localSGCSRowsForTable(cat, metric, ctx.Tables.UL, "UL", note)];
+observations = ctx.ChannelSGCSObservations;
+for i = 1:height(observations)
+    row = observations(i,:);
+    if ~row.ChannelSGCSAvailable, continue; end
+    entity = row.Direction + "@Observation=" + row.ChannelEstimateObservationID;
+    note = "Independently recomputed paired channel-vector SGCS; " + ...
+        row.ChannelSGCSVectorization + "; reference plane=" + row.ChannelSGCSReferencePlane + ...
+        "; source=" + row.ChannelEstimateResourcesCSV + "; SHA256=" + ...
+        row.ChannelEstimateResourcesCSVSHA256 + ...
+        ". This is DMRS channel-estimation similarity, not CSI-report/PMI accuracy or a condition-number proxy.";
+    T = [T; localMetricTableRow(cat, metric, entity, "paired_vector_similarity", ...
+        "derived", row.ChannelSGCS, "", "ratio", ...
+        "reports/csv/channel_sgcs_observations.csv", note)]; %#ok<AGROW>
+end
 end
 
 function T = localDMRSVsCSIRSComparisonRows(cat, metric, ctx)
-T = localEmptyMetricTable();
-dmrsNmse = localMeanColumn(ctx.Tables.DL, "NMSE_dB");
-csirsEnabled = localConfigFlag(ctx, ["reference_signals.csi_rs_enabled", "reference_signals.nzp_csi_rs.enabled"], false);
-note = "Dedicated CSI-RS runtime events are persisted when waveform CSI-RS is mapped and observed; this DMRS-vs-CSI-RS estimate delta still reflects the shared CSI estimator path.";
-if isfinite(dmrsNmse)
-    T = [T; localMetricTableRow(cat, metric, "DL", "dmrs_nmse_db", "available", dmrsNmse, "", "dB", "air_interface/csv/dl_pdsch_trials.csv", note)]; %#ok<AGROW>
+% Native archives usually differ in pilot support, port/layer basis and RF
+% inclusion. A pair is permitted only after exact readback/reference checks.
+T=localEmptyMetricTable();
+for k=1:height(ctx.SharedChannelEstimatorPairs)
+    row=ctx.SharedChannelEstimatorPairs(k,:);
+    assert(row.PairingStatus=="paired_exact_common_operands", ...
+        'sixgr:report:UnboundChannelEstimatorComparison','Only recomputed actual common operands qualify.');
+    entity="SameCapture="+row.DMRSObservationID+"@Resource="+row.CSIRSResourceID+"@SourceRow="+row.SourceTrialRow;
+    note="Actual same-grid native DMRS/CSI-RS estimates; exact executed CSI-port-to-DMRS-layer map; " + ...
+        "one nominal-linear reference on the actual receiver FFT clock (other RF/ICI/ISI remain errors). " + ...
+        "Same evaluation support, not identical pilot sampling/interpolation. Engineering comparison, not statistical qualification. " + ...
+        "Operands="+row.ResourcesCSV+"; SHA256="+row.ResourcesCSVSHA256;
+    T=[T;localMetricTableRow(cat,metric,entity,"delta_nmse_linear","derived", ...
+        row.DeltaNMSELinear,"","ratio","reports/csv/same_capture_dmrs_csirs_pairs.csv",note)]; %#ok<AGROW>
+    if row.DeltaNMSEdBAvailable
+        T=[T;localMetricTableRow(cat,metric,entity,"delta_nmse_db","derived", ...
+            row.DeltaNMSE_dB,"","dB","reports/csv/same_capture_dmrs_csirs_pairs.csv",note)]; %#ok<AGROW>
+    end
 end
-T = [T; ... %#ok<AGROW>
-    localMetricTableRow(cat, metric, "CSI-RS", "enabled_flag", "available", double(csirsEnabled), "", "bool", "", note); ...
-    localMetricTableRow(cat, metric, "DMRS_vs_CSI-RS", "shared_estimator_delta_db", "available", 0, "", "dB", "air_interface/csv/dl_pdsch_trials.csv", note)];
+for k=1:height(ctx.ChannelEstimatorPairs)
+    row=ctx.ChannelEstimatorPairs(k,:);
+    assert(row.PairingStatus=="paired_exact_common_operands", ...
+        'sixgr:report:UnboundChannelEstimatorComparison','Only verified common-operand pairs can be compared.');
+    entity="DMRS="+row.DMRSObservationID+"@CSI="+row.CSIRSObservationID+ ...
+        "@Resource="+row.CSIRSResourceID+"@Pair="+k;
+    note="Independent retained complex operands agree in execution, point, receiver clock, reference plane, resource support and spatial/power mapping. " + ...
+        "Engineering NMSE difference on that common evaluation population, not a 3GPP-mandated equality or statistical qualification.";
+    T=[T;localMetricTableRow(cat,metric,entity,"delta_nmse_linear","derived", ...
+        row.DeltaNMSELinear,"","ratio","reports/csv/dmrs_csirs_comparison_pairs.csv",note)]; %#ok<AGROW>
+    if row.DeltaNMSEdBAvailable
+        T=[T;localMetricTableRow(cat,metric,entity,"delta_nmse_db","derived", ...
+            row.DeltaNMSE_dB,"","dB","reports/csv/dmrs_csirs_comparison_pairs.csv",note)]; %#ok<AGROW>
+    end
+end
+if isempty(T)
+    T=localUnavailableMetricRows(cat,metric,"DMRS_vs_CSI-RS","common_evaluation_required", ...
+        "reports/csv/channel_estimator_observations.csv", ...
+        "Individual NMSE measurements are retained separately. A DMRS/CSI-RS delta needs common evaluation REs, time, physical link, rank/port/precoder basis, receiver clock, power and RF reference plane. " + ...
+        "No equality follows from a shared estimator function or a CSI-RS enable flag; an absent paired measurement is never zero.");
+end
+end
+
+function T=localChannelEstimatorObservationRows(cat,metric,ctx)
+T=localEmptyMetricTable();
+observations=ctx.ChannelEstimatorObservations;
+method="PDSCH_DMRS";
+if string(metric.key)=="csirs_channel_estimation_observations", method="CSI_RS"; end
+for k=1:height(observations)
+    row=observations(k,:);
+    if string(row.Method)~=method || ~row.NMSEAvailable, continue; end
+    entity=method+"@Observation="+string(row.ObservationID)+ ...
+        "@Resource="+string(row.ResourceID)+"@AuditRow="+k;
+    note="Independently recomputed from exact retained complex Hhat/Hreference operands; plane=" + ...
+        string(row.ReferencePlane)+"; source="+string(row.ResourcesCSV)+ ...
+        "; SHA256="+string(row.ResourcesCSVSHA256)+ ...
+        ". Per-observation engineering channel-estimation diagnostic, not a paired estimator delta or CSI optimality result.";
+    for name=["NMSELinear","NMSE_dB","ErrorEnergy","ReferenceEnergy","ComparedValues"]
+        unit="channel_squared_units";
+        if name=="NMSELinear", unit="ratio"; end
+        if name=="NMSE_dB", unit="dB"; end
+        if name=="ComparedValues", unit="complex_value_count"; end
+        T=[T;localMetricTableRow(cat,metric,entity,name,"derived",row.(name),"",unit, ...
+            "reports/csv/channel_estimator_observations.csv",note)]; %#ok<AGROW>
+    end
+end
 end
 
 function T = localSRSPortScalingImpactRows(cat, metric, ctx)
@@ -3633,9 +4291,9 @@ note = "SRS-port scaling separates configured port-count intent from observed SR
 if isfinite(ports)
     T = [T; localMetricTableRow(cat, metric, "SRS", "configured_ports", "config_only", ports, "", "count", "meta/scenario_config_resolved.json", note)]; %#ok<AGROW>
 end
-T = [T; localNumericTrialSummaryRows(cat, metric, ctx.Tables.SRS, "NMSE_dB", "SRS", "dB")]; %#ok<AGROW>
+T = [T; localSRSChannelNMSEMetricRows(cat,metric,ctx.SRSChannelStatistics)]; %#ok<AGROW>
 if ~isempty(T)
-    T.Notes(:) = note;
+    T.Notes = note + " " + T.Notes;
 end
 end
 
@@ -3656,181 +4314,13 @@ function T = localAnalogJSCCJSCMRows(cat, metric, ctx)
 T = localEmptyMetricTable();
 mode = localCSICompressionMode(ctx);
 enabled = mode ~= "none";
-note = "AI/ML CSI robustness is exported as a scenario-mode row. In non-AI baseline runs the robustness delta is zero by configuration.";
+note = "Configured CSI feedback mode is not an executed paired robustness experiment. No supported paired physical baseline/candidate artifact is retained by this report path.";
 T = [T; ... %#ok<AGROW>
-    localMetricTableRow(cat, metric, "CSI_feedback", "mode", "available", NaN, mode, "", "", note); ...
-    localMetricTableRow(cat, metric, "CSI_feedback", "mode_enabled", "available", double(enabled), "", "bool", "", note); ...
-    localMetricTableRow(cat, metric, "CSI_feedback", "robustness_delta", "available", 0, "", "score", "", note)];
+    localMetricTableRow(cat, metric, "CSI_feedback", "mode", "config_only", NaN, mode, "", "meta/scenario_config_resolved.json", note); ...
+    localMetricTableRow(cat, metric, "CSI_feedback", "mode_enabled", "config_only", double(enabled), "", "bool", "meta/scenario_config_resolved.json", note); ...
+    localMetricTableRow(cat, metric, "CSI_feedback", "robustness_delta", "not_available", NaN, "", "score", "", note)];
 end
 
-function T = localCQIAccuracyRowsForTable(cat, metric, trialT, entity, note)
-T = localEmptyMetricTable();
-    if ~(istable(trialT) && ~isempty(trialT) && all(ismember(["WidebandCQI","PostEqSINR_dB"], string(trialT.Properties.VariableNames))))
-        return;
-    end
-    reported = sixgr.truth.numericMeasurementColumn( ...
-        trialT.WidebandCQI, "WidebandCQI");
-    sinr = sixgr.truth.numericMeasurementColumn( ...
-        trialT.PostEqSINR_dB, "PostEqSINR_dB");
-mask = isfinite(reported) & isfinite(sinr);
-if ~any(mask)
-    return;
-end
-reference = arrayfun(@(x) sixgr.phy.dl.mapSINRToCQI(x), sinr(mask));
-T = localAccuracyRows(cat, metric, entity, reported(mask), reference, "cqi_steps", localDefaultSource(entity), note, 0);
-end
-
-function T = localPMIAccuracyRowsForTable(cat, metric, trialT, entity, note)
-T = localEmptyMetricTable();
-if ~(istable(trialT) && ~isempty(trialT) && ismember("PMI", string(trialT.Properties.VariableNames)))
-    return;
-end
-reported = sixgr.truth.numericMeasurementColumn(trialT.PMI, "PMI");
-reference = NaN(size(reported));
-if ismember("BestBeamIndex", string(trialT.Properties.VariableNames))
-    bestBeam = sixgr.truth.numericMeasurementColumn( ...
-        trialT.BestBeamIndex, "BestBeamIndex") - 1;
-    reference(isfinite(bestBeam)) = bestBeam(isfinite(bestBeam));
-end
-if ismember("SelectedBeamIndex", string(trialT.Properties.VariableNames))
-    selBeam = sixgr.truth.numericMeasurementColumn( ...
-        trialT.SelectedBeamIndex, "SelectedBeamIndex") - 1;
-    mask = ~isfinite(reference) & isfinite(selBeam);
-    reference(mask) = selBeam(mask);
-end
-if ismember("ConfiguredPMI", string(trialT.Properties.VariableNames))
-    cfgPmi = sixgr.truth.numericMeasurementColumn( ...
-        trialT.ConfiguredPMI, "ConfiguredPMI");
-    mask = ~isfinite(reference) & isfinite(cfgPmi);
-    reference(mask) = cfgPmi(mask);
-end
-mask = isfinite(reported) & isfinite(reference);
-if ~any(mask)
-    return;
-end
-T = localAccuracyRows(cat, metric, entity, reported(mask), reference(mask), "codebook_index", localDefaultSource(entity), note, 0);
-end
-
-function T = localRIAccuracyRowsForTable(cat, metric, trialT, entity, note)
-T = localEmptyMetricTable();
-if ~(istable(trialT) && ~isempty(trialT) && ismember("RankIndicator", string(trialT.Properties.VariableNames)))
-    return;
-end
-reported = sixgr.truth.numericMeasurementColumn( ...
-    trialT.RankIndicator, "RankIndicator");
-reference = NaN(size(reported));
-if ismember("RankEstimate", string(trialT.Properties.VariableNames))
-    rankEst = sixgr.truth.numericMeasurementColumn( ...
-        trialT.RankEstimate, "RankEstimate");
-    reference(isfinite(rankEst)) = rankEst(isfinite(rankEst));
-end
-if ismember("Layers", string(trialT.Properties.VariableNames))
-    layers = sixgr.truth.numericMeasurementColumn(trialT.Layers, "Layers");
-    mask = ~isfinite(reference) & isfinite(layers);
-    reference(mask) = layers(mask);
-end
-mask = isfinite(reported) & isfinite(reference);
-if ~any(mask)
-    return;
-end
-T = localAccuracyRows(cat, metric, entity, reported(mask), reference(mask), "rank_steps", localDefaultSource(entity), note, 0);
-end
-
-function T = localL1SINRAccuracyRowsForTable(cat, metric, trialT, entity, note)
-T = localEmptyMetricTable();
-req = ["ReceiverHestSINR_dB","ChannelGain_dB","NoiseVariance"];
-if ~(istable(trialT) && ~isempty(trialT) && all(ismember(req, string(trialT.Properties.VariableNames))))
-    return;
-end
-reported = sixgr.truth.numericMeasurementColumn( ...
-    trialT.ReceiverHestSINR_dB, "ReceiverHestSINR_dB");
-gain = sixgr.truth.numericMeasurementColumn( ...
-    trialT.ChannelGain_dB, "ChannelGain_dB");
-noiseVar = sixgr.truth.numericMeasurementColumn( ...
-    trialT.NoiseVariance, "NoiseVariance");
-reference = gain - 10 .* log10(max(noiseVar, eps));
-mask = isfinite(reported) & isfinite(reference);
-if ~any(mask)
-    return;
-end
-T = localAccuracyRows(cat, metric, entity, reported(mask), reference(mask), "dB", localDefaultSource(entity), note, 0.5);
-end
-
-function T = localRSRPAccuracyRowsForTable(cat, metric, trialT, entity, note)
-T = localEmptyMetricTable();
-if ~(istable(trialT) && ~isempty(trialT) && ismember("ChannelGain_dB", string(trialT.Properties.VariableNames)))
-    return;
-end
-reported = sixgr.truth.numericMeasurementColumn(trialT.ChannelGain_dB, "ChannelGain_dB");
-reference = NaN(size(reported));
-if ismember("SelectedBeamGain_dB", string(trialT.Properties.VariableNames))
-    ref0 = sixgr.truth.numericMeasurementColumn(trialT.SelectedBeamGain_dB, "SelectedBeamGain_dB");
-    reference(isfinite(ref0)) = ref0(isfinite(ref0));
-end
-if ismember("BestBeamGain_dB", string(trialT.Properties.VariableNames))
-    ref1 = sixgr.truth.numericMeasurementColumn(trialT.BestBeamGain_dB, "BestBeamGain_dB");
-    mask = ~isfinite(reference) & isfinite(ref1);
-    reference(mask) = ref1(mask);
-end
-mask = isfinite(reported) & isfinite(reference);
-if ~any(mask)
-    return;
-end
-T = localAccuracyRows(cat, metric, entity, reported(mask), reference(mask), "dB", localDefaultSource(entity), note, 1.0);
-end
-
-function T = localSchedulerApplicationLossRowsForTable(cat, metric, trialT, entity, note)
-T = localEmptyMetricTable();
-req = ["LinkAdaptationScheduled","LinkAdaptationApplied"];
-if ~(istable(trialT) && ~isempty(trialT) && all(ismember(req, string(trialT.Properties.VariableNames))))
-    return;
-end
-scheduledValue = sixgr.truth.numericMeasurementColumn(trialT.LinkAdaptationScheduled, "LinkAdaptationScheduled");
-appliedValue = sixgr.truth.numericMeasurementColumn(trialT.LinkAdaptationApplied, "LinkAdaptationApplied");
-scheduled = scheduledValue ~= 0;
-applied = appliedValue ~= 0;
-mask = isfinite(scheduledValue) & isfinite(appliedValue);
-if ~any(mask)
-    return;
-end
-scheduled = scheduled(mask);
-applied = applied(mask);
-loss = scheduled & ~applied;
-T = [T; ... %#ok<AGROW>
-    localMetricTableRow(cat, metric, entity, "scheduled_not_applied_rate", "available", mean(loss), "", "fraction", localDefaultSource(entity), note); ...
-    localMetricTableRow(cat, metric, entity, "sample_count", "available", numel(loss), "", "count", localDefaultSource(entity), note)];
-end
-
-function T = localSGCSRowsForTable(cat, metric, trialT, entity, note)
-T = localEmptyMetricTable();
-if ~(istable(trialT) && ~isempty(trialT) && ismember("ConditionNumber_dB", string(trialT.Properties.VariableNames)))
-    return;
-end
-condDb = sixgr.truth.numericMeasurementColumn(trialT.ConditionNumber_dB, "ConditionNumber_dB");
-condDb = condDb(isfinite(condDb));
-if isempty(condDb)
-    return;
-end
-score = 10 .^ (-abs(condDb) ./ 20);
-T = [T; ... %#ok<AGROW>
-    localMetricTableRow(cat, metric, entity, "mean_score", "available", mean(score, "omitnan"), "", "score", localDefaultSource(entity), note); ...
-    localMetricTableRow(cat, metric, entity, "p05_score", "available", prctile(score, 5), "", "score", localDefaultSource(entity), note)];
-end
-
-function T = localAccuracyRows(cat, metric, entity, reported, reference, unit, source, note, hitTol)
-T = localEmptyMetricTable();
-mask = isfinite(reported) & isfinite(reference);
-if ~any(mask)
-    return;
-end
-err = double(reported(mask)) - double(reference(mask));
-hit = abs(err) <= double(hitTol);
-T = [T; ...
-    localMetricTableRow(cat, metric, entity, "hit_rate", "available", mean(hit), "", "fraction", source, note); ...
-    localMetricTableRow(cat, metric, entity, "mean_abs_error", "available", mean(abs(err), "omitnan"), "", unit, source, note); ...
-    localMetricTableRow(cat, metric, entity, "rmse", "available", sqrt(mean(err.^2, "omitnan")), "", unit, source, note); ...
-    localMetricTableRow(cat, metric, entity, "sample_count", "available", numel(err), "", "count", source, note)];
-end
 
 function passRate = localPassRateScalar(trialT)
 passRate = NaN;
@@ -4197,12 +4687,16 @@ mode = lower(strtrim(localConfigString(ctx, ["ai_ml.csi_feedback_mode"], "none")
 if mode ~= "none"
     return;
 end
+mode=lower(strtrim(localConfigString(ctx,["csi_acquisition_and_reporting.compression_mode"],"none")));
+if mode ~= "none", return; end
 if localConfigFlag(ctx, ["csi_acquisition_and_reporting.jscc_mode"], false)
     mode = "jscc";
 elseif localConfigFlag(ctx, ["csi_acquisition_and_reporting.jscm_mode"], false)
     mode = "jscm";
 elseif localConfigFlag(ctx, ["csi_acquisition_and_reporting.analog_feedback_mode"], false)
     mode = "analog";
+elseif localConfigFlag(ctx, ["csi_acquisition_and_reporting.sscc_mode"], false)
+    mode = "sscc";
 end
 end
 
@@ -4974,42 +5468,29 @@ end
 
 function T = localAIPerformanceComplexityFrontierRows(cat, metric, ctx)
 T = localEmptyMetricTable();
-note = "Performance-complexity frontier is exported from actual AI baseline delta and FLOPs when available, otherwise from the resolved AI enable state. Disabled scenarios export zero frontier gain.";
-delta = localAIMetadataValue(ctx.Tables.AIMetadata, ["BaselineDelta"]);
-flops = localAIMetadataValue(ctx.Tables.AIMetadata, ["FLOPs","FLOPsBudget"]);
-if isnumeric(delta) && isfinite(double(delta)) && isnumeric(flops) && isfinite(double(flops)) && double(flops) > 0
-    frontier = double(delta) / double(flops);
-    T = [T; localMetricTableRow(cat, metric, "ai_ml", "delta_per_flop", "available", frontier, "", "delta_per_flop", "reports/csv/ai_benchmark_metadata.csv", note)]; %#ok<AGROW>
-    return;
-end
+note = "A measured frontier requires a verified paired performance delta and measured execution cost for that same pair. Scalar metadata and configured FLOPs budgets do not establish either operand.";
+availability="disabled";
 if localAIEnabled(ctx)
-    flopsBudget = max(localConfigNumber(ctx, ["ai_ml.flops_budget"], 1), 1);
-    T = [T; ... %#ok<AGROW>
-        localMetricTableRow(cat, metric, "ai_ml", "delta_per_flop", "available", 0, "", "delta_per_flop", "meta/scenario_config_resolved.json", note + " No measured AI-vs-baseline delta table was emitted in this run."); ...
-        localMetricTableRow(cat, metric, "ai_ml", "configured_flops_budget", "available", flopsBudget, "", "flops", "meta/scenario_config_resolved.json", note)];
-else
-    T = [T; localMetricTableRow(cat, metric, "ai_ml", "delta_per_flop", localAIConfigAvailability(ctx), 0, "", "delta_per_flop", "meta/scenario_config_resolved.json", note)]; %#ok<AGROW>
+    availability="not_available";
+    flopsBudget=localConfigNumber(ctx,["ai_ml.flops_budget"],NaN);
+    T=[T;localMetricTableRow(cat,metric,"ai_ml","configured_flops_budget","config_only", ...
+        flopsBudget,"","flops","meta/scenario_config_resolved.json",note)]; %#ok<AGROW>
 end
+T=[T;localMetricTableRow(cat,metric,"ai_ml","delta_per_flop",availability, ...
+    NaN,"","delta_per_flop","",note)];
 end
 
 function T = localAIBaselineDeltaRows(cat, metric, ctx)
 T = localEmptyMetricTable();
-delta = localAIMetadataValue(ctx.Tables.AIMetadata, ["BaselineDelta"]);
-note = "Baseline delta is exported from actual AI benchmark metadata when available, otherwise from the resolved baseline pairing and scenario enable state.";
-if isnumeric(delta) && isfinite(double(delta))
-    T = [T; localMetricTableRow(cat, metric, "ai_ml", "reported_delta", "available", double(delta), "", "delta", "reports/csv/ai_benchmark_metadata.csv", note)]; %#ok<AGROW>
-    return;
-end
-baselineName = localConfigString(ctx, ["ai_ml.baseline_pairing", "meta.baseline_reference_name"], "non_ai_baseline");
+note = "A baseline name or scalar BaselineDelta metadata does not retain paired executed operands, their population, metric definition or source integrity. No supported paired-delta reader exists for this path.";
+baselineName = localConfigString(ctx, ["ai_ml.baseline_pairing", "meta.baseline_reference_name"], "");
+availability="disabled";
 if localAIEnabled(ctx)
-    T = [T; ... %#ok<AGROW>
-        localMetricTableRow(cat, metric, "ai_ml", "configured_baseline", "available", NaN, baselineName, "", "meta/scenario_config_resolved.json", note); ...
-        localMetricTableRow(cat, metric, "ai_ml", "reported_delta", "available", 0, "", "delta", "meta/scenario_config_resolved.json", note + " No measured AI-vs-baseline delta table was emitted in this run.")];
-else
-    T = [T; ... %#ok<AGROW>
-        localMetricTableRow(cat, metric, "ai_ml", "configured_baseline", localAIConfigAvailability(ctx), NaN, baselineName, "", "meta/scenario_config_resolved.json", note); ...
-        localMetricTableRow(cat, metric, "ai_ml", "reported_delta", localAIConfigAvailability(ctx), 0, "", "delta", "meta/scenario_config_resolved.json", note + " AI/ML is disabled in this scenario, so baseline delta is zero by configuration.")];
+    availability="not_available";
+    T=[T;localMetricTableRow(cat,metric,"ai_ml","configured_baseline","config_only", ...
+        NaN,baselineName,"","meta/scenario_config_resolved.json",note)]; %#ok<AGROW>
 end
+T=[T;localMetricTableRow(cat,metric,"ai_ml","reported_delta",availability,NaN,"","delta","",note)];
 end
 
 function value = localAIMetadataValue(metaT, fieldNames)
@@ -5970,6 +6451,16 @@ if ~(istable(T) && ~isempty(T))
     return;
 end
 token = string(varName);
+% These historical aliases were derived from post-EQ SINR, target rate and
+% an unjustified layer factor. Even a supplied legacy column is not a
+% qualified energy operand. Branch-mean support ratios have distinct names
+% and their own receipt-backed diagnostic CSV; never put them on an Es axis.
+if any(lower(strtrim(token))==["derivedecno_db","ecno_db","effectiveecno_db", ...
+        "derivedebno_db","ebno_db","effectiveebno_db", ...
+        "derivedesn0_db","esn0_db","effectiveesn0_db"])
+    values=nan(height(T),1);
+    return;
+end
 if ismember(token, string(T.Properties.VariableNames))
     values = localCoerceNumericVector(T.(token));
     available = numel(values) == height(T);
@@ -6022,26 +6513,18 @@ values(mask) = bitErrors(mask) ./ bitsCompared(mask);
 end
 
 function values = localDerivedEsNoMetric(T)
-values = localTrialMetricColumn(T, ["PostEqSINR_dB", "MeasuredTrialSINR_dB", "MeasuredWidebandSINR_dB", "MeasuredSINR_dB"], NaN);
+% No retained per-modulation-symbol pure-noise plane is exported here.
+values = nan(height(T),1);
 end
 
 function values = localDerivedEcNoMetric(T)
-sinr_dB = localDerivedEsNoMetric(T);
-qm = localTrialModulationOrder(T);
-layers = localTrialMetricColumn(T, ["Layers", "Rank"], 1);
-codedBitsPerSymbol = qm .* max(layers, 1);
-values = sinr_dB - 10 .* log10(max(codedBitsPerSymbol, eps));
-values(~(isfinite(sinr_dB) & isfinite(qm) & qm > 0 & isfinite(layers) & layers > 0)) = NaN;
+% Branch-mean SCH support energy has a different, explicitly named metric.
+values = nan(height(T),1);
 end
 
 function values = localDerivedEbNoMetric(T)
-sinr_dB = localDerivedEsNoMetric(T);
-qm = localTrialModulationOrder(T);
-layers = localTrialMetricColumn(T, ["Layers", "Rank"], 1);
-rate = localTrialMetricColumn(T, ["TargetCodeRate", "CQIDerivedTargetCodeRate"], NaN);
-infoBitsPerSymbol = qm .* max(layers, 1) .* rate;
-values = sinr_dB - 10 .* log10(max(infoBitsPerSymbol, eps));
-values(~(isfinite(sinr_dB) & isfinite(qm) & qm > 0 & isfinite(layers) & layers > 0 & isfinite(rate) & rate > 0)) = NaN;
+% A configured target rate is not the actual per-attempt TB/G ratio.
+values = nan(height(T),1);
 end
 
 function values = localTrialModulationOrder(T)
@@ -6059,19 +6542,7 @@ end
 end
 
 function value = localModulationOrder(modulation)
-token = upper(strtrim(char(string(modulation))));
-switch token
-    case "QPSK"
-        value = 2;
-    case "16QAM"
-        value = 4;
-    case "64QAM"
-        value = 6;
-    case "256QAM"
-        value = 8;
-    otherwise
-        value = NaN;
-end
+value = sixgr.report.reportModulationOrder(modulation);
 end
 
 function values = localTrialMetricColumn(T, varNames, defaultValue)
@@ -7455,10 +7926,14 @@ if isfield(ctx, "DebugArtifacts") && isfield(ctx.DebugArtifacts, fieldName)
 end
 end
 
-function localExportNamedHeatmap(pathOut, plotTitle, xLabels, rowLabel, values, fallbackMessage)
+function localExportNamedHeatmap(pathOut, plotTitle, xLabels, rowLabel, values, fallbackMessage, exactZeroErrorMask)
 values = double(values(:))';
+if nargin<7, exactZeroErrorMask=false(size(values)); end
+assert(isequal(size(exactZeroErrorMask),size(values))&& ...
+    all(~exactZeroErrorMask|values==-Inf), ...
+    'sixgr:report:InvalidZeroErrorHeatmap','Only measured zero-error NMSE can be marked -Inf.');
 finiteMask = isfinite(values);
-if ~any(finiteMask)
+if ~any(finiteMask|exactZeroErrorMask)
     localExportPlaceholderFigure(pathOut, plotTitle, fallbackMessage);
     return;
 end
@@ -7480,6 +7955,8 @@ title(ax, plotTitle);
 for i = 1:numel(values)
     if isfinite(values(i))
         txt = sprintf("%.3g", values(i));
+    elseif exactZeroErrorMask(i)
+        txt = "-Inf (zero error)";
     else
         txt = "NaN";
     end
@@ -7785,18 +8262,19 @@ values = [ ...
     localRuntimeTrialThroughputMean(ctx.Tables.UL), ...
     localRuntimeTrialBLERMean(ctx.Tables.DL), ...
     localRuntimeTrialBLERMean(ctx.Tables.UL), ...
-    localMeanColumn(ctx.Tables.SRS, "NMSE_dB"), ...
+    ctx.SRSChannelStatistics.NMSE_dB, ...
     localProbeMetricScalar(ctx.Tables.BeamManagement, "beam_index_hit_rate"), ...
     localProbeMetricScalar(ctx.Tables.HARQSummary, "rtt_distribution"), ...
     localProbeMetricScalar(ctx.Tables.RFEnergy, "ue_energy_per_successful_bit")];
 labels = ["DL Thr","UL Thr","DL BLER","UL BLER","SRS NMSE","Beam Hit","HARQ RTT","UE E/bit"];
 rowLabel = string(ctx.ScenarioConfig.get("global_radio_scope.frequency_range_label", ctx.ScenarioConfig.get("frequency.range", "single_run")));
-if all(~isfinite(values)) && ~localShouldEmitPlaceholderArtifacts(ctx)
+zeroError=labels=="SRS NMSE" & values==-Inf & ctx.SRSChannelStatistics.MeasurementAvailable;
+if all(~isfinite(values)&~zeroError) && ~localShouldEmitPlaceholderArtifacts(ctx)
     return;
 end
 localWriteHeatmapSource(ctx, "heatmap_band_feature_kpi.csv", rowLabel, labels, values, "summary_heatmap");
 localExportNamedHeatmap(pathOut, "Band vs Feature vs KPI", labels, rowLabel, values, ...
-    "Single-run band/feature/KPI snapshot built from actual run data.");
+    "Single-run band/feature/KPI snapshot built from actual run data.",zeroError);
 end
 
 function localPlotImpairmentKPIHeatmapPlaceholder(pathOut, ctx, ~)
@@ -7807,19 +8285,20 @@ end
 values = [ ...
     localRuntimeTrialBLERMean(ctx.Tables.DL), ...
     localRuntimeTrialBLERMean(ctx.Tables.UL), ...
-    localMeanColumn(ctx.Tables.SRS, "NMSE_dB"), ...
+    ctx.SRSChannelStatistics.NMSE_dB, ...
     localRMSEAcrossTables({ctx.Tables.PBCH, ctx.Tables.DL, ctx.Tables.UL}, "CFOError_Hz"), ...
     localRMSEAcrossTables({ctx.Tables.PBCH, ctx.Tables.DL, ctx.Tables.UL}, "TimingError_samples"), ...
     localRMSEAcrossTables({ctx.Tables.DL, ctx.Tables.UL, ctx.Tables.TRS}, "DopplerError_Hz"), ...
     localMeanColumn(ctx.Tables.DL, "MismatchSensitivity_dB"), ...
     localProbeMetricScalar(ctx.Tables.RFEnergy, "ue_energy_per_successful_bit")];
 labels = ["DL BLER","UL BLER","SRS NMSE","CFO RMSE","TO RMSE","Doppler RMSE","Mismatch","UE E/bit"];
-if all(~isfinite(values)) && ~localShouldEmitPlaceholderArtifacts(ctx)
+zeroError=labels=="SRS NMSE" & values==-Inf & ctx.SRSChannelStatistics.MeasurementAvailable;
+if all(~isfinite(values)&~zeroError) && ~localShouldEmitPlaceholderArtifacts(ctx)
     return;
 end
 localWriteHeatmapSource(ctx, "heatmap_impairment_kpi.csv", rowLabel, labels, values, "summary_heatmap");
 localExportNamedHeatmap(pathOut, "Impairment vs KPI", labels, rowLabel, values, ...
-    "No impairment-linked KPI snapshot was emitted by the current LLS path.");
+    "No impairment-linked KPI snapshot was emitted by the current LLS path.",zeroError);
 end
 
 function localPlotBeamRankTRPKPIHeatmapPlaceholder(pathOut, ctx, ~)
@@ -8059,7 +8538,7 @@ localWriteMeasuredSINRRangeSection(fid, ctx, "## Measured SINR Operating Range")
 fprintf(fid, "\n## Highlights\n\n");
 localWriteMeasuredSINRHighlight(fid, ctx, "DL");
 localWriteMeasuredSINRHighlight(fid, ctx, "UL");
-localWriteMetricHighlight(fid, ctx.Tables.SRS, "NMSE_dB", "SRS NMSE");
+localWriteSRSChannelHighlight(fid,ctx.SRSChannelStatistics);
 localWriteProbeMetricHighlight(fid, ctx.Tables.HARQSummary, "rtt_distribution", "mean_ms", "HARQ RTT");
 localWriteProbeMetricHighlight(fid, ctx.Tables.BeamManagement, "beam_index_hit_rate", "rate", "Beam hit rate");
 localWriteProbeMetricHighlight(fid, ctx.Tables.RFEnergy, "ue_energy_per_successful_bit", "mean", "UE energy per successful bit");
@@ -8359,23 +8838,21 @@ rate = NaN;
 if ~(istable(T) && ~isempty(T))
     return;
 end
-vars = string(T.Properties.VariableNames);
-flagCol = "";
-for cand = ["FalseAlarmFlag", "FalseAlarm", "type1_false_detection_flag", "type2_false_detection_flag"]
-    if ismember(cand, vars)
-        flagCol = cand;
-        break;
-    end
+entity="control";
+if any(ismember(["PUCCHFormat","ReceiverPUCCHFormat","PresenceScoringStatus"],string(T.Properties.VariableNames)))
+    entity="PUCCH";
+elseif ismember("FalseCandidateCount",string(T.Properties.VariableNames))
+    entity="PDCCH";
 end
-if strlength(flagCol) == 0
-    return;
+cat=struct('code',"",'key',"",'name',"");
+metric=struct('key',"false_alarm_probability",'label',"False alarm probability");
+rows=localExplicitNoSignalFalseAlarmRows(cat,metric,T,entity,"");
+rates=rows(rows.Statistic=="rate",:);
+% A compact scalar cannot represent several populations or detector/sweep
+% strata. The detailed rows retain those observations separately.
+if height(rates)==1 && contains(rates.Entity,"/no_signal_before_receiver_noise_and_RF/")
+    rate=rates.ValueNumeric;
 end
-x = localCoerceNumericVector(T.(flagCol));
-x = x(isfinite(x));
-if isempty(x)
-    return;
-end
-rate = mean(x ~= 0);
 end
 
 function value = localTableNumericAtRow(T, rowIdx, candidates)
@@ -8444,6 +8921,13 @@ end
 fprintf(fid, "- %s: min=`%.6g`, mean=`%.6g`, max=`%.6g`\n", label, min(x), mean(x, "omitnan"), max(x));
 end
 
+function localWriteSRSChannelHighlight(fid,statistics)
+if ~statistics.MeasurementAvailable, return; end
+fprintf(fid,"- Reference-authorized SRS NMSE: min=`%.6g`, linear-power mean in dB=`%.6g`, max=`%.6g`; measured trials=`%d`, threshold-qualified trials=`%d`. No independence or confidence-interval claim.\n", ...
+    statistics.MinNMSE_dB,statistics.NMSE_dB,statistics.MaxNMSE_dB, ...
+    statistics.MeasuredTrials,statistics.QualifiedTrials);
+end
+
 function localWriteProbeMetricHighlight(fid, probeT, metricKey, statistic, label)
 requiredVars = ["MetricKey","Statistic","Value"];
 if ~(istable(probeT) && ~isempty(probeT) && all(ismember(requiredVars, string(probeT.Properties.VariableNames))))
@@ -8473,12 +8957,13 @@ T = table( ...
     string(entity), string(stat), string(state), ...
     localCoverageStateCountsTowardCoverage(state), ...
     double(valueNum), string(valueText), string(unit), string(source), string(notes), ...
+    "", "", "", "", "", ...
     'VariableNames', localMetricTableVarNames());
 end
 
 function T = localEmptyMetricTable()
 varNames = localMetricTableVarNames();
-varTypes = {'string','string','string','string','string','string','string','string','logical','double','string','string','string','string'};
+varTypes = {'string','string','string','string','string','string','string','string','logical','double','string','string','string','string','string','string','string','string','string'};
 T = table('Size', [0 numel(varNames)], 'VariableTypes', varTypes, 'VariableNames', varNames);
 end
 
@@ -8496,7 +8981,8 @@ end
 
 function names = localMetricTableVarNames()
 names = {'CategoryCode','CategoryKey','CategoryName','MetricKey','MetricName', ...
-    'Entity','Statistic','Availability','CountsTowardCoverage','ValueNumeric','ValueText','Unit','SourceArtifact','Notes'};
+    'Entity','Statistic','Availability','CountsTowardCoverage','ValueNumeric','ValueText','Unit','SourceArtifact','Notes', ...
+    'PopulationID','PopulationJSON','SupportConfigurationJSON','PopulationSeriesID','PopulationSeriesJSON'};
 end
 
 function out = localDefaultSource(entity)

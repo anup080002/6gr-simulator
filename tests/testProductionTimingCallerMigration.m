@@ -13,6 +13,9 @@ cfg.phy.pdsch.numPorts = 1;
 cfg.phy.pdsch.nPorts = 1;
 cfg.phy.pdsch.dmrs.portSet = 0;
 cfg.phy.pdsch.dmrs.DMRSPortSet = 0;
+% This particular catalog regression is the pos0 column. Nonzero additional
+% DM-RS and shortened grants have separate production-boundary regressions.
+cfg.phy.pdsch.dmrs.additionalPositions = 0;
 
 dlGrant = localGrant("DL");
 dl = sixgr.phy.frame.TimingRelationEngine. ...

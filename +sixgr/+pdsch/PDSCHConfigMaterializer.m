@@ -45,6 +45,19 @@ classdef PDSCHConfigMaterializer
             end
             pdsch.NumLayers = double(source.NumLayers);
             pdsch.PRBSet = double(source.PRBSetCarrierRelative(:).');
+            % Canonical indices remain carrier-relative. When the original
+            % native BWP is retained, its adapter consumes the corresponding
+            % BWP-relative assignment, without adding the offset twice.
+            if isfield(referenceConfig,"NStartBWP") ...
+                    || isfield(referenceConfig,"NSizeBWP")
+                if ~all(isfield(referenceConfig,["NStartBWP","NSizeBWP"]))
+                    error("sixgr:pdsch:IncompleteReferenceBWP", ...
+                        "Original native BWP metadata must be supplied as a pair.");
+                end
+                pdsch.NStartBWP = referenceConfig.NStartBWP;
+                pdsch.NSizeBWP = referenceConfig.NSizeBWP;
+                pdsch.PRBSet = double(source.PRBSetBWPRelative(:).');
+            end
             pdsch.SymbolAllocation = double(source.SymbolAllocation(:).');
             pdsch.MappingType = char(upper(string(source.MappingType)));
             pdsch.RNTI = double(source.RNTI);
@@ -57,6 +70,10 @@ classdef PDSCHConfigMaterializer
             pdsch.DMRS.NumCDMGroupsWithoutData = double(referenceConfig.NumCDMGroupsWithoutData);
             pdsch.DMRS.NIDNSCID = double(referenceConfig.NIDNSCID);
             pdsch.DMRS.NSCID = double(referenceConfig.NSCID);
+            if isfield(referenceConfig,"DMRSReferencePoint")
+                pdsch.DMRS.DMRSReferencePoint = char(string( ...
+                    referenceConfig.DMRSReferencePoint));
+            end
             pdsch.DMRS.DMRSPortSet = double(source.DMRSPortSet(:).');
             if isfield(referenceConfig,"DMRSMultiplexing")
                 multiplexing = lower(strtrim(string( ...

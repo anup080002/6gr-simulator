@@ -29,7 +29,8 @@ for path = paths.'
         receiverTable=any(stem==["prach_trials","pbch_trials","srs_trials", ...
             "trs_trials","pdcch_trials","pucch_trials","csi_rs_trials"]);
         sixgr.util.csvWriteTable(path, T, ...
-            "PreserveSchema", options.PreserveSchema || receiverTable);
+            "PreserveSchema", options.PreserveSchema || receiverTable, ...
+            "RoundTripNumericText",featureName=="srs");
         sixgr.report.exportControlEVMSamples(path,T);
     elseif isfile(path)
         delete(path);

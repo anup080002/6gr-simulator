@@ -1,0 +1,19 @@
+# The production shared owner requires an installed paired DCI schema,
+# even before connected data begins. Keep the existing TDD CDL/RF/access
+# waveform profile; do not infer receiver configuration from a TX grant.
+inherits:
+  - ../scenarios/lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml
+
+meta:
+  scenario_id: lls_tdd_coupled_access_boundary
+  research_class: baseline_benchmark
+  maturity_tag: regression
+  description: >
+    Nine executed slots in the bounded coupled-access regression, including
+    SSB/SIB1 and TRS. Installed connected DCI is present before execution.
+    This is not full random-access, adaptive-data or statistical qualification.
+
+run_control:
+  # The regression retains its actual receiver observations. The unrelated
+  # full-stream instrument archive has dedicated coverage elsewhere.
+  continuous_raw_iq_capture_enable: false

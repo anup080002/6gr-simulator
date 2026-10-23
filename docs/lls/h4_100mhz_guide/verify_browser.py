@@ -42,6 +42,67 @@ def main():
         }""")
         assert not audit['missing'] and not audit['broken'] and audit['unique'], audit
         assert audit['methods'] >= 40 and audit['playbooks'] >= 14
+        evidence = page.evaluate("""() => {
+            const g=window.H4Guide;
+            return {families:g.evidenceFamilies.length, standards:g.standardComparisons.length,
+                missing:Object.keys(g.evidenceCoverage).filter(id=>{
+                    const c=g.CHAPTERS.find(c=>c.id===id);
+                    return !c || !c.body().includes('chapter-evidence');
+                }),
+                invalid:g.standardComparisons.filter(r=>r[3].some(k=>!g.FILES[k])||
+                    r[2].some(([k])=>!g.REFS[k])).map(r=>r[0])};
+        }""")
+        assert evidence['families'] >= 18 and evidence['standards'] >= 18
+        assert not evidence['missing'] and not evidence['invalid'], evidence
+        page.goto(args.url+'/#resource-efficiency', wait_until='networkidle')
+        backlog = page.evaluate("""window.H4Guide.resourceEfficiencyFixes.map(
+            f=>({id:f.id,status:f.status}))""")
+        assert [f['id'] for f in backlog] == ['H4-196', 'H4-197', 'H4-198']
+        assert all(f['status'].startswith('OPEN') for f in backlog)
+        expect(page.locator('#content')).to_contain_text('standards-permitted, resource-conservative')
+        expect(page.locator('#content')).to_contain_text('changes no active YAML, MATLAB code')
+        opportunity = page.locator('details').filter(
+            has=page.get_by_text('Educational resource-opportunity calculation', exact=False))
+        opportunity.locator('summary').click()
+        expect(opportunity.locator('.equation')).to_be_visible()
+        expect(opportunity).to_contain_text('not 5,400 proven recoverable data REs')
+        if args.screenshots:
+            page.screenshot(path=str(args.screenshots/'resource-efficiency.png'))
+        page.goto(args.url+'/#comparison', wait_until='networkidle')
+        page.locator('a[href="#resource-efficiency"]').last.click()
+        expect(page.locator('h1')).to_contain_text('fix-later list')
+        page.goto(args.url+'/#dashboard-reading', wait_until='networkidle')
+        page.locator('#evidence-family-search').fill('false ACK')
+        assert page.locator('[data-evidence-family="uci"]').is_visible()
+        assert page.locator('[data-evidence-family="channel"]').is_hidden()
+        page.goto(args.url+'/#standards-crosswalk', wait_until='networkidle')
+        page.locator('#standard-search').fill('nrTBS')
+        assert page.locator('[data-standard-topic="pdsch"]').is_visible()
+        assert page.locator('[data-standard-topic="pusch"]').is_visible()
+        assert page.locator('[data-standard-topic="ssb"]').is_hidden()
+        page.goto(args.url+'/#output-atlas?kind=live_chart&q=TRS', wait_until='networkidle')
+        expect(page.locator('#evidence-inventory-summary')).to_contain_text('not run acceptance')
+        expect(page.locator('#artifact-table')).to_contain_text('trs_received_pilot_evm.png')
+        expect(page.locator('#artifact-table')).to_contain_text('reports/live_measurements/')
+        page.locator('#artifact-kind').select_option('dashboard_panel')
+        page.locator('#artifact-search').fill('ssb_sync_timing')
+        expect(page.locator('#artifact-table')).to_contain_text('SSB measured timing')
+        page.locator('#artifact-table details').first.click()
+        expect(page.locator('#artifact-table')).to_contain_text('Residual CFO')
+        page.locator('#artifact-kind').select_option('runtime_csv')
+        page.locator('#artifact-search').fill('pdcch_trials')
+        expect(page.locator('#artifact-table')).to_contain_text('air_interface/csv/pdcch_trials.csv')
+        page.locator('#artifact-search').fill('no-such-output-987654321')
+        expect(page.locator('#artifact-table')).to_contain_text('No matches. Nothing has been substituted.')
+        parsed = page.evaluate("""window.H4Guide.parseEvidenceCSV('a,b\\r\\n"x,y","a""b\\nc"\\r\\n')""")
+        assert parsed == [['a','b'],['x,y','a"b\nc']]
+        if args.screenshots:
+            page.goto(args.url+'/#dashboard-reading', wait_until='networkidle')
+            page.screenshot(path=str(args.screenshots/'dashboard-reading.png'))
+            page.goto(args.url+'/#standards-crosswalk', wait_until='networkidle')
+            page.screenshot(path=str(args.screenshots/'standards-crosswalk.png'))
+            page.goto(args.url+'/#output-atlas?kind=live_chart&q=TRS', wait_until='networkidle')
+            page.screenshot(path=str(args.screenshots/'output-atlas.png'))
         source_paths = page.evaluate("""[...new Set(window.H4Guide.CHAPTERS.flatMap(c=>{
             const d=document.createElement('div');d.innerHTML=c.body();
             return [...d.querySelectorAll('[data-source]')].map(a=>a.dataset.source);
@@ -200,12 +261,22 @@ def main():
         assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
         page.goto(args.url+'/#worked-calculations', wait_until='networkidle')
         assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
+        page.goto(args.url+'/#output-atlas?kind=live_chart&q=TRS', wait_until='networkidle')
+        expect(page.locator('#artifact-table')).to_contain_text('TRS received-pilot EVM')
+        assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
+        page.goto(args.url+'/#standards-crosswalk', wait_until='networkidle')
+        assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
+        page.goto(args.url+'/#resource-efficiency', wait_until='networkidle')
+        expect(page.locator('#content')).to_contain_text('H4-198')
+        assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
         if args.screenshots:
             page.screenshot(path=str(args.screenshots/'mobile.png'))
         assert not errors, errors
         print(json.dumps({'status':'PASS','chapters':len(chapters),'authored_words':word_count,
                           'source_links_verified':len(source_paths),
                           'documented_methods':audit['methods'],'channel_playbooks':audit['playbooks'],
+                          'dashboard_families':evidence['families'],
+                          'standards_comparisons':evidence['standards'],
                           'browser_errors':errors,'scope':'documentation_only_no_simulation'}))
         browser.close()
 

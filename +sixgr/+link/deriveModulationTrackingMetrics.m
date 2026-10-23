@@ -239,7 +239,7 @@ if ~isscalar(captureScope) || ~any(captureScope == ["preview", "full_allocation"
         "outputs.constellationCaptureScope must be preview or full_allocation.");
 end
 constellationT = localConstellationTable(direction, symbolModulation, ...
-    sixgr.util.structGet(cfg, "channel.snr_dB", NaN), tx, refSym, eqSymRawUse, eqSymAligned, hardSym, detectorSym, detectorInfo, orderInfo, refOrder, captureScope);
+    sixgr.util.structGet(cfg, "channel.snr_dB", NaN), tx, rx, refSym, eqSymRawUse, eqSymAligned, hardSym, detectorSym, detectorInfo, orderInfo, refOrder, eqOrder, captureScope);
 if ~isempty(constellationT)
     constellationT.SymbolDecisionStatus = repmat(metrics.SymbolDecisionStatus, height(constellationT), 1);
 end
@@ -904,11 +904,12 @@ catch
 end
 end
 
-function constellationT = localConstellationTable(direction, modulation, snr_dB, tx, refSym, eqSymRaw, eqSymAligned, hardSym, detectorSym, detectorInfo, orderInfo, referenceOrder, captureScope)
+function constellationT = localConstellationTable(direction, modulation, snr_dB, tx, rx, refSym, eqSymRaw, eqSymAligned, hardSym, detectorSym, detectorInfo, orderInfo, referenceOrder, equalizedOrder, captureScope)
 constellationT = table();
 if isempty(eqSymAligned)
     return;
 end
+coordinateDomain=localConstellationCoordinateDomain(tx,rx,direction,referenceOrder,equalizedOrder);
 L = min(numel(eqSymAligned), 512);
 if captureScope == "full_allocation"
     L = numel(eqSymAligned);
@@ -917,21 +918,10 @@ if captureScope == "full_allocation"
         error("sixgr:link:IncompleteConstellationAllocation", ...
             "Full capture requires the paired count to equal the transmitter's actual QAMSymbolCount.");
     end
-    % Full-allocation evidence needs the actual layer/QAM ordering map; port
-    % indices or inferred grid dimensions cannot establish coverage.
-    requiredCoordinates = ["LinearIndex", "SubcarrierIndex", "OFDMSymbolIndex", "LayerIndex"];
-    for coordinate = requiredCoordinates
-        values = sixgr.util.structGet(referenceOrder, coordinate, []);
-        if numel(values) ~= L || any(~isfinite(values(:))) || ...
-                any(values(:) < 1 | values(:) ~= round(values(:)))
-            error("sixgr:link:IncompleteConstellationOrdering", ...
-                "Full-allocation capture requires one valid %s per paired symbol.", coordinate);
-        end
-    end
-    if numel(unique(double(referenceOrder.LinearIndex(:)))) ~= L
-        error("sixgr:link:DuplicateConstellationResource", ...
-            "Full-allocation capture cannot contain duplicate layer resource identities.");
-    end
+    % CP-OFDM QAM occupies individual REs; pre-DFT data QAM does not.
+    % Both still require complete, exactly matched native ordering keys.
+    % Port-grid coordinates or invented subcarriers cannot prove coverage.
+    localValidateFullConstellationOrder(referenceOrder,equalizedOrder,L,coordinateDomain);
 end
 if isempty(L) || L <= 0
     return;
@@ -1023,14 +1013,87 @@ if captureScope == "full_allocation"
 end
 constellationT.ObservationSymbolCount = repmat(double(numel(refSym)), L, 1);
 constellationT.CapturedSymbolCount = repmat(double(L), L, 1);
-constellationT.SymbolCoordinateDomain = repmat("layer_resource_elements", L, 1);
-if direction == "UL" && logical(localConfigurationValue( ...
-        sixgr.util.structGet(tx,"PUSCH",struct()), "TransformPrecoding", false))
+constellationT.SymbolCoordinateDomain = repmat(coordinateDomain, L, 1);
+nativeIndex=localOrderLinearIndex(referenceOrder);
+constellationT.SymbolOrderLinearIndex=nan(L,1);
+constellationT.SymbolOrderLinearIndexDomain=repmat("unavailable_native_order",L,1);
+if numel(nativeIndex)>=L
+    retainedIndex=double(nativeIndex(1:L));
+    constellationT.SymbolOrderLinearIndex=retainedIndex(:);
+    constellationT.SymbolOrderLinearIndexDomain(:)="layer_grid_linear_index";
+end
+if coordinateDomain=="pre_transform_qam_positions"
     % After inverse DFT, QAM positions share an OFDM-symbol identity but are
-    % not individual physical subcarrier REs. Do not label them as such.
-    constellationT.SymbolCoordinateDomain(:) = "pre_transform_qam_positions";
+    % not individual physical subcarrier REs. The retained native linear
+    % key labels an allocation position, not a single occupied subcarrier.
+    constellationT.SymbolOrderLinearIndexDomain(:)="native_pre_transform_allocation_position_key";
     constellationT.DetectorOutputCoordinateDomain(:) = "pre_transform_qam_positions";
     constellationT.SubcarrierIndex(:) = NaN;
+end
+end
+
+function domain=localConstellationCoordinateDomain(tx,rx,direction,referenceOrder,equalizedOrder)
+domain="layer_resource_elements";
+transformed=false;
+if direction=="UL"
+    txTransform=localConfigurationValue(sixgr.util.structGet(tx,'PUSCH',struct()),'TransformPrecoding',false);
+    rxTransform=localConfigurationValue(sixgr.util.structGet(rx,'PUSCH',struct()),'TransformPrecoding',false);
+    assert(isscalar(txTransform) && isscalar(rxTransform) && ...
+        any(double(txTransform)==[0 1]) && any(double(rxTransform)==[0 1]) && ...
+        logical(txTransform)==logical(rxTransform), ...
+        'sixgr:link:ConstellationCoordinateDomainMismatch', ...
+        'Paired PUSCH symbols must agree on their actual transform-precoding domain.');
+    transformed=logical(txTransform);
+end
+for order={referenceOrder,equalizedOrder}
+    marker=string(sixgr.util.structGet(order{1},'CoordinateDomain',""));
+    assert(isscalar(marker) && ~ismissing(marker), ...
+        'sixgr:link:ConstellationCoordinateDomainMismatch','Require a scalar native coordinate-domain marker.');
+    if transformed
+        assert(marker=="pre_transform_qam_positions", ...
+            'sixgr:link:ConstellationCoordinateDomainMismatch', ...
+            'DFT-s-OFDM QAM evidence requires explicit pre-transform native ordering on both sides.');
+    else
+        assert(any(marker==["","layer_resource_elements"]), ...
+            'sixgr:link:ConstellationCoordinateDomainMismatch', ...
+            'A pre-transform marker cannot bypass ordinary RE-coordinate coverage.');
+    end
+end
+if transformed, domain="pre_transform_qam_positions"; end
+end
+
+function localValidateFullConstellationOrder(referenceOrder,equalizedOrder,count,domain)
+coordinates=["LinearIndex","OFDMSymbolIndex","LayerIndex"];
+if domain=="layer_resource_elements", coordinates=[coordinates,"SubcarrierIndex"]; end
+for order={referenceOrder,equalizedOrder}
+    value=order{1};
+    for coordinate=coordinates
+        values=sixgr.util.structGet(value,coordinate,[]);
+        if ~isnumeric(values) || ~isreal(values) || numel(values)~=count || ...
+                any(~isfinite(values(:))) || any(values(:)<1 | values(:)~=fix(values(:)))
+            error('sixgr:link:IncompleteConstellationOrdering', ...
+                'Full-allocation capture requires one valid %s per paired symbol in %s.',coordinate,domain);
+        end
+    end
+    if numel(unique(double(value.LinearIndex(:))))~=count
+        error('sixgr:link:DuplicateConstellationResource', ...
+            'Full-allocation capture cannot contain duplicate native layer/QAM position keys.');
+    end
+    if domain=="pre_transform_qam_positions"
+        subcarriers=sixgr.util.structGet(value,'SubcarrierIndex',[]);
+        if ~isnumeric(subcarriers) || ~isreal(subcarriers) || numel(subcarriers)~=count || ...
+                ~isequal(size(subcarriers),size(value.LinearIndex)) || ~all(isnan(subcarriers(:)))
+            error('sixgr:link:IncompleteConstellationOrdering', ...
+                'Pre-transform data QAM requires explicit non-applicable subcarriers, not fabricated RE coordinates.');
+        end
+    end
+end
+for coordinate=coordinates
+    ref=double(referenceOrder.(coordinate)); received=double(equalizedOrder.(coordinate));
+    if ~isequal(ref,received) || ~isequal(size(ref),size(referenceOrder.LinearIndex))
+        error('sixgr:link:SymbolOrderingMismatch', ...
+            'Paired full-allocation %s must retain the same native %s identity and shape.',domain,coordinate);
+    end
 end
 end
 

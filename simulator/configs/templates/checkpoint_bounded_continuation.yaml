@@ -1,0 +1,22 @@
+# Copy this request and replace identities with a completed checkpoint receipt.
+# No scenario inheritance or PHY overrides are allowed. The original scenario
+# and config hash stay immutable; this separately declared horizon is a
+# right-censored diagnostic continuation, not completion of the original study.
+checkpoint_continuation:
+  contract: sixgr_checkpoint_continuation/v1
+  checkpoint: 'C:\REPLACE\after_slot_000045\state.mat'
+  state_sha256: REPLACE_WITH_ORIGINAL_STATE_SHA256
+  config_hash: REPLACE_WITH_ORIGINAL_CONFIG_SHA256
+  repair_reason: Reviewed core repairs; retain the native prefix and publish a bounded diagnostic.
+  # Inclusive 1-based radio slot; must be after the checkpoint and no greater
+  # than the original horizon. Only single-operating-point runs are supported.
+  finish_after_slot: 60
+  operational_settings:
+    run_control:
+      runtime_checkpoint_enable: true
+      checkpoint_first_slot: 49
+      checkpoint_every_slots: 3
+      runtime_checkpoint_keep: 100
+    output:
+      live_csv_png_interval_slots: 5
+      execution_stage_profile_enabled: true

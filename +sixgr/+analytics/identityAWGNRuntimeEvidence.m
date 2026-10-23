@@ -23,6 +23,10 @@ expected=["AWGN","AWGN","awgn_no_array_channel", ...
 if fixedMatrix
     expected(5:7)=["explicit_fixed_matrix_sample_operator", ...
         "awgn_configured_spatial_matrix_no_array_kernel","not_applicable_awgn_fixed_matrix_channel"];
+    if isequal(sixgr.util.structGet(cfg,'channel.awgnBeamFailureRecoveryEnabled',false),true)
+        expected(5)="explicit_piecewise_matrix_sample_operator";
+        expected(7)="not_applicable_awgn_piecewise_matrix_channel";
+    end
 end
 dimensions=["ConfiguredTxAntennas","ConfiguredRxAntennas", ...
     "PhysicalTxAntennas","PhysicalRxAntennas","TxWaveformColumns","RxWaveformBranches"];

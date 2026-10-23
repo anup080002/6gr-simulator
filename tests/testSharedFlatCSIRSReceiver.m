@@ -1,6 +1,7 @@
 function ok=testSharedFlatCSIRSReceiver(snr,withCSIIM)
 % Real PDSCH/CSI-RS waveform, shared 4x2 channel/noise/RF and PDSCH_Rx.
 % Explicit calibration assignment, not PDCCH/access or scenario acceptance.
+% This static-operator component does not qualify a piecewise channel.
 setup6GRSimToolkit('Verbose',false);
 if nargin<1, snr=20; end
 if nargin<2, withCSIIM=false; end
@@ -8,6 +9,9 @@ validateattributes(snr,{'numeric'},{'real','finite','scalar'});
 s=sixgr.lls6g.config.loadScenarioConfig( ...
     'simulator/configs/scenarios/lls_tdd_5mhz_rank2_4tx2rx_awgn_m10db.yaml');
 sc=s.toStruct(); sc.reference_signals.csi_rs_runtime_channel_estimator='flat_static_awgn_ls';
+% Select a genuinely static component before constructing the channel.
+% The production parent keeps its physical beam-failure/recovery episode.
+sc.channels.awgn_beam_failure_recovery_enabled=false;
 if withCSIIM
     % Explicit calibration resource on the same configured periodic
     % measurement occasion as the inherited CSI-RS.  CSI-IM is an
@@ -21,6 +25,8 @@ end
 sixgr.lls6g.config.validateScenarioConfig(sc);
 cfg=sixgr.lls6g.buildInternalConfig(sc,tempname);
 assert(string(cfg.phy.csirs.runtimeChannelEstimator)=="flat_static_awgn_ls");
+assert(~cfg.channel.awgnBeamFailureRecoveryEnabled, ...
+    'test:FlatCSIRSStaticScope','Flat-estimator qualification requires the explicitly static fixture.');
 % Resolve the inherited calendar instead of freezing an obsolete offset.
 % Runtime slots are one based. Never
 % turn resource enablement into an every-slot transmission merely to make a
@@ -65,6 +71,15 @@ end
 done=event.advanceUntilEvent(count);
 [~,pre,~,replay,received]=sixgr.truth.sharedObservationEvidence(done.Completed);
 sixgr.phy.rx.assertFlatStaticAWGNObservation(replay);
+for k=1:numel(replay.ReceiveStreamExecutionSegments)
+    links=replay.ReceiveStreamExecutionSegments{k}.Execution.Links;
+    links=links(string({links.RX})==string(replay.ReceiverID));
+    assert(numel(links)==1 && ...
+        string(links.Replay.RuntimeChannelTimingTruthSource)== ...
+        "executed_fixed_matrix_operator_zero_delay", ...
+        'test:FlatCSIRSExecutedOperator', ...
+        'This component must retain the actual static matrix operator, not relabel a piecewise execution.');
+end
 assert(replay.AppliedAWGNSNR_dB==snr);
 rx=sixgr.phy.dl.PDSCH_Rx(received.readComplete(),cfg, ...
     'ExecutionProfile','phy_calibration','Carrier',tx.Carrier,'PDSCH',tx.PDSCH, ...
@@ -172,6 +187,7 @@ row=table(replay.AppliedAWGNSNR_dB,rx.CRCError,rx.CSIRSNoiseVar,measured.CSI_SIN
     string(rx.CSIRSObservation.ReferenceSINRMeasurementJSON), ...
     'VariableNames',{'AppliedAWGNSNR_dB','PDSCHCRCError','CSIRSNoiseVariance','MeasuredCSISINR_dB','MeasurementJSON'});
 row.CSIIMEnabled=logical(withCSIIM);
+row.ExecutionScope="static_fixed_matrix_shared_receiver_component_not_piecewise_qualification";
 writetable(row,fullfile(folder,'receiver.csv'));
 fprintf('SHARED_FLAT_CSIRS_RECEIVER_PASS dataCRC=%d SINR=%g output=%s\n',~rx.CRCError,measured.CSI_SINR_dB,folder);
 ok=true;

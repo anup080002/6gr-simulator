@@ -31,7 +31,8 @@ if ~isempty(fieldnames(sixgr.util.structGet(cfg,'lls6g.runtimeScheduledPowerCont
 end
 [carrier,~] = sixgr.phy.grid.makeCarrier(cfg);
 ssbSCS = double(sixgr.util.structGet(cfg,'phy.ssb.scs_kHz',carrier.SubcarrierSpacing));
-if ssbSCS~=carrier.SubcarrierSpacing
+normalized = sixgr.rf.isNormalizedFixedSNRPowerReference(cfg);
+if ssbSCS~=carrier.SubcarrierSpacing && ~normalized
     error('sixgr:rf:SSBMixedNumerologyPowerUnqualified', ...
         'Mixed-numerology SSB/carrier EPRE normalization requires its own exact-grid power contract.');
 end
@@ -46,8 +47,8 @@ end
 ctx = sixgr.rf.PowerContext(cfg,'DL');
 nsc = 12*double(carrier.NSizeGrid);
 base = ctx.TotalTxPower_dBm-10*log10(nsc);
-normalized = sixgr.rf.isNormalizedFixedSNRPowerReference(cfg);
 normalizedUnitEPRE_dB = NaN;
+numerologyOffset_dB=0;
 if normalized
     % A deterministic single-RE calibration measures the actual Toolbox
     % IFFT convention; it is not a PHY result or a noise/receiver input.
@@ -62,6 +63,28 @@ if normalized
     contract.OFDMUnitReference=struct('Source',"deterministic_single_RE_IFFT_useful_sample_power", ...
         'Nfft',double(info.Nfft),'SampleRateHz',double(info.SampleRate), ...
         'UnitREUsefulSamplePower_mW',unitPower,'DevicePowerApplied',false);
+    if ssbSCS~=carrier.SubcarrierSpacing
+        % A common-rate SS30 IFFT and a data15 IFFT have different unit-bin
+        % sample amplitudes. Calibrate their useful-sample power, never from
+        % received data or a desired decode outcome. This model explicitly
+        % keeps SSS RE power on the common-carrier unit-EPRE reference.
+        ssbCarrier=nrCarrierConfig('NSizeGrid',20,'SubcarrierSpacing',ssbSCS, ...
+            'CyclicPrefix','normal');
+        fftSSB=double(info.SampleRate)/(ssbSCS*1000);
+        validateattributes(fftSSB,{'numeric'},{'scalar','finite','integer','>=',240});
+        ssbGrid=complex(zeros(240,14)); ssbGrid(1,1)=1;
+        [ssbProbe,ssbInfo]=nrOFDMModulate(ssbCarrier,ssbGrid, ...
+            'SampleRate',double(info.SampleRate),'Nfft',fftSSB,'Windowing',0);
+        usefulSSB=double(ssbInfo.CyclicPrefixLengths(1))+(1:double(ssbInfo.Nfft));
+        ssbUnitPower=mean(abs(ssbProbe(usefulSSB,:)).^2,'all');
+        validateattributes(ssbUnitPower,{'numeric'},{'scalar','real','finite','positive'});
+        numerologyOffset_dB=10*log10(unitPower/ssbUnitPower);
+        contract.OFDMUnitReference.SSBSubcarrierSpacingKHz=ssbSCS;
+        contract.OFDMUnitReference.SSBNfft=double(ssbInfo.Nfft);
+        contract.OFDMUnitReference.SSBUnitREUsefulSamplePower=ssbUnitPower;
+        contract.OFDMUnitReference.SSBToCommonEPREOffset_dB=numerologyOffset_dB;
+        contract.OFDMUnitReference.MixedNumerologyPolicy="equal_useful_sample_RE_power_to_common_carrier_reference";
+    end
 end
 explicit = sixgr.util.structGet(cfg,[root 'ss_pbch_block_power_dbm'], ...
     sixgr.util.structGet(cfg,'powerAndRF.ssPBCHBlockPower_dBm',[]));
@@ -86,7 +109,7 @@ end
 validateattributes(target,{'numeric'},{'scalar','real','finite','integer','>=',-60,'<=',50});
 % This separate correction avoids adding the boost again on repeated config
 % resolution. The authored per-SSB values and normalized precoders survive.
-referenceOffset_dB=target-base-powers(1);
+referenceOffset_dB=target-base-powers(1)+numerologyOffset_dB;
 cfg = sixgr.util.structSet(cfg,'phy.ssb.referencePowerOffset_dB',referenceOffset_dB);
 cfg = sixgr.util.structSet(cfg,'rrc.sib1.ss_pbch_block_power_dbm',target);
 contract.Available = true;
@@ -106,7 +129,7 @@ contract.ReferencePowerOffset_dB=referenceOffset_dB;
 contract.NominalConfiguredFullBWPPower_dBm=base+10*log10(nsc);
 if normalized
     contract.NormalizedWaveformEPRE_dB_re_UnitOccupiedRE_Es = ...
-        normalizedUnitEPRE_dB+powers(1)+referenceOffset_dB;
+        normalizedUnitEPRE_dB+powers(1)+referenceOffset_dB-numerologyOffset_dB;
 else
     contract.ReferenceFullBWPPower_dBm=base+10*log10(nsc);
 end

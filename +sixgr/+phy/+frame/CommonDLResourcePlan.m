@@ -11,6 +11,11 @@ classdef CommonDLResourcePlan
         SIB1PDCCH
         SIB1AdditionalPlans = {}
         TRS
+        PreparedSlot0 = NaN
+        PreparedSSBRE0 = []
+        PreparedTRSRE0 = []
+        PreparedCSIRSRE0 = []
+        PreparedSIB1RE0 = []
     end
     methods
         function obj = CommonDLResourcePlan(cfg)
@@ -47,14 +52,28 @@ classdef CommonDLResourcePlan
             end
         end
 
+        function obj = prepareSlot(obj,slot0)
+            % Value-object snapshot of this immutable configuration and
+            % absolute slot only. No global cache, RNG, or receiver state.
+            % Native generators and every collision guard still execute.
+            obj.PreparedSlot0=NaN;
+            carrier=obj.carrierAt(slot0);
+            ssb=sixgr.phy.frame.ssbPRBSymbolReservation(obj.Config,carrier,slot0);
+            obj.PreparedSSBRE0=ssb.ReservedCarrierRE0;
+            obj.PreparedTRSRE0=obj.trsRE(slot0);
+            obj.PreparedCSIRSRE0=obj.csirsRE(slot0);
+            obj.PreparedSIB1RE0=obj.sib1ReservedRE(slot0);
+            obj.PreparedSlot0=double(slot0);
+        end
+
         function coordinates = controlReservations(obj,slot0)
             % Configured ownership, never a claim that reception occurred.
             % Connected DL assignments AND UL grants share this DL grid.
             % Include payload and pilots of cell-common signals; a distinct
             % search-space/CORESET ID does not make colliding REs orthogonal.
             carrier=obj.carrierAt(slot0);
-            ssb=sixgr.phy.frame.ssbPRBSymbolReservation(obj.Config,carrier,slot0);
-            re=unique([ssb.ReservedCarrierRE0(:);obj.sib1ReservedRE(slot0); ...
+            ssb=obj.ssbRE(slot0);
+            re=unique([ssb(:);obj.sib1ReservedRE(slot0); ...
                 obj.trsRE(slot0);obj.csirsRE(slot0)]);
             k=12*carrier.NSizeGrid;
             coordinates=[mod(re,k)+12*carrier.NStartGrid,floor(re/k)];
@@ -75,8 +94,7 @@ classdef CommonDLResourcePlan
                 'sixgr:phy:frame:CommonPDSCHOutsideCarrier','Common PDSCH allocation exceeds the carrier.');
             re = localRectangle(carrier,values(1)+(0:values(2)-1),values(3)+(0:values(4)-1));
             owners = strings(0,1); counts = zeros(0,1);
-            ssb = sixgr.phy.frame.ssbPRBSymbolReservation(obj.Config,carrier,slot0);
-            [owners,counts] = localConflict(owners,counts,re,ssb.ReservedCarrierRE0,"SSB_PRB_symbol_reservation");
+            [owners,counts] = localConflict(owners,counts,re,obj.ssbRE(slot0),"SSB_PRB_symbol_reservation");
             [owners,counts] = localConflict(owners,counts,re,obj.trsRE(slot0),"TRS");
             [owners,counts] = localConflict(owners,counts,re,obj.csirsRE(slot0),"CSI-RS");
             [owners,counts] = localConflict(owners,counts,re,obj.sib1ReservedRE(slot0), ...
@@ -214,6 +232,7 @@ classdef CommonDLResourcePlan
                 mod(slot0-obj.SIB1Slot0,obj.BroadcastPeriodSlots)==0;
         end
         function re = sib1ReservedRE(obj,slot0)
+            if isequal(slot0,obj.PreparedSlot0), re=obj.PreparedSIB1RE0; return; end
             re=zeros(0,1);
             if obj.hasSIB1(slot0)
                 carrier=obj.carrierAt(slot0);
@@ -227,6 +246,7 @@ classdef CommonDLResourcePlan
             end
         end
         function re = trsRE(obj,slot0)
+            if isequal(slot0,obj.PreparedSlot0), re=obj.PreparedTRSRE0; return; end
             re = zeros(0,1);
             if isempty(obj.TRS) || ~sixgr.truth.isActiveTRSOccasion(obj.Config,slot0+1), return; end
             carrier = obj.carrierAt(slot0);
@@ -239,6 +259,7 @@ classdef CommonDLResourcePlan
             re = unique(mod(re,12*carrier.NSizeGrid*carrier.SymbolsPerSlot));
         end
         function re = csirsRE(obj,slot0)
+            if isequal(slot0,obj.PreparedSlot0), re=obj.PreparedCSIRSRE0; return; end
             re = zeros(0,1);
             if ~sixgr.phy.refsig.csirsOccasion(obj.Config,slot0), return; end
             cfg = sixgr.phy.grid.applyRuntimeCarrierTimeline(obj.Config,slot0+1);
@@ -247,6 +268,11 @@ classdef CommonDLResourcePlan
             assert(~isempty(indices),'sixgr:phy:frame:EmptyCSIRSReservation', ...
                 'An active CSI-RS resource must resolve actual indices at absolute slot0 %d.',slot0);
             re = unique(mod(double(indices(:))-1,12*carrier.NSizeGrid*carrier.SymbolsPerSlot));
+        end
+        function re = ssbRE(obj,slot0)
+            if isequal(slot0,obj.PreparedSlot0), re=obj.PreparedSSBRE0; return; end
+            ssb=sixgr.phy.frame.ssbPRBSymbolReservation(obj.Config,obj.carrierAt(slot0),slot0);
+            re=ssb.ReservedCarrierRE0;
         end
     end
 end

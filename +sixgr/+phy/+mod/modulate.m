@@ -1,5 +1,5 @@
 function [sym, info] = modulate(bits, modScheme, varargin)
-%MODULATE NR-style symbol modulation (supports 1024/4096-QAM via Comm Toolbox).
+%MODULATE NR symbol modulation; explicit Comm-QAM research mapping is separate.
 %
 %   [SYM,INFO] = sixgr.phy.mod.modulate(BITS, MODSCHEME) maps a column vector
 %   of bits (0/1) to complex modulation symbols.
@@ -8,14 +8,16 @@ function [sym, info] = modulate(bits, modScheme, varargin)
 %     "QPSK","16QAM","64QAM","256QAM","1024QAM","4096QAM","pi/2-BPSK","BPSK"
 %
 %   Name-value options:
-%     "Engine"          : "auto" (default) | "nr" | "comm"
+%     "Engine"          : "auto" (default) | "nr" | "native_nr" | "comm"
 %     "UnitAveragePower": true (default)  | false   (Comm Toolbox only)
 %     "SymbolOrder"     : "Gray" (default) | "Binary" (Comm Toolbox only)
 %
 %   Notes:
-%   - For NR standard modulations up to 256QAM (and pi/2-BPSK), this wrapper
+%   - For NR standard modulations up to 1024QAM (and pi/2-BPSK), this wrapper
 %     uses nrSymbolModulate when available.
-%   - For 1024/4096-QAM it uses qammod (Communications Toolbox).
+%   - native_nr implements TS 38.211 section 5.1 without a toolbox mapper.
+%   - Explicit comm QAM has different bit labels; 4096QAM is a research mode.
+%     A failure in a selected engine is never retried with a different map.
 %
 %   This is a PHY building block; higher layers must ensure the bit length is
 %   a multiple of Qm (bits per symbol).
@@ -46,10 +48,11 @@ end
 
 % Normalize bits
 bits = bits(:);
-if ~isnumeric(bits) && ~islogical(bits)
-    error("sixgr:phy:modulate:BadBits", "BITS must be numeric or logical.");
+if ~((isnumeric(bits) || islogical(bits)) && isreal(bits) ...
+        && all(isfinite(double(bits))) && all(bits == 0 | bits == 1))
+    error("sixgr:phy:modulate:BadBits", "BITS must contain only finite binary values.");
 end
-bits = int8(bits ~= 0);
+bits = int8(bits);
 
 % Normalize modulation
 [modStr, M, Qm, isNRStd] = localNormalizeMod(modScheme);
@@ -66,57 +69,66 @@ end
 
 % Choose engine
 eng = lower(strtrim(opts.Engine));
-useNR = false;
-if eng == "nr"
-    useNR = true;
-elseif eng == "comm"
-    useNR = false;
-else
-    % auto
-    useNR = isNRStd && exist("nrSymbolModulate","file") == 2;
+if ~isscalar(eng) || ~any(eng == ["auto","nr","native_nr","comm"])
+    error("sixgr:phy:modulate:BadEngine", "Unknown modulation engine.");
 end
-
-if useNR
-    % NR modulator (5G Toolbox)
-    try
-        sym = nrSymbolModulate(double(bits), char(modStr));  %#ok<CHARTEN>
-    catch ME
-        % If the NR modulator rejects the scheme, fallback to Comm Toolbox if possible.
-        if ~isNRStd
-            rethrow(ME);
+if eng == "auto"
+    if isNRStd
+        eng = "native_nr";
+        if exist("nrSymbolModulate","file") == 2
+            eng = "nr";
         end
-        useNR = false;
-    end
-end
-
-if ~useNR
-    % Comm Toolbox modulation for large QAM, fallback for others
-    if modStr == "BPSK"
-        sym = 1 - 2*double(bits); % 0->+1, 1->-1
-        sym = complex(sym, 0);
-    elseif modStr == "pi/2-BPSK"
-        % Simple pi/2 rotation per symbol (fallback)
-        b = 1 - 2*double(bits);
-        n = (0:numel(b)-1).';
-        sym = b .* exp(1j*(pi/2)*n);
     else
-        if exist("qammod","file") ~= 2
-            error("sixgr:phy:modulate:NoQAMMOD", ...
-                "qammod not found. Install Communications Toolbox or use Engine='nr'.");
-        end
-        % Use bit-vector input mode (qammod groups bits internally)
-        symOrder = localNormalizeSymOrder(opts.SymbolOrder);
-        sym = qammod(double(bits), M, symOrder, ...
-            "InputType","bit", "UnitAveragePower", opts.UnitAveragePower);
-        sym = sym(:);
+        eng = "comm";
     end
+end
+if any(eng == ["nr","native_nr"]) && ~isNRStd
+    error("sixgr:phy:modulate:UnsupportedNRModulation", ...
+        "%s is not an NR constellation supported by this wrapper.", modStr);
+end
+if any(eng == ["nr","native_nr"]) && (~opts.UnitAveragePower || ...
+        ~any(lower(opts.SymbolOrder) == ["gray","gr"]))
+    error("sixgr:phy:modulate:NonNRMappingOption", ...
+        "NR mapping has fixed bit labelling and unit ensemble-average power.");
+end
+engineUsed = eng;
+convention = "TS_38_211_section_5_1";
+if eng == "nr"
+    sym = nrSymbolModulate(double(bits), char(modStr));
+    engineUsed = "nrSymbolModulate";
+elseif eng == "native_nr" || Qm == 1
+    if Qm == 1
+        sym = (1-2*double(bits))*(1+1i)/sqrt(2);
+        if modStr == "pi/2-BPSK"
+            sym = sym .* exp(1i*pi/2*mod((0:numel(bits)-1).',2));
+        end
+    else
+        [axisValues,~] = sixgr.phy.mod.nrPAMAlphabet(Qm);
+        groups = reshape(double(bits),Qm,[]).';
+        weights = 2.^(Qm/2-1:-1:0).';
+        sym = complex(axisValues(1+groups(:,1:2:end)*weights), ...
+            axisValues(1+groups(:,2:2:end)*weights));
+    end
+    engineUsed = "sixgr_native_nr";
+else
+    % Explicit Communications Toolbox mapping: never label this NR bit order.
+    if exist("qammod","file") ~= 2
+        error("sixgr:phy:modulate:NoQAMMOD", ...
+            "qammod not found. Install Communications Toolbox or use Engine='nr'.");
+    end
+    symOrder = localNormalizeSymOrder(opts.SymbolOrder);
+    sym = qammod(double(bits), M, symOrder, ...
+        "InputType","bit", "UnitAveragePower", opts.UnitAveragePower);
+    sym = sym(:);
+    convention = "communications_toolbox_" + lower(opts.SymbolOrder);
 end
 
 info = struct();
 info.Modulation = char(modStr);
 info.M = double(M);
 info.Qm = double(Qm);
-info.EngineUsed = ternary(useNR, "nrSymbolModulate", "comm");
+info.EngineUsed = engineUsed;
+info.ConstellationConvention = convention;
 info.UnitAveragePower = logical(opts.UnitAveragePower);
 info.SymbolOrder = char(opts.SymbolOrder);
 
@@ -138,13 +150,13 @@ else
 end
 
 switch modStr
-    case {"BPSK"}
+    case {"BPSK","2QAM","2"}
         modStr = "BPSK"; M = 2; Qm = 1;
         isNRStd = true;
     case {"PI/2BPSK","PI/2-BPSK","PI2BPSK"}
         modStr = "pi/2-BPSK"; M = 2; Qm = 1;
         isNRStd = true;
-    case {"QPSK"}
+    case {"QPSK","4QAM","4"}
         modStr = "QPSK"; M = 4; Qm = 2;
         isNRStd = true;
     case {"16QAM","16"}
@@ -158,6 +170,7 @@ switch modStr
         isNRStd = true;
     case {"1024QAM","1024"}
         modStr = "1024QAM"; M = 1024; Qm = 10;
+        isNRStd = true;
     case {"4096QAM","4096"}
         modStr = "4096QAM"; M = 4096; Qm = 12;
     otherwise
@@ -174,13 +187,5 @@ elseif s == "binary" || s == "bin"
     symOrder = "bin";
 else
     symOrder = char(in); % pass through
-end
-end
-
-function out = ternary(cond, a, b)
-if cond
-    out = a;
-else
-    out = b;
 end
 end

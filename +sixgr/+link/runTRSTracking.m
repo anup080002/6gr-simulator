@@ -174,6 +174,7 @@ out.PowerClosureError_dB = NaN;
 out.PowerConversionEquation = "";
 out = sixgr.report.bindTransmitPowerEvidence(out, struct());
 out.ObservedREAllocationTable = table();
+out.ResourceIntervalEvidence=sixgr.truth.executedResourceIntervals();
 
 configuredTRS = logical(sixgr.util.structGet(cfg, "phy.trs.enable", false));
 configuredTracking = logical(sixgr.util.structGet(cfg, ...
@@ -201,7 +202,8 @@ try
     [strictCfg,tx,rx,replay,timing,det,freq,ch,tracking,score,channelState,reception] = ...
         localRunStrictRuntimeTRSEvidence(cfg,snr_dB,initialChannelState,receivedContext,p.Results.RuntimeSlot);
     out.RuntimeStageCount = 5;
-    out.ObservedREAllocationTable = localObservedTRSAllocation(tx,reception.Prepared);
+    [out.ObservedREAllocationTable,out.ResourceIntervalEvidence] = ...
+        localObservedTRSAllocation(tx,reception.Prepared);
     out.ChannelState = channelState;
     trial = score.TrialRow;
     runtimeEvidenceOk = localRuntimeTRSEvidenceComplete(trial, strictCfg);
@@ -432,8 +434,10 @@ catch ME
     end
 end
 
-function T = localObservedTRSAllocation(tx,prepared)
+function [T,evidence] = localObservedTRSAllocation(tx,prepared)
 T = table();
+evidence=sixgr.truth.executedResourceIntervals();
+intervals=struct([]);
 slots = sixgr.util.structGet(tx, "GridSlots", struct([]));
 for ii = 1:numel(slots)
     grid=slots(ii).Grid;
@@ -451,6 +455,15 @@ for ii = 1:numel(slots)
         portDomain="physical_antenna_ports_after_executed_projection";
         projectionHash=string(sixgr.channel.ChannelFactory.runtimeNumericArraySHA256(W));
     end
+    part=sixgr.truth.executedResourceIntervals(grid,double(slots(ii).Slot));
+    if ii>1
+        assert(evidence.ResourceGridPRBCount==part.ResourceGridPRBCount && ...
+            evidence.ResourceSymbolsPerSlot==part.ResourceSymbolsPerSlot, ...
+            'sixgr:truth:TRSResourceGridChanged', ...
+            'A TRS observation must retain one consistent carrier grid.');
+    end
+    evidence=part;
+    intervals=[intervals;jsondecode(part.ExecutedResourceIntervalsJSON)]; %#ok<AGROW>
     slotTx = struct("Carrier", slots(ii).Carrier, ...
         "Grid", grid, "Indices", find(grid~=0));
     chunk = sixgr.truth.buildObservedREAllocation(slotTx, ...
@@ -468,6 +481,7 @@ for ii = 1:numel(slots)
         T = [T; chunk]; %#ok<AGROW>
     end
 end
+if ~isempty(slots), evidence.ExecutedResourceIntervalsJSON=string(jsonencode(intervals)); end
 end
 end
 

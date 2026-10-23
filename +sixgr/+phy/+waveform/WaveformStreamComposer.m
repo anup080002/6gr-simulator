@@ -86,6 +86,29 @@ classdef WaveformStreamComposer < handle
             obj.ComponentIDs(end+1,1)=id;
         end
 
+        function receipt=replaceUnemittedComponent(obj,componentID,replacement)
+            % Late power binding may replace a pending contribution, never
+            % samples already emitted or another component's contribution.
+            id=string(componentID); hit=find(obj.PendingComponentIDs==id);
+            assert(isscalar(id) && isscalar(hit),'WAVEFORM:UnknownPendingComponent', ...
+                'Replace one exact pending component.');
+            old=obj.Pending{hit};
+            assert(isa(replacement,'sixgr.phy.waveform.WaveformChunk') && ...
+                replacement.StartSample==old.StartSample && ...
+                isequal(size(replacement.Samples),size(old.Samples)) && ...
+                strcmp(class(replacement.Samples),class(old.Samples)) && ...
+                all(isfinite(replacement.Samples),'all'), ...
+                'WAVEFORM:ReplacementScopeMismatch','Replacement must preserve the exact physical extent and precision.');
+            consumed=max(0,min(size(old.Samples,1),obj.NextSampleIndex-old.StartSample));
+            assert(~any(old.Samples(1:consumed,:)~=0,'all') && ...
+                ~any(replacement.Samples(1:consumed,:)~=0,'all'), ...
+                'WAVEFORM:CannotReplaceEmittedComponent','No nonzero sample may be changed after emission.');
+            receipt=struct('ComponentID',id,'BoundAtSample',obj.NextSampleIndex, ...
+                'OriginalSampleSHA256',old.SHA256,'ReplacementSampleSHA256',replacement.SHA256, ...
+                'ConsumedPrefixSamples',consumed,'PreviouslyConsumedSamplesChanged',false);
+            obj.Pending{hit}=replacement;
+        end
+
         function receipt=cancelUnemittedComponent(obj,componentID)
             % UE priority can suppress a queued waveform after its all-zero
             % prefix passed, but never after ANY nonzero sample was emitted.
@@ -106,7 +129,7 @@ classdef WaveformStreamComposer < handle
             % Keep ComponentIDs: cancellation does not permit identity reuse.
         end
 
-        function chunk=readThrough(obj,endSampleExclusive)
+        function [chunk,receipt]=readThrough(obj,endSampleExclusive)
             % Half-open [NextSampleIndex,endSampleExclusive) consumption.
             validateattributes(endSampleExclusive,{'numeric'}, ...
                 {'real','scalar','finite','integer','nonnegative'});
@@ -120,6 +143,9 @@ classdef WaveformStreamComposer < handle
             end
             first=obj.NextSampleIndex;
             samples=complex(zeros(stop-first,obj.NumTransmitAntennas,char(obj.SampleClass)));
+            components=struct('ComponentID',{},'OriginalSampleSHA256',{}, ...
+                'StartSample',{},'EndSampleExclusive',{},'NonzeroSampleCount',{}, ...
+                'NonzeroIntervals',{},'NonzeroTimeSampleCount',{});
             keep=true(numel(obj.Pending),1);
             for k=1:numel(obj.Pending)
                 component=obj.Pending{k};
@@ -130,11 +156,30 @@ classdef WaveformStreamComposer < handle
                     dst=(lo-first+1):(hi-first);
                     src=(lo-component.StartSample+1):(hi-component.StartSample);
                     samples(dst,:)=samples(dst,:)+component.Samples(src,:);
+                    if nargout>1
+                        % Exact component support, before summing other
+                        % components. No detection threshold or RF replay.
+                        active=any(component.Samples(src,:)~=0,2);
+                        edges=diff([false;active;false]);
+                        runs=[find(edges==1)-1 find(edges==-1)-1]+lo;
+                        components(end+1)=struct('ComponentID',obj.PendingComponentIDs(k), ...
+                            'OriginalSampleSHA256',component.SHA256,'StartSample',lo, ...
+                            'EndSampleExclusive',hi, ...
+                            'NonzeroSampleCount',nnz(component.Samples(src,:)), ...
+                            'NonzeroIntervals',runs,'NonzeroTimeSampleCount',nnz(active)); %#ok<AGROW>
+                    end
                 end
                 keep(k)=componentEnd>stop;
             end
             % Create the immutable output before committing cursor/queue state.
             chunk=sixgr.phy.waveform.WaveformChunk(samples,first);
+            % This is consumption evidence, not physical-execution success.
+            % The event owner promotes it only after its processor succeeds.
+            receipt=struct('Schema',"consumed_waveform_components/v1", ...
+                'NonzeroIntervalSchema',"exact_absolute_component_nonzero_runs/v1", ...
+                'StartSample',first,'EndSampleExclusive',stop, ...
+                'SampleRateHz',obj.SampleRateHz,'CompleteContributorList',true, ...
+                'CompositeInputSHA256',chunk.SHA256,'Components',components);
             obj.Pending=obj.Pending(keep);
             obj.PendingComponentIDs=obj.PendingComponentIDs(keep);
             obj.NextSampleIndex=stop;

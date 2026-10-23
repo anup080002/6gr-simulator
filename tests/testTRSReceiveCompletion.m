@@ -14,6 +14,23 @@ assert(~criteria.StandardMandatedThresholds && criteria.RuntimeCoupled && ...
     baseline.StrictReceiverEvidenceOk==baseline.TRSRuntimeEvidenceUsable);
 x=r.Observation.readComplete();
 p=r.Prepared;
+intervals=jsondecode(baseline.ResourceIntervalEvidence.ExecutedResourceIntervalsJSON);
+mapped=baseline.ObservedREAllocationTable;
+assert(numel(intervals)==size(unique([mapped.absolute_slot mapped.symbol_index],'rows'),1));
+for k=1:numel(intervals)
+    one=intervals(k);
+    actual=mapped(mapped.absolute_slot==one.AbsoluteSlotIndex0 & ...
+        mapped.symbol_index==one.SymbolIndex0,:);
+    assert(~isempty(actual));
+    expected=[];
+    for j=1:height(actual)
+        first=actual.subcarrier_start(j);
+        last=first+actual.subcarrier_count(j)-1;
+        expected=union(expected,floor(first/12):floor(last/12));
+    end
+    assert(isequal(reshape(one.PRBSet0Based,1,[]),reshape(expected,1,[])), ...
+        'TRS interval PRBs must equal independently retained actual TX RE occupancy.');
+end
 origin=r.Observation.StartSample;
 buffer=sixgr.phy.waveform.WaveformObservationBuffer( ...
     origin,origin+p.NumSamples,p.SampleRateHz,size(x,2));

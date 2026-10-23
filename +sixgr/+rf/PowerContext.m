@@ -36,6 +36,15 @@ end
 [txPower_dBm, txPowerSource] = localResolveTxPower(cfg, direction);
 [txGain_dB, txGainSource] = localResolveGain(cfg, direction, "tx");
 [rxGain_dB, rxGainSource] = localResolveGain(cfg, direction, "rx");
+bsReference=sixgr.util.structGet(cfg,'rf.bsPowerReference',struct());
+if isstruct(bsReference)&&isscalar(bsReference)&&~isempty(fieldnames(bsReference))
+    assert(string(sixgr.util.structGet(bsReference,'AntennaGainOwner',''))=="physical_array_channel", ...
+        'RF:BSReferenceContract','The modeled integrated array must retain explicit antenna-gain ownership.');
+    bsScalarGain=txGain_dB;
+    if direction=="UL", bsScalarGain=rxGain_dB; end
+    assert(bsScalarGain==0,'RF:DuplicateBSArrayGain', ...
+        'The physical array/channel owns gNB antenna gain; a second scalar gNB gain would count it twice.');
+end
 [extraLoss_dB, extraLossSource] = localResolveExtraLoss(cfg, direction);
 [noiseFigure_dB, noiseFigureSource] = localResolveNoiseFigure(cfg, direction);
 [paEfficiency, paEfficiencySource] = localResolvePAEfficiency(cfg, txEntity);

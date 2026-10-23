@@ -104,8 +104,52 @@ publication=sixgr.link.csiReferenceSINRPublication(struct(),NaN);
 for name=string(fieldnames(publication)).'
     row.(name)=publication.(name);
 end
-% MATLAB drops every field's type when struct2table receives a zero-size
-% struct array. Build the typed row first, then retain zero evidence rows.
+resourceEvidence=sixgr.truth.executedResourceIntervals();
+for field=string(fieldnames(resourceEvidence)).'
+    row.(field)=resourceEvidence.(field);
+end
+receivedEvidence=sixgr.link.receivedWaveformEvidence();
+for field=string(fieldnames(receivedEvidence)).'
+    row.(field)=receivedEvidence.(field);
+end
+row.PhysicalMeasurementObservationSHA256="";
+row.PhysicalMeasurementObservationHashPlane="";
+row.ReceiverID=""; row.ReceiverWindowID="";
+row.ReceiverClockDomain=""; row.ReceiverClockEpoch=NaN;
+for field=["SelectedRank","SelectedPMI","SelectedObjective_bpsHz", ...
+        "BestReportedRankObjective_bpsHz","BestJointObjective_bpsHz", ...
+        "ConditionalPMIRegret_bpsHz","RankRegret_bpsHz","JointRegret_bpsHz", ...
+        "SupportCount","CandidateCount","JointTieCount","ReportedRankTieCount"]
+    row.("CSISelectionQuality"+field)=NaN;
+end
+for field=["IdentityJSON","ObservationID","IdentitySHA256","OperandSetSHA256", ...
+        "MATFile","MATFileSHA256","CandidatesCSV","CandidatesCSVSHA256", ...
+        "SelectedPMIComponentsJSON","SelectedMatrixSHA256","CandidateDomainSHA256", ...
+        "ChannelSHA256","PortToPhysicalMatrixSHA256","ReferencePlane","Scope", ...
+        "ObjectiveClassification","LegalRankDomainJSON","PhysicalPowerUnit", ...
+        "PhysicalPowerReferencePlane","PowerNormalization"]
+    row.("CSISelectionQuality"+field)="";
+end
+for field=["Available","SelectedWithinJointTie","SelectedWithinReportedRankTie", ...
+        "StatisticallyQualified","ActualPDSCHPerformanceQualified","CQIBLERQualified","CRISelectionQualified"]
+    row.("CSISelectionQuality"+field)=false;
+end
+row.CSISelectionQualityStatus="not_executed";
+for prefix=["Receiver","PhysicalMeasurement"]
+    row.(prefix+"ObservationArchiveFile")="";
+    row.(prefix+"ObservationArchiveFileSHA256")="";
+    row.(prefix+"ObservationArchiveReceiptJSON")="";
+end
+% MATLAB drops field types for a zero-size struct array. Build the typed
+% row first, then retain zero evidence rows, not a fabricated observation.
+for field=["RunFolder","RunID","RunTag","ExecutionID","ConfigHash","ScenarioID", ...
+        "CSIObservationPopulationJSON","CSIObservationPopulationSHA256", ...
+        "CSIObservationPopulationSource","CSIObservationPopulationBindingJSON"]
+    row.(field)="";
+end
+for field=["RandomSeed","ChannelSeed","SweepPointIndex","ConfiguredSNR_dB"]
+    row.(field)=NaN;
+end
 T = struct2table(row, "AsArray", true);
 T = T([],:);
 end

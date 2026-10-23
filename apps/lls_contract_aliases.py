@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from lls_radio_measurement_plots import CHART_SOURCES as _RADIO_CHART_SOURCES
+from lls_csi_selection_quality import CHART as _SELECTION_CHART, SOURCES as _SELECTION_SOURCES
 
 CONTRACT_TABLE_ALIAS_PATHS: dict[str, list[str]] = {
+    "private_csi_selection_observations": list(_SELECTION_SOURCES),
+    "private_csi_selection_source_audit": list(_SELECTION_SOURCES),
     # The AI benchmark runner persists its measured per-method results under
     # reports/csv.  The browser analytics contract must bind to those rows,
     # not to the descriptor/config-only summary emitted by ai_ml_outputs.
@@ -51,6 +54,9 @@ CONTRACT_TABLE_ALIAS_PATHS: dict[str, list[str]] = {
     "live_prach_native_allocation_snapshot": [
         "reports/csv/live_prach_native_allocation_snapshot.csv"
     ],
+    "live_ssb_native_allocation_snapshot": [
+        "reports/csv/live_ssb_native_allocation_snapshot.csv"
+    ],
     "live_prb_allocation_snapshot": ["packet_flow/csv/live_prb_allocation.csv", "reports/csv/prb_allocation_heatmap.csv"],
     "live_re_allocation_snapshot": ["reports/csv/live_re_allocation_snapshot.csv", "reports/csv/dl_resource_grid_heatmap.csv", "reports/csv/ul_resource_grid_heatmap.csv"],
     "live_scheduler_cycle": ["packet_flow/csv/table_scheduler_decision.csv", "packet_flow/csv/live_dl_scheduler_grants.csv", "packet_flow/csv/live_ul_scheduler_grants.csv"],
@@ -83,8 +89,10 @@ CONTRACT_TABLE_ALIAS_PATHS: dict[str, list[str]] = {
     "live_pdsch_code_block_table": ["reports/csv/coding_decoder_outputs.csv", "air_interface/csv/dl_pdsch_trials.csv"],
     "live_pdsch_mapping_table": ["reports/csv/dl_resource_grid_heatmap.csv", "packet_flow/csv/live_dl_scheduler_grants.csv"],
     "live_pdsch_dmrs_ptrs_table": ["air_interface/csv/dl_pdsch_trials.csv", "reports/csv/channel_snapshots.csv"],
-    "live_pusch_stage_table": ["reports/csv/pusch_pucch_outputs.csv", "air_interface/csv/ul_pusch_trials.csv"],
-    "live_pusch_rx_summary": ["reports/csv/pusch_pucch_outputs.csv", "reports/csv/table_ul_transport_block.csv"],
+    # Receiver processing applicability is projected by the MATLAB public
+    # owner. Raw historical rows remain raw, never an alias for UCI presence.
+    "live_pusch_stage_table": ["reports/csv/pusch_runtime_event_table.csv", "air_interface/csv/ul_pusch_trials.csv", "reports/csv/pusch_pucch_outputs.csv"],
+    "live_pusch_rx_summary": ["reports/csv/pusch_runtime_event_table.csv", "air_interface/csv/ul_pusch_trials.csv", "reports/csv/pusch_pucch_outputs.csv", "reports/csv/table_ul_transport_block.csv"],
     "live_ul_dmrs_table": ["air_interface/csv/ul_pusch_trials.csv", "reports/csv/channel_snapshots.csv"],
     "live_llr_summary": ["reports/csv/llr_histograms.csv", "reports/csv/coding_decoder_outputs.csv"],
     "live_decoder_summary": ["reports/csv/coding_decoder_outputs.csv", "reports/csv/pusch_pucch_outputs.csv"],
@@ -367,6 +375,7 @@ CONTRACT_CHART_ALIAS_PATHS: dict[str, list[str]] = {
 # These source dependencies also invalidate the browser's exact-source cache
 # when fresh CSI, precoder or independently paired control evidence arrives.
 CONTRACT_CHART_ALIAS_PATHS.update({name: list(paths) for name, paths in _RADIO_CHART_SOURCES.items()})
+CONTRACT_CHART_ALIAS_PATHS[_SELECTION_CHART] = list(_SELECTION_SOURCES)
 
 
 OPTIONAL_6G_TABLES = {

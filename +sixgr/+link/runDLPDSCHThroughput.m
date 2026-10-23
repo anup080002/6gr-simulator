@@ -215,6 +215,7 @@ slotDur_s = localSlotDuration(cfg);
 
 trialSeed = NaN(numFrames,1);
 trialReplayStatus = repmat("not_attempted",numFrames,1);
+trialLinkEnergyEvidence = cell(numFrames,1);
 trialReplayMAT = strings(numFrames,1);
 trialReplayHash = strings(numFrames,1);
 trialFrame = startFrameIndex + (0:numFrames-1).';
@@ -238,6 +239,7 @@ trialHARQCurrentDecodeOK = NaN(numFrames,1);
 trialHARQCombinedDecodeOK = NaN(numFrames,1);
 trialHARQCombiningApplied = NaN(numFrames,1);
 trialHARQLLRCombiningGain = NaN(numFrames,1);
+trialDLSCHFinalOutcome = cell(numFrames,1);
 trialHARQNDIEpoch = NaN(numFrames,1);
 trialHARQTBId = strings(numFrames,1);
 trialOriginalTBSBits = NaN(numFrames,1);
@@ -254,6 +256,7 @@ trialPRB = NaN(numFrames,1);
 trialPRBStart = NaN(numFrames,1);
 trialSymbolStart = NaN(numFrames,1);
 trialNumSymbols = NaN(numFrames,1);
+trialResourceIntervals = repmat(sixgr.truth.executedResourceIntervals(),numFrames,1);
 trialLayers = NaN(numFrames,1);
 trialModulation = strings(numFrames,1);
 trialCodeRate = NaN(numFrames,1);
@@ -917,6 +920,7 @@ for n = 1:numFrames
             string(sixgr.util.structGet(grantSnapshotOverride, ...
                 "PHYGrantContextId", sixgr.util.structGet( ...
                 grantSnapshotOverride, "GrantContextId", ""))));
+        trialResourceIntervals(n)=sixgr.truth.resourceIntervalsFromObservedRE(observedREChunks{n},tx.Carrier,"PDSCH");
         trialTxWaveformColumns(n) = double(size(tx.Waveform, 2));
         observedREChunks{n}.ConfiguredSNR_dB = repmat(snr_dB,height(observedREChunks{n}),1);
         observedREChunks{n}.Seed = repmat(trialSeed(n),height(observedREChunks{n}),1);
@@ -1202,6 +1206,7 @@ for n = 1:numFrames
         captureDiagnosticPathGains = logical(sixgr.util.structGet( ...
             cfgFrame, "outputs.phySignalDiagnosticEnabled", false)) && ...
             ~logical(sixgr.util.structGet(signalDiagnostic, "Available", false));
+        energyNoise=[]; energyMeasurement=[]; energyIdentity=struct();
         if receivedCompletion
             rxWave = p.Results.ReceivedContext.Observation.readComplete();
             physicalMeasurementWaveform = ...
@@ -1212,6 +1217,18 @@ for n = 1:numFrames
                 localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState, ...
                 cfgFrame, tx, txInfo, interferenceBundle, ...
                 captureDiagnosticPathGains);
+            if isfield(replay,'LinkEnergyOriginalAWGNReceipt')
+                % Private post-hoc energy operands never enter receiver args.
+                energyNoise=replay.LinkEnergyOriginalAWGNReceipt;
+                energyMeasurement=replay.LinkEnergyOriginalMeasurementReceipt;
+                replay=rmfield(replay,{'LinkEnergyOriginalAWGNReceipt','LinkEnergyOriginalMeasurementReceipt'});
+                energyIdentity=struct('Direction',"DL",'Frame',trialFrame(n),'Slot',trialSlot(n), ...
+                    'Seed',trialSeed(n),'UEIndex',trialUEIndex(n),'RNTI',trialRNTI(n), ...
+                    'ConfiguredSNR_dB',double(sixgr.util.structGet(replay,'ConfiguredSNR_dB',snr_dB)), ...
+                    'RunTag',string(sixgr.util.structGet(cfg,'run.runTag',"")), ...
+                    'ScenarioID',string(sixgr.util.structGet(cfg,'run.scenarioID',sixgr.util.structGet(cfg,'meta.lls6gScenarioID',""))), ...
+                    'ConfigHash',string(sixgr.util.structGet(cfg,'meta.configHash',"")));
+            end
             trialAppliedPrecoderEvidence{n}=sixgr.link.exportIsolatedDataPrecoderEvidence( ...
                 tx,cfgFrame,chState,replay,struct('Direction',"DL", ...
                 'UEIndex',observedUEIndex,'ConfiguredSNR_dB',snr_dB, ...
@@ -1609,7 +1626,11 @@ for n = 1:numFrames
         trialLargeScaleSINRSource(n) = string(sixgr.util.structGet(replay, "LargeScaleSINRSource", ""));
         trialServingRSRP(n) = double(sixgr.util.structGet(replay, "ServingRSRP_dBm", NaN));
         trialServingRSRPSource(n) = string(sixgr.util.structGet(replay, "ServingRSRPSource", ""));
-        trialRuntimeEvidence{n} = localBuildRuntimeAntennaTimingEvidence("DL", cfgFrame, grantSnapshot, tx, txInfo, chState, replay);
+        trialRuntimeEvidence{n} = localBuildRuntimeAntennaTimingEvidence("DL", cfgFrame, grantSnapshot, tx, txInfo, chState, replay, rx);
+        if ~receivedCompletion && ~isempty(energyNoise)
+            trialLinkEnergyEvidence{n}=sixgr.link.captureLinkEnergyEvidence(tx,desiredScoringWaveform, ...
+                energyNoise,energyIdentity,string(tx.PowerContext.WaveformAmplitudeUnit),energyMeasurement);
+        end
         if ~trialDecodeUsable(n)
             % CSI-RS is an independently observable reference signal.  A
             % failed or unavailable PDSCH decode must not erase a valid
@@ -1656,7 +1677,7 @@ for n = 1:numFrames
             lastHARQ = struct( ...
                 "TransportBlockBits", int8(tx.TransportBlock(:)), ...
                 "DecodedTransportBlockBits", int8([]), ...
-                "CombinedLLR", previousCombinedLLR, ...
+                "CombinedLLR", {previousCombinedLLR}, ...
                 "CurrentDecodeOK", false, ...
                 "CombinedDecodeOK", false, ...
                 "DecoderIterations", NaN, ...
@@ -2096,15 +2117,18 @@ for n = 1:numFrames
             'sixgr:phy:harq:DLReceiverCodingLayoutRequired', ...
             'DL HARQ combining requires the actual receiver coding layout.');
         currentCodingLayout = rx.CodingLayout;
-        if connectedReceivedHARQ
-            [combinedLLR,harqCombining]=sixgr.link.receivedDLHARQCombiningEvidence(rx);
-        else
-            [combinedLLR, harqCombining] = localCombineRateRecoveredLLR(previousCombinedLLR, currentRecLLR, currentCodingLayout);
-        end
         combinedDecodeOK = false;
         combinedDecodeIt = NaN;
         L = min(numel(txBits), numel(rxBits));
         if L == 0
+            % No decoded population: retain the existing no-result path,
+            % without manufacturing final codeword receipts.
+            if connectedReceivedHARQ
+                [combinedLLR,harqCombining]=sixgr.link.receivedDLHARQCombiningEvidence(rx);
+            else
+                [combinedLLR,harqCombining]=localCombineRateRecoveredLLR( ...
+                    previousCombinedLLR,currentRecLLR,currentCodingLayout);
+            end
             blockErr = blockErr + 1;
             trialGoodBits(n) = 0;
             if isfinite(trialOfferedBits(n))
@@ -2139,26 +2163,33 @@ for n = 1:numFrames
         finalBitsCompared = L;
         bitTot = bitTot + double(numel(txBits));
 
-        hasPriorHARQEvidence = localHARQPriorAvailable(previousCombinedLLR);
-        if ~connectedReceivedHARQ && hasPriorHARQEvidence && ~currentDecodeOK
-            [combinedDecodeOK, combinedDecodeIt, combinedRxBits] = ...
-                sixgr.phy.harq.decodeCombinedDLSCH(currentCodingLayout, combinedLLR, cfgFrame);
-            if combinedDecodeOK
-                [combinedDecodeOK,combinedBe,combinedBitsCompared] = sixgr.link.scoreReceivedDLTransportBlock( ...
-                    struct('CRCPass',logical(combinedDecodeOK),'TransportBlock',combinedRxBits),txBits);
-                finalBe = combinedBe;
-                finalBitsCompared = combinedBitsCompared;
-                if combinedDecodeOK
-                    finalRxBits = int8(combinedRxBits(:));
-                end
-            end
+        if connectedReceivedHARQ
+            % This path already decoded the UE-owned combined mother code.
+            % Its received-DCI contract remains explicitly single-codeword.
+            [combinedLLR,harqCombining]=sixgr.link.receivedDLHARQCombiningEvidence(rx);
+            [finalOutcome,finalState]=sixgr.link.finalizeDLSCHCodewordOutcomes(rx.Decode,cfgFrame);
         else
-            combinedDecodeOK = logical(currentDecodeOK);
-            if isfield(rx, "ActiveIterations") && ~isempty(rx.ActiveIterations)
-                combinedDecodeIt = mean(double(rx.ActiveIterations(:)), "omitnan");
-            end
+            [finalOutcome,finalState]=sixgr.link.finalizeDLSCHCodewordOutcomes( ...
+                rx.Decode,cfgFrame,'Mode','legacy_outer_harq','PriorRecoveredLLR',previousCombinedLLR);
+            [combinedLLR,harqCombining]=localFinalCodewordCombiningEvidence( ...
+                previousCombinedLLR,rx.Decode,finalState);
         end
-        finalDecodeOK = logical(combinedDecodeOK);
+        assert(logical(currentDecodeOK)==all(finalState.OriginalDecoderCRCPassPerCodeword), ...
+            'sixgr:link:DLSCHFinalDecodeMismatch','Original aggregate CRC contradicts individual decoder results.');
+        combinedDecodeOK=logical(finalOutcome.CRCPass);
+        combinedDecodeIt=mean(finalState.DecoderIterationsPerCodeword,'omitnan');
+        if finalOutcome.AdditionalDecoderInvocationCount==0 && isfield(rx,'ActiveIterations') && ~isempty(rx.ActiveIterations)
+            combinedDecodeIt=mean(double(rx.ActiveIterations(:)),'omitnan');
+        end
+        if combinedDecodeOK && finalOutcome.AdditionalDecoderInvocationCount>0
+            selectedBits=vertcat(finalState.TransportBlocks{:});
+            [combinedDecodeOK,finalBe,finalBitsCompared]=sixgr.link.scoreReceivedDLTransportBlock( ...
+                struct('CRCPass',combinedDecodeOK,'TransportBlock',selectedBits),txBits);
+            finalRxBits=int8(selectedBits(:));
+        end
+        % Preserve the legacy aggregate BER convention on failed attempts;
+        % the separate final receipt always records each selected decoder.
+        finalDecodeOK=logical(combinedDecodeOK);
         % Retain this receiver attempt, not only the final loop iteration's
         % lastHARQ struct. Frames which never reach decoding remain unknown.
         trialHARQCurrentDecodeOK(n) = double(currentDecodeOK);
@@ -2219,9 +2250,13 @@ for n = 1:numFrames
         lastHARQ = struct( ...
             "TransportBlockBits", txBits, ...
             "DecodedTransportBlockBits", finalRxBits, ...
-            "CombinedLLR", combinedLLR, ...
-            "SoftBuffer", harqCombining.SoftBuffer, ...
-            "HARQSoftBuffer", harqCombining.SoftBuffer, ...
+            "DecodedTransportBlockBitsScope", "aggregate_success_selected_else_original_decoder_bits", ...
+            "FinalDecodedTransportBlocks", {finalState.TransportBlocks}, ...
+            "FinalCodewordOutcome", finalOutcome, ...
+            "CombinedLLR", {combinedLLR}, ...
+            "SoftBuffer", {harqCombining.SoftBuffer}, ...
+            "HARQSoftBuffer", {harqCombining.SoftBuffer}, ...
+            "HARQCombineInfoPerCodeword", {finalState.HARQCombineInfoPerCodeword}, ...
             "PreviousLLRCount", harqCombining.PreviousLLRCount, ...
             "CurrentLLRCount", harqCombining.CurrentLLRCount, ...
             "CombinedLLRCount", harqCombining.CombinedLLRCount, ...
@@ -2244,6 +2279,10 @@ for n = 1:numFrames
             trialIndependentChannelScore{n}=sixgr.link.scoreIsolatedDataChannelEstimate( ...
                 rx,desiredScoringWaveform,cfgFrame,"DL",scoreContext,replay);
         end
+        if connectedReceivedHARQ
+            finalOutcome.ReceivedAssignmentDigest=string(rx.ReceivedAssignmentDigest);
+        end
+        trialDLSCHFinalOutcome{n}=finalOutcome;
     catch ME
         if prepareOnly || receivedCompletion
             rethrow(ME); % A broken stage cannot become a received CRC-failure row.
@@ -2745,6 +2784,9 @@ end
         T.PRBCount = trialPRB(idx);
         T.SymbolStart = trialSymbolStart(idx);
         T.NumSymbols = trialNumSymbols(idx);
+        for resourceField=string(fieldnames(trialResourceIntervals)).'
+            T.(resourceField)=reshape([trialResourceIntervals(idx).(resourceField)],[],1);
+        end
         T.AppliedAWGNSNR_dB = trialAppliedAWGNSNR(idx);
         T.AppliedAWGNSNRSource = trialAppliedAWGNSNRSource(idx);
         T.InjectedCarrierPhaseOffset_deg = trialCarrierPhaseOffsetDeg(idx);
@@ -3020,6 +3062,37 @@ end
         T = sixgr.link.appendMeasuredPHYEvidenceColumns(T, trialMeasuredPHYEvidence(idx));
         T = localDecorateTrialTruthFields(T, "DL", cfg);
         T = localDecoratePDSCHExecutionContract(T, executionContract);
+        T.LinkEnergyEvidenceJSON=strings(height(T),1);
+        T.LinkEnergyEvidenceSHA256=strings(height(T),1);
+        for energyRow=1:numel(idx)
+            energyEvidence=trialLinkEnergyEvidence{idx(energyRow)};
+            if isempty(energyEvidence), continue; end
+            bound=sixgr.link.bindLinkEnergyEvidence(T(energyRow,:),energyEvidence);
+            T.LinkEnergyEvidenceJSON(energyRow)=bound.LinkEnergyEvidenceJSON;
+            T.LinkEnergyEvidenceSHA256(energyRow)=bound.LinkEnergyEvidenceSHA256;
+        end
+        T.DLSCHFinalOutcomeAvailable=false(height(T),1);
+        T.DLSCHFinalOutcomeStage=strings(height(T),1);
+        T.DLSCHFinalOutcomeJSON=strings(height(T),1);
+        T.DLSCHFinalOutcomeSHA256=strings(height(T),1);
+        T.DLSCHSuccessfulDecodedBits=nan(height(T),1);
+        T.DLSCHSuccessfulDecodedBitsScope=strings(height(T),1);
+        T.DLSCHAggregateGoodBitsPolicy=strings(height(T),1);
+        finalNames=["DLSCHFinalOutcomeAvailable","DLSCHFinalOutcomeStage", ...
+            "DLSCHFinalOutcomeJSON","DLSCHFinalOutcomeSHA256","DLSCHSuccessfulDecodedBits", ...
+            "DLSCHSuccessfulDecodedBitsScope","DLSCHAggregateGoodBitsPolicy"];
+        for finalRow=1:numel(idx)
+            original=trialDLSCHFinalOutcome{idx(finalRow)};
+            if isempty(original), continue; end
+            originalRow=removevars(T(finalRow,:),cellstr(finalNames));
+            if isfield(original,'ReceivedAssignmentDigest')
+                originalRow.ReceivedAssignmentDigest=original.ReceivedAssignmentDigest;
+            end
+            bound=sixgr.link.bindDLSCHFinalOutcome(originalRow,original);
+            for finalName=finalNames
+                T.(finalName)(finalRow,:)=bound.(finalName);
+            end
+        end
 end
 end
 
@@ -3060,7 +3133,7 @@ if isempty(carrier)
 end
 [measuredReceivedEnergy, receivedEnergyEvidence] = ...
     sixgr.phy.waveform.measureReceivedOccupiedREEnergy( ...
-        carrier,referenceWaveform,occupiedIndices,"SignalFamily","PDSCH");
+        carrier,referenceWaveform,occupiedIndices,"SignalFamily","PDSCH","RetainEnergyReceipt",true);
 % Freeze the configured reference before channel/precoder realization. The
 % received energy is evidence, never the authority for injected noise.
 % Absolute-power callers express the same reference in their TX sample
@@ -3109,6 +3182,8 @@ noiseInfo.NoiseCalibrationVersion = char(string(referenceNoise.Version));
 noiseInfo.WaveformPowerUsedForAWGN = false;
 noiseInfo.SignalEnergyPerOccupiedRE = ...
     double(referenceNoise.SignalEnergyPerOccupiedRE);
+noiseInfo.LinkEnergyOriginalAWGNReceipt=referenceNoise;
+noiseInfo.LinkEnergyOriginalMeasurementReceipt=receivedEnergyEvidence;
 end
 
 function localAssertDLHybridElementDomainExecution(cfg, tx, txInfo)
@@ -3402,7 +3477,7 @@ T.SourceArtifact = repmat("air_interface/csv/dl_pdsch_trials.csv", n, 1);
 T.SourceTable = repmat("air_interface/csv/dl_pdsch_trials.csv", n, 1);
 T.ArtifactClass = repmat("raw_runtime_trial_evidence", n, 1);
 T.SemanticState = string(T.RowLifecycleState);
-T.CountsTowardCoverage = ~logical(localOptionalColumn(T, "Crash", false)) & ~logical(localOptionalColumn(T, "IsWarmupFrame", false));
+T.CountsTowardCoverage = sixgr.util.linkTrialDecodeCoverage(T);
 T.MachineReadable = true(n, 1);
 T.HumanReadable = true(n, 1);
 end
@@ -3420,7 +3495,9 @@ end
 row.Direction = "DL";
 row.SignalFamily = "CSI-RS";
 row.SNR_dB = double(snr_dB);
-row.SFN = double(frameIdx);
+% Use the same executed carrier authority as the enclosing PDSCH trial.
+% frameIdx is a distinct one-based runtime index, not the radio SFN.
+row.SFN = mod(double(tx.Carrier.NFrame),1024);
 row.Frame = double(frameIdx);
 row.Slot = double(slotIdx);
 row.Time_s = (double(slotIdx) - 1) * double(slotDur_s);
@@ -4059,7 +4136,7 @@ else
 end
 end
 
-function row = localBuildRuntimeAntennaTimingEvidence(direction, cfg, grant, tx, txInfo, chState, replay)
+function row = localBuildRuntimeAntennaTimingEvidence(direction, cfg, grant, tx, txInfo, chState, replay, rx)
 userMeta = sixgr.util.structGet(cfg, "lls6g.userContext", struct());
 bsMeta = localResolveRuntimeAntennaMeta(userMeta, "RuntimeServingBSAntennaMeta", "RuntimeServingBSAntenna");
 ueMeta = localResolveRuntimeAntennaMeta(userMeta, "RuntimeUEAntennaMeta", "RuntimeUEAntenna");
@@ -4077,6 +4154,18 @@ channelMeta = localResolveChannelRuntimeMeta(chState, cfg, userMeta);
 interferenceMeta = localResolveInterferenceChannelRuntimeMeta(replay, channelMeta);
 
 row = localEmptyRuntimeEvidenceRow();
+% This builder is reached only after the actual prepared/direct TX and RX
+% call returned. A usable decode is separate from an executed NA capture.
+row.RuntimeMaterializationStatus = "active_waveform_pdsch_runtime";
+row.RuntimeEvidenceSource = "sixgr.link.runDLPDSCHThroughput_returned_receiver";
+stageEvidence = sixgr.link.summarizeDataReceiverStages(rx, direction);
+channelEvidence = sixgr.link.collectDataChannelExecutionEvidence(replay);
+for name = string(fieldnames(stageEvidence)).'
+    row.(name) = stageEvidence.(name);
+end
+for name = string(fieldnames(channelEvidence)).'
+    row.(name) = channelEvidence.(name);
+end
 row.Direction = string(direction);
 row.GrantContextId = string(sixgr.util.structGet(grant, "GrantContextId", ""));
 row.BSAntennaArrayClass = string(sixgr.util.structGet(bsMeta, "ArrayClass", ""));
@@ -4685,6 +4774,16 @@ row = struct( ...
     "InterferencePowerReferencePlane", "");
 row = sixgr.report.bindTransmitPowerEvidence(row, struct());
 row = sixgr.report.bindConverterEvidence(row, struct(), struct());
+stageEvidence = sixgr.link.summarizeDataReceiverStages();
+channelEvidence = sixgr.link.collectDataChannelExecutionEvidence();
+for name = string(fieldnames(stageEvidence)).'
+    row.(name) = stageEvidence.(name);
+end
+for name = string(fieldnames(channelEvidence)).'
+    row.(name) = channelEvidence.(name);
+end
+row.RuntimeMaterializationStatus = "";
+row.RuntimeEvidenceSource = "";
 end
 
 function id = localCompositeRFChainId(txId, rxId)
@@ -4891,24 +4990,14 @@ state.Meta = localNormalizeChannelRuntimeMeta(sixgr.util.structGet(ch, "Meta", s
 if logical(sixgr.util.structGet(ch, "IsFading", false)) && isfield(ch, "Object") && ~isempty(ch.Object)
     state.UseFading = true;
     state.Obj = ch.Object;
+    sixgr.channel.waveformChannelOutputContract(state.Obj);
     [padSamples, trimSamples] = localResolveChannelDelaySamples(ch.Object, fs);
     state.ChannelPadSamples = padSamples;
     state.ChannelTrimSamples = trimSamples;
     state.WarmupSamples = max(256, padSamples);
-    try
-        reset(state.Obj);
-    catch
-    end
-    try
-        warmup = zeros(state.WarmupSamples, numTx, 'like', tx.Waveform);
-        try
-            state.Obj(warmup);
-        catch
-            [~, ~] = state.Obj(warmup);
-        end
-    catch
-        state.WarmupSamples = 0;
-    end
+    reset(state.Obj);
+    warmup = zeros(state.WarmupSamples, numTx, 'like', tx.Waveform);
+    sixgr.channel.applyWaveformChannelOnce(state.Obj,warmup,false);
 end
 end
 
@@ -5002,12 +5091,9 @@ elseif isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false
     if padSamples > 0
         xIn = [x; zeros(padSamples, size(x,2), 'like', x)];
     end
-    try
-        [yRaw, pathGains] = state.Obj(xIn);
-    catch
-        yRaw = state.Obj(xIn);
-        pathGains = [];
-    end
+    [yRaw,pathGains,~,channelExecution] = ...
+        sixgr.channel.applyWaveformChannelOnce(state.Obj,xIn,true);
+    replay.ChannelModelApplied = channelExecution.ModelApplied;
     replay.ChannelFadingApplied = true;
     replay.ChannelFadingExecutionStatus = "applied_runtime_channel_object";
     replay.ChannelPathGainsAvailable = ~isempty(pathGains);
@@ -5624,6 +5710,10 @@ end
 assert(numel(varTypes) == numel(varNames), ...
     'sixgr:link:DLTrialSchemaTypeCountMismatch');
 T = table('Size', [0, numel(varNames)], 'VariableTypes', varTypes, 'VariableNames', varNames);
+resourceTemplate=sixgr.truth.executedResourceIntervals();
+for field=string(fieldnames(resourceTemplate)).'
+    T.(field)=repmat(resourceTemplate.(field),0,1);
+end
 T.EqualizerSolveCount=zeros(0,1);
 T.EqualizerUniqueSolveCount=zeros(0,1);
 T.EqualizerCovarianceFactorizationCount=zeros(0,1);
@@ -5669,6 +5759,15 @@ T.TxWaveformColumns = zeros(0,1);
 T.ReceiverReplayCaptureStatus = strings(0,1);
 T.ReceiverReplayMATFile = strings(0,1);
 T.ReceiverReplayMATSHA256 = strings(0,1);
+T.LinkEnergyEvidenceJSON = strings(0,1);
+T.LinkEnergyEvidenceSHA256 = strings(0,1);
+T.DLSCHFinalOutcomeAvailable=false(0,1);
+T.DLSCHFinalOutcomeStage=strings(0,1);
+T.DLSCHFinalOutcomeJSON=strings(0,1);
+T.DLSCHFinalOutcomeSHA256=strings(0,1);
+T.DLSCHSuccessfulDecodedBits=zeros(0,1);
+T.DLSCHSuccessfulDecodedBitsScope=strings(0,1);
+T.DLSCHAggregateGoodBitsPolicy=strings(0,1);
 T=sixgr.link.addCFOObservationColumns(T,cell(0,1));
 T.PhysicalTxAntennas = zeros(0,1);
 T.TxWaveformDomain = strings(0,1);
@@ -7405,6 +7504,32 @@ end
 diag = localHARQCombiningDiagnostics(prev, cur, combined, info);
 end
 
+function [combined,diag]=localFinalCodewordCombiningEvidence(prior,decode,state)
+% Preserve the original scalar compatibility API. For two CW the arrays and
+% buffers stay explicitly ordered cells; no CW0-only surrogate is exported.
+n=numel(state.CombinedLLRPerCodeword);
+if n==1
+    if iscell(prior)
+        if isempty(prior), prior=[]; else, prior=prior{1}; end
+    end
+    combined=state.CombinedLLRPerCodeword{1};
+    diag=localHARQCombiningDiagnostics(prior,decode.RateRecoveredLLR,combined, ...
+        state.HARQCombineInfoPerCodeword{1});
+    return;
+end
+info=state.HARQCombineInfoPerCodeword;
+combined=state.CombinedLLRPerCodeword;
+diag=struct('PreviousLLRCount',sum(cellfun(@(v)double(v.PriorNumel),info)), ...
+    'CurrentLLRCount',sum(cellfun(@(v)double(v.CurrentNumel),info)), ...
+    'CombinedLLRCount',sum(cellfun(@(v)double(v.CombinedNumel),info)), ...
+    'CombiningApplied',any(cellfun(@(v)logical(v.Applied),info)), ...
+    'CombiningSkipReason','see_original_per_codeword_HARQCombineInfo', ...
+    'PositionAware',all(cellfun(@(v)logical(v.PositionAware),info)), ...
+    'SoftBuffer',{state.SoftBufferPerCodeword}, ...
+    'LLRCombiningGain_dB',NaN);
+% A mean of per-CW gains is not an original aggregate receiver measurement.
+end
+
 function diag = localHARQCombiningDiagnostics(prev, cur, combined, info)
 if nargin < 4
     info = struct();
@@ -9057,6 +9182,10 @@ if ~isempty(options.HARQManager)
     rxArgs = [rxArgs, {"HARQManager", options.HARQManager}]; %#ok<AGROW>
 end
 [rx, rxInfo] = sixgr.phy.dl.PDSCH_Rx(rxWaveform, cfg, rxArgs{:});
+[finalOutcome,finalState]=sixgr.link.finalizeDLSCHCodewordOutcomes(rx.Decode,cfg);
+assert(isequal(logical(rx.CRCPass),finalOutcome.CRCPass) && ...
+    isequaln(rx.TransportBlocks,finalState.TransportBlocks), ...
+    'sixgr:link:DLSCHFinalDecodeMismatch','Strict receiver aliases must match its original per-codeword results.');
 
 binding = localAssertCanonicalPDSCHBindingEvidence( ...
     tx, rx, options.Assignment);
@@ -9133,6 +9262,9 @@ T.ReplaySampleNoiseVariance = channelEvidence.TimeNoiseVariance;
 T.ReplayGridNoiseVariance = channelEvidence.GridNoiseVariance;
 T.SampleToGridNoiseVarianceGain = channelEvidence.SampleToGridNoiseVarianceGain;
 T.NoiseVarianceSource = channelEvidence.NoiseVarianceSource;
+T.AssignmentValidationDigest=string(options.Assignment.validateForExecution());
+finalOutcome.Assignment=options.Assignment.toStruct();
+[T,finalOutcome]=sixgr.link.bindDLSCHFinalOutcome(T,finalOutcome);
 
 out = struct();
 out.Ok = true;
@@ -9187,6 +9319,7 @@ out.SignalDiagnostic = struct( ...
     "Metadata", struct("AssignmentId", assignmentId), ...
     "SourceTable", table());
 out.HARQ = rx.HARQResults;
+out.DLSCHFinalOutcome=finalOutcome;
 out.ChannelState = channelState;
 out.ChannelEvidence = channelEvidence;
 out.StartFrameIndex = double(startFrameIndex);

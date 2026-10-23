@@ -700,6 +700,7 @@ def test_dashboard_discovers_filesystem_only_result_run(tmp_path, monkeypatch) -
 def test_dashboard_publishes_hash_verified_compact_rank4_lls_run(
     tmp_path, monkeypatch
 ) -> None:
+    monkeypatch.delenv("SIXGR_RESULTS_ROOT", raising=False)
     results_root = tmp_path / "results"
     run_folder = (
         results_root
@@ -985,6 +986,7 @@ def test_dashboard_publishes_enabled_isac_compact_lls_evidence(
 def test_dashboard_discovers_component_qualification_without_scenario_manifest(
     tmp_path, monkeypatch
 ) -> None:
+    monkeypatch.delenv("SIXGR_RESULTS_ROOT", raising=False)
     results_root = tmp_path / "results"
     run_folder = (
         results_root

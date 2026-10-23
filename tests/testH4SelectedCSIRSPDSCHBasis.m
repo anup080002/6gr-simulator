@@ -13,6 +13,28 @@ scenario = sixgr.lls6g.config.loadScenarioConfig(fullfile( ...
     "h4_100_cdlc100_connected_impaired_40db_gate.yaml"));
 cfg = sixgr.lls6g.buildInternalConfig(scenario, ...
     fullfile(tempdir, "h4_selected_csirs_pdsch_basis"));
+baseline = localCheckBasis(cfg);
+renamed = scenario.toStruct();
+renamed.reference_signals.csi_rs_resource_ids = [17 5 33 9 41 13 57 21];
+renamed.mimo_and_beam_management.ssb_to_initial_csi_resource_ids = [17 33 41 57];
+renamedCfg = sixgr.lls6g.buildInternalConfig(renamed,tempname);
+relabelled = localCheckBasis(renamedCfg);
+assert(isequaln(cfg.phy.csirs.precoderMatrices,renamedCfg.phy.csirs.precoderMatrices), ...
+    'Resource-ID renaming must not reorder the configured CSI-RS beam tensor.');
+for k = 1:numel(baseline)
+    assert(isequaln(baseline{k}.PrecodingState.MatrixPhysicalPorts, ...
+        relabelled{k}.PrecodingState.MatrixPhysicalPorts) && ...
+        isequaln(baseline{k}.PrecodingState.MatrixLogicalPorts, ...
+        relabelled{k}.PrecodingState.MatrixLogicalPorts) && ...
+        baseline{k}.PrecodingState.CSIResourceIndex == ...
+        relabelled{k}.PrecodingState.CSIResourceIndex, ...
+        'Renaming resource IDs must preserve ordinal CRI and frozen B(CRI)*W.');
+end
+ok = true;
+fprintf("[PASS] H4 received-CRI CSI-RS basis is frozen before PMI application.\n");
+end
+
+function frozen = localCheckBasis(cfg)
 [cfg, ~] = sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg, 31, 2);
 
 baseGrant = localGrant(cfg);
@@ -79,8 +101,6 @@ catch ME
         "Unexpected stale-basis failure: %s", ME.message);
 end
 
-ok = true;
-fprintf("[PASS] H4 received-CRI CSI-RS basis is frozen before PMI application.\n");
 end
 
 function grant = localGrant(cfg)

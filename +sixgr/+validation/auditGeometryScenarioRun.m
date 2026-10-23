@@ -25,6 +25,16 @@ runClassT = localReadOptionalTable(fullfile(reportCSVDir, "run_classification.cs
 
 files = localReadGeometryArtifacts(rootRunFolder, reportCSVDir);
 req = localResolveGeometryRequirements(cfg, runClassT, opt);
+executionHorizon=sixgr.runtime.CheckpointExecutionHorizon.readPublished(rootRunFolder);
+if ~isempty(fieldnames(executionHorizon))
+    identity=localReadOptionalJSON(fullfile(layout.MetaDir,'scenario_config_identity.json'));
+    assert(string(sixgr.util.structGet(identity.Data,'ConfigHash',''))== ...
+        string(executionHorizon.OriginalConfigHash) && ...
+        string(sixgr.util.structGet(identity.Data,'ResolvedJSONSHA256',''))== ...
+        string(sixgr.util.sha256File(fullfile(layout.MetaDir,'scenario_config_resolved.json'))), ...
+        'sixgr:checkpoint:HorizonPublicationIdentity','Geometry horizon must bind the immutable scenario identity.');
+    req.ExpectedSlots=min(req.ExpectedSlots,double(executionHorizon.FinishAfterSlot));
+end
 
 rows = repmat(localEmptyAuditRow(), 0, 1);
 rows = [rows; localRequiredArtifactRows(files)]; %#ok<AGROW>
@@ -57,6 +67,8 @@ audit.FailureCodes = unique(string(auditTable.FailureCode(failMask)), "stable");
 audit.WarningCodes = unique(string(auditTable.FailureCode(warnMask)), "stable");
 audit.Table = auditTable;
 audit.Options = opt;
+audit.ExpectedSlots=req.ExpectedSlots;
+audit.ExecutionHorizon=executionHorizon;
 
 if logical(opt.WriteOutputs)
     sixgr.util.ensureFolder(reportCSVDir);

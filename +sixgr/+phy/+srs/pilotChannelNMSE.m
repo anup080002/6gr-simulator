@@ -58,4 +58,15 @@ score=struct('Linear',errorEnergy/referenceEnergy, ...
     'ComparedComplexValueCount',numel(sampledEstimate),'NumReceiveAntennas',R, ...
     'NumSRSPorts',P,'PerReceiveAntennaPortLinear',perPort, ...
     'GainOrPhaseFitted',false,'MissingValuesDiscarded',false,'Available',true);
+similarity=sixgr.phy.rx.squaredGeneralizedCosineSimilarity(sampledEstimate,sampledReference);
+score.ChannelSGCS=similarity.Value;
+score.ChannelSGCSAvailable=similarity.Available;
+score.ChannelSGCSStatus=similarity.Status;
+score.ChannelSGCSDefinition=similarity.Definition;
+score.ChannelSGCSVectorization="all_executed_pilot_resources_receive_branches_and_logical_ports";
+score.ChannelSGCSEstimateEnergy=similarity.EstimateEnergy;
+score.ChannelSGCSReferenceEnergy=similarity.ReferenceEnergy;
+score.ChannelSGCSInnerProductReal=similarity.InnerProductReal;
+score.ChannelSGCSInnerProductImag=similarity.InnerProductImag;
+score.ChannelSGCSComparedValues=similarity.ComparedValues;
 end

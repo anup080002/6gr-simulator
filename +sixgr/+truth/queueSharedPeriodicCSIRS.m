@@ -43,11 +43,12 @@ if owner.hasPending("CSIRS",ueIdx)
         "UE %d already owns an incomplete CSI-RS observation.",ueIdx);
 end
 resolvedSNR=sixgr.truth.resolveWaveformOperatingPointMetadata(cfg,snr_dB);
+population=sixgr.truth.captureCSIObservationPopulation(state,cfg,slotIdx,resolvedSNR);
 prepared=sixgr.link.prepareCSIRSTransmission(cfg,resolvedSNR, ...
     "RuntimeSlot",slotIdx,"Frame",frameIdx);
 context=struct("Config",cfg,"Slot",slotIdx,"Frame",frameIdx, ...
     "RNTI",rnti,"ServingCell",servingCell,"SNR",resolvedSNR, ...
-    "UEIndex",ueIdx);
+    "UEIndex",ueIdx,"PopulationIdentity",population);
 owner.queueDownlink("CSIRS",ueIdx,prepared,context);
 queued=true;
 reason="configured_periodic_csirs_queued_on_shared_physical_stream";

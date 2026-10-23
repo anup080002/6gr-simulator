@@ -309,10 +309,19 @@ sections:
       # or normalized_nr_ofdm_full_carrier. The latter additionally requires
       # reference_re_energy and reference_headroom_db; the core resolver
       # validates normalized power authority, sample clock and TX dimensions.
+      # absolute_endpoint_rms instead requires reference_total_power_dl_dbm,
+      # reference_total_power_ul_dbm and reference_headroom_db. It fixes the
+      # range in sqrt(mW) per physical TX chain independently of each grant.
+      # The same reference is supported for Rapp PA saturation_amplitude.
       dac: {required: false, type: struct}
       receiver: {required: false, type: struct}
       blocker: {required: false, type: struct}
       measurements: {required: false, type: struct}
+      # srs.pathloss_reference selects its own received SSB/CSI-RS resource
+      # (reference_signal_type/id, pathloss_reference_rs_id, maximum_age_slots).
+      # srs.adjustment_state: same_as_pusch or open_loop_only, validated by
+      # validateScenarioConfig and the SRS transmitter. Separate state needs
+      # a received DCI 2_3 owner and is not silently initialized to zero.
       ul_power_control: {required: false, type: struct}
   scheduling_timing:
     required: false

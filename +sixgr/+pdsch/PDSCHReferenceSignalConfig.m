@@ -64,6 +64,31 @@ classdef PDSCHReferenceSignalConfig
                 "InvalidNumCDMGroupsWithoutData");
             localInteger(data.NIDNSCID,0,65535,"InvalidNIDNSCID");
             localInteger(data.NSCID,0,1,"InvalidNSCID");
+            if isfield(data,"DMRSReferencePoint")
+                point = string(data.DMRSReferencePoint);
+                if ~isscalar(point) || ismissing(point) ...
+                        || ~any(point == ["CRB0","PRB0"])
+                    error("sixgr:pdsch:InvalidDMRSReferencePoint", ...
+                        "DMRSReferencePoint must be CRB0 or PRB0.");
+                end
+            end
+            bwpFields = isfield(data,["NStartBWP","NSizeBWP"]);
+            if any(bwpFields) && ~all(bwpFields)
+                error("sixgr:pdsch:IncompleteReferenceBWP", ...
+                    "Original native BWP metadata requires both NStartBWP and NSizeBWP.");
+            end
+            if all(bwpFields)
+                if ~isempty(data.NStartBWP)
+                    localInteger(data.NStartBWP,0,2473,"InvalidReferenceBWP");
+                elseif ~isnumeric(data.NStartBWP)
+                    error("sixgr:pdsch:InvalidReferenceBWP","NStartBWP must be numeric.");
+                end
+                if ~isempty(data.NSizeBWP)
+                    localInteger(data.NSizeBWP,1,275,"InvalidReferenceBWP");
+                elseif ~isnumeric(data.NSizeBWP)
+                    error("sixgr:pdsch:InvalidReferenceBWP","NSizeBWP must be numeric.");
+                end
+            end
             mux = lower(strtrim(string(data.DMRSMultiplexing)));
             if ~isscalar(mux) || ~any(mux == ["basic","enhanced"])
                 error("sixgr:pdsch:InvalidDMRSMultiplexingMode", ...

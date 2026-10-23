@@ -15,6 +15,8 @@ classdef PUSCHPowerController
             ip.addParameter("DeltaTF_dB", [], @(x) isnumeric(x) && isscalar(x));
             ip.addParameter("PreviousF_dB", [], @(x) isnumeric(x) && isscalar(x));
             ip.addParameter("TPCDelta_dB", [], @(x) isnumeric(x) && isscalar(x));
+            ip.addParameter("PreviousAtMaximumPower", false, @(x) islogical(x) && isscalar(x));
+            ip.addParameter("PreviousAtMinimumPower", false, @(x) islogical(x) && isscalar(x));
             ip.addParameter("PCMAX_dBm", [], @(x) isnumeric(x) && isscalar(x));
             ip.addParameter("ReferenceWaveformPower_dBm", [], @(x) isnumeric(x) && isscalar(x));
             ip.addParameter("PathlossReferenceRS", "", @(x) ischar(x) || isstring(x));
@@ -37,11 +39,17 @@ classdef PUSCHPowerController
                     "PUSCH power control requires measured nonnegative pathloss and its RS identity.");
             end
             mode = lower(strtrim(string(o.AdjustmentMode)));
+            delta = localFinite(o.TPCDelta_dB, "TPCDelta_dB");
+            heldAtLimit = false;
             if mode == "accumulated"
-                updatedF = localFinite(o.PreviousF_dB, "PreviousF_dB") + ...
-                    localFinite(o.TPCDelta_dB, "TPCDelta_dB");
+                % 38.213 7.1.1: evaluate the PREVIOUS transmission's limit,
+                % not the current request. A release command remains usable.
+                heldAtLimit = (o.PreviousAtMaximumPower && delta>=0) || ...
+                    (o.PreviousAtMinimumPower && delta<=0);
+                if heldAtLimit, delta=0; end
+                updatedF = localFinite(o.PreviousF_dB, "PreviousF_dB") + delta;
             elseif mode == "absolute"
-                updatedF = localFinite(o.TPCDelta_dB, "TPCDelta_dB");
+                updatedF = delta;
             else
                 error("sixgr:pusch:InvalidPowerAdjustmentMode", ...
                     "AdjustmentMode must be accumulated or absolute.");
@@ -69,6 +77,8 @@ classdef PUSCHPowerController
                 "PreviousF_dB", double(o.PreviousF_dB), ...
                 "TPCDelta_dB", double(o.TPCDelta_dB), ...
                 "UpdatedF_dB", updatedF, ...
+                "TPCAdjustmentHeldAtPowerLimit", heldAtLimit, ...
+                "AppliedTPCDelta_dB", delta, ...
                 "RequestedPower_dBm", requested, ...
                 "PCMAX_dBm", pcmax, ...
                 "AppliedPower_dBm", applied, ...

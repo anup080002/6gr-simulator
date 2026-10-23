@@ -70,6 +70,14 @@ evidence=struct('Applied',enabled,'Source',"actual_receiver_applied_analog_gain_
     'ClippingReconstructed',false,'QuantizationRemoved',false, ...
     'AppliedGainMin_dB',min(gain),'AppliedGainMax_dB',max(gain));
 evidence.AGCDecisionCausal=decisionCausal;
+% Bind the two DISTINCT original planes at their actual transform owner.
+% Observation hashes are immutable/cached; no second IQ array is retained.
+evidence.ContractVersion="sixgr.phy.rx.completed_gain_compensation/v1";
+evidence.ReceiverID=string(receiverID);
+evidence.SampleRateHz=raw.SampleRateHz;
+evidence.NumReceiveBranches=raw.NumReceiveAntennas;
+evidence.InputSampleSHA256=raw.sampleHash();
+evidence.OutputSampleSHA256=observation.sampleHash();
 if blockGainUsed
     evidence.Source="actual_receiver_recorded_block_gain_after_ADC";
 end

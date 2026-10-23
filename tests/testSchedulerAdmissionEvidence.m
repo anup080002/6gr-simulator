@@ -128,7 +128,14 @@ assert(height(candidates)==numel(d.DataAttempts) && ...
 
 % The future-resource copy must be copied back even when it has no grants.
 code=fileread(which('sixgr.truth.runWaveformLinkBundle'));
-assert(contains(code,'sixgr.util.structGet(state,"SchedulerAdmissionTable",table()),info.AdmissionTable)'));
+planner=fileread(which('sixgr.truth.planFutureULGrants'));
+assert(isscalar(strfind(code,'sixgr.truth.planFutureULGrants(')), ...
+    'The production coordinator must delegate to the extracted planner exactly once.');
+admission=strfind(planner, ...
+    'sixgr.util.structGet(state,"SchedulerAdmissionTable",table()),scheduleInfo.AdmissionTable)');
+emptyGrant=strfind(planner,'if isempty(grants)');
+assert(isscalar(admission) && ~isempty(emptyGrant) && admission<emptyGrant(1), ...
+    'The extracted producer must copy admission evidence before its no-grant return.');
 testSchedulerEligibilityAfterAccess;
 ok=true;
 fprintf('SCHEDULER_ADMISSION_EVIDENCE_PASS\n');

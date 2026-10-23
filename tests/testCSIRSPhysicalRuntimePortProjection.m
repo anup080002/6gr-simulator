@@ -56,6 +56,15 @@ assert(~isempty(csi1) && ~isempty(csi2) && ...
 [canonicalCSI, removedCSI] = sixgr.truth.deduplicateObservedREAllocation([csi1; csi2]);
 assert(removedCSI == height(csi1) && height(canonicalCSI) == height(csi1), ...
     "One executed cell CSI-RS resource must canonicalize once across per-UE PDSCH observations.");
+% Compact data export must preserve separate cell-common signal ownership.
+% A real PDSCH transmission can contain a second CSI-RS allocation identity.
+dataOnly=observedUE1(string(observedUE1.channel)=="PDSCH",:);
+dataIntervals=sixgr.truth.resourceIntervalsFromObservedRE(observedUE1,tx.Carrier,"PDSCH");
+assert(isequal(dataIntervals,sixgr.truth.resourceIntervalsFromObservedRE(dataOnly,tx.Carrier)));
+csiIntervals=sixgr.truth.resourceIntervalsFromObservedRE(observedUE1,tx.Carrier,"CSI-RS");
+assert(isequal(csiIntervals,sixgr.truth.resourceIntervalsFromObservedRE(csi1,tx.Carrier)));
+localAssertThrows(@()sixgr.truth.resourceIntervalsFromObservedRE(observedUE1,tx.Carrier), ...
+    'sixgr:truth:InvalidExecutedREIntervals');
 
 cfgBad = cfg;
 cfgBad.phy.csirs.precoderMatrices = codebook(:, [1 3]);

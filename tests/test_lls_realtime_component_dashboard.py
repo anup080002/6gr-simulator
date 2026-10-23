@@ -15,6 +15,38 @@ sys.path.insert(0, str(ROOT / "apps"))
 import lls_web_dashboard as dashboard  # noqa: E402
 
 
+def test_srs_power_preview_retains_causal_source_and_does_not_invent_zero() -> None:
+    source = dict(Slot=5, UEID=1, ServingCell=1,
+                  SRSPowerControlRequestedPower_dBm=16.8227,
+                  SRSPowerControlAppliedPower_dBm=16.8227,
+                  SRSPowerControlPCMAX_dBm=23,
+                  SRSPowerControlPathloss_dB=95,
+                  SRSPowerControlPathlossReferenceRS="SSB-0",
+                  SRSPowerControlSignalledReferencePower_dBm=5,
+                  SRSPowerControlFilteredRSRP_dBm=-90,
+                  SRSPowerControlAdjustment_dB=1,
+                  SRSPowerControlAdjustmentState="same_as_pusch",
+                  SRSPowerControlStateOwner="received_ue_pusch_power_control",
+                  SRSPowerControlStateUpdateCount=1,
+                  SRSPowerControlTPCAvailableAtSample=15360,
+                  SRSPowerControlTPCAppliedAtSample=60896,
+                  SRSPowerControlAdjustmentReadAtSample=75160,
+                  SRSPowerControlBoundAtEmission=True,
+                  SRSPowerControlClipped=False,
+                  SRSPowerControlReceivedAssignmentDigest="a" * 64)
+    row = dashboard.summarize_control_trial_preview_rows("srs_trials", [source])[0]
+    labels = dict(dashboard.CONTROL_TRIAL_PREVIEW_COLUMNS["srs_trials"])
+    for name, value in source.items():
+        if name.startswith("SRSPowerControl"):
+            assert row[labels[name]] == value
+    old = dashboard.summarize_control_trial_preview_rows("srs_trials", [dict(Slot=5)])[0]
+    assert old.get(labels["SRSPowerControlAdjustment_dB"]) is None
+    assert old.get(labels["SRSPowerControlAppliedPower_dBm"]) is None
+    html = Path(dashboard.__file__).read_text(encoding="utf-8")
+    assert "id:'srs_power'" in html
+    assert "not measured post-PA power or radiated EIRP/TRP" in html
+
+
 def test_live_generic_table_does_not_hide_late_measurement_columns() -> None:
     # Execute the production renderer, including fields that first appear in
     # a later row. A twelve-column preview hid the receiver-owned AMC state.
@@ -144,6 +176,192 @@ def test_csi_preview_separates_reference_slot_decoded_rank_and_scheduler_admissi
         assert value is None or not math.isfinite(value)
     poisoned = dict(source, UEReferenceRecordJSON='{"SourceSlot":999,"SINR_dB":999,"RI":4}')
     assert dashboard.summarize_procedure_preview_rows("csi_report", [poisoned])[0] == preview
+
+
+def _delivered_ul_quality_report() -> dict:
+    return dict(Direction="UL", UEIndex=1, RNTI=4660, SourceSlot=50,
+                DueSlot=51, DeliveredSlot=51, ReportIdentity="UL_UE1_SRC50_DUE51",
+                SourceSignal="PUSCH-DMRS", Processed=1,
+                DeliveryStatus="delivered_to_runtime_scheduler",
+                AdaptationDeliveryStatus="accepted_new_feedback_delivery",
+                CSIUCIDecodeOk=0, CSIUCICRCPass="NaN", CSIUCITransport="not_scheduled",
+                CQI=14, RI=1, PMI=0, SchedulerResolvedCQI=13,
+                RawCQIDerivedMCS=26, MCSIndex=24, LinkAdaptationMCSIndex=24,
+                Modulation="64QAM", SchedulerAcceptedRank=1,
+                SchedulerSpatialDecisionDeferred=0, RankIncreaseConfirmationCount=0,
+                RankIncreaseRequiredCount=2, RankUpdateStatus="not_requested",
+                MCSSelectionSource="runtime_cqi_to_amc")
+
+
+def test_pending_dl_csi_does_not_claim_received_uci_or_selected_mcs() -> None:
+    raw = dict(Direction="DL", UEIndex=1, RNTI=4660, SourceSlot=46,
+               DueSlot=59, DeliveredSlot="NaN", ReportIdentity="pending_DL_59",
+               SourceSignal="CSI-RS", Processed=0,
+               DeliveryStatus="pending_receiver_decoded_csi_uci",
+               CSIUCIDecodeOk=0, CSIUCITransport="pucch", CQI=14, RI=1, PMI=7,
+               RawCQIDerivedMCS=26, MCSIndex=26, Modulation="64QAM",
+               LinkAdaptationMCSIndex="NaN", SchedulerSpatialDecisionDeferred=0)
+    before = dict(raw)
+    view = dashboard.summarize_procedure_preview_rows("csi_report", [raw])[0]
+    assert view["Feedback evidence scope"] == "pending_report_not_received"
+    assert view["Direction"] == "DL" and view["Report identity"] == "pending_DL_59"
+    assert view["Raw CQI-derived MCS"] == 26 and view["Stored MCS field"] == 26
+    assert view["Selected MCS"] is None
+    assert view["MCS decision status"] == "no_delivered_scheduler_decision"
+    assert view["UCI interpretation"] == "pending_transport_not_decode_failure"
+    assert raw == before, "The view must not rewrite a retained producer row."
+
+
+def test_ul_quality_delivery_is_not_a_failed_uci_decode() -> None:
+    raw = _delivered_ul_quality_report()
+    before = dict(raw)
+    view = dashboard.summarize_procedure_preview_rows("csi_report", [raw])[0]
+    assert view["Feedback evidence scope"] == "delivered_gnb_local_ul_feedback"
+    assert view["UCI interpretation"] == "not_applicable_gnb_local_ul_feedback"
+    assert view["Source signal"] == "PUSCH-DMRS"
+    assert view["Raw CQI-derived MCS"] == 26 and view["Selected MCS"] == 24
+    assert view["MCS decision status"] == "accepted_for_future_grants_not_executed_trial"
+    assert view["UCI decode"] == 0, "Keep the raw stored flag alongside its correct scope."
+    assert raw == before
+    strings = {k: str(v) for k, v in raw.items()}
+    parsed = dashboard.summarize_procedure_preview_rows("csi_report", [strings])[0]
+    for key in ("Feedback evidence scope", "UCI interpretation", "MCS decision status", "Selected MCS"):
+        assert parsed[key] == view[key]
+
+
+def test_csi_selection_requires_causal_received_and_accepted_evidence() -> None:
+    raw = _delivered_ul_quality_report()
+    changes = [dict(Processed=0), dict(Processed="NaN"), dict(DeliveredSlot="NaN"),
+               dict(DeliveredSlot=49), dict(DeliveredSlot=50.5), dict(DueSlot=49),
+               dict(DeliveryStatus="pending_causal_feedback_delay"),
+               dict(AdaptationDeliveryStatus="ignored_duplicate_feedback_delivery"),
+               dict(SchedulerSpatialDecisionDeferred=1),
+               dict(SchedulerSpatialDecisionDeferred="NaN"),
+               dict(SchedulerResolvedCQI=0), dict(LinkAdaptationMCSIndex="NaN"),
+               dict(LinkAdaptationMCSIndex=25), dict(MCSIndex=24.5),
+               dict(MCSIndex="Inf"), dict(Direction=""), dict(SourceSignal="configured"),
+               dict(SchedulerAcceptedRank=4), dict(RI="NaN"), dict(RI=1.5),
+               dict(CSIUCIDecodeOk=1), dict(CSIUCITransport="pucch_decoded")]
+    for change in changes:
+        view = dashboard.summarize_procedure_preview_rows("csi_report", [{**raw, **change}])[0]
+        assert view["Selected MCS"] is None, change
+        assert view["Stored MCS field"] == change.get("MCSIndex", raw["MCSIndex"])
+
+
+def test_received_dl_uci_rank_hold_is_separate_from_candidate_mcs() -> None:
+    raw = {**_delivered_ul_quality_report(), "Direction": "DL",
+           "SourceSignal": "received_CSI_UCI", "CSIUCIDecodeOk": 1,
+           "CSIUCITransport": "pucch_decoded", "SchedulerSpatialDecisionDeferred": 1,
+           "RankUpdateStatus": "pending_increase_confirmation", "RI": 2,
+           "RankIncreaseConfirmationCount": 1, "LinkAdaptationMCSIndex": "NaN",
+           "MCSIndex": "NaN"}
+    view = dashboard.summarize_procedure_preview_rows("csi_report", [raw])[0]
+    assert view["Feedback evidence scope"] == "received_dl_csi_uci"
+    assert view["UCI interpretation"] == "independently_decoded_dl_csi_feedback"
+    assert view["MCS decision status"] == "held_spatial_operating_point"
+    assert view["RI"] == 2 and view["Scheduler rank"] == 1 and view["Selected MCS"] is None
+    accepted = {**raw, "SchedulerSpatialDecisionDeferred": 0,
+                "SchedulerAcceptedRank": 2, "MCSIndex": 24, "LinkAdaptationMCSIndex": 24}
+    assert dashboard.summarize_procedure_preview_rows("csi_report", [accepted])[0]["Selected MCS"] == 24
+
+
+def test_csi_browser_panel_preserves_source_identity_and_decision_scope(tmp_path: Path) -> None:
+    raw = [{**_delivered_ul_quality_report(), "SweepPointIndex": point,
+            "ConfiguredSNR_dB": 40, "ReportIdentity": f"point_{point}_UL50"}
+           for point in (1, 2)]
+    path = tmp_path / "csi_feedback_reports.csv"
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(raw[0]))
+        writer.writeheader()
+        writer.writerows(raw)
+    before = path.read_bytes()
+    artifact = dict(artifact_id=-212, logical_path="air_interface/csv/csi_feedback_reports.csv",
+                    filesystem_path=str(path), byte_size=path.stat().st_size,
+                    artifact_kind="csv", mime_type="text/csv")
+    context = dashboard.extract_runtime_context(dict(run_id=-212, status="running"), [artifact])
+    preview = context["procedure_previews"]["csi_report"]
+    assert [row["Sweep point"] for row in preview] == [1, 2]
+    assert [row["Report identity"] for row in preview] == [r["ReportIdentity"] for r in raw]
+    assert all(row["Selected MCS"] == 24 for row in preview)
+    assert path.read_bytes() == before
+    node = shutil.which("node")
+    if node is None:
+        import playwright
+        node = str(Path(playwright.__file__).parent / "driver" /
+                   ("node.exe" if sys.platform == "win32" else "node"))
+    source = Path(dashboard.__file__).read_text(encoding="utf-8")
+    panel = next(line.strip().rstrip(",") for line in source.splitlines()
+                 if "{id:'csi_report', title:" in line)
+    script = ("const csiReportRows=" + json.dumps(preview) + ";\n"
+              "const procedureSelection={csi_report:'air_interface/csv/csi_feedback_reports.csv'};\n"
+              "const selectedPath=x=>x; const spec=" + panel + ";\n"
+              "console.log(JSON.stringify(spec));")
+    actual = json.loads(subprocess.run([node, "-e", script], capture_output=True,
+                                      text=True, check=True, timeout=15).stdout)
+    assert "pending reports" in actual["title"] and "local UL measurements" in actual["title"]
+    for column in ("Direction", "Sweep point", "Report identity", "Source signal",
+                   "Feedback evidence scope", "UCI interpretation", "Raw CQI-derived MCS",
+                   "Stored MCS field", "Selected MCS", "MCS decision status"):
+        assert column in actual["columns"]
+    assert actual["rows"] == preview
+    assert "not proof of an executed data trial" in actual["sourcePath"]
+
+
+def test_received_csi_file_does_not_hide_pending_or_local_ul_feedback(tmp_path: Path) -> None:
+    local_ul = _delivered_ul_quality_report()
+    pending = {**local_ul, "Direction": "DL", "SourceSignal": "CSI-RS",
+               "ReportIdentity": "pending_DL59", "SourceSlot": 46, "DueSlot": 59,
+               "DeliveredSlot": "NaN", "Processed": 0, "CSIUCITransport": "pucch",
+               "DeliveryStatus": "pending_receiver_decoded_csi_uci"}
+    received = {**local_ul, "Direction": "DL", "SourceSignal": "received_CSI_UCI",
+                "ReportIdentity": "received_DL49", "CSIUCIDecodeOk": 1,
+                "CSIUCITransport": "pucch_decoded"}
+    artifacts = []
+    for filename, rows in [("csi_feedback_reports.csv", [pending, local_ul]),
+                            ("received_csi_reports.csv", [received])]:
+        path = tmp_path / filename
+        with path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+            writer.writeheader()
+            writer.writerows(rows)
+        artifacts.append(dict(artifact_id=-len(artifacts)-300,
+            logical_path="air_interface/csv/"+filename, filesystem_path=str(path),
+            byte_size=path.stat().st_size, artifact_kind="csv", mime_type="text/csv"))
+    context = dashboard.extract_runtime_context(dict(run_id=-300, status="running"), artifacts)
+    views = context["procedure_previews"]
+    assert [row["Report identity"] for row in views["csi_report"]] == [
+        "pending_DL59", local_ul["ReportIdentity"]]
+    assert [row["Report identity"] for row in views["received_csi_report"]] == ["received_DL49"]
+    assert views["csi_report"][0]["Selected MCS"] is None
+    assert views["received_csi_report"][0]["Feedback evidence scope"] == "received_dl_csi_uci"
+    # No UE-reference values may be joined into the independently received row.
+    assert views["received_csi_report"][0]["Source signal"] == "received_CSI_UCI"
+    source = Path(dashboard.__file__).read_text(encoding="utf-8")
+    panel = next(line for line in source.splitlines() if "{id:'received_csi_report'," in line)
+    assert "rows:receivedCSIReportRows" in panel
+    assert "procedureSelection.received_csi_report" in panel
+
+
+def test_empty_canonical_csi_table_is_not_replaced_by_stale_mirror(tmp_path: Path) -> None:
+    raw = _delivered_ul_quality_report()
+    for key, name in [("csi_report", "csi_feedback_reports.csv"),
+                       ("received_csi_report", "received_csi_reports.csv")]:
+        artifacts = []
+        for prefix, rows in [("air_interface", []), ("control", [raw])]:
+            path = tmp_path / (prefix+"_"+name)
+            with path.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=list(raw))
+                writer.writeheader()
+                writer.writerows(rows)
+            artifacts.append(dict(artifact_id=-len(artifacts)-400,
+                logical_path=prefix+"/csv/"+name, filesystem_path=str(path),
+                byte_size=path.stat().st_size))
+        preview, source = dashboard.load_procedure_preview(artifacts,key,
+            ["air_interface/csv/"+name, "control/csv/"+name])
+        assert preview == [], "A committed empty canonical table owns its lifecycle state."
+        assert source["selection_status"] == "canonical_empty"
+        assert source["selected_logical_path"] == "air_interface/csv/"+name
+        assert source["fallback_used"] is False
 
 
 def test_data_cfo_preview_separates_receiver_measurement_from_simulation_reference() -> None:
@@ -425,6 +643,80 @@ def test_srs_scoring_clock_never_becomes_receiver_timing_or_cfo() -> None:
     view = dashboard.summarize_control_trial_preview_rows("srs_trials", [zero])[0]
     assert view["Scoring-only recorded RX delay (samples)"] == 0
     assert view["Scoring-only recorded RX CFO (Hz)"] == 0
+
+
+def test_srs_arrival_scoring_never_replaces_receiver_or_injected_timing(tmp_path: Path) -> None:
+    # Declared CSV binding fixture, not a measured waveform or performance row.
+    source = dict(Slot=55, UEID=1, ObservationStartSample=3314931,
+                  SRSExpectedReceiveCenterSample=3316160,
+                  SRSExpectedCaptureOffset_samples=1229,
+                  SRSCaptureExtractionOffset_samples=1231,
+                  SRSReceiveTimingOffset_samples=2,
+                  SRSAppliedTimingCorrection_samples=1231,
+                  SRSReceiveTimingSource="received_reference_correlation_bounded_search",
+                  SRSArrivalTimingReferenceAvailable=1,
+                  SRSExpectedEarliestArrivalSample=3316147,
+                  SRSExpectedEarliestArrivalCaptureOffset_samples=1216,
+                  SRSExpectedEarliestArrivalRelativeToReceiveCenter_samples=-13,
+                  SRSSelectedPeakMinusEarliestArrival_samples=15,
+                  SRSArrivalTimingReferencePlane="earliest_path_not_strongest_peak",
+                  SRSArrivalTimingScoringStatus="available_earliest_path_not_post_correction_residual",
+                  TimingScoringReferenceSource="same_executed_clock_and_RF_channel_operators",
+                  TimingScoringReferenceJSON=json.dumps({"ReceiverEstimatorInput": False,
+                                                        "AdditionalChannelExecutions": 0}))
+    path = tmp_path / "srs_trials.csv"
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(source))
+        writer.writeheader()
+        writer.writerow(source)
+    artifact = dict(artifact_id=-1, logical_path="air_interface/csv/srs_trials.csv",
+                    filesystem_path=str(path), byte_size=path.stat().st_size)
+    rows = dashboard.load_small_csv_rows([artifact], artifact["logical_path"])
+    labels = dict(dashboard.CONTROL_TRIAL_PREVIEW_COLUMNS["srs_trials"])
+    view = dashboard.summarize_control_trial_preview_rows("srs_trials", rows)[0]
+    for name, value in source.items():
+        assert view[labels[name]] == value
+    rendered = next(line for line in dashboard.product_frontend_script().splitlines()
+                    if "id:'srs_arrival_timing'" in line)
+    for name in source:
+        assert f"'{labels[name]}'" in rendered
+    old = dict(Slot=45, TrueTimingOffset_samples=0,
+               InjectedTimingOffset_samples=1, TimingError_samples=3,
+               TimingScoringReferenceSource="unavailable")
+    historical = dashboard.summarize_control_trial_preview_rows("srs_trials", [old])[0]
+    for name in source:
+        if name.startswith("SRS"):
+            assert labels[name] not in historical
+    zero = dict(source, SRSExpectedEarliestArrivalRelativeToReceiveCenter_samples=0,
+                SRSSelectedPeakMinusEarliestArrival_samples=0)
+    measured_zero = dashboard.summarize_control_trial_preview_rows("srs_trials", [zero])[0]
+    assert measured_zero[labels["SRSExpectedEarliestArrivalRelativeToReceiveCenter_samples"]] == 0
+    assert measured_zero[labels["SRSSelectedPeakMinusEarliestArrival_samples"]] == 0
+    # Execute the complete production channel-table renderer, not a copy of
+    # its table logic or merely an assertion that labels exist in the source.
+    node = shutil.which("node")
+    if node is None:
+        import playwright
+        node = str(Path(playwright.__file__).parent / "driver" /
+                   ("node.exe" if sys.platform == "win32" else "node"))
+    frontend = dashboard.product_frontend_script()
+    renderer = frontend[frontend.index("  function realtimeValue("):
+                        frontend.index("  function realtimeMeasuredValue(")]
+    payload = {"live": {"realtime_dashboard": {"components": [{"component_id": "SRS"}]},
+                        "runtime_context": {"control_trial_previews": {
+                            "srs_trials": [view, measured_zero]}, "artifact_selection": {
+                            "raw_control_trials": {"srs_trials": {
+                                "selected_logical_path": artifact["logical_path"]}}}}}}
+    script = "const state=" + json.dumps(payload) + ";\n"
+    script += "const esc=x=>String(x); const unavailable=x=>x; const metricExplorerPayload=()=>({rows:[]});\n"
+    script += renderer + "\nconsole.log(realtimeComponentPanel());"
+    result = subprocess.run([node, "-"], input=script, capture_output=True,
+                            text=True, check=True, timeout=15)
+    title = "SRS receiver timing versus independent earliest-path scoring"
+    section = result.stdout.split(title, 1)[1].split("</article>", 1)[0]
+    for value in ("<td>1231</td>", "<td>-13</td>", "<td>15</td>", "<td>0</td>"):
+        assert value in section
+    assert "not an injected delay or measured post-correction residual" in section
 
 
 def test_trs_preview_separates_scheduler_tracking_and_qualification() -> None:

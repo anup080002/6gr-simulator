@@ -155,6 +155,13 @@ assert(all(U.StartSample==first & U.EndSampleExclusive==first+count) && ...
     all(U.Duration_s==count/fs) && all(U.SourceObservationCount==4));
 assert(all(contains(U.SourceTablesJSON,'CSIRS') & contains(U.SourceTablesJSON,'TRS')));
 assert(all(contains(U.IntervalMeaning,'not_radio_power_state_or_sleep')));
+% Access/SI attribution can reference the same real RF capture. It must
+% participate in provenance without multiplying endpoint execution time.
+raw.CommonEnergyObservations=T;
+[commonO,commonU,commonC]=sixgr.truth.collectRFEndpointObservationIntervals(raw);
+assert(height(commonO)==30 && height(commonU)==2 && height(commonC)==10 && ...
+    all(commonU.Duration_s==count/fs) && all(commonU.SourceObservationCount==5));
+raw=rmfield(raw,'CommonEnergyObservations');
 root=tempname; mkdir(root); cleanup=onCleanup(@()rmdir(root,'s')); %#ok<NASGU>
 export=sixgr.truth.exportLLSEnergyDiagnostics(cfg,fullfile(root,'air_interface'),raw);
 assert(isequaln(export.RFIntervalUnionTable,U) && isfile(export.RFIntervalUnionCSV));

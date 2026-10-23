@@ -1,6 +1,6 @@
 {
   "scope": "effective_catalog_declared_options_not_runtime_qualification",
-  "created": "2026-10-20 14:36:52",
+  "created": "2026-10-22 14:04:32",
   "matlab": "26.1.0.3312084 (R2026a) Update 4",
   "sources": [
     {
@@ -9,7 +9,7 @@
     },
     {
       "path": "simulator/configs/schema/scenario_parameter_catalog.yaml",
-      "sha256": "0ca253065b4600ff4a5d5e6614ff2347a2c2816a62aa989cd717297b9e085fb1"
+      "sha256": "d895664e36693642abccbe091d119c62927589f6e1e2d6fe7dc921c70dad3f26"
     },
     {
       "path": "simulator/configs/schema/matrix_parameter_catalog.yaml",
@@ -17,7 +17,7 @@
     },
     {
       "path": "simulator/configs/schema/scenario_parameter_catalog_extension_01.yaml",
-      "sha256": "f6a6abfda3ed253e01b1a75f9cb1f3f6c3f2dc904034726f4fe57fc2f3b5e9de"
+      "sha256": "7ee1b85318f5cb5a34e001fa341b662399c3145517d1925d943090aedf9ad255"
     },
     {
       "path": "simulator/configs/schema/scenario_parameter_catalog_extension_02.yaml",
@@ -41,7 +41,7 @@
     },
     {
       "path": "simulator/configs/schema/scenario_parameter_catalog_extension_07.yaml",
-      "sha256": "8aa1e033f5478ebadc81b25139f78b4f2d1ae376a256d29ff9a4b9aea00537f0"
+      "sha256": "1a831781933f05efde2fcc61416eaaf897451e34b8664c61ef73053d9d3c4f9d"
     },
     {
       "path": "simulator/configs/schema/scenario_parameter_catalog_extension_09.yaml",

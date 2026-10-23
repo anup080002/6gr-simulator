@@ -1,0 +1,61 @@
+inherits:
+  - ./n77_20mhz_30khz_tdd.yaml
+
+# TS 38.104 Table 5.3.2-1: 20 MHz, 15 kHz -> 106 PRBs.
+# Nominal 4.000 GHz baseband study, not RF raster/conformance certification.
+frequency:
+  numerology_options_khz: [15]
+  n_size_grid: 106
+global_radio_scope:
+  occupied_bandwidth_hz: 19080000
+  scs_hz: 15000
+  numerology_mu: 0
+  fft_size: 2048
+  ifft_size: 2048
+  guard_band_hz: 460000
+frame:
+  scs_khz: 15
+  tdd_common:
+    ReferenceSubcarrierSpacingKHz: 15
+    Pattern1:
+      PeriodicityMilliseconds: 5
+      NumDownlinkSlots: 3
+      NumDownlinkSymbols: 10
+      NumUplinkSlots: 1
+      NumUplinkSymbols: 2
+waveform:
+  fft_size: 2048
+  sample_rate_hz: 30720000
+bwp:
+  dl:
+    n_size_bwp: 106
+    scs_khz: 15
+    common_tdd_reference_scs_khz: 15
+  ul:
+    n_size_bwp: 106
+    scs_khz: 15
+    common_tdd_reference_scs_khz: 15
+  component_carriers:
+    - cc_id: 0
+      serving_cell_id: 1
+      scheduling_cc_ids: [0]
+      center_frequency_hz: 4000000000
+      band: n77
+      frequency_range: FR1
+      channel_bandwidth_mhz: 20
+      duplex_mode: TDD
+      dl_carrier_grid: {n_start_grid: 0, n_size_grid: 106, scs_khz: 15}
+      ul_carrier_grid: {n_start_grid: 0, n_size_grid: 106, scs_khz: 15}
+      carrier_indicator_map:
+        - {indicator: 0, scheduled_cc_id: 0}
+pdsch:
+  num_prb: 106
+pusch:
+  num_prb: 106
+reference_signals:
+  # n77 SS/PBCH remains 30 kHz Case C, independently of common/data SCS.
+  ssb_case: Case C
+  ssb_scs_khz: 30
+random_access:
+  carrier_scs_khz: 15
+  n_size_grid: 106

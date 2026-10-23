@@ -1,19 +1,31 @@
-function [rendered,summary] = exportConstellationGroups(T,pathOut)
+function [rendered,summary,diagnostics,layout] = exportConstellationGroups(T,pathOut)
 % One joint raster for every captured direction/SNR/modulation/MCS/layer.
 % T is the same canonical sample table persisted in the report CSV.
-[groups,summary]=sixgr.report.groupConstellationPlotSamples(T);
-rendered=false;
+[groups,summary,diagnostics]=sixgr.report.groupConstellationPlotSamples(T);
+rendered=false; layout=table();
 if isempty(groups), return; end
 nCols=min(3,numel(groups)); nRows=ceil(numel(groups)/nCols);
+labels=cell(numel(groups),1);
+for k=1:numel(groups), labels{k}=localPanelLabels(summary(k,:),k); end
+% Metadata is deliberately complete. Reserve space for it instead of
+% allowing a long title to paint over the neighbouring cohort's title.
+tileWidth=560;
+tileHeight=max(430,240+14*max(cellfun(@numel,labels)));
 fig=figure('Visible','off','Color','w','Units','pixels', ...
-    'Position',[50 50 420*nCols 390*nRows+60]);
+    'Position',[50 50 tileWidth*nCols tileHeight*nRows+60]);
 cleanup=onCleanup(@()close(fig)); %#ok<NASGU>
 tl=tiledlayout(fig,nRows,nCols,'Padding','loose','TileSpacing','loose');
-title(tl,'Equalized constellations — all captured groups','Interpreter','none');
+title(tl,'Equalized constellations — all finite paired samples; source scopes kept separate','Interpreter','none');
+axesHandles=gobjects(numel(groups),1); titleHandles=gobjects(numel(groups),1);
 for k=1:numel(groups)
     G=groups{k}; s=summary(k,:); ax=nexttile(tl); hold(ax,'on');
-    scatter(ax,double(G.equalized_i),double(G.equalized_q),8,'filled', ...
-        'MarkerFaceAlpha',0.35,'DisplayName','Equalized capture');
+    axesHandles(k)=ax;
+    receiverLabel='Raw receiver equalized symbols';
+    if startsWith(s.PlottedIQSource,"legacy_")
+        receiverLabel='Legacy canonical equalized (not verified raw)';
+    end
+    scatter(ax,double(G.(s.PlottedRealColumn)),double(G.(s.PlottedImagColumn)),8,'filled', ...
+        'MarkerFaceAlpha',0.35,'DisplayName',receiverLabel);
     names=string(G.Properties.VariableNames);
     for pair={ ["HardDecisionReal","HardDecisionImag"], ["DecisionReal","DecisionImag"] }
         fields=pair{1};
@@ -44,19 +56,48 @@ for k=1:numel(groups)
             end
         end
     end
-    label=[string(sprintf('%s | %s | layer %g | MCS %g', ...
-        s.Direction,s.Modulation,s.Layer,s.MCS)); ...
-        string(sprintf('Configured SNR %g dB | N=%d',s.ConfiguredSNR_dB,s.CapturedSampleCount)); ...
-        string(sprintf('Capture EVM %.3g%% (%.3g dB)',s.CaptureEVM_pct,s.CaptureEVM_dB))];
-    if ismember('ue_id',names)
-        label(1)=label(1)+" | UE "+string(G.ue_id(1));
-    end
-    title(ax,label,'Interpreter','none','FontSize',9);
+    titleHandles(k)=title(ax,labels{k},'Interpreter','none','FontSize',9, ...
+        'FontName',get(groot,'FixedWidthFontName'));
     xlabel(ax,'I'); ylabel(ax,'Q'); axis(ax,'equal'); grid(ax,'on');
     legend(ax,'Location','southoutside','NumColumns',2,'FontSize',8);
 end
 sixgr.util.exportFigureArtifact(fig,pathOut,'Resolution',160);
+drawnow;
+% Retain measured graphics geometry for regression checks. This is display
+% metadata, not a measurement or a modification of the plotted population.
+layout=table((1:numel(groups)).',ceil((1:numel(groups)).'/nCols), ...
+    zeros(numel(groups),1),zeros(numel(groups),1), ...
+    zeros(numel(groups),1),zeros(numel(groups),1), ...
+    'VariableNames',{'GroupIndex','PanelRow','TitleLeftPixels','TitleRightPixels', ...
+    'TitleBottomPixels','TitleTopPixels'});
+for k=1:numel(groups)
+    set(titleHandles(k),'Units','pixels');
+    bounds=get(titleHandles(k),'Extent'); origin=getpixelposition(axesHandles(k),true);
+    layout.TitleLeftPixels(k)=origin(1)+bounds(1);
+    layout.TitleRightPixels(k)=layout.TitleLeftPixels(k)+bounds(3);
+    layout.TitleBottomPixels(k)=origin(2)+bounds(2);
+    layout.TitleTopPixels(k)=layout.TitleBottomPixels(k)+bounds(4);
+end
 rendered=true;
+end
+
+function lines=localPanelLabels(s,index)
+% Wrap display text only. Full typed grouping identity remains in summary,
+% and no identifiers, native positions or samples are changed/truncated.
+text=["Group "+string(index)+" | plotted pairs "+string(s.CapturedSampleCount)+" / source rows "+string(s.SourceRowCount); ...
+    "I/Q source: "+s.PlottedIQSource; ...
+    "Capture scope: "+s.CaptureScope+" | coordinate domain: "+s.SymbolCoordinateDomain; ...
+    string(sprintf('Plotted-pair EVM %.3g%% (%.3g dB)',s.CaptureEVM_pct,s.CaptureEVM_dB)); ...
+    s.PopulationStatus+" | rejected rows: "+string(s.RejectedSampleCount); ...
+    s.GroupLabel];
+if strlength(s.RejectionReason)>0, text(end+1)=s.RejectionReason; end
+lines=strings(0,1); width=54;
+for row=reshape(text,1,[])
+    chars=char(row);
+    for first=1:width:numel(chars)
+        lines(end+1,1)=string(chars(first:min(first+width-1,numel(chars)))); %#ok<AGROW>
+    end
+end
 end
 
 function points=localSquareAlphabet(modulation)

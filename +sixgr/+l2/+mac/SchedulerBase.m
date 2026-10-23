@@ -848,6 +848,14 @@ classdef (Abstract) SchedulerBase < handle
                     amc.CQIProvenance="modeled_csi_not_waveform_measurement";
                 end
             end
+            amc.SpatialRankTupleBound=false;
+            amc.SpatialRankTupleSource="";
+            if ~amc.ReceivedCSIRankBound
+                % Type-II coefficient and modeled-DL owners already bind
+                % rank above; neither uses the Type-I scalar PMI contract.
+                [amc.SpatialRankTupleBound,amc.SpatialRankTupleSource] = ...
+                    localSpatialRankTupleConstraint(ue,dir,nLayers);
+            end
             amc.InitialNumLayers = double(requestedLayers);
             amc.ConfiguredLayers = double(rankDecision.ConfiguredLayers);
             amc.RankSelectionPolicy = char(string(rankDecision.Policy));
@@ -876,6 +884,7 @@ classdef (Abstract) SchedulerBase < handle
         end
 
         function [tbsBits, tbsBytes, nrePerPRB, info] = estimateTBS(obj, modStr, nLayers, nPRB, symAlloc, targetCodeRate, varargin)
+            stageScope=sixgr.runtime.ExecutionStageProfiler.scope("scheduler",upper(string(obj.Direction))+"_resource_TBS"); %#ok<NASGU>
             % Estimate TB size using nrTBS. Uses NREPerPRB from nrPDSCHInfo/nrPUSCHInfo.
             if nargin < 5 || isempty(symAlloc)
                 symAlloc = [0 obj.SymbolsPerSlot];
@@ -1084,6 +1093,9 @@ classdef (Abstract) SchedulerBase < handle
                     end
                 end
             end
+            planStage="final_grant_plan";
+            if opt.PlanningOnly, planStage="PF_probe_plan"; end
+            stageScope=sixgr.runtime.ExecutionStageProfiler.scope("scheduler",upper(string(obj.Direction))+"_"+planStage); %#ok<NASGU>
             queueBytes = max(0, floor(double(queueBytes)));
             [modStr, nLayers, targetCodeRate, amc] = obj.selectAMC(ue);
             xOverhead = localResolveTBSXOverhead(obj.Direction, obj.Cfg, symAlloc);
@@ -1156,6 +1168,8 @@ classdef (Abstract) SchedulerBase < handle
                 "RankDecisionReason", char(string(sixgr.util.structGet(amc, "RankDecisionReason", ""))), ...
                 "RankDowngradeApplied", logical(sixgr.util.structGet(amc, "RankDowngradeApplied", false)), ...
                 "MaxSupportedLayers", double(sixgr.util.structGet(amc, "MaxSupportedLayers", NaN)), ...
+                "SpatialRankTupleBound", logical(amc.SpatialRankTupleBound), ...
+                "SpatialRankTupleSource", char(amc.SpatialRankTupleSource), ...
                 "GrantBlocker", char(localAMCBlockerReason(amc)), ...
                 "NREPerPRB", double(rawNRE), ...
                 "XOverhead", double(xOverhead), ...
@@ -1311,6 +1325,7 @@ classdef (Abstract) SchedulerBase < handle
             actual=sixgr.phy.grid.applyRuntimeCarrierTimeline(obj.Cfg,double(timing.DataAbsoluteSlot)+1);
             if isempty(before), return; end
             plan=sixgr.phy.frame.CommonDLResourcePlan(actual);
+            plan=plan.prepareSlot(double(timing.DataAbsoluteSlot));
             excluded=zeros(1,0); owners=strings(0,1);
             for prb=before
                 allocation=struct('PRBStart',double(prb),'NumPRB',1, ...
@@ -1351,6 +1366,7 @@ classdef (Abstract) SchedulerBase < handle
         end
 
         function grantOut = freezePHYGrantForGrant(obj, grantIn, varargin)
+            stageScope=sixgr.runtime.ExecutionStageProfiler.scope("scheduler",upper(string(obj.Direction))+"_exact_grant_freeze"); %#ok<NASGU>
             % Freeze the final scheduler grant dimensional contract once.
             options=inputParser;
             options.addParameter('TimingAlreadySelected',false,@(x)islogical(x)&&isscalar(x));
@@ -1401,6 +1417,13 @@ classdef (Abstract) SchedulerBase < handle
             cfgForFreeze = options.Results.ActiveConfig;
             if isempty(fieldnames(cfgForFreeze))
                 cfgForFreeze = obj.Cfg;
+                installation=sixgr.util.structGet(grantOut,'SRSCurrentInstallation',struct());
+                if upper(string(grantOut.Direction))=="UL" && ~isempty(fieldnames(installation))
+                    % The first freeze receives current per-UE ownership,
+                    % not a producer's retired config. Final ActiveConfig is
+                    % checked independently below and is never overwritten.
+                    cfgForFreeze=sixgr.truth.resolveSRSCurrentInstallation(cfgForFreeze,installation);
+                end
             end
             activeDLTCI = struct();
             if upper(string(grantOut.Direction)) == "DL"
@@ -1470,6 +1493,7 @@ classdef (Abstract) SchedulerBase < handle
                     frozenW, size(frozenW,1), nLayers);
             end
             grantOut.PHYGrant = phyGrant;
+            grantOut.CSIReportApplication = sixgr.l2.mac.csiReportGrantApplication(grantOut,phyGrant);
             grantOut.GrantContextId = char(string(phyGrant.GrantContextId));
             grantOut.PHYGrantContextId = char(string(phyGrant.GrantContextId));
             grantOut.DMRSPortSet = double(phyGrant.CodingLayout.DMRSPortSet(:).');
@@ -1495,12 +1519,18 @@ classdef (Abstract) SchedulerBase < handle
                     grantOut.PMI=modeled.PMI; grantOut.CRI=modeled.CRI;
                     grantOut.PrecodingMatrixLogicalPorts=modeled.MatrixPorts;
                     grantOut.PrecoderSource="modeled_csi_not_waveform_measurement";
+                else
+                    grantOut=sixgr.l2.mac.bindReceivedCSIProvenance(grantOut,ueState,obj.Cfg);
                 end
                 return;
             end
             if nargin < 3 || ~(isstruct(ueState) && isscalar(ueState))
                 error("sixgr:l2:mac:MissingULSchedulerUEState", ...
                     "UL grant freezing requires the scheduler UE state that owns the causal SRS evidence.");
+            end
+            if sixgr.phy.grant.isExplicitHARQRetransmission(grantOut) || ...
+                    logical(sixgr.util.structGet(grantOut,'PHYGrant.IsFrozen',false))
+                return; % Issued tuple and both sounding identities are immutable.
             end
             grantOut.SRSValid = logical(sixgr.util.structGet( ...
                 ueState, "SRSValid", false));
@@ -1518,6 +1548,16 @@ classdef (Abstract) SchedulerBase < handle
                 ueState, "SRSCausalStatus", "")));
             grantOut.SRSMeasurementAuthoritySource = ...
                 "scheduler_ue_state_causal_srs";
+            if ~sixgr.phy.grant.isExplicitHARQRetransmission(grantOut) && ...
+                    ~logical(sixgr.util.structGet(grantOut,'PHYGrant.IsFrozen',false))
+                defaults=struct('AcceptedSRSSpatialDecision',struct(), ...
+                    'AcceptedSRSCausalUsable',false,'AcceptedSRSCausalAgeSlots',NaN, ...
+                    'AcceptedSRSCausalStatus',"unavailable",'AcceptedSRSDecisionContext',struct(), ...
+                    'SRSCurrentInstallation',struct());
+                for field=string(fieldnames(defaults)).'
+                    grantOut.(field)=sixgr.util.structGet(ueState,field,defaults.(field));
+                end
+            end
             modeled=sixgr.util.structGet(ueState,'ModeledSRSFeedback',struct());
             if isfield(grantOut,'ModeledSRSFeedback')
                 grantOut.ModeledSRSFeedback=struct();
@@ -1926,6 +1966,7 @@ classdef (Abstract) SchedulerBase < handle
         end
 
         function dci = buildDCIBitfield(obj, grant, activeCfg)
+            stageScope=sixgr.runtime.ExecutionStageProfiler.scope("scheduler",upper(string(obj.Direction))+"_DCI_creation"); %#ok<NASGU>
             % buildDCIBitfield Build NR-style DCI intent fields for a grant.
             %
             % The scheduler object retains the installed cell template, but
@@ -2262,14 +2303,9 @@ if any(~isfinite(sa)) || any(sa ~= fix(sa)) || ...
         "DCI SymbolAllocation must be integer [start,count] within " + ...
         "the canonical %d-symbol slot.", N);
 end
-s = sa(1);
-l = sa(2);
-if (l - 1) <= floor(N / 2)
-    idx = N * (l - 1) + s;
-else
-    idx = N * (N - l + 1) + (N - 1 - s);
-end
-idx = max(0, round(double(idx)));
+% Share the NR radix-14 encoder; SymbolsPerSlot limits legality only.
+% DCI transmits a configured TDRA row index, not this SLIV value.
+idx = sixgr.phy.frame.ResourceAllocationValidator.encodeSLIV(sa(1),sa(2),N);
 end
 
 function nrePerPRB = localFastNREPerPRB(direction, cfg, nSym)
@@ -3287,6 +3323,74 @@ evalOut = struct( ...
     "TBSBytes", NaN);
 end
 
+function [bound,source] = localSpatialRankTupleConstraint(ue,direction,nLayers)
+% A rank-specific spatial tuple constrains NEW-data candidate arithmetic;
+% this is NOT reception, freshness, admission or installed-config authority.
+% Their existing runtime/attachment/freeze checks remain mandatory. Even a
+% stale tuple must never be reinterpreted at another rank by a queue policy.
+% A different rank requires a separately qualified precoder/quality decision,
+% which this finite-queue search does not produce. MCS/PRB/padding may vary.
+bound=false; source="";
+if direction=="DL"
+    field="CSIReportProvenance"; version="received_csi_provenance/v1";
+    identity="ReportIdentity"; owner="UEIndex";
+else
+    field="AcceptedSRSSpatialDecision"; version="accepted_srs_spatial_decision/v1";
+    identity="MeasurementId"; owner="TargetId";
+end
+p=sixgr.util.structGet(ue,field,struct());
+id='sixgr:l2:mac:SpatialRankTupleMismatch';
+assert(isstruct(p),id,'Use a retained spatial tuple, not a scalar rank hint.');
+if isempty(p) || isempty(fieldnames(p)), return; end
+assert(isscalar(p),id,'Use one retained spatial tuple.');
+assert(isfield(p,'Version') && isscalar(string(p.Version)) && ...
+    string(p.Version)==version && isfield(p,identity) && ...
+    isscalar(string(p.(identity))) && ~ismissing(string(p.(identity))) && ...
+    strlength(strtrim(string(p.(identity))))>0,id, ...
+    'Retain the typed source identity, not a new rank hint.');
+if direction=="DL"
+    assert(isfield(p,'Direction') && isequal(upper(string(p.Direction)),"DL"),id, ...
+        'DL spatial constraints require a DL report.');
+else
+    assert(isfield(p,'SignalType') && isequal(string(p.SignalType),"SRS") && ...
+        isfield(p,'TargetType') && isequal(string(p.TargetType),"UE") && ...
+        isfield(p,'Valid') && (isnumeric(p.Valid) || islogical(p.Valid)) && ...
+        isreal(p.Valid) && isscalar(p.Valid) && p.Valid==1,id, ...
+        'UL spatial constraints require the retained accepted SRS tuple.');
+end
+for pair=[owner,"UEIndex";"RNTI","RNTI";"ServingCell","ServingCell"].'
+    actual=sixgr.util.structGet(p,pair(1),NaN);
+    expected=sixgr.util.structGet(ue,pair(2),NaN);
+    assert(localSpatialTupleInteger(actual,1) && ...
+        localSpatialTupleInteger(expected,1) && double(actual)==double(expected),id, ...
+        'The rank/precoder tuple belongs to another UE, RNTI or cell.');
+end
+assert(isfield(p,'RI') && localSpatialTupleInteger(p.RI,1) && ...
+    double(p.RI)==nLayers && isfield(p,'PMI') && localSpatialTupleInteger(p.PMI,0),id, ...
+    'The installed rank policy cannot reinterpret a retained rank-specific precoder.');
+for name=["RI","NumLayers","PMI"]
+    if ~isfield(ue,name), continue; end
+    expected=p.PMI; minimum=0;
+    if name~="PMI", expected=p.RI; minimum=1; end
+    assert(localSpatialTupleInteger(ue.(name),minimum) && double(ue.(name))==double(expected),id, ...
+        'Scheduler rank/PMI aliases must retain one spatial decision.');
+end
+if direction=="DL"
+    assert(isfield(p,'CRI') && localSpatialTupleInteger(p.CRI,0) && ...
+        isfield(ue,'CRI') && localSpatialTupleInteger(ue.CRI,0) && ue.CRI==p.CRI,id, ...
+        'Keep the decoded CRI ordinal with its rank/PMI.');
+elseif isfield(ue,'TPMI')
+    assert(localSpatialTupleInteger(ue.TPMI,0) && ue.TPMI==p.PMI,id, ...
+        'The accepted SRS rank and TPMI must remain atomic; SRI stays separate.');
+end
+bound=true; source=field;
+end
+
+function tf=localSpatialTupleInteger(value,minimum)
+tf=isnumeric(value) && isreal(value) && isscalar(value) && ...
+    isfinite(value) && value==fix(value) && value>=minimum;
+end
+
 function candidates = localCandidateMCSProfiles(amc, cfg, queueAwareReduction)
 if nargin < 2 || isempty(cfg)
     cfg = struct();
@@ -3300,7 +3404,8 @@ numLayers = max(1, round(double(sixgr.util.structGet(amc, "NumLayers", 1))));
 queueAwareReduction = logical(queueAwareReduction);
 
 layerList = numLayers;
-if queueAwareReduction && ~logical(sixgr.util.structGet(amc,'ReceivedCSIRankBound',false))
+if queueAwareReduction && ~logical(sixgr.util.structGet(amc,'ReceivedCSIRankBound',false)) && ...
+        ~logical(sixgr.util.structGet(amc,'SpatialRankTupleBound',false))
     layerDecMax = localNonnegativeIntegerConfig(cfg, "phy.linkAdaptation.queueAwareLayerDecrementMax", 1);
     minLayers = max(1, numLayers - layerDecMax);
     layerList = numLayers:-1:minLayers;

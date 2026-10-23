@@ -45,6 +45,8 @@ for k=1:numel(names)
     end
     T.(name)=repmat(expected(k),height(T),1);
 end
+T=sixgr.kpi.bindTransportGoodputPublicationScope(T, ...
+    struct('RunID',values(3),'ExecutionID',values(4),'ConfigHash',values(2)));
 if ~bindInPathScope, return; end
 if ismember("EvidenceScope",string(T.Properties.VariableNames))
     actual=strtrim(string(T.EvidenceScope));

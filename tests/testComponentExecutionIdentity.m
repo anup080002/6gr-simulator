@@ -54,13 +54,19 @@ assert(~result.StrictOk && result.FailureReason=="component_scope_not_eligible_f
 % Exercise the exact producer classification statements without launching
 % another bundle. This verifies metadata scope, not receiver qualification.
 source=fileread(which('sixgr.truth.runWaveformLinkBundle'));
+control=fileread(which('sixgr.truth.PDCCHControlRuntime'));
+assert(contains(source, ...
+    '[varargout{1:nargout}] = sixgr.truth.PDCCHControlRuntime.receiveTrial(varargin{:});'), ...
+    'The runner must consume the canonical PDCCH producer classification.');
 for signal=["PDCCH","PRACH"]
     if signal=="PDCCH"
-        pattern='(?s)if isempty\(fieldnames\(grantContext\)\)\s+r.SourceClassification = "isolated_component_waveform";.*?\r?\nend';
+        producer=control;
+        pattern='(?s)if isempty\(fieldnames\(grantContext\)\)\s+r.SourceClassification = "isolated_component_waveform";.*?\r?\n\s*end';
     else
+        producer=source;
         pattern='(?s)if ~isfinite\(slotIdx\)\s+r.SourceClassification = "isolated_component_waveform";.*?\r?\nend';
     end
-    statement=regexp(source,pattern,'match');
+    statement=regexp(producer,pattern,'match');
     assert(numel(statement)==1,'Expected one producer scope binding for %s.',signal);
     for integrated=[false,true]
         r=struct('SourceClassification',"active_integrated", ...

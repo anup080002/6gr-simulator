@@ -90,6 +90,10 @@ classdef AntennaArrayFactory
                     upper(char(roleL)));
             end
             d = lambda .* spacingLambda;
+            [panelSpacingLambda, panelSpacingSource] = ...
+                sixgr.rf.AntennaArrayFactory.localPanelCenterSpacing( ...
+                cfg, roleL, nRow, nCol, panelRows, panelCols, spacingLambda);
+            panelSpacing = lambda .* panelSpacingLambda; % [horizontal vertical]
 
             % Compute numeric element positions (for codegen friendliness and plotting).
             % Call the private static helper as a plain method name to avoid
@@ -124,14 +128,12 @@ classdef AntennaArrayFactory
                         end
                     end
                     elemObj = elementSet{1};
-                    panelSpacing = [max((nRow + 1) * d(2), d(2)), ...
-                        max((nCol + 1) * d(1), d(1))];
                     % R2026a Size is [rows cols panelRows panelCols];
                     % polarization is represented by ElementSet.
                     arrObj = phased.NRRectangularPanelArray( ...
                         "ElementSet", elementSet, ...
                         "Size", [nRow nCol panelRows panelCols], ...
-                        "Spacing", [d(2) d(1) panelSpacing]);
+                        "Spacing", [d(2) d(1) panelSpacing(2) panelSpacing(1)]);
                 catch ME
                     if elementSpec.RequirePatternInChannel
                         error("AntennaArrayFactory:RequiredElementPatternBuildFailed", ...
@@ -154,7 +156,7 @@ classdef AntennaArrayFactory
             end
 
             [pos, polIndex, panelIndex] = sixgr.rf.AntennaArrayFactory.localExpandPositionsForPolarizationAndPanels( ...
-                pos, nRow, nCol, nPol, panelRows, panelCols, d);
+                pos, nPol, panelRows, panelCols, panelSpacing);
             elementPositionSource = "numeric_geometry_no_phased_array";
             if havePhased && ~isempty(arrObj)
                 % The installed System object owns the physical element
@@ -191,6 +193,9 @@ classdef AntennaArrayFactory
             arr.PanelShapeSource = char(string(panelSource));
             arr.ElementSpacing_m = d;
             arr.ElementSpacing_lambda = spacingLambda;
+            arr.PanelCenterSpacing_m = panelSpacing;
+            arr.PanelCenterSpacing_lambda = panelSpacingLambda;
+            arr.PanelCenterSpacingSource = char(panelSpacingSource);
             arr.ElementPositions_m = pos;           % [Nant x 3]
             arr.ElementPositionSource = char(elementPositionSource);
             arr.ElementOrderingSource = char(elementPositionSource);
@@ -867,7 +872,32 @@ classdef AntennaArrayFactory
             end
         end
 
-        function [posOut, polIndex, panelIndex] = localExpandPositionsForPolarizationAndPanels(pos, nRow, nCol, nPol, panelRows, panelCols, d)
+        function [spacing, source] = localPanelCenterSpacing(cfg, role, nRow, nCol, panelRows, panelCols, elementSpacing)
+            path = "antenna." + role + ".panelCenterSpacingLambda";
+            spacing = sixgr.util.structGet(cfg, path, []);
+            source = path;
+            if isempty(spacing)
+                % Preserve the historical phased-array geometry for legacy
+                % configs. The ambiguous old panel_spacing scalar is NOT
+                % silently reinterpreted as a center-to-center distance.
+                spacing = [(nCol+1)*elementSpacing(1), (nRow+1)*elementSpacing(2)];
+                source = "legacy_two_element_spacing_panel_gap";
+            end
+            if ~(isnumeric(spacing) && isreal(spacing) && numel(spacing)==2 && ...
+                    all(isfinite(spacing(:))) && all(spacing(:)>0))
+                error("AntennaArrayFactory:InvalidPanelCenterSpacing", ...
+                    "%s must be [horizontal vertical] finite positive wavelengths.", path);
+            end
+            spacing = double(spacing(:).');
+            aperture = [(nCol-1)*elementSpacing(1), (nRow-1)*elementSpacing(2)];
+            if any(([panelCols panelRows]>1) & (spacing<=aperture))
+                error("AntennaArrayFactory:OverlappingPanels", ...
+                    "%s=%s overlaps panel aperture %s on a replicated axis.", ...
+                    path, mat2str(spacing), mat2str(aperture));
+            end
+        end
+
+        function [posOut, polIndex, panelIndex] = localExpandPositionsForPolarizationAndPanels(pos, nPol, panelRows, panelCols, panelSpacing)
             base = double(pos);
             nBase = size(base, 1);
             nPol = max(1, round(double(nPol)));
@@ -876,14 +906,15 @@ classdef AntennaArrayFactory
             posOut = zeros(nBase * nPol * panelRows * panelCols, 3);
             polIndex = zeros(size(posOut, 1), 1);
             panelIndex = zeros(size(posOut, 1), 1);
-            rowAperture = max(1, nRow) * d(1);
-            colAperture = max(1, nCol) * d(2);
             writeIdx = 1;
-            for pr = 1:panelRows
-                for pc = 1:panelCols
-                    pIdx = (pr - 1) * panelCols + pc;
-                    panelOffset = [0, (pr - (panelRows + 1) / 2) * rowAperture, ...
-                        (pc - (panelCols + 1) / 2) * colAperture];
+            % Same [M N P Mg Ng] linear ordering as nrCDLChannel and
+            % NRRectangularPanelArray: vertical rows first, then columns,
+            % polarization, panel rows, panel columns. Broadside is +x.
+            for pc = 1:panelCols
+                for pr = 1:panelRows
+                    pIdx = pr + (pc - 1) * panelRows;
+                    panelOffset = [0, (pc - (panelCols + 1) / 2) * panelSpacing(1), ...
+                        ((panelRows + 1) / 2 - pr) * panelSpacing(2)];
                     for pp = 1:nPol
                         rows = writeIdx:(writeIdx + nBase - 1);
                         posOut(rows, :) = base + panelOffset;
@@ -978,7 +1009,7 @@ classdef AntennaArrayFactory
             dz = d(2);
 
             y = ((0:nCol-1) - (nCol-1)/2) * dy;
-            z = ((0:nRow-1) - (nRow-1)/2) * dz;
+            z = ((nRow-1)/2 - (0:nRow-1)) * dz;
 
             [Z,Y] = ndgrid(z, y);
             X = zeros(size(Y));

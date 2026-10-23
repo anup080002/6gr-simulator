@@ -1,0 +1,28 @@
+# Preserve the existing 100 MHz / 4 GHz run and immutable 100-slot science.
+# Replay from before the affected CSI-RS occasion, then publish at slot 60.
+# The original attempt is retained by SlotCheckpoint.prepareResume.
+checkpoint_continuation:
+  contract: sixgr_checkpoint_continuation/v1
+  checkpoint: 'E:\SixGRResults\lls\h4_100_cdlc100_connected_impaired_40db_adaptation\.checkpoints\h4_100mhz_local_e_20261019_v3\after_slot_000045_531fd857-2215-4b94-a7e0-d2656ee5ecf0\state.mat'
+  state_sha256: 9db68e9b442efeeb4caf6ea4f161f7e0be51ae133ec41cdc1314ad73fe6429b1
+  config_hash: 9f8ed02945f015a4af9753e705d50d3d8cfb28a118bc7fd1f54e5a32bd9e4d10
+  finish_after_slot: 60
+  repair_reason: >
+    User-approved bounded continuation after CSI timing, independent DL/UL
+    spatial/quality adaptation, sample provenance and publication repairs.
+    Resume after completed slot45 to remeasure CSI46 under repaired source;
+    checkpoints49/55 retain the affected CSI and are not suitable for that
+    verification. Preserve original configuration, native channel/RF/RNG,
+    pending reception and HARQ state. Stop scheduling after slot60, drain
+    actual receive tails and execute full CSV/PNG/report publication.
+    Historical prefix gaps remain explicit. This is changed-source repair
+    validation, not complete adaptive-throughput or statistical qualification.
+  operational_settings:
+    run_control:
+      runtime_checkpoint_enable: true
+      checkpoint_first_slot: 49
+      checkpoint_every_slots: 3
+      runtime_checkpoint_keep: 100
+    output:
+      live_csv_png_interval_slots: 5
+      execution_stage_profile_enabled: true

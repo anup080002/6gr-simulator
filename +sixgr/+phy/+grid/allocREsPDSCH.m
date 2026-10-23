@@ -16,11 +16,13 @@ function [pdschInd, info, pdsch] = allocREsPDSCH(carrier, cfgOrPdsch, varargin)
 opts = sixgr.phy.grid.parsePDSCHAllocationOptions(varargin{:});
 ssbReservation = struct();
 csiimReservation = struct();
+controlReservation = struct();
 
 if isa(cfgOrPdsch, "nrPDSCHConfig")
     pdsch = cfgOrPdsch;
 else
     pdsch = sixgr.phy.grid.pdschConfigFromConfig(carrier, cfgOrPdsch, varargin{:});
+    [pdsch,controlReservation] = sixgr.phy.grid.reserveConnectedCORESETPDSCHResources(carrier,pdsch,cfgOrPdsch);
     pdsch = localReserveCSIRSResources(carrier, pdsch, cfgOrPdsch);
     pdsch = localReserveTRSResources(carrier, pdsch, cfgOrPdsch);
     [pdsch, ssbReservation] = sixgr.phy.grid.reserveSSBPDSCHResources(carrier, pdsch, cfgOrPdsch);
@@ -37,6 +39,7 @@ info = struct();
 info.Channel = "PDSCH";
 info.SSBReservation = ssbReservation;
 info.CSIIMReservation = csiimReservation;
+info.ConnectedCORESETReservation = controlReservation;
 info.IndexBase = opts.IndexBase;
 info.NRE = size(pdschInd, 1);
 info.PRBSet = pdsch.PRBSet;

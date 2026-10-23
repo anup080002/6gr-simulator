@@ -1,0 +1,22 @@
+# Research class: optional_research_experiment.
+# Explicit operator-selected engineering baseline, not a 3GPP hardware model.
+# Compose after the scenario's ordinary energy defaults in a NEW execution.
+# Do not attach this fragment to a checkpoint with another saved policy.
+#
+# This fragment selects a policy only. It does not manufacture complete-run
+# energy evidence, choose hardware watts, change PHY samples, or establish
+# zero power in unobserved intervals. Retain endpoint-specific model terms
+# and the actual RF-chain inventory in the enclosing scenario. Whole-time
+# awake TX/RX/idle integration and its qualification remain required.
+energy_and_complexity:
+  sleep_state_model: none
+  race_to_sleep_metrics: disabled
+
+energy_efficiency:
+  operating_state_policy: always_awake
+  rf_inventory_source: declared_endpoint_inventory
+  sleep_state_model: none
+  race_to_sleep_enabled: false
+  active_sleep_tracking_enabled: false
+  duty_cycle_logging: true
+  energy_per_bit_reporting: true

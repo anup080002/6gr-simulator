@@ -96,19 +96,33 @@ localReject(@()sixgr.truth.coupledSRSAttemptDue(futureAttempt,cfg,5,1), ...
 
 code=fileread(which('sixgr.truth.runWaveformLinkBundle'));
 first=regexp(code,'function[^\r\n]*= localScheduleCoupledFutureULGrantsFromDLControl\(','start');
-last=strfind(code,'function decision = localResolveCoupledULTimingDecision');
+last=strfind(code,'function [state,pendingULGrants]=localTransmitCoupledFutureULGrants(');
 assert(isscalar(first) && isscalar(last) && first<last);
 body=code(first(1):last(1)-1);
-reservation=strfind(body,'sixgr.truth.planFirstSRSULResources');
-dci=strfind(body,'[state, qualifiedGrants] = localQualifyCoupledGrantsWithPDCCH');
-assert(numel(reservation)==1 && numel(dci)==1 && reservation<dci);
+planner=fileread(which('sixgr.truth.planFutureULGrants'));
+reservation=strfind(planner,'sixgr.truth.planFirstSRSULResources');
+cancel=strfind(planner,'cancelUnexecutedHARQGrantRuntime(');
+delegate=strfind(body,'sixgr.truth.planFutureULGrants(');
+planOnly=strfind(body,'if isempty(plannedGrants) || planOnly, return; end');
+transmit=strfind(body,'localTransmitCoupledFutureULGrants(');
+transmitEnd=regexp(code(last(1)+1:end),'(?m)^function','start','once');
+assert(~isempty(transmitEnd));
+transmitBody=code(last(1):last(1)+transmitEnd-1);
+dci=strfind(transmitBody,'[state, qualifiedGrants] = localQualifyCoupledGrantsWithPDCCH');
+assert(isscalar(reservation) && ~isempty(cancel) && reservation<cancel(1) && ...
+    contains(planner,'''DCINotIssued'',true') && ...
+    isscalar(delegate) && isscalar(planOnly) && isscalar(transmit) && ...
+    delegate<planOnly && planOnly<transmit && isscalar(dci) && ...
+    ~contains(planner,'localQualifyCoupledGrantsWithPDCCH') && ...
+    ~contains(body,'localQualifyCoupledGrantsWithPDCCH'), ...
+    'First-SRS arbitration/cancellation must finish in the delegated planner before any DCI.');
 % The shared path separates tentative planning from control enqueue. Both
 % SRS priority and joint HARQ timing must finish before either data DCI.
 joint=strfind(code,'sixgr.truth.planJointHARQPUSCHTiming(');
 dlDCI=strfind(code,'[runtimeState, dlGrants, queuedDL] = localQualifyCoupledGrantsWithPDCCH');
 assert(isscalar(joint) && isscalar(dlDCI) && joint<dlDCI);
-assert(contains(body,'if planOnly, return; end') && ...
-    contains(body,'localTransmitCoupledFutureULGrants(state,cfg,userCfg,pendingULGrants,grants,snr_dB)'));
+assert(contains(regexprep(body,'\s|\.\.\.',''), ...
+    'localTransmitCoupledFutureULGrants(state,cfg,userCfg,pendingULGrants,plannedGrants,snr_dB)'));
 ok=true;
 fprintf('FIRST_SRS_UL_PRE_DCI_PASS\n');
 end

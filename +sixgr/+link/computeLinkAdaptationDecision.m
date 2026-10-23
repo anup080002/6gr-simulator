@@ -32,6 +32,9 @@ beamPolicy = lower(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.beamPoli
 
 base = localBaseState(cfg, direction);
 adaptationState = localInitAdaptationState(cfg, direction, opt.AdaptationState);
+stateBeforeQuality = adaptationState;
+spatialUpdateAllowed = logical(sixgr.util.structGet(metrics, "SpatialUpdateAllowed", true));
+qualityKey = string(sixgr.util.structGet(metrics, "QualityOperatingPointKey", ""));
 adaptationDomain = sixgr.link.resolveLinkAdaptationDomain(cfg, direction);
 [ackKnown, ackObserved, ackSource] = localResolveAckOutcome(metrics);
 [ollaUpdateAuthorized, ollaFeedbackEventType, ollaAuthoritySource] = ...
@@ -169,6 +172,26 @@ if rankControl.FixedRankAnchor && isfinite(decision.RI) && ...
     return;
 end
 
+% Do not mutate quality state for rejected fixed-rank or stale feedback.
+% A changed spatial operating point starts its own CQI filter, not a new OLLA.
+if ~decision.CausalFeedbackUsable
+    decision.Reason = "stale_or_unusable_csi_feedback";
+    return;
+end
+if strlength(qualityKey) > 0 && ...
+        qualityKey ~= string(sixgr.util.structGet(adaptationState,"QualityOperatingPointKey",""))
+    adaptationState.Initialized = false;
+    adaptationState.SmoothedCQI = NaN;
+    adaptationState.CQIBasedMCS = NaN;
+    adaptationState.LastCQI = NaN;
+    adaptationState.LastRI = NaN;
+    adaptationState.LastCQIOutOfRange = false;
+    adaptationState.CQIOutageRecoveryPositiveCount = 0;
+    adaptationState.CQIOutageRecoveryCandidate = NaN;
+    adaptationState.LastCQIFeedbackAbsoluteSlot = NaN;
+    adaptationState.QualityOperatingPointKey = qualityKey;
+end
+
 if localPolicyEnabled(policy)
     % TS 38.214 CQI index 0 explicitly reports that the channel is out of
     % range.  It is feedback, not a schedulable minimum-MCS operating
@@ -197,8 +220,10 @@ if localPolicyEnabled(policy)
         if isfinite(feedbackAbsoluteSlot)
             adaptationState.LastCQIFeedbackAbsoluteSlot = feedbackAbsoluteSlot;
         end
-        adaptationState.RankIncreaseCandidate = NaN;
-        adaptationState.RankIncreaseConfirmationCount = 0;
+        if spatialUpdateAllowed
+            adaptationState.RankIncreaseCandidate = NaN;
+            adaptationState.RankIncreaseConfirmationCount = 0;
+        end
         decision.ResolvedCQI = 0;
         decision.SmoothedCQI = 0;
         decision.CQIObservationCount = double(adaptationState.CQIObservationCount);
@@ -232,7 +257,7 @@ if localPolicyEnabled(policy)
     end
 end
 
-if rankControl.AdaptiveRank
+if rankControl.AdaptiveRank && spatialUpdateAllowed
     ri = decision.RI;
     if isfinite(ri)
         maxLayers = localMaxLayers(cfg, direction);
@@ -275,7 +300,7 @@ if rankControl.AdaptiveRank
     end
 end
 
-if direction == "DL" && localPolicyEnabled(beamPolicy)
+if direction == "DL" && localPolicyEnabled(beamPolicy) && spatialUpdateAllowed
     pmi = decision.PMI;
     if isfinite(pmi)
         decision.PMI = round(pmi);
@@ -312,6 +337,31 @@ elseif logical(decision.RankUpdated)
     decision.RankUpdateStatus = "ready_to_apply";
     adaptationState.RankIncreaseCandidate = NaN;
     adaptationState.RankIncreaseConfirmationCount = 0;
+end
+
+if strlength(qualityKey) > 0 && ...
+        any(string(decision.RankUpdateStatus) == ...
+        ["pending_increase_confirmation","held_missing_atomic_pmi"])
+    % Candidate-rank CQI cannot enter the executable-rank temporal filter.
+    % Keep only the spatial confirmation transition; all prior quality and
+    % OLLA state remains intact. Raw candidate CQI/RI stays in the report.
+    candidate = adaptationState.RankIncreaseCandidate;
+    count = adaptationState.RankIncreaseConfirmationCount;
+    adaptationState = stateBeforeQuality;
+    adaptationState.RankIncreaseCandidate = candidate;
+    adaptationState.RankIncreaseConfirmationCount = count;
+    decision.MCSUpdated = false;
+    decision.MCSIndex = NaN;
+    decision.TargetCodeRate = NaN;
+    decision.Modulation = "";
+    decision.SmoothedCQI = adaptationState.SmoothedCQI;
+    decision.CQIBasedMCS = adaptationState.CQIBasedMCS;
+    decision.CQIObservationCount = adaptationState.CQIObservationCount;
+    decision.CQIOutageObservationCount = adaptationState.CQIOutageObservationCount;
+    decision.StateUpdateCount = adaptationState.UpdateCount;
+    decision.OLLAUpdateCount = adaptationState.OLLAUpdateCount;
+    decision.OLLAUpdateCountAfterEvent = adaptationState.OLLAUpdateCount;
+    decision.OLLAUpdateAppliedAtThisEvent = false;
 end
 
 decision.Valid = logical(decision.MCSUpdated || decision.RankUpdated || decision.PMIUpdated || decision.CRIUpdated);
@@ -500,7 +550,9 @@ else
 end
 
 if resetState
-    adaptationState.DeltaMCS = 0;
+    if ollaUpdateAuthorized
+        adaptationState.DeltaMCS = 0;
+    end
     adaptationState.LastResetReason = char(resetReason);
 end
 

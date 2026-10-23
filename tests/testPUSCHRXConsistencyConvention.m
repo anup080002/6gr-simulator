@@ -1,8 +1,23 @@
-function ok = testPUSCHRXConsistencyConvention()
+function [ok, artifact] = testPUSCHRXConsistencyConvention(artifactRoot)
 %TESTPUSCHRXCONSISTENCYCONVENTION Guard UL RX LLR and symbol-domain contracts.
+% Optional artifactRoot must not exist. It retains the already executed
+% DFT component, not an additional waveform or a shared-runtime episode.
+
+if nargin<1, artifactRoot=""; end
+assert((isstring(artifactRoot)&&isscalar(artifactRoot))||ischar(artifactRoot), ...
+    'testPUSCHRXConsistencyConvention:ArtifactRoot','Expected one artifact directory.');
+artifactRoot=string(artifactRoot);
+artifact=struct('Status',"not_requested",'ArtifactRoot',"");
+if strlength(artifactRoot)>0
+    artifactRoot=string(java.io.File(char(artifactRoot)).getCanonicalPath());
+    localRequireNewArtifactRoot(artifactRoot);
+end
 
 setup6GRSimToolkit("Verbose", false, "RunToolboxChecks", false);
 if ~localHaveRequired5G()
+    assert(strlength(artifactRoot)==0, ...
+        'testPUSCHRXConsistencyConvention:NativeCaptureUnavailable', ...
+        'Requested native artifact requires the actual 5G Toolbox execution; no substitute is written.');
     warning("testPUSCHRXConsistencyConvention:Missing5G", ...
         "Skipping PUSCH RX consistency test because required 5G Toolbox APIs are unavailable.");
     ok = true;
@@ -12,7 +27,8 @@ end
 rng(1919, "twister");
 localAssertNoNoiseCase(localCfg("nonCodebook", false, 1, 1, NaN), "cp_ofdm_noncodebook");
 localAssertNoNoiseCase(localCfg("codebook", false, 1, 2, 0), "cp_ofdm_codebook");
-localAssertNoNoiseCase(localCfg("nonCodebook", true, 1, 1, NaN), "dft_s_ofdm_noncodebook");
+artifact=localAssertNoNoiseCase(localCfg("nonCodebook", true, 1, 1, NaN), ...
+    "dft_s_ofdm_noncodebook",artifactRoot);
 localAssertUCIOnPUSCHAccounting();
 localAssertUCIOnPUSCHRank2Accounting();
 localAssertUCIOnPUSCHRank2CombinedCSIAccounting();
@@ -48,7 +64,12 @@ assert(string(rx.EqualizerRequestedType) == "MMSE" && ...
      "because the same scenario reserves IRC for MU-MIMO grants."]);
 end
 
-function localAssertNoNoiseCase(cfg, label)
+function artifact=localAssertNoNoiseCase(cfg, label, artifactRoot)
+if nargin<3, artifactRoot=""; end
+artifact=struct('Status',"not_requested",'ArtifactRoot',"");
+% Earlier CP cases have consumed randomness. Retain the actual state here,
+% never relabel this observation with the test's initial seed alone.
+rngBeforeTX=rng;
 [tx, ~] = sixgr.phy.ul.PUSCH_Tx(cfg, "CompactOutput", false);
 [rx, ~] = sixgr.phy.ul.PUSCH_Rx(tx.Waveform, cfg, ...
     "Carrier", tx.Carrier, ...
@@ -71,6 +92,7 @@ assert(ber == 0, "%s no-noise PUSCH must have BER=0.", label);
 assert(height(samples) == double(tx.QAMSymbolCount) && ...
     all(samples.CaptureScope == "full_allocation_paired_symbols"), ...
     "%s must retain every executed receiver QAM symbol, not a preview.", label);
+localAssertCoordinateDomain(tx,rx,cfg,samples,label);
 assert(double(metrics.SymbolErrorRate) == 0 && double(metrics.SymbolErrors) == 0, ...
     "%s no-noise PUSCH must have layer-domain SER=0.", label);
 assert(strcmpi(string(metrics.SymbolComparisonDomain), "layer"), ...
@@ -102,6 +124,92 @@ assert(double(lineage.ULSCHDemapperLLRCount) == double(tx.DataRateMatchedBitCoun
 assert(double(lineage.RateRecoveredRows) == double(tx.CodingLayout.MotherCodeLength) && ...
         double(lineage.RateRecoveredCodeBlocks) == double(tx.CodingLayout.NumCodeBlocks), ...
     "%s decoded lineage must preserve rate-recovery mother-code dimensions.", label);
+if strlength(artifactRoot)>0
+    artifact=localRetainNativeDFT(artifactRoot,label,cfg,tx,rx,metrics,samples,rngBeforeTX);
+end
+end
+
+function artifact=localRetainNativeDFT(root,label,cfg,tx,rx,metrics,samples,rngBeforeTX)
+assert(label=="dft_s_ofdm_noncodebook" && tx.PUSCH.TransformPrecoding && ...
+    all(samples.SymbolCoordinateDomain=="pre_transform_qam_positions"), ...
+    'testPUSCHRXConsistencyConvention:ArtifactScope','Retain only the actual DFT case.');
+localRequireNewArtifactRoot(root);
+[created,message,messageID]=mkdir(root);
+assert(created && isempty(messageID), ...
+    'testPUSCHRXConsistencyConvention:ArtifactRoot', ...
+    'Cannot create a new immutable component directory: %s',message);
+csvRelative="air_interface/csv/ul_constellation_samples.csv";
+matRelative="native_dft_component.mat";
+[~,csvPath]=sixgr.truth.constellationArtifactPaths(cfg,fullfile(root,'air_interface','csv'));
+sixgr.util.csvWriteTable(csvPath,samples,'PreserveSchema',true,'RoundTripNumericText',true);
+types=struct();
+for name=string(samples.Properties.VariableNames)
+    if isstring(samples.(name)), types.(name)='string';
+    else, types.(name)='double'; end
+end
+readback=sixgr.util.csvReadTable(csvPath,'ColumnTypes',types);
+assert(isequal(string(readback.Properties.VariableNames),string(samples.Properties.VariableNames)), ...
+    'testPUSCHRXConsistencyConvention:ArtifactRoundTrip','Native CSV schema changed.');
+for name=string(samples.Properties.VariableNames)
+    assert(isequaln(readback.(name),samples.(name)), ...
+        'testPUSCHRXConsistencyConvention:ArtifactRoundTrip','Native CSV changed %s.',name);
+end
+% MAT retains original complex/native operands, not just plotted reductions.
+save(fullfile(root,matRelative),'cfg','tx','rx','metrics','samples','rngBeforeTX','-v7.3');
+retained=load(fullfile(root,matRelative),'samples','rngBeforeTX');
+assert(isequaln(retained.samples,samples)&&isequaln(retained.rngBeforeTX,rngBeforeTX), ...
+    'testPUSCHRXConsistencyConvention:ArtifactRoundTrip','Native MAT readback changed operands.');
+raw=complex(samples.RawEqualizedReal,samples.RawEqualizedImag);
+reference=complex(samples.ReferenceSymbolReal,samples.ReferenceSymbolImag);
+receipt=struct('Version',"native_dft_constellation_component/v1", ...
+    'Status',"actual_native_DFT_case_assertions_passed", ...
+    'Producer',"testPUSCHRXConsistencyConvention",'Case',label, ...
+    'EvidenceScope',"direct_no_noise_PUSCH_PHY_component_not_shared_runtime_or_scenario", ...
+    'TerminalQualification',false,'AdditionalPHYExecutionsForPersistence',0, ...
+    'ReceiverConfigurationSource',"supplied_native_TX_allocation_TBS_RV_and_coding_layout", ...
+    'ReceiverSkipTimingEstimate',true,'AppliedChannel',"TX_waveform_passed_directly_to_RX_without_added_noise", ...
+    'ConfiguredSNR_dB',double(cfg.channel.snr_dB), ...
+    'ConfiguredSNRRole',"configuration_only_not_applied_or_measured_noise", ...
+    'SuppliedDecoderNoiseVariance',1e-9,'SuppliedDecoderNoiseVarianceDomain',"grid", ...
+    'SuppliedDecoderNoiseVarianceRole',"receiver_parameter_not_injected_noise_measurement", ...
+    'RNGProvenance',"exact_rng_state_immediately_before_this_TX_retained_in_MAT", ...
+    'PopulationScopeComplete',false,'SharedReceiverClockEvidenceAvailable',false, ...
+    'SourceCSV',csvRelative,'SourceCSVSHA256',sixgr.util.sha256File(csvPath), ...
+    'SourceRows',height(samples),'MATFile',matRelative, ...
+    'MATFileSHA256',sixgr.util.sha256File(fullfile(root,matRelative)), ...
+    'CaptureScope',"full_allocation_paired_symbols", ...
+    'SymbolCoordinateDomain',"pre_transform_qam_positions", ...
+    'SymbolOrderLinearIndexDomain',"native_pre_transform_allocation_position_key", ...
+    'QAMSymbolCount',double(tx.QAMSymbolCount), ...
+    'UniqueNativePositions',numel(unique(samples.SymbolOrderLinearIndex)), ...
+    'RawErrorEnergy',sum(abs(raw-reference).^2), ...
+    'ReferenceEnergy',sum(abs(reference).^2), ...
+    'CRCPass',logical(rx.Ok)&&~logical(rx.CRCError), ...
+    'BitErrors',sum(int8(tx.TransportBlock(:))~=int8(rx.TransportBlock(:))), ...
+    'SymbolErrors',double(metrics.SymbolErrors));
+sourceNames=["testPUSCHRXConsistencyConvention","sixgr.phy.ul.PUSCH_Tx", ...
+    "sixgr.phy.ul.PUSCH_Rx","sixgr.link.deriveModulationTrackingMetrics", ...
+    "sixgr.util.csvWriteTable","sixgr.util.CSVTableStream"];
+receipt.ProducerSources=repmat(struct('Function',"",'SHA256',""),numel(sourceNames),1);
+for k=1:numel(sourceNames)
+    receipt.ProducerSources(k)=struct('Function',sourceNames(k), ...
+        'SHA256',sixgr.util.sha256File(which(char(sourceNames(k)))));
+end
+sixgr.util.jsonWrite(fullfile(root,'native_dft_component.json'),receipt);
+artifact=struct('Status',receipt.Status,'ArtifactRoot',root, ...
+    'Receipt',fullfile(root,'native_dft_component.json'),'SourceCSV',csvPath);
+% Exercise refusal without another TX/RX call and without modifying evidence.
+localReject(@()localRequireNewArtifactRoot(root), ...
+    'testPUSCHRXConsistencyConvention:ArtifactExists');
+assert(sixgr.util.sha256File(csvPath)==receipt.SourceCSVSHA256, ...
+    'testPUSCHRXConsistencyConvention:ArtifactRoundTrip','Refusal changed retained samples.');
+fprintf('NATIVE_DFT_COMPONENT_EVIDENCE=%s\n',root);
+end
+
+function localRequireNewArtifactRoot(root)
+assert(~isfolder(root)&&~isfile(root), ...
+    'testPUSCHRXConsistencyConvention:ArtifactExists', ...
+    'Refusing to overwrite an existing component destination: %s',root);
 end
 
 function localAssertUCIOnPUSCHAccounting()
@@ -257,6 +365,70 @@ if iscell(raw)
     raw = raw{1};
 end
 llr = double(raw(:));
+end
+
+function localAssertCoordinateDomain(tx,rx,cfg,samples,label)
+% These are original no-noise production TX/RX operands. Mutated copies
+% below are rejection probes only, never replacement measured evidence.
+assert(isequal(samples.SymbolOrderLinearIndex,double(tx.QAMSymbolOrder.LinearIndex(:))) && ...
+    isequal(samples.OFDMSymbolIndex,double(tx.QAMSymbolOrder.OFDMSymbolIndex(:))) && ...
+    isequal(samples.LayerIndex,double(tx.QAMSymbolOrder.LayerIndex(:))), ...
+    '%s full capture must retain every original native QAM position.',label);
+derive=@(t,r)sixgr.link.deriveModulationTrackingMetrics(t,r,cfg,'UL');
+if tx.PUSCH.TransformPrecoding
+    assert(all(samples.SymbolCoordinateDomain=="pre_transform_qam_positions") && ...
+        all(samples.SymbolOrderLinearIndexDomain=="native_pre_transform_allocation_position_key") && ...
+        all(isnan(samples.SubcarrierIndex)) && ...
+        all(isnan(tx.QAMSymbolOrder.SubcarrierIndex(:))) && ...
+        all(isnan(rx.QAMSymbolOrder.SubcarrierIndex(:))), ...
+        'Pre-transform QAM positions are not individual physical subcarrier REs.');
+    bad=tx; bad.QAMSymbolOrder=rmfield(bad.QAMSymbolOrder,'CoordinateDomain');
+    localReject(@()derive(bad,rx),'sixgr:link:ConstellationCoordinateDomainMismatch');
+    bad=rx; bad.QAMSymbolOrder.CoordinateDomain="layer_resource_elements";
+    localReject(@()derive(tx,bad),'sixgr:link:ConstellationCoordinateDomainMismatch');
+    bad=rx; bad.PUSCH=struct('TransformPrecoding',false);
+    localReject(@()derive(tx,bad),'sixgr:link:ConstellationCoordinateDomainMismatch');
+    bad=tx; bad.QAMSymbolOrder.SubcarrierIndex(1)=1;
+    localReject(@()derive(bad,rx),'sixgr:link:IncompleteConstellationOrdering');
+    bad=rx; bad.QAMSymbolOrder.OFDMSymbolIndex(1)=NaN;
+    localReject(@()derive(tx,bad),'sixgr:link:IncompleteConstellationOrdering');
+    bad=rx; bad.QAMSymbolOrder.OFDMSymbolIndex(1)=bad.QAMSymbolOrder.OFDMSymbolIndex(1)+1;
+    localReject(@()derive(tx,bad),'sixgr:link:SymbolOrderingMismatch');
+    bad=rx; bad.QAMSymbolOrder.LayerIndex(1)=bad.QAMSymbolOrder.LayerIndex(1)+1;
+    localReject(@()derive(tx,bad),'sixgr:link:SymbolOrderingMismatch');
+    bad=rx; bad.QAMSymbolOrder.LinearIndex(1)=NaN;
+    localReject(@()derive(tx,bad),'sixgr:link:IncompleteConstellationOrdering');
+    badTx=tx; badRx=rx;
+    badTx.QAMSymbolOrder.LinearIndex(2)=badTx.QAMSymbolOrder.LinearIndex(1);
+    badRx.QAMSymbolOrder.LinearIndex(2)=badRx.QAMSymbolOrder.LinearIndex(1);
+    localReject(@()derive(badTx,badRx),'sixgr:link:DuplicateConstellationResource');
+else
+    assert(all(samples.SymbolCoordinateDomain=="layer_resource_elements") && ...
+        all(samples.SymbolOrderLinearIndexDomain=="layer_grid_linear_index") && ...
+        isequal(samples.SubcarrierIndex,double(tx.QAMSymbolOrder.SubcarrierIndex(:))), ...
+        'CP-OFDM must retain actual physical RE coordinates.');
+    bad=tx; bad.QAMSymbolOrder.SubcarrierIndex(1)=NaN;
+    localReject(@()derive(bad,rx),'sixgr:link:IncompleteConstellationOrdering');
+    bad=rx; bad.QAMSymbolOrder.SubcarrierIndex(1)=NaN;
+    localReject(@()derive(tx,bad),'sixgr:link:IncompleteConstellationOrdering');
+    badTx=tx; badRx=rx;
+    badTx.QAMSymbolOrder.CoordinateDomain="pre_transform_qam_positions";
+    badRx.QAMSymbolOrder.CoordinateDomain="pre_transform_qam_positions";
+    badTx.QAMSymbolOrder.SubcarrierIndex(:)=NaN;
+    badRx.QAMSymbolOrder.SubcarrierIndex(:)=NaN;
+    localReject(@()derive(badTx,badRx),'sixgr:link:ConstellationCoordinateDomainMismatch');
+end
+end
+
+function localReject(action,identifier)
+try
+    action();
+catch cause
+    assert(strcmp(cause.identifier,identifier),'Expected %s, got %s: %s', ...
+        identifier,cause.identifier,cause.message);
+    return;
+end
+error('testPUSCHRXConsistencyConvention:MissingRejection','Expected %s.',identifier);
 end
 
 function tf = localHaveRequired5G()

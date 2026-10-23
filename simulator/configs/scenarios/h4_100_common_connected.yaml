@@ -3,6 +3,9 @@ inherits:
   - ../bands/h4_100_4ghz_tdd.yaml
   - ../mimo/ran1_h4_64txru_4rx.yaml
   - ../control/pdcch_joint_tdd_admission.yaml
+  # User-selected circuit-model baseline for NEW H4 executions. The old
+  # checkpoint's scientific configuration remains immutable.
+  - ../energy/always_awake_baseline.yaml
 
 meta:
   scenario_id: h4_100_common_connected
@@ -31,6 +34,12 @@ control_gating:
   srs_required: false
   trs_required: true
   trs_max_age_slots: 20
+
+# Model RF units from the explicitly installed endpoint inventory, not the
+# inherited two-chain energy example or the logical CSI/data port count.
+# This is a configurable engineering model, not measured circuit power.
+energy_efficiency:
+  rf_inventory_source: declared_endpoint_inventory
 
 simulation:
   link_direction: both

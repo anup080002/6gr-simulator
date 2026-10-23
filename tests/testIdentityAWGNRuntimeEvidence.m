@@ -46,6 +46,11 @@ for field=["ConfiguredRxAntennas","PhysicalRxAntennas","RxWaveformBranches"]
     M.(field)(:)=2;
 end
 assert(sixgr.analytics.identityAWGNRuntimeEvidence(M,cfg,4,2));
+cfg.channel.awgnBeamFailureRecoveryEnabled=true;
+assert(~sixgr.analytics.identityAWGNRuntimeEvidence(M,cfg,4,2));
+M.ChannelObjectClass(:)="explicit_piecewise_matrix_sample_operator";
+M.ElementPatternChannelApplicability(:)="not_applicable_awgn_piecewise_matrix_channel";
+assert(sixgr.analytics.identityAWGNRuntimeEvidence(M,cfg,4,2));
 M.Rank(2)=3;
 assert(~sixgr.analytics.identityAWGNRuntimeEvidence(M,cfg,4,2));
 fprintf('IDENTITY_AWGN_RUNTIME_EVIDENCE_PASS metadata_only=1 dimensions=1,2,4\n');

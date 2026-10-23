@@ -1,0 +1,19 @@
+# Execution request, NOT a new scientific scenario or inheritance override.
+# Replace the three checkpoint identities from its committed receipt and
+# retained scenario_config_identity.json. This template is not executable.
+# The existing run folder is preserved and restored by the checkpoint owner.
+checkpoint_continuation:
+  contract: sixgr_checkpoint_continuation/v1
+  checkpoint: REPLACE_WITH_ABSOLUTE_STATE_MAT_PATH
+  state_sha256: REPLACE_WITH_COMMITTED_STATE_SHA256
+  config_hash: REPLACE_WITH_ORIGINAL_CONFIG_HASH
+  repair_reason: REPLACE_WITH_REVIEWED_REPAIR_AND_PREFIX_COMPATIBILITY_REASON
+  operational_settings:
+    run_control:
+      runtime_checkpoint_enable: true
+      checkpoint_first_slot: 49
+      checkpoint_every_slots: 3
+      runtime_checkpoint_keep: 3
+    output:
+      live_csv_png_interval_slots: 5
+      execution_stage_profile_enabled: true

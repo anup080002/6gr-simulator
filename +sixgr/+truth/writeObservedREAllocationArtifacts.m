@@ -1,4 +1,4 @@
-function [carrier,native]=writeObservedREAllocationArtifacts(T,cfg,layout)
+function [carrier,native,ssb]=writeObservedREAllocationArtifacts(T,cfg,layout)
 % Publish executed grid domains with their actual run-context identity.
 % This adds no rows, changes no measurement/source label and infers no RF
 % parameter. Missing identity remains missing; conflicting identity fails.
@@ -7,13 +7,16 @@ if ~isempty(T)
     T=localBind(T,cfg,'ScenarioID',["run.scenarioID","meta.lls6gScenarioID"]);
     T=localBind(T,cfg,'ConfigHash',"meta.configHash");
 end
-[carrier,native]=sixgr.truth.splitREAllocationDomains(T);
+[carrier,native,ssb]=sixgr.truth.splitREAllocationDomains(T);
 carrierPaths=[string(fullfile(layout.ComponentCSVDirs.frame_grid,'observed_re_allocation.csv')), ...
     string(fullfile(layout.ReportCSVDir,'live_re_allocation_snapshot.csv'))];
 nativePaths=[string(fullfile(layout.ComponentCSVDirs.frame_grid,'observed_prach_native_allocation.csv')), ...
     string(fullfile(layout.ReportCSVDir,'live_prach_native_allocation_snapshot.csv'))];
 localWrite(carrier,carrierPaths);
 localWrite(native,nativePaths);
+ssbPaths=[string(fullfile(layout.ComponentCSVDirs.frame_grid,'observed_ssb_native_allocation.csv')), ...
+    string(fullfile(layout.ReportCSVDir,'live_ssb_native_allocation_snapshot.csv'))];
+localWrite(ssb,ssbPaths);
 end
 
 function T=localBind(T,cfg,name,paths)

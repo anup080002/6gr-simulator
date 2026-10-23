@@ -1,0 +1,13 @@
+function evidence=pdcchResourceIntervalEvidence(tx)
+% Actual transmitted candidate, not its decoded/scheduled data allocation.
+assert(isstruct(tx) && all(isfield(tx, ...
+    {'Carrier','PDCCH','PDCCHInd','DMRSInd'})), ...
+    'sixgr:truth:MissingPDCCHResourceEvidence');
+indices=double([tx.PDCCHInd(:);tx.DMRSInd(:)]);
+validateattributes(indices,{'double'},{'vector','integer','positive','nonempty'});
+K=12*double(tx.Carrier.NSizeGrid);
+prbs=unique(floor(mod(indices-1,K)/12),'sorted');
+evidence=struct('PDCCHCORESETStartSymbol', ...
+    double(tx.PDCCH.SearchSpace.StartSymbolWithinSlot), ...
+    'PDCCHAllocatedPRBSetJSON',string(jsonencode(prbs.')));
+end

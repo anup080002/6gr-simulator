@@ -144,6 +144,13 @@ classdef IdentityAWGNRuntime
                 state.Meta.ReceiveElementPatternSource="not_applied_awgn_fixed_matrix_channel";
                 state.Meta.RuntimeTDDReciprocitySource="configured_DL_matrix_UL_nonconjugate_transpose";
                 state.Meta.RuntimeTDDReciprocityApproximationMode="none_explicit_fixed_matrix_lab_channel";
+                if state.Meta.BeamFailureRecoveryEpisodeEnabled
+                    state.Meta.ChannelObjectClass="explicit_piecewise_matrix_sample_operator";
+                    state.Meta.ElementPatternChannelApplicability="not_applicable_awgn_piecewise_matrix_channel";
+                    state.Meta.TransmitElementPatternSource="not_applied_awgn_piecewise_matrix_channel";
+                    state.Meta.ReceiveElementPatternSource="not_applied_awgn_piecewise_matrix_channel";
+                    state.Meta.RuntimeTDDReciprocityApproximationMode="none_explicit_piecewise_matrix_lab_channel";
+                end
             end
         end
 
@@ -224,7 +231,7 @@ classdef IdentityAWGNRuntime
             episodeActive=logical(segments.EpisodeActive);
         end
 
-        function reference=reference(state,count)
+        function reference=reference(state,count,segments)
             assert(sixgr.channel.IdentityAWGNRuntime.isState(state) && ...
                 state.Materialized && ~state.UseFading && isempty(state.Obj), ...
                 'ChannelFactory:InvalidIdentityReference','Require the executed identity operator, never a fading replacement.');
@@ -234,8 +241,12 @@ classdef IdentityAWGNRuntime
             % deliberately not labelled NR fading
             % snapshots or receiver channel estimates. Scoring consumers only.
             matrix=state.Meta.AWGNSpatialMatrix;
-            segments=sixgr.channel.IdentityAWGNRuntime.matrixSegmentsForInterval( ...
-                state,count);
+            if nargin<3
+                assert(~state.Meta.BeamFailureRecoveryEpisodeEnabled, ...
+                    'ChannelFactory:MissingExecutedAWGNSegments', ...
+                    'A piecewise reference requires the segments returned by the actual application.');
+                segments=sixgr.channel.IdentityAWGNRuntime.matrixSegmentsForInterval(state,count);
+            end
             gains=zeros(count,1,n,nr,'like',matrix);
             for k=1:numel(segments)
                 idx=(segments(k).FirstOffset+1):segments(k).EndOffsetExclusive;
@@ -258,6 +269,22 @@ classdef IdentityAWGNRuntime
             if state.Meta.IdentityOperatorSource=="explicit_matrix_AWGN_shared_sample_operator"
                 reference.Source="executed_fixed_matrix_AWGN_operator";
                 reference.SpatialMatrix=matrix;
+                if state.Meta.BeamFailureRecoveryEpisodeEnabled
+                    reference=rmfield(reference,'SpatialMatrix');
+                    reference.Source="executed_piecewise_matrix_AWGN_operator";
+                    reference.OperatorExecutionStartSample=state.CurrentSampleIndex;
+                    reference.OperatorExecutionEndSampleExclusive=state.CurrentSampleIndex+count;
+                    for k=1:numel(segments)
+                        segments(k).MatrixSHA256=string( ...
+                            sixgr.channel.ChannelFactory.runtimeNumericArraySHA256(segments(k).Matrix));
+                    end
+                    reference.OperatorSegments=segments;
+                    reference.AppliedAWGNSpatialMatrixSHA256= ...
+                        sixgr.channel.PiecewiseAWGNReference.signature(segments);
+                    assert(sixgr.channel.PiecewiseAWGNReference.metadataValid(reference), ...
+                        'ChannelFactory:InvalidExecutedAWGNSegments', ...
+                        'Executed operator segments must retain exact full-interval coverage and matrices.');
+                end
             end
         end
     end

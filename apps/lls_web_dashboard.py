@@ -7997,7 +7997,7 @@ def classify_result_section(logical_path: str) -> str:
         return "geometry"
     if "waveform_preview" in path:
         return "waveform"
-    if "constellation_preview" in path:
+    if "constellation_preview" in path or "constellation_samples" in path or path.endswith("/equalized_constellations.csv"):
         return "constellation"
     if "modulation_demodulation" in path:
         return "modulation"
@@ -8100,6 +8100,8 @@ def result_artifact_display_priority(section: str, logical_path: str) -> int:
             "reports/csv/live_waveform_preview.csv",
         ],
         "constellation": [
+            "air_interface/csv/dl_constellation_samples.csv",
+            "air_interface/csv/ul_constellation_samples.csv",
             "air_interface/csv/dl_constellation_preview.csv",
             "air_interface/csv/ul_constellation_preview.csv",
         ],
@@ -8227,7 +8229,7 @@ def result_artifact_display_priority(section: str, logical_path: str) -> int:
     keyword_groups: dict[str, list[str]] = {
         "summary": ["runtime", "scenario_summary", "kpi_summary", "link_kpis", "sweep", "coverage", "stage_profile"],
         "waveform": ["live_waveform_preview", "waveform"],
-        "constellation": ["constellation_preview"],
+        "constellation": ["constellation_samples", "constellation_preview", "equalized_constellations"],
         "pdsch": ["dl_pdsch_trials", "pdsch_outputs", "coding_decoder"],
         "pusch": ["ul_pusch_trials", "pusch_pucch_outputs", "coding_decoder"],
         "modulation": ["live_modulation_demodulation", "constellation_preview", "modulation"],
@@ -8249,6 +8251,79 @@ def result_artifact_display_priority(section: str, logical_path: str) -> int:
     return len(preferred) + len(keyword_groups.get(section, [])) + 50
 
 
+def raw_constellation_source(logical_path: str) -> tuple[str, str, str] | None:
+    """Recognize producer names, not proof of complete capture or receiver data."""
+    path = str(logical_path or "").replace("\\", "/").strip().lower()
+    match = re.fullmatch(r"(.*?)(?:air_interface/csv/)(dl|ul)_constellation_(samples|preview)\.csv", path)
+    if match:
+        return match.group(1), match.group(2).upper(), match.group(3)
+    if path.endswith("reports/csv/equalized_constellations.csv"):
+        return path[:-len("reports/csv/equalized_constellations.csv")], "", "legacy_combined"
+    return None
+
+
+def _constellation_artifact_scope(artifact: dict[str, Any]) -> tuple[str, str, str]:
+    source = raw_constellation_source(artifact.get("logical_path", ""))
+    path = str(artifact.get("filesystem_path") or "").replace("\\", "/")
+    logical = str(artifact.get("logical_path") or "").replace("\\", "/")
+    root = path[:-len(logical)] if path and logical and path.lower().endswith(logical.lower()) else path
+    return str(artifact.get("run_id") or ""), root.lower(), source[0] if source else ""
+
+
+def prefer_raw_constellation_sources(artifacts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Prefer full-source files without upgrading preview or merging executions.
+
+    This is display selection, not capture validation. Even an empty/invalid
+    full source stays selected; its genuine preview remains an alternate
+    download. A combined report is not an equivalent alias merely by name.
+    """
+    full = {}
+    for item in artifacts:
+        source = raw_constellation_source(item.get("logical_path", ""))
+        scope = _constellation_artifact_scope(item)
+        if source and source[2] == "samples" and (scope[0] or scope[1]):
+            full.setdefault((scope, source[1]), item)
+    selected, seen = [], set()
+    for item in artifacts:
+        source = raw_constellation_source(item.get("logical_path", ""))
+        if not source:
+            selected.append(item)
+            continue
+        scope = _constellation_artifact_scope(item)
+        preferred = full.get((scope, source[1])) if source[2] == "preview" else None
+        if preferred is not None:
+            continue
+        key = (scope, str(item.get("logical_path") or "").replace("\\", "/").lower(),
+               None if scope[0] or scope[1] else item.get("artifact_id"))
+        if key in seen:
+            continue
+        # Suppress only a declared, byte-identical alias within this run/root.
+        alias_of = str(item.get("source_csv") or "").replace("\\", "/").lower()
+        digest = str(item.get("sha256") or item.get("content_sha256") or "").lower()
+        if (scope[0] or scope[1]) and source[2] == "legacy_combined" and alias_of and re.fullmatch(r"[0-9a-f]{64}", digest):
+            if any(other is not item and _constellation_artifact_scope(other) == scope
+                   and str(other.get("logical_path") or "").replace("\\", "/").lower() == alias_of
+                   and raw_constellation_source(alias_of) and raw_constellation_source(alias_of)[2] in {"samples", "preview"}
+                   and str(other.get("sha256") or other.get("content_sha256") or "").lower() == digest
+                   for other in artifacts):
+                continue
+        seen.add(key)
+        current = dict(item)
+        current["constellation_source_kind"] = source[2]
+        current["constellation_chart_scope"] = "bounded_receiver_IQ_preview_not_full_capture_validation"
+        if source[2] == "samples":
+            current["constellation_alternate_sources"] = list(item.get("constellation_alternate_sources") or []) + [
+                {"logical_path": other["logical_path"], "artifact_id": other["artifact_id"],
+                 "source_kind": "preview", "download_url": artifact_url(int(other["artifact_id"]), download=True)}
+                for other in artifacts
+                if raw_constellation_source(other.get("logical_path", "")) == (source[0], source[1], "preview")
+                and _constellation_artifact_scope(other) == scope]
+            current["constellation_alternate_sources"] = list({
+                alternate["artifact_id"]: alternate for alternate in current["constellation_alternate_sources"]}.values())
+        selected.append(current)
+    return selected
+
+
 def build_artifact_descriptor(art: dict[str, Any]) -> dict[str, Any]:
     section = classify_result_section(str(art.get("logical_path") or ""))
     descriptor = {
@@ -8263,7 +8338,8 @@ def build_artifact_descriptor(art: dict[str, Any]) -> dict[str, Any]:
         "download_url": artifact_url(int(art["artifact_id"]), download=True),
     }
     for field in ("evidence_scope", "publication_kind", "terminal_qualification",
-                  "publication_snapshot", "measurement_name", "source_csv", "hash_verified"):
+                  "publication_snapshot", "measurement_name", "source_csv", "hash_verified",
+                  "run_id", "filesystem_path", "sha256", "content_sha256"):
         if field in art:
             descriptor[field] = art[field]
     if art["artifact_kind"] == "table_csv":
@@ -8286,6 +8362,11 @@ def friendly_artifact_label(logical_path: str) -> str:
     label = label.replace("__", " / ")
     label = re.sub(r"[_-]+", " ", label)
     label = re.sub(r"\s+", " ", label).strip()
+    source = raw_constellation_source(raw)
+    if source:
+        scope = {"samples": "full-source CSV; chart is a bounded preview",
+                 "preview": "preview-source CSV", "legacy_combined": "legacy combined CSV; capture scope as retained"}[source[2]]
+        return f"{label} ({scope})"
     return label or raw
 
 
@@ -8423,6 +8504,9 @@ def plot_browser_chart_table_artifacts(
     out: list[dict[str, Any]] = list(reference_chart_artifacts)
     for item in table_artifacts:
         path = str(item.get("logical_path") or "").replace("\\", "/").strip().lower()
+        if raw_constellation_source(path):
+            out.append(item)
+            continue
         if path in explicit_signal_sources:
             out.append(item)
             continue
@@ -8436,7 +8520,7 @@ def plot_browser_chart_table_artifacts(
             or path.endswith("_histogram.csv")
         ):
             out.append(item)
-    return dedupe_descriptor_list(out)
+    return prefer_raw_constellation_sources(dedupe_descriptor_list(out))
 
 
 def build_plot_browser_payload(run_id: int) -> dict[str, Any]:
@@ -8806,6 +8890,12 @@ CANONICAL_RUNTIME_ARTIFACT_OWNERS: dict[str, dict[str, Any]] = {
         "legacy_paths": ["control/csv/pucch_trials.csv"],
         "owner_kind": "raw_control_trials",
     },
+    "csirs_trials": {
+        "canonical_path": "air_interface/csv/csi_rs_trials.csv",
+        "legacy_paths": ["control/csv/csi_rs_trials.csv"],
+        # Aggregate live_csirs_stats is not a per-occasion receiver trial.
+        "owner_kind": "raw_control_trials",
+    },
     "srs_trials": {
         "canonical_path": "air_interface/csv/srs_trials.csv",
         "legacy_paths": ["control/csv/srs_trials.csv"],
@@ -8915,7 +9005,7 @@ def artifact_is_legacy_mirror(logical_path: str) -> bool:
 def dedupe_table_descriptors_for_ui(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     grouped: dict[str, list[dict[str, Any]]] = {}
     passthrough: list[dict[str, Any]] = []
-    for item in items:
+    for item in prefer_raw_constellation_sources(items):
         path = str(item.get("logical_path") or "").strip().lower()
         family = artifact_runtime_family_key(path)
         if family:
@@ -9841,6 +9931,13 @@ PHY_GRID_EXTRA_TABLES: dict[str, dict[str, Any]] = {
         "owner_kind": "observed_prach_native_allocation",
         # PRACH uses its own OFDM grid.  Keep it on the slot timeline, but
         # never project its native subcarriers onto the carrier CP-OFDM grid.
+        "render_events": False,
+    },
+    "native_ssb_allocation": {
+        "canonical_path": "reports/csv/live_ssb_native_allocation_snapshot.csv",
+        "legacy_paths": ["frame_grid/csv/observed_ssb_native_allocation.csv"],
+        "owner_kind": "observed_ssb_native_allocation",
+        # Mixed SSB symbols/bins cannot become carrier-grid rectangles.
         "render_events": False,
     },
     "initial_access_lifecycle": {
@@ -11485,6 +11582,21 @@ CONTROL_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("RuntimeStageWaveformsUsed", "Runtime waveform used"),
         ("Status", "Status"),
     ],
+    "csirs_trials": [
+        ("Direction", "Direction"),
+        ("Frame", "Frame"),
+        ("Slot", "Slot"),
+        ("UEIndex", "UE"),
+        ("RNTI", "RNTI"),
+        ("CellID", "Cell"),
+        ("ResourceID", "Selected CSI resource"),
+        ("ResourceSetID", "CSI resource set"),
+        ("ChannelNMSEMeasuredResourceCount", "Measured resources"),
+        ("ChannelNMSEConfiguredResourceCount", "Configured resources"),
+        ("ChannelNMSEScope", "NMSE scoring scope"),
+        ("ChannelEstimateResourcesCSV", "Paired channel resource CSV"),
+        ("Status", "Status"),
+    ],
     "srs_trials": [
         ("Direction", "Direction"),
         ("Frame", "Frame"),
@@ -11492,6 +11604,36 @@ CONTROL_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("UEID", "UE"),
         ("RNTI", "RNTI"),
         ("ServingCell", "Cell"),
+        ("MeasurementId", "Raw SRS measurement ID"),
+        ("SRSConfigurationContextID", "Raw SRS configuration context"),
+        ("SRSNumPorts", "Raw SRS configured ports"),
+        ("ObservationID", "Raw SRS observation ID"),
+        ("MeasurementClockDomain", "Raw measurement clock"),
+        ("MeasurementClockEpoch", "Raw measurement epoch"),
+        ("ResultAvailableAtSample", "Raw measurement available sample"),
+        ("SRSPowerControlRequestedPower_dBm", "Requested SRS power (dBm; pre-RF)"),
+        ("SRSPowerControlAppliedPower_dBm", "Applied SRS target (dBm; pre-RF)"),
+        ("SRSPowerControlPCMAX_dBm", "Configured PCMAX (dBm)"),
+        ("SRSPowerControlPathloss_dB", "SRS reference pathloss (dB)"),
+        ("SRSPowerControlPathlossSource", "SRS pathloss source"),
+        ("SRSPowerControlPathlossReferenceRS", "SRS power reference RS"),
+        ("SRSPowerControlSignalledReferencePower_dBm", "Decoded RS power (dBm)"),
+        ("SRSPowerControlFilteredRSRP_dBm", "Filtered reference RSRP (dBm)"),
+        ("SRSPowerControlPathlossMeasurementId", "SRS pathloss measurement ID"),
+        ("SRSPowerControlPathlossProducerSlot", "SRS reference source slot"),
+        ("SRSPowerControlPathlossAvailableSlot", "SRS reference available slot"),
+        ("SRSPowerControlSIB1RxTreeHash", "Decoded SIB1 power-reference hash"),
+        ("SRSPowerControlAdjustment_dB", "SRS adjustment h (dB)"),
+        ("SRSPowerControlAdjustmentState", "SRS adjustment policy"),
+        ("SRSPowerControlStateOwner", "SRS adjustment owner"),
+        ("SRSPowerControlStateUpdateCount", "Received power-state updates"),
+        ("SRSPowerControlStateResetReason", "Power-state reset reason"),
+        ("SRSPowerControlReceivedAssignmentDigest", "Decoded TPC assignment hash"),
+        ("SRSPowerControlTPCAvailableAtSample", "TPC result available sample"),
+        ("SRSPowerControlTPCAppliedAtSample", "PUSCH adjustment effective sample"),
+        ("SRSPowerControlAdjustmentReadAtSample", "SRS adjustment read sample"),
+        ("SRSPowerControlBoundAtEmission", "SRS power bound before emission"),
+        ("SRSPowerControlClipped", "SRS target limited by PCMAX"),
         ("DetectionMetric", "Metric"),
         ("EVM_rms", "EVM rms"),
         ("NMSE_dB", "NMSE dB"),
@@ -11514,6 +11656,15 @@ CONTROL_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("SRSExpectedReceiveCenterSample", "Expected receive center sample"),
         ("SRSAppliedTimingCorrection_samples", "SRS timing correction (samples)"),
         ("SRSReceiveTimingSource", "SRS timing source"),
+        ("SRSArrivalTimingReferenceAvailable", "Earliest-path scoring available"),
+        ("SRSExpectedEarliestArrivalSample", "Expected earliest arrival sample"),
+        ("SRSExpectedEarliestArrivalCaptureOffset_samples", "Earliest arrival from capture start (samples)"),
+        ("SRSExpectedEarliestArrivalRelativeToReceiveCenter_samples", "Earliest arrival relative to scheduled center (samples)"),
+        ("SRSSelectedPeakMinusEarliestArrival_samples", "Selected peak minus earliest path (samples; not post-correction residual)"),
+        ("SRSArrivalTimingReferencePlane", "Arrival scoring reference plane"),
+        ("SRSArrivalTimingScoringStatus", "Arrival scoring status"),
+        ("TimingScoringReferenceSource", "Arrival scoring source"),
+        ("TimingScoringReferenceJSON", "Executed arrival-reference operands"),
         ("PilotCommonPhaseRate_Hz", "Matched-pilot common phase rate (Hz; not Doppler spread)"),
         ("PilotPhaseEvolutionStatus", "Pilot phase measurement status"),
         ("PilotPhaseObservationScope", "Pilot phase observation scope"),
@@ -11749,6 +11900,23 @@ DATA_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("Slot", "Slot"),
         ("UEID", "UE"),
         ("RNTI", "RNTI"),
+        ("UCIOnPUSCHFlag", "UCI processing flag (definition required; not presence/success)"),
+        ("UCIOnPUSCHFlagDefinition", "UCI processing flag definition"),
+        ("UCIOnPUSCHFlagSource", "UCI processing flag source"),
+        ("UCIOnPUSCHFlagStatus", "UCI processing flag status"),
+        ("UCIOnPUSCHApplied", "Raw UCI Applied (source required; not presence/success)"),
+        ("UCIOnPUSCHSource", "Raw UCI processing source"),
+        ("UCIOnPUSCHEvidenceSource", "Raw UCI processing evidence source"),
+        ("InputUCIOnPUSCHFlag", "Stored input UCI flag (separate plane)"),
+        ("InputUCIOnPUSCHFlagDefinition", "Stored input UCI flag definition"),
+        ("InputUCIOnPUSCHFlagSource", "Stored input UCI flag source"),
+        ("InputUCIOnPUSCHFlagStatus", "Stored input UCI flag status"),
+        ("RuntimeEvidenceSource", "Original receiver runtime evidence source"),
+        ("RuntimeMaterializationStatus", "Original runtime materialization status"),
+        ("PartialReception", "Partial reception"),
+        ("CSIPresenceResolved", "CSI presence resolved (separate outcome)"),
+        ("CSIReportDetected", "CSI report detected (separate outcome)"),
+        ("CSIPart1Usable", "CSI Part 1 usable (separate outcome)"),
         ("AllocatedPRBCount", "PRBs"),
         ("NumSymbols", "Symbols"),
         ("MCSIndex", "MCS"),
@@ -11799,6 +11967,23 @@ DATA_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("RequestedPrecoderPMI", "Requested TPMI"),
         ("RequestedPrecoderSource", "PMI request source"),
         ("AppliedPrecoderPMI", "Applied TPMI"),
+        ("RawSRSMeasurementID", "Newest raw SRS measurement ID"),
+        ("RawSRSLastSuccessfulSlot", "Newest raw SRS slot"),
+        ("AcceptedSRSMeasurementID", "Accepted spatial source measurement ID"),
+        ("AcceptedSRSConfigurationContextID", "Accepted source configuration context"),
+        ("AcceptedSRSNumPorts", "Accepted source SRS ports"),
+        ("AcceptedSRSProducerSlot", "Accepted spatial source slot"),
+        ("AcceptedSRSAvailableSlot", "Accepted spatial source available slot"),
+        ("AcceptedSRSRI", "Accepted source RI"),
+        ("AcceptedSRSTPMI", "Accepted source TPMI"),
+        ("AcceptedSRSCausalUsable", "Accepted source usable at decision"),
+        ("AcceptedSRSCausalAgeSlots", "Accepted source age at decision (slots)"),
+        ("AcceptedSRSCausalStatus", "Accepted source causal status"),
+        ("AcceptedSRSMeasurementClockDomain", "Accepted source clock"),
+        ("AcceptedSRSMeasurementClockEpoch", "Accepted source epoch"),
+        ("AcceptedSRSSpatialDecisionSHA256", "Accepted source capsule SHA256"),
+        ("ScheduledSRI", "Scheduled SRI (separate resource association)"),
+        ("FrozenGrantContextId", "Frozen grant identity"),
         ("AppliedPrecoderPMITruthClassification", "Applied PMI status"),
         ("AppliedCodebookPortIndexSet", "Codebook ports (1-based)"),
         ("PrecodingNumLogicalPorts", "Logical ports"),
@@ -11857,8 +12042,15 @@ PROCEDURE_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("UEIndex", "UE"), ("CellID", "Cell"), ("Slot", "Source slot (1-based)"),
         ("ObservationDeliverySlot", "Delivery slot (1-based)"),
         ("SSBIndex", "SSB index (0-based)"),
-        ("SSBCandidateCarrierSlot0Based", "Candidate carrier slot (0-based)"),
-        ("SSBCandidateSymbolWithinSlot0Based", "Candidate symbol (0-based)"),
+        ("SSBCandidateCarrierSlot0Based", "Containing common-carrier slot (0-based)"),
+        ("SSBCandidateSymbolWithinSlot0Based", "Containing common-carrier symbol (0-based)"),
+        ("SSBCandidateNativeSlot0Based", "Native SSB slot (0-based)"),
+        ("SSBCandidateNativeSymbolWithinSlot0Based", "Native SSB symbol (0-based)"),
+        ("SSBCandidateNativeSCS_kHz", "SSB SCS (kHz)"),
+        ("SSBCandidateCPStartSample", "SSB CP start sample"),
+        ("SSBCandidateEndSampleExclusive", "SSB end sample (exclusive)"),
+        ("SSBCandidateCommonBoundaryAligned", "Aligned to common symbol boundary"),
+        ("SSBCandidateCoordinateSource", "Coordinate source (not timing estimate)"),
         ("SSBBurstConfiguredBeamCount", "Configured beams"),
         ("SSBBurstExecutedBeamCount", "Executed beams"),
         ("SSBBurstSweepObservedCandidateCount", "Observed candidates"),
@@ -12015,7 +12207,9 @@ PROCEDURE_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("SelectionAuthority", "Selection authority"),
     ],
     "csi_report": [
-        ("UEIndex", "UE"), ("RNTI", "RNTI"),
+        ("UEIndex", "UE"), ("RNTI", "RNTI"), ("Direction", "Direction"),
+        ("ReportIdentity", "Report identity"), ("SourceSignal", "Source signal"),
+        ("SweepPointIndex", "Sweep point"), ("ConfiguredSNR_dB", "Configured SNR (dB)"),
         ("SourceSlot", "Report source slot"), ("CSIReferenceSlot", "CSI reference-resource slot"),
         ("SourceSlotAuthority", "Reference-slot authority"), ("DueSlot", "Report due slot"),
         ("DeliveredSlot", "Delivered slot"), ("DeliveryStatus", "Delivery status"),
@@ -12024,7 +12218,8 @@ PROCEDURE_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("CRI", "CRI"), ("RI", "RI"), ("PMI", "PMI"),
         ("LI", "LI"), ("CQI", "CQI"), ("SINR_dB", "CSI SINR dB"),
         ("SINRSource", "SINR wire status"),
-        ("MCSIndex", "Selected MCS"), ("Modulation", "Modulation"),
+        ("RawCQIDerivedMCS", "Raw CQI-derived MCS"),
+        ("MCSIndex", "Stored MCS field"), ("Modulation", "Stored modulation field"),
         ("SchedulerAcceptedRank", "Scheduler rank"),
         ("SchedulerSpatialDecisionDeferred", "Spatial decision held"),
         ("RankIncreaseConfirmationCount", "Rank confirmations"),
@@ -12124,7 +12319,8 @@ def summarize_procedure_preview_rows(procedure_key: str, rows: list[dict[str, An
                                       ("PreambleDetectionThreshold", "DetectionThreshold")):
                 if normalize_preview_value(row.get(canonical)) is None and actual in row:
                     row[canonical] = row[actual]
-    specs = PROCEDURE_PREVIEW_COLUMNS.get(procedure_key) or []
+    column_key = "csi_report" if procedure_key == "received_csi_report" else procedure_key
+    specs = PROCEDURE_PREVIEW_COLUMNS.get(column_key) or []
     if not specs:
         return rows
     active_specs: list[tuple[str, str]] = []
@@ -12141,6 +12337,9 @@ def summarize_procedure_preview_rows(procedure_key: str, rows: list[dict[str, An
             absolute_slot = coerce_numeric(row.get("StageSlot"))
             if absolute_slot is not None and float(absolute_slot).is_integer():
                 curated["Runtime slot (1-based)"] = int(absolute_slot) + 1
+        if procedure_key in {"csi_report", "received_csi_report"}:
+            from lls_waveform_quality import csi_feedback_evidence_fields
+            curated.update(csi_feedback_evidence_fields(row))
         curated_rows.append(curated)
     return curated_rows
 
@@ -12153,6 +12352,16 @@ def load_procedure_preview(
     max_rows: int = 64,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Select the first exact persisted producer and retain its identity."""
+    if procedure_key in {"csi_report", "received_csi_report"} and logical_paths:
+        # The pending/lifecycle and independent-RX ledgers are different
+        # populations, not alternate copies. An empty canonical ledger must
+        # not be filled from a stale control-directory mirror.
+        rows, source = select_canonical_csv_rows(
+            artifacts, logical_paths[0], legacy_paths=logical_paths[1:],
+            max_rows=max_rows, owner_kind=procedure_key,
+        )
+        source["row_count"] = len(rows)
+        return summarize_procedure_preview_rows(procedure_key, rows), source
     for logical_path in logical_paths:
         rows = load_small_csv_rows(artifacts, logical_path, max_rows=max_rows)
         if not rows:
@@ -12177,9 +12386,16 @@ def summarize_data_trial_preview_rows(trial_key: str, rows: list[dict[str, Any]]
     if not specs:
         return rows
     active_specs: list[tuple[str, str]] = []
+    uci_columns = set(output_contract.PUSCH_UCI_EVIDENCE_COLUMNS + output_contract.PUSCH_UCI_CONTEXT_COLUMNS)
+    has_uci_evidence = trial_key == "ul_trials" and any(
+        key in row for row in rows for key in output_contract.PUSCH_UCI_EVIDENCE_COLUMNS)
     for source_key, label in specs:
         has_meaningful = any(normalize_preview_value(row.get(source_key)) is not None for row in rows)
-        if has_meaningful:
+        # Unknown is a visible observation state, not False and not a reason
+        # to hide the entire declared processing column. Do not add fields
+        # that the source never supplied or qualify raw Applied in Python.
+        declared_uci = has_uci_evidence and source_key in uci_columns and any(source_key in row for row in rows)
+        if has_meaningful or declared_uci:
             active_specs.append((source_key, label))
     if not active_specs:
         return rows
@@ -13202,6 +13418,12 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "beam_adaptation_enabled": beam_adaptation_enabled,
         "beam_count": int(round(beam_count)),
         "csi_enabled": csi_enabled,
+        "csi_selection_quality_enabled": config_any_bool(
+            "kpi_spec.csi_selection_quality.enabled",
+            "measurements.csiSelectionQuality.Enabled",
+            "lls6g.resolvedConfig.kpi_spec.csi_selection_quality.enabled",
+            "lls6g.resolvedConfig.measurements.csiSelectionQuality.Enabled",
+        ),
         "rank_adaptation_enabled": rank_adaptation_enabled,
         "max_spatial_rank": int(round(max_spatial_rank)),
         "max_spatial_measurement_rank": int(round(max_spatial_measurement_rank)),
@@ -13400,6 +13622,22 @@ def build_contract_chart_evidence(
     table_evidence: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
     chart_name = str(chart_spec.get("chart_name") or "").strip()
+    if chart_name.startswith("Private CSI selection regret"):
+        from lls_csi_selection_quality import numeric_chart
+        plotted_path = contract_materializer.chart_contract_csv_path(chart_spec)
+        plotted = find_artifact_by_logical_path(artifacts, plotted_path)
+        valid = False
+        if plotted is not None:
+            try:
+                header, values = load_artifact_csv_preview(plotted, None)
+                valid = numeric_chart(header, values) is not None
+            except (ValueError, OSError):
+                pass
+        if not valid:
+            return {"status": "unavailable", "status_label": "no verified private selection observations",
+                    "status_class": "warn", "reason": "private_selection_source_audit_required",
+                    "lineage_note": "Empty or invalid plotted evidence is not selection quality; see the source-audit table.",
+                    "matches": []}
     if str(section.get("slug") or "") == "optional-6g-extension-analytics" or chart_name in OPTIONAL_6G_CHARTS:
         return {
             "status": "policy_disabled",
@@ -13497,6 +13735,9 @@ def build_output_contract_surface(
     for kind in ("reports", "analytics"):
         sections_out: list[dict[str, Any]] = []
         for section in output_contract.product_sections_payload(kind):
+            if (section.get("slug") == "private-csi-selection-study"
+                    and not feature_policy.get("csi_selection_quality_enabled", False)):
+                continue
             table_evidence: dict[str, dict[str, Any]] = {}
             tables_out: list[dict[str, Any]] = []
             for table_spec in section.get("tables") or []:
@@ -14238,7 +14479,7 @@ def extract_runtime_context(run_row: dict[str, Any], artifacts: list[dict[str, A
     )
     control_trial_previews: dict[str, list[dict[str, Any]]] = {}
     control_trial_sources: dict[str, dict[str, Any]] = {}
-    for control_key in ("pbch_trials", "prach_trials", "pdcch_trials", "pucch_trials", "srs_trials", "trs_trials"):
+    for control_key in ("pbch_trials", "prach_trials", "pdcch_trials", "pucch_trials", "csirs_trials", "srs_trials", "trs_trials"):
         control_rows, control_source = select_canonical_csv_rows(
             artifacts,
             CANONICAL_RUNTIME_ARTIFACT_OWNERS[control_key]["canonical_path"],
@@ -14311,10 +14552,12 @@ def extract_runtime_context(run_row: dict[str, Any], artifacts: list[dict[str, A
         "ra_rx_setup": ["control/csv/rrc_setup_complete.csv"],
         "beam_state": ["beamforming/csv/beam_management_state_trace.csv"],
         "csi_report": [
-            "air_interface/csv/received_csi_reports.csv",
-            "control/csv/received_csi_reports.csv",
             "air_interface/csv/csi_feedback_reports.csv",
             "control/csv/csi_feedback_reports.csv",
+        ],
+        "received_csi_report": [
+            "air_interface/csv/received_csi_reports.csv",
+            "control/csv/received_csi_reports.csv",
         ],
         "channel_angles": ["reports/csv/channel_impulse_response.csv"],
     }
@@ -14825,6 +15068,13 @@ def infer_effective_live_stage(stage: dict[str, Any], artifacts: list[dict[str, 
         "harq/csv/probe_harq_packets.csv",
     ]
     beam_paths = [
+        # Canonical coupled-runtime measurements can be published before
+        # the older terminal probe/statistics families. Readiness means an
+        # actual parsed observation exists, not beam qualification success.
+        "beamforming/csv/beam_management_state_trace.csv",
+        "beamforming/csv/ssb_beam_sweep.csv",
+        "beamforming/csv/ssb_pbch_sib1_beam_sweep.csv",
+        "beamforming/csv/applied_data_precoder_weights.csv",
         "reports/csv/live_beam_selection_stats.csv",
         "beamforming/csv/probe_beam_mimo.csv",
         "beamforming/csv/probe_beam_management.csv",
@@ -16438,8 +16688,94 @@ def annotate_realtime_logs(logs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return annotated
 
 
+CONSTELLATION_PREVIEW_COHORT_FIELDS = (
+    "SourceRunID", "RunID", "ExecutionID", "ConfigHash", "ScenarioID", "RunTag", "RunFolder",
+    "SweepPointIndex", "SweepPointLabel", "ConfiguredSNR_dB", "Seed", "RandomSeed", "ChannelSeed",
+    "SourceRandomSeed", "SourceChannelSeed", "PreparedRandomSeed", "PreparedChannelSeed",
+    "DropIndex", "RealizationIndex", "SweepAggregatePointIndex", "SweepAggregateLabel",
+    "SweepAggregateConfiguredSNR_dB", "SweepAggregateSourceCSV", "SweepAggregatePointStatus", "Direction", "RuntimeDirection",
+    "UEIndex", "UEID", "RNTI", "ServingCell", "Modulation", "LayerIndex", "CaptureScope",
+    "SymbolCoordinateDomain", "SymbolOrderLinearIndexDomain", "NormalizationMode",
+)
+
+
+def _receiver_constellation_preview(artifact, header, rows):
+    """A bounded scatter, never an EVM/full-allocation or provenance validator."""
+    lowered = [str(name).strip().lower() for name in header]
+    raw_declared = "rawequalizedreal" in lowered or "rawequalizedimag" in lowered
+    pair = ("rawequalizedreal", "rawequalizedimag") if raw_declared else ("equalizedreal", "equalizedimag")
+    source = raw_constellation_source(artifact.get("logical_path", ""))
+    source_kind = source[2] if source else "retained_receiver_table"
+    note = (f"Bounded first-{MAX_ACTIVITY_POINTS}-row receiver-IQ preview from {source_kind}; "
+            "download retains the entire original CSV. Source filename does not validate full capture. "
+            "Any PNG exported from this chart is preview-only; no per-RE or EVM claim.")
+    chart = {"title": f"{artifact['logical_path']} — bounded receiver-IQ preview",
+             "artifact_id": int(artifact["artifact_id"]),
+             "download_url": artifact_url(int(artifact["artifact_id"]), download=True),
+             "xaxis_title": "In-phase", "yaxis_title": "Quadrature", "series": [],
+             "source_kind": source_kind, "chart_scope": "bounded_receiver_IQ_preview",
+             "image_scope": "preview_only", "download_scope": "entire_original_source_csv",
+             "source_rows_previewed": len(rows), "preview_row_limit": MAX_ACTIVITY_POINTS,
+             "note": note, "constellation_alternate_sources": artifact.get("constellation_alternate_sources", [])}
+    if any(name not in lowered for name in pair) or not rows:
+        chart.update(status="unavailable_receiver_iq_preview",
+                     reason="Receiver I/Q columns or rows unavailable; TX/reference/hard decisions were not substituted.")
+        return chart
+    if source and source[1]:
+        direction_indices = [lowered.index(name) for name in ("direction", "runtimedirection") if name in lowered]
+        if any(index < len(row) and str(row[index]).strip() and str(row[index]).strip().upper() != source[1]
+               for row in rows for index in direction_indices):
+            chart.update(status="unavailable_receiver_iq_preview",
+                         reason="Retained row direction contradicts the selected directional source; no relabeling applied.")
+            return chart
+    real_idx, imag_idx = (lowered.index(name) for name in pair)
+    group_indices = [(name, lowered.index(name.lower())) for name in CONSTELLATION_PREVIEW_COHORT_FIELDS
+                     if name.lower() in lowered]
+    groups = {}
+    omitted = 0
+    for source_row_index, row in enumerate(rows, 1):
+        real = coerce_numeric(row[real_idx]) if real_idx < len(row) else None
+        imag = coerce_numeric(row[imag_idx]) if imag_idx < len(row) else None
+        if real is None or imag is None or not math.isfinite(real) or not math.isfinite(imag):
+            omitted += 1
+            continue
+        identity = tuple((name, str(row[index]) if index < len(row) else "") for name, index in group_indices)
+        label = "; ".join(f"{name}={value or '[not retained]'}" for name, value in identity) or "cohort/domain not retained"
+        group = groups.setdefault(identity, {"name": f"Receiver {pair[0]}/{pair[1]} | {label}",
+                                            "mode": "markers", "points": []})
+        # Keep native positions and capture IDs as exact text; NaN DFT
+        # subcarrier is non-applicable, never an excuse to drop the IQ row.
+        retained = {name: row[index] if index < len(row) else "" for index, name in enumerate(header)
+                    if name in {"SymbolCoordinateDomain", "SymbolOrderLinearIndex", "SymbolOrderLinearIndexDomain",
+                                "OFDMSymbolIndex", "SubcarrierIndex", "LayerIndex", "SampleIndex", "CaptureScope",
+                                "ObservationID", "ReceiverWindowID", "ReceiverObservationSHA256",
+                                "ReceiverClockDomain", "ReceiverClockEpoch", "ObservationStartSample",
+                                "ObservationEndSampleExclusive", "ObservationSampleRateHz"}}
+        group["points"].append({"x": real, "y": imag, "source_row_index": source_row_index,
+                                "retained_coordinates_and_capture": retained})
+    chart["series"] = list(groups.values())
+    chart["omitted_nonfinite_receiver_rows"] = omitted
+    chart["status"] = "receiver_iq_preview" if groups else "unavailable_receiver_iq_preview"
+    if omitted or not groups:
+        chart["reason"] = f"{omitted} preview rows lacked a finite receiver I/Q pair; no alternate values substituted."
+    return chart
+
+
 def build_numeric_chart_from_artifact(artifact: dict[str, Any]) -> dict[str, Any] | None:
+    if "contract__private-csi-selection-study__" in str(artifact.get("logical_path") or ""):
+        from lls_csi_selection_quality import numeric_chart
+        header, rows = load_artifact_csv_preview(artifact, None)
+        try:
+            chart = numeric_chart(header, rows)
+        except ValueError:
+            return None
+        if chart is not None:
+            chart.update(artifact_id=int(artifact["artifact_id"]),
+                         download_url=artifact_url(int(artifact["artifact_id"]), download=True))
+        return chart
     header, rows = load_artifact_csv_preview(artifact, MAX_ACTIVITY_POINTS)
+    if raw_constellation_source(artifact.get("logical_path", "")):
+        return _receiver_constellation_preview(artifact, header, rows)
     if not rows or not header:
         return None
     lowered = [str(name).strip().lower() for name in header]
@@ -16458,40 +16794,8 @@ def build_numeric_chart_from_artifact(artifact: dict[str, Any]) -> dict[str, Any
         if expanded_header:
             header, rows = expanded_header, expanded_rows
             lowered = [str(name).strip().lower() for name in header]
-    if "equalizedreal" in lowered and "equalizedimag" in lowered:
-        real_idx = lowered.index("equalizedreal")
-        imag_idx = lowered.index("equalizedimag")
-        decision_real_idx = lowered.index("harddecisionreal") if "harddecisionreal" in lowered else None
-        decision_imag_idx = lowered.index("harddecisionimag") if "harddecisionimag" in lowered else None
-        traces: list[dict[str, Any]] = []
-        equalized_points = []
-        for row in rows:
-            real_val = coerce_numeric(row[real_idx]) if real_idx < len(row) else None
-            imag_val = coerce_numeric(row[imag_idx]) if imag_idx < len(row) else None
-            if real_val is None or imag_val is None:
-                continue
-            equalized_points.append({"x": real_val, "y": imag_val})
-        if equalized_points:
-            traces.append({"name": "Equalized Symbols", "mode": "markers", "points": equalized_points})
-        if decision_real_idx is not None and decision_imag_idx is not None:
-            decision_points = []
-            for row in rows:
-                real_val = coerce_numeric(row[decision_real_idx]) if decision_real_idx < len(row) else None
-                imag_val = coerce_numeric(row[decision_imag_idx]) if decision_imag_idx < len(row) else None
-                if real_val is None or imag_val is None:
-                    continue
-                decision_points.append({"x": real_val, "y": imag_val})
-            if decision_points:
-                traces.append({"name": "Hard Decisions", "mode": "markers", "points": decision_points})
-        if traces:
-            return {
-                "title": artifact["logical_path"],
-                "artifact_id": int(artifact["artifact_id"]),
-                "download_url": artifact_url(int(artifact["artifact_id"]), download=True),
-                "xaxis_title": "In-phase",
-                "yaxis_title": "Quadrature",
-                "series": traces,
-            }
+    if any(name in lowered for name in ("equalizedreal", "equalizedimag", "rawequalizedreal", "rawequalizedimag")):
+        return _receiver_constellation_preview(artifact, header, rows)
     def token_sort_key(value: Any) -> tuple[int, Any, str]:
         token = str(value or "").strip()
         numeric = coerce_numeric(token)
@@ -16854,7 +17158,7 @@ def build_numeric_charts_from_artifacts(artifacts: list[dict[str, Any]], limit: 
             return (5, path)
         if "lls_measured_sinr_summary" in path or "measured_sinr" in path:
             return (6, path)
-        if "constellation_preview" in path:
+        if raw_constellation_source(path):
             return (7, path)
         if "prach" in path:
             return (8, path)
@@ -16869,10 +17173,11 @@ def build_numeric_charts_from_artifacts(artifacts: list[dict[str, Any]], limit: 
         return (20, path)
     candidates = [
         art
-        for art in artifacts
+        for art in prefer_raw_constellation_sources(artifacts)
         if art["artifact_kind"] == "table_csv"
         and (
-            art["byte_size"] <= 750_000
+            raw_constellation_source(str(art["logical_path"])) is not None
+            or art["byte_size"] <= 750_000
             or (
                 "contract__" in str(art["logical_path"]).lower()
                 and art["byte_size"] <= 2_500_000
@@ -16884,7 +17189,7 @@ def build_numeric_charts_from_artifacts(artifacts: list[dict[str, Any]], limit: 
         )
         and any(
             token in art["logical_path"].lower()
-            for token in ("summary", "trace", "trial", "timeline", "timeseries", "kpi", "outputs", "report", "sweep", "preview", "stage", "reference", "contract__")
+            for token in ("summary", "trace", "trial", "timeline", "timeseries", "kpi", "outputs", "report", "sweep", "preview", "constellation_samples", "stage", "reference", "contract__")
         )
     ]
     candidates.sort(key=lambda art: chart_priority(str(art["logical_path"])))
@@ -16968,6 +17273,8 @@ def build_reference_plot_gallery(
         best_chart: dict[str, Any] | None = None
         best_chart_score = 0
         for chart in numeric_charts:
+            if str(chart.get("status") or "").startswith("unavailable_receiver_iq"):
+                continue
             if _reference_spec_requires_time_axis(spec) and not _reference_chart_has_time_axis(chart):
                 continue
             score = _gallery_match_score(
@@ -17035,7 +17342,7 @@ def build_reference_plot_gallery(
 def shortlist_reference_gallery_chart_artifacts(table_artifacts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     shortlisted: list[dict[str, Any]] = []
     seen_ids: set[int] = set()
-    for artifact in table_artifacts:
+    for artifact in prefer_raw_constellation_sources(table_artifacts):
         artifact_id = int(artifact.get("artifact_id") or 0)
         if artifact_id <= 0 or artifact_id in seen_ids:
             continue
@@ -18188,7 +18495,10 @@ def build_lite_live_payload(run_id: int) -> dict[str, Any]:
     }
 
     status_json = parse_status_json(run_row)
-    stage = infer_effective_live_stage(merge_live_status_into_stage({}, status_json), recent_artifacts)
+    # Activity charts are bounded, but stage evidence belongs to the full
+    # run inventory. A newer image must not evict an older canonical trial
+    # table and make an executed DL/UL receiver appear to have never run.
+    stage = infer_effective_live_stage(merge_live_status_into_stage({}, status_json), recent_all_artifacts)
     config = parse_config_json(run_row)
     runtime_context = {
         "stage": stage,
@@ -20986,6 +21296,7 @@ window.addEventListener('DOMContentLoaded', function () {
     const raRFRows = recent(procedurePreviews.ra_receiver_rf || []);
     const beamStateRows = recent(procedurePreviews.beam_state || []);
     const csiReportRows = recent(procedurePreviews.csi_report || []);
+    const receivedCSIReportRows = recent(procedurePreviews.received_csi_report || []);
     const channelAngleRows = recent(procedurePreviews.channel_angles || []);
     const hasRuntimeBeamValue = value => value !== null && value !== undefined && value !== '' && value !== 'N/A';
     const beamRows = recent([...(dataPreviews.dl_trials || []), ...(dataPreviews.ul_trials || [])]
@@ -21008,13 +21319,18 @@ window.addEventListener('DOMContentLoaded', function () {
       }
       return null;
     };
+    const pdcchAdmissionRows = recent(controlPreviews.pdcch_trials)
+      .filter(row => row['Receiver evidence scope'] === 'pretransmission_admission_no_receiver');
+    const pdcchReceiverRows = recent(controlPreviews.pdcch_trials)
+      .filter(row => row['Receiver evidence scope'] !== 'pretransmission_admission_no_receiver');
     const qualitySourceRows = [
       ...recent(controlPreviews.pbch_trials).map(row => ['SSB/PBCH','DL',row]),
       ...recent(controlPreviews.prach_trials).map(row => ['PRACH','UL',row]),
-      ...recent(controlPreviews.pdcch_trials).map(row => ['PDCCH','DL',row]),
+      ...pdcchReceiverRows.map(row => ['PDCCH','DL',row]),
       ...recent(dataPreviews.dl_trials).map(row => ['PDSCH','DL',row]),
       ...recent(controlPreviews.pucch_trials).map(row => ['PUCCH','UL',row]),
       ...recent(dataPreviews.ul_trials).map(row => ['PUSCH','UL',row]),
+      ...recent(controlPreviews.csirs_trials).map(row => ['CSI-RS','DL',row]),
       ...recent(controlPreviews.srs_trials).map(row => ['SRS','UL',row]),
       ...recent(controlPreviews.trs_trials).map(row => ['TRS','DL',row]),
     ];
@@ -21028,6 +21344,12 @@ window.addEventListener('DOMContentLoaded', function () {
       'EVM status':firstValue(row,['EVM status']),
       'NMSE scoring available':firstValue(row,['NMSE scoring available']),
       'NMSE reference source':firstValue(row,['NMSE reference source']),
+      'NMSE reference plane':firstValue(row,['NMSE reference plane']),
+      'NMSE compared complex values':firstValue(row,['NMSE compared complex values']),
+      'NMSE pilot resource count':firstValue(row,['NMSE pilot resource count']),
+      'NMSE qualification mode':firstValue(row,['NMSE qualification mode']),
+      'NMSE reference includes RF impairments':firstValue(row,['NMSE reference includes RF impairments']),
+      'NMSE reference used by receiver':firstValue(row,['NMSE reference used by receiver']),
       'Channel estimate available':firstValue(row,['Channel estimate available']),
       'Channel estimate applicable':firstValue(row,['Channel estimate applicable']),
       'Channel estimate source':firstValue(row,['Channel estimate source']),
@@ -21104,7 +21426,7 @@ window.addEventListener('DOMContentLoaded', function () {
       {id:'dl_sync', title:'DL synchronization detection and applied compensation', columns:['Stage','Slot','UE','Injected CFO (Hz)','Estimated CFO (Hz)','Estimate availability','Estimator / source','Applied CFO correction (Hz)','Correction source','Residual CFO (Hz)','Residual CFO status','Timing estimate (samples)','Applied timing correction (samples)','Residual timing error (samples)','Timing status / policy','Status'], rows:dlSynchronizationRows, sourcePath:'received SSB/PBCH + TRS + PDSCH synchronization evidence'},
       {id:'ul_sync', title:'UL synchronization detection, timing advance and compensation', columns:['Stage','Slot','UE','Frequency estimate enabled','Injected CFO (Hz)','Estimated CFO (Hz)','Estimate valid','Estimator / source','Raw timing (samples)','Propagation timing (samples)','Injected timing (samples)','Timing error (samples)','Applied timing correction (samples)','Proposed RAR TA command','TA evidence role','Timing source','Status'], rows:ulSynchronizationRows, sourcePath:'received PRACH + SRS + PUSCH synchronization evidence'},
       {id:'ssb_measurements', title:'SSB receiver measurements', columns:['Slot','Cell','SSB index','Configured SNR (dB)','SS-RSRP (dBm)','SS-RSRP (dB re unit Es)','SS-SINR (dB)','EVM','NMSE dB','Power reference plane','SS measurement status'], rows:recent(controlPreviews.pbch_trials), sourcePath:selectedPath(controlSelection.pbch_trials)},
-      {id:'waveform_quality', title:'Waveform quality by physical channel', columns:['Channel','Direction','Slot','UE','Sweep point','Configured SNR (dB)','SSB index / observation','EVM rms','EVM percent','EVM applicable','EVM reference source','EVM status','NMSE dB','NMSE scoring available','NMSE reference source','Channel estimate applicable','Channel estimate available','Channel estimate source','Equalization applicable','Equalization available','Observation samples','Observation scope','Sample rate (Hz)','Waveform executed','Waveform hash','Waveform hash plane','Evidence notes','Status'], rows:waveformQualityRows, sourcePath:'exact per-channel receiver trial rows; RMS EVM × 100 is percent; decision-directed and received-pilot EVM are not RF-conformance measurements; sample intervals are [start,end)'},
+      {id:'waveform_quality', title:'Waveform quality by physical channel', columns:['Channel','Direction','Slot','UE','Sweep point','Configured SNR (dB)','SSB index / observation','EVM rms','EVM percent','EVM applicable','EVM reference source','EVM status','NMSE dB','NMSE scoring available','NMSE reference source','NMSE reference plane','NMSE compared complex values','NMSE pilot resource count','NMSE qualification mode','NMSE reference includes RF impairments','NMSE reference used by receiver','Channel estimate applicable','Channel estimate available','Channel estimate source','Equalization applicable','Equalization available','Observation samples','Observation scope','Sample rate (Hz)','Waveform executed','Waveform hash','Waveform hash plane','Evidence notes','Status'], rows:waveformQualityRows, sourcePath:'exact per-channel receiver trial rows; compare NMSE only on the stated reference plane; RMS EVM × 100 is percent; decision-directed and received-pilot EVM are not RF-conformance measurements; sample intervals are [start,end)'},
       {id:'receiver_criteria', title:'Recorded receiver acceptance / qualification criteria', columns:['Channel','Slot','UE','PSS threshold','SSS threshold','Detection threshold','Detection threshold source','Minimum resource coverage','NMSE qualification limit (dB)','Decode acceptance','Receiver evidence usable','TRS runtime usable','Qualification passed','Detector qualification','Target false-alarm probability','Qualification criteria','Status'], rows:criteriaRows, sourcePath:'actual retained criteria; correlation/NMSE limits are receiver or project choices, not universal 3GPP limits; a target probability is not a measured probability; blank legacy thresholds require new producer evidence'},
       {id:'prach_rach', title:'Completed RA attempt summaries — individual Msg1 observations are shown separately', columns:['Frame','Slot','UE','Configured SNR (dB)','TX preamble (audit)','Detected preamble','Detection attempted','Preamble detected','Metric','Threshold','Peak/noise (dB)','Peaks above threshold','Missed detection','False alarm','False alarm definition','DTX','Qualification status','Status'], rows:recent(controlPreviews.prach_trials), sourcePath:selectedPath(controlSelection.prach_trials)},
       {id:'prach_timing', title:'PRACH timing / RAR timing advance', columns:['Slot','UE','Detected preamble','Raw timing (samples)','Propagation timing (samples)','PRACH sample rate (Hz)','Timing valid','Timing source','RAR TA command','TA NTA (Tc units)','TA (samples)','TA (us)','TA source','Msg3 TA applied','TA out of range'], rows:recent(controlPreviews.prach_trials), sourcePath:selectedPath(controlSelection.prach_trials)},
@@ -21119,18 +21441,22 @@ window.addEventListener('DOMContentLoaded', function () {
       {id:'initial_access', title:'Acquisition / Initial Access observations — not an attachment verdict', columns:['Procedure','Frame','Slot','Slot convention','Endpoint','Outcome','Status'], rows:initialAccessRows, sourcePath:'canonical PBCH + received Msg1 + completed RA attempt rows'},
       {id:'beam_state', title:'SSB / CSI beam-management state and TCI activation', columns:['Event #','UE','Slot','From','Event','To','Measured RS/beam','Legacy RSRP column (unit not inferred)','Measured SS-RSRP (dB re unit Es)','Measured power unit','Power reference plane','Measured SINR','Activated TCI state','Geometry oracle used','Source evidence','Selection authority'], rows:beamStateRows, sourcePath:selectedPath(procedureSelection.beam_state)},
       {id:'beam', title:'Beam / Precoding', columns:['Slot','UE','Direction','Bootstrap grant','Beamforming applied','Explicit weights applied','Application stage','Applied beam','Requested PMI/TPMI','PMI request source','Applied PMI/TPMI','PMI basis','Applied PMI status','Precoder match','Matrix identity match','Precoder domain','Precoder SHA','CSI resource applied','TCI state ID','TCI status','Projection candidates','Best projection index','Best projection power (dB)','Selected projection power (dB)','Projection gap (dB)','Projection source'], rows:beamRows, sourcePath:'executed matrices and received control; post-hoc Hest projection scores are not antenna gain or an executed CSI beam sweep; absent scalar PMI is valid for explicit-matrix bootstrap grants'},
-      {id:'pdcch', title:'Connected-mode PDCCH / DCI blind detection (RA PDCCH is shown above)', columns:['Slot','UE','Configured SNR (dB)','RNTI','CORESET ID','Search-space ID','Blind search enabled','Candidates available','Candidates attempted','Blind decodes','Selected candidate','Selected flat index','AggLevel','Decoded DCI format','DCI bits','CRC RNTI','Decode ok','CRC pass','Detection attempted','Missed detection','False alarm','False alarm definition','DTX','Status'], rows:recent(controlPreviews.pdcch_trials), sourcePath:selectedPath(controlSelection.pdcch_trials)},
-      {id:'pdcch_hypotheses', title:'Connected-mode PDCCH receiver hypothesis evidence', columns:['Slot','UE','Blind decode source','Hypothesis AL vector','Hypothesis decode vector','Hypothesis SINR vector (dB)'], rows:recent(controlPreviews.pdcch_trials), sourcePath:selectedPath(controlSelection.pdcch_trials)},
+      {id:'pdcch_admission', title:'PDCCH pre-transmission admission — no receiver trial executed', columns:['Slot','UE','Direction','Sweep point','Configured SNR (dB)','Admission blocker','Waveform executed','PDCCH receiver attempted','Measurement attempted','Status'], rows:pdcchAdmissionRows, sourcePath:selectedPath(controlSelection.pdcch_trials) + '; actual admission dispositions only, not missed detections or receiver-quality samples'},
+      {id:'pdcch', title:'Connected-mode PDCCH / DCI blind detection (RA PDCCH is shown above)', columns:['Slot','UE','Configured SNR (dB)','RNTI','CORESET ID','Search-space ID','Blind search enabled','Candidates available','Candidates attempted','Blind decodes','Selected candidate','Selected flat index','AggLevel','Decoded DCI format','DCI bits','CRC RNTI','Decode ok','CRC pass','Detection attempted','Missed detection','False alarm','False alarm definition','DTX','Evidence notes','Status'], rows:pdcchReceiverRows, sourcePath:selectedPath(controlSelection.pdcch_trials)},
+      {id:'pdcch_hypotheses', title:'Connected-mode PDCCH receiver hypothesis evidence', columns:['Slot','UE','Blind decode source','Hypothesis AL vector','Hypothesis decode vector','Hypothesis SINR vector (dB)'], rows:pdcchReceiverRows, sourcePath:selectedPath(controlSelection.pdcch_trials)},
       {id:'pucch', title:'Connected-mode PUCCH / UCI detection and DTX', columns:['Slot','UE','Configured SNR (dB)','Format','Bits','Detection attempted','Detection outcome','Metric','Threshold','Threshold source','Decode ok','CRC applicable','CRC outcome','DTX','Missed feedback','False ACK','False NACK','Missed SR','False SR','Status'], rows:recent(controlPreviews.pucch_trials), sourcePath:selectedPath(controlSelection.pucch_trials)},
       {id:'pdsch', title:'Connected-mode PDSCH / DL-SCH (RA Msg2/Msg4 are shown above)', columns:['Slot','UE','MCS','Modulation','MCS mode','MCS source','LA applied','Scheduler CQI used','LA MCS','Measured SINR dB','CRC pass'], rows:recent(dataPreviews.dl_trials), sourcePath:selectedPath(linkSelection.dl)},
       {id:'pusch', title:'Connected-mode PUSCH / UL-SCH (RA Msg3 is shown above)', columns:['Slot','UE','MCS','Modulation','MCS mode','MCS source','LA applied','Scheduler CQI used','LA MCS','Measured SINR dB','CRC pass'], rows:recent(dataPreviews.ul_trials), sourcePath:selectedPath(linkSelection.ul)},
       {id:'csi', title:'CSI / CSI-RS measurements and separate scheduling objective', columns:['Slot','UE','Cell','CSI-RSRP dBm','CSI-RSRP (dB re unit occupied-RE Es)','CSI-RSSI (dB re unit occupied-RE Es)','CSI-RSRQ dB','RSRP RX branch (1-based)','Power unit','Power reference plane','CSI-SINR dB','SINR source','SINR plane','Rank/PMI objective dB','Objective source','Status'], rows:csiRows, sourcePath:'air_interface/csv/csi_rs_trials.csv'},
       {id:'csi_sync', title:'CSI-RS synchronization — independent pre/post-front-end planes', columns:['Slot','UE','Plane','Timing estimate (samples)','Timing applied (samples)','Search offsets (samples)','Timing hypotheses','Timing search scope','Demodulated samples','Estimated CFO (Hz)','Applied CFO (Hz)','CFO status','CFO estimator','Sample domain','Source'], rows:csiSyncRows, sourcePath:'air_interface/csv/csi_rs_trials.csv; offsets are relative to capture start; a one-hypothesis search is fixed alignment, not timing acquisition'},
       {id:'csi_channel', title:'CSI-RS independent nominal-channel error — separate from pilot residual and RF EVM', columns:['Slot','UE','Independent nominal-channel NMSE dB','Pilot reconstruction residual dB','Reference plane','Compared complex values','Measured resources','Scope','Scoring mode','Paired resource CSV'], rows:csiChannelRows, sourcePath:'air_interface/csv/csi_rs_trials.csv; channel_estimation/csv/csirs_*.csv'},
-      {id:'csi_report', title:'Received CSI-UCI / scheduler rank admission', columns:['UE','RNTI','Report source slot','CSI reference-resource slot','Reference-slot authority','Report due slot','Delivered slot','Delivery status','UCI transport','UCI decode','UCI CRC','CRI','RI','PMI','LI','CQI','CSI SINR dB','SINR wire status','Selected MCS','Modulation','Scheduler rank','Spatial decision held','Rank confirmations','Required confirmations','Rank update','MCS authority','Measurement authority','Processed'], rows:csiReportRows, sourcePath:selectedPath(procedureSelection.csi_report)},
+      {id:'csi_report', title:'CSI feedback lifecycle — pending reports, received DL UCI and local UL measurements', columns:['UE','RNTI','Direction','Sweep point','Report identity','Source signal','Feedback evidence scope','Report source slot','CSI reference-resource slot','Reference-slot authority','Report due slot','Delivered slot','Delivery status','UCI transport','UCI interpretation','UCI decode','UCI CRC','CRI','RI','PMI','LI','CQI','CSI SINR dB','SINR wire status','Raw CQI-derived MCS','Stored MCS field','Selected MCS','MCS decision status','Stored modulation field','Scheduler rank','Spatial decision held','Rank confirmations','Required confirmations','Rank update','MCS authority','Measurement authority','Processed'], rows:csiReportRows, sourcePath:selectedPath(procedureSelection.csi_report)+'; selected MCS is a delivered scheduler decision, not proof of an executed data trial'},
+      {id:'received_csi_report', title:'Independently received DL CSI-UCI — no pending UE-reference substitution', columns:['UE','RNTI','Direction','Sweep point','Report identity','Source signal','Feedback evidence scope','Report source slot','CSI reference-resource slot','Reference-slot authority','Report due slot','Delivered slot','Delivery status','UCI transport','UCI interpretation','UCI decode','UCI CRC','CRI','RI','PMI','LI','CQI','CSI SINR dB','SINR wire status','Raw CQI-derived MCS','Stored MCS field','Selected MCS','MCS decision status','Stored modulation field','Scheduler rank','Spatial decision held','Rank confirmations','Required confirmations','Rank update','MCS authority','Measurement authority','Processed'], rows:receivedCSIReportRows, sourcePath:selectedPath(procedureSelection.received_csi_report)},
       {id:'qcl_tci', title:'PDSCH received QCL / TCI binding', columns:['Slot','UE','QCL status','QCL type','QCL source RS','QCL source resource','QCL source slot','QCL available sample','QCL timing prior used','QCL timing prior samples','QCL DMRS delay residual','QCL measurement status','TCI state ID','TCI codepoint','TCI status','TCI initialization source'], rows:recent(dataPreviews.dl_trials), sourcePath:selectedPath(linkSelection.dl)},
       {id:'srs', title:'SRS channel / spatial-rank evidence', columns:['Slot','UE','Cell','Metric','NMSE dB','Raw complex-plane NMSE dB','NMSE reference plane','NMSE qualification mode','Scoring reference includes RX delay','Scoring-only recorded RX delay (samples)','Scoring reference includes RX CFO','Scoring-only recorded RX CFO (Hz)','Unmatched pre-RX-clock NMSE dB (diagnostic)','Timing estimate (samples)','Applied timing correction (samples)','Estimated CFO (Hz)','CFO estimate availability','Timing off','SRS rank estimate','SRS PMI','SRS-derived CQI','Spatial signature source','Spatial raw rank','Spatial retained rank','Condition number dB','Worst inter-port leakage dB','Inter-port leakage status','SRS first PRB','SRS last PRB','SRS bandwidth coverage','Applied SRS beam','Applied SRS PMI','Status'], rows:recent(controlPreviews.srs_trials), sourcePath:selectedPath(controlSelection.srs_trials)},
       {id:'srs_phase', title:'Received SRS common-phase evolution (not maximum Doppler spread)', columns:['Slot','UE','Matched-pilot common phase rate (Hz; not Doppler spread)','Unaliased common-phase half-width (Hz)','Pilot phase pairs','Matched pilot channel values','Pilot observation separation (s)','Previous pilot time (s)','Current pilot time (s)','Pilot phase observation scope','Pilot phase history status','Pilot phase measurement status','Doppler-spread measurement status'], rows:recent(controlPreviews.srs_trials), sourcePath:selectedPath(controlSelection.srs_trials)},
+      {id:'srs_power', title:'SRS power control — received reference and causal adjustment', columns:['Slot','UE','Cell','Requested SRS power (dBm; pre-RF)','Applied SRS target (dBm; pre-RF)','Configured PCMAX (dBm)','SRS reference pathloss (dB)','SRS power reference RS','Decoded RS power (dBm)','Filtered reference RSRP (dBm)','SRS reference source slot','SRS reference available slot','SRS adjustment h (dB)','SRS adjustment policy','SRS adjustment owner','Received power-state updates','Power-state reset reason','TPC result available sample','PUSCH adjustment effective sample','SRS adjustment read sample','SRS power bound before emission','SRS target limited by PCMAX','Decoded TPC assignment hash','SRS pathloss measurement ID','Decoded SIB1 power-reference hash','SRS pathloss source'], rows:recent(controlPreviews.srs_trials), sourcePath:selectedPath(controlSelection.srs_trials)+'; pre-RF power-control targets, not measured post-PA power or radiated EIRP/TRP; sample indices use the declared shared physical clock'},
+      {id:'srs_arrival_timing', title:'SRS receiver timing versus independent earliest-path scoring', columns:['Slot','UE','Observation start sample','Expected receive center sample','Expected capture center offset (samples)','SRS capture extraction (samples)','SRS residual timing (samples)','SRS timing correction (samples)','SRS timing source','Earliest-path scoring available','Expected earliest arrival sample','Earliest arrival from capture start (samples)','Earliest arrival relative to scheduled center (samples)','Selected peak minus earliest path (samples; not post-correction residual)','Arrival scoring reference plane','Arrival scoring status','Arrival scoring source','Executed arrival-reference operands'], rows:recent(controlPreviews.srs_trials), sourcePath:selectedPath(controlSelection.srs_trials)+'; receiver residual is relative to the scheduled center; earliest-path scoring is post-reception only, not an injected delay or measured post-correction residual'},
       {id:'channel_angles', title:'Executed CDL channel-profile AoD / ZoD / AoA / ZoA', columns:['Direction','Path/tap','Delay s','Path power dB','AoD azimuth deg','ZoD deg','AoA azimuth deg','ZoA deg','Coordinate frame','Angle status','Source'], rows:channelAngleRows, sourcePath:selectedPath(procedureSelection.channel_angles)},
       {id:'trs', title:'TRS scheduler usability / tracking / qualification', columns:['Slot','UE','Metric','Est Doppler Hz','Scheduler usable','Tracking state','Qualification pass','Status','Update'], rows:recent(controlPreviews.trs_trials), sourcePath:selectedPath(controlSelection.trs_trials)},
       {id:'traffic', title:'Traffic / Goodput', columns:['Slot','UE','Direction','Offered Mbps','Goodput Mbps','MCS','Rank / Layers','PRBs','Symbols'], rows:trafficRows, sourcePath:'executed PDSCH/PUSCH trials; symbols are zero-based inclusive allocation bounds, not all-data REs; control, DM-RS, other RS and TDD guard/UL resources are not PDSCH payload; rank/layers are transmitted values'},
@@ -21155,12 +21481,12 @@ window.addEventListener('DOMContentLoaded', function () {
   }
   function realtimeSchedulerAdmission(ue) {
     const records = ue.scheduler_admission || {};
-    const fields = [['Sweep point','SweepPointIndex'],['Configured SNR (dB)','ConfiguredSNR_dB'],['Control slot','ControlSlot'],['Target data slot','ScheduledDataSlot'],['Knowledge slot','SchedulingKnowledgeSlot'],['Clock convention','SlotNumbering'],['Queued bytes','QueueBytes'],['Pending retransmission','HasPendingRetransmission'],['Traffic direction configured','TrafficDirectionConfigured'],['SRS required','SRSRequired'],['Causal SRS usable','SRSCausalUsable'],['SRS status','SRSCausalStatus'],['Candidate rank','CandidateRank'],['Rank authority','RankAuthority'],['New-data HARQ process available','HARQNewDataProcessAvailable'],['HARQ policy/source','HARQStateSource'],['Admission reason','AdmissionReason'],['Scheduler rejection reasons','SchedulerDecisionReasons'],['Candidate grant count','CandidateGrantCount']];
+    const fields = [['Sweep point','SweepPointIndex'],['Configured SNR (dB)','ConfiguredSNR_dB'],['Control slot','ControlSlot'],['Target data slot','ScheduledDataSlot'],['Knowledge slot','SchedulingKnowledgeSlot'],['Clock convention','SlotNumbering'],['Queued bytes','QueueBytes'],['Pending retransmission','HasPendingRetransmission'],['Traffic direction configured','TrafficDirectionConfigured'],['SRS required','SRSRequired'],['Newest raw SRS usable','SRSCausalUsable'],['Newest raw SRS status','SRSCausalStatus'],['Newest raw SRS measurement','RawSRSMeasurementID'],['Accepted spatial source measurement','AcceptedSRSMeasurementID'],['Accepted source slot','AcceptedSRSProducerSlot'],['Accepted source available slot','AcceptedSRSAvailableSlot'],['Accepted source RI','AcceptedSRSRI'],['Accepted source TPMI','AcceptedSRSTPMI'],['Accepted source usable at decision','AcceptedSRSCausalUsable'],['Accepted source age (slots)','AcceptedSRSCausalAgeSlots'],['Accepted source status','AcceptedSRSCausalStatus'],['Scheduled SRI (separate association)','ScheduledSRI'],['Candidate rank','CandidateRank'],['Rank authority','RankAuthority'],['New-data HARQ process available','HARQNewDataProcessAvailable'],['HARQ policy/source','HARQStateSource'],['Admission reason','AdmissionReason'],['Scheduler rejection reasons','SchedulerDecisionReasons'],['Candidate grant count','CandidateGrantCount']];
     return ['DL','UL'].filter(direction => records[direction]).map(direction => {
       const row = records[direction];
       const present = value => value !== null && value !== undefined && !['','nan','<missing>'].includes(String(value).trim().toLowerCase());
       const body = fields.map(([label,key]) => `<tr><th>${esc(label)}</th><td>${esc(present(row[key]) ? row[key] : '—')}</td></tr>`).join('');
-      return `<details><summary>${esc(direction)} last observed scheduling decision</summary><p class="mini-note">Historical decision-time inputs, not current queue state or proof of received DCI/data. No future traffic is included. A free new-data HARQ process is not required to retransmit an existing TB.</p><div class="table-wrap"><table><tbody>${body}</tbody></table></div><p class="mini-note">Source: packet_flow/csv/scheduler_admission_trace.csv</p></details>`;
+      return `<details><summary>${esc(direction)} last observed scheduling decision</summary><p class="mini-note">Historical decision-time inputs, not current queue state or proof of received DCI/data. Newest raw sounding, accepted RI/TPMI computation source, and scheduled SRI association are distinct. Fresh raw sounding does not refresh an older accepted decision. No future traffic is included. A free new-data HARQ process is not required to retransmit an existing TB.</p><div class="table-wrap"><table><tbody>${body}</tbody></table></div><p class="mini-note">Source: packet_flow/csv/scheduler_admission_trace.csv</p></details>`;
     }).join('');
   }
   function realtimeULPlanningPanel() {
@@ -23719,7 +24045,7 @@ function filterTablesBySection(tables) {{
       if (section === 'beam' && !resultTruthyFlag(stage.BeamReady)) return false;
       if (section === 'pusch' && path.endsWith('ul_pusch_trials.csv') && size <= 2303) return false;
       if (section === 'pdsch' && path.endsWith('dl_pdsch_trials.csv') && size <= 2303) return false;
-      if ((path.endsWith('dl_constellation_preview.csv') || path.endsWith('ul_constellation_preview.csv')) && size <= 2303) return false;
+      // CSV byte size cannot distinguish a valid small receiver capture from a header.
       return true;
     }});
   return filtered.sort((a, b) => {{
@@ -23854,7 +24180,7 @@ function renderModeValidationPanel(modeValidation) {{
   if (!host || !title) return;
   const mode = modeValidation || {{}};
   const runClass = String(mode.run_class || 'unknown');
-  title.textContent = `Scenario Validation Mode · ${runClass}`;
+  title.textContent = `Scenario Validation Mode · ${{runClass}}`;
   const fixed = mode.fixed_snr || {{}};
   const geometry = mode.geometry || {{}};
   const links = [];
@@ -23915,7 +24241,8 @@ function buildResultChartModel(payload) {{
   if (!header.length || !rows.length) {{
     return {{ kind: 'empty', header, rows, lowered, numericColumns: [], xCandidates: [], yCandidates: [], groupCandidates: [] }};
   }}
-  if (lowered.includes('equalizedreal') && lowered.includes('equalizedimag')) {{
+  const constellationPath = /(?:_constellation_(?:samples|preview)|equalized_constellations)\\.csv$/i.test(String((payload.meta || {{}}).logical_path || ''));
+  if (constellationPath || lowered.some((name) => ['rawequalizedreal', 'rawequalizedimag', 'equalizedreal', 'equalizedimag'].includes(name))) {{
     return {{ kind: 'constellation', header, rows, lowered, numericColumns: [], xCandidates: [], yCandidates: [], groupCandidates: [] }};
   }}
   const numericColumns = [];
@@ -24055,33 +24382,33 @@ function renderResultAuxPanels(data) {{
 }}
 function buildConstellationTraces(payload, lowered) {{
   const rows = payload.rows || [];
-  const realIdx = lowered.indexOf('equalizedreal');
-  const imagIdx = lowered.indexOf('equalizedimag');
-  const decisionRealIdx = lowered.includes('harddecisionreal') ? lowered.indexOf('harddecisionreal') : null;
-  const decisionImagIdx = lowered.includes('harddecisionimag') ? lowered.indexOf('harddecisionimag') : null;
-  const equalized = {{ name: 'Equalized Symbols', x: [], y: [], mode: 'markers', type: 'scatter', marker: {{ size: 7 }} }};
+  const rawDeclared = lowered.includes('rawequalizedreal') || lowered.includes('rawequalizedimag');
+  const realName = rawDeclared ? 'rawequalizedreal' : 'equalizedreal';
+  const imagName = rawDeclared ? 'rawequalizedimag' : 'equalizedimag';
+  const realIdx = lowered.indexOf(realName);
+  const imagIdx = lowered.indexOf(imagName);
+  if (realIdx < 0 || imagIdx < 0) return []; // Never substitute TX or hard decisions.
+  const direction = String((payload.meta || {{}}).logical_path || '').split('/').pop().match(/^(dl|ul)_constellation_(?:samples|preview)\\.csv$/i);
+  const directionIndices = ['direction', 'runtimedirection'].filter((name) => lowered.includes(name)).map((name) => lowered.indexOf(name));
+  if (direction && rows.some((row) => directionIndices.some((idx) => String(row[idx] || '').trim() && String(row[idx]).trim().toUpperCase() !== direction[1].toUpperCase()))) return [];
+  const groupFields = {json_for_script(list(CONSTELLATION_PREVIEW_COHORT_FIELDS))};
+  const groupIndices = groupFields.filter((name) => lowered.includes(name.toLowerCase())).map((name) => [name, lowered.indexOf(name.toLowerCase())]);
+  const groups = new Map();
   rows.forEach((row) => {{
+    if (!String(row[realIdx] ?? '').trim() || !String(row[imagIdx] ?? '').trim()) return;
     const xr = parseResultNumber(row[realIdx]);
     const yi = parseResultNumber(row[imagIdx]);
-    if (xr !== null && yi !== null) {{
-      equalized.x.push(xr);
-      equalized.y.push(yi);
-    }}
+    if (xr === null || yi === null || !Number.isFinite(xr) || !Number.isFinite(yi)) return;
+    const identity = groupIndices.map(([name, index]) => [name, String(row[index] ?? '')]);
+    const key = JSON.stringify(identity);
+    const label = identity.map(([name, value]) => `${{name}}=${{value || '[not retained]'}}`).join('; ') || 'cohort/domain not retained';
+    if (!groups.has(key)) groups.set(key, {{ name: `Receiver ${{realName}}/${{imagName}} | ${{label}}`, x: [], y: [], customdata: [], mode: 'markers', type: 'scatter', marker: {{ size: 7 }} }});
+    const trace = groups.get(key);
+    trace.x.push(xr);
+    trace.y.push(yi);
+    trace.customdata.push(row); // Exact retained coordinates, including non-applicable DFT subcarrier.
   }});
-  const traces = [equalized];
-  if (decisionRealIdx !== null && decisionImagIdx !== null) {{
-    const hard = {{ name: 'Hard Decisions', x: [], y: [], mode: 'markers', type: 'scatter', marker: {{ size: 8, symbol: 'x' }} }};
-    rows.forEach((row) => {{
-      const xr = parseResultNumber(row[decisionRealIdx]);
-      const yi = parseResultNumber(row[decisionImagIdx]);
-      if (xr !== null && yi !== null) {{
-        hard.x.push(xr);
-        hard.y.push(yi);
-      }}
-    }});
-    if (hard.x.length) traces.push(hard);
-  }}
-  return traces.filter((trace) => trace.x.length);
+  return Array.from(groups.values());
 }}
 function buildRawTrace(rows, xIdx, yIdx, label) {{
   const points = [];
@@ -24161,7 +24488,7 @@ function renderResultChartControls(payload) {{
     return;
   }}
   if (model.kind === 'constellation') {{
-    host.innerHTML = '<span class="pill">Live constellation scatter</span><span class="mini-note">Equalized I/Q points are being rendered directly from the live DB table.</span>';
+    host.innerHTML = '<span class="pill">Receiver-IQ preview</span><span class="mini-note">Only the bounded table preview is plotted; exported PNGs are preview-only. Download CSV retains the entire original source (which may itself be a preview). Missing receiver I/Q is unavailable, never replaced with TX or hard decisions. No full-capture/EVM validation is implied.</span>';
     return;
   }}
   ensureResultChartState(model);
@@ -24229,7 +24556,9 @@ function renderResultChart(payload) {{
   const chart = buildResultChartData(payload);
   const traces = chart.traces || [];
   if (!traces.length) {{
-    host.innerHTML = '<div class="chart-empty">This table does not expose enough numeric columns for a live plot.</div>';
+    host.innerHTML = chart.model.kind === 'constellation'
+      ? '<div class="chart-empty">Receiver-IQ preview unavailable: missing/nonfinite receiver samples or conflicting source direction. TX/reference symbols and hard decisions were not substituted.</div>'
+      : '<div class="chart-empty">This table does not expose enough numeric columns for a live plot.</div>';
     return;
   }}
   Plotly.react(
@@ -24240,6 +24569,7 @@ function renderResultChart(payload) {{
       plot_bgcolor: 'rgba(255,255,255,0.94)',
       margin: {{ l: 48, r: 18, t: 28, b: 42 }},
       legend: {{ orientation: 'h' }},
+      title: chart.model.kind === 'constellation' ? 'Receiver-IQ preview (bounded rows; not full-capture validation)' : undefined,
       xaxis: {{ title: chart.xTitle, gridcolor: 'rgba(133,150,178,0.18)' }},
       yaxis: {{ title: chart.yTitle, gridcolor: 'rgba(133,150,178,0.18)' }},
       hovermode: traces.some((trace) => trace.mode === 'markers') ? 'closest' : 'x unified',
@@ -24265,6 +24595,10 @@ async function loadSelectedTable() {{
     `<span class="pill">${{resultEsc(meta.logical_path || '')}}</span><span class="pill">${{resultEsc(meta.byte_size || '')}} bytes</span><span class="pill">${{resultEsc(meta.created_utc || '')}}</span>`;
   document.getElementById('resultActions').innerHTML =
     `<a class="button-link secondary" href="/artifact/${{CURRENT_TABLE_ID}}/raw?download=1">Download CSV</a><a class="button-link secondary" href="/artifact/${{CURRENT_TABLE_ID}}/table">Open Full Preview</a>`;
+  const selectedSource = ((RESULT_LATEST_DATA || {{}}).tables_all || []).find((item) => Number(item.artifact_id) === Number(CURRENT_TABLE_ID));
+  const alternates = (selectedSource || {{}}).constellation_alternate_sources || [];
+  document.getElementById('resultActions').innerHTML += alternates.map((item) =>
+    `<a class="button-link secondary" href="${{resultEsc(item.download_url)}}">Download alternate preview CSV (not full capture)</a>`).join('');
   RESULT_CURRENT_PREVIEW = payload;
   renderPreviewTable(payload);
   renderResultChartControls(payload);

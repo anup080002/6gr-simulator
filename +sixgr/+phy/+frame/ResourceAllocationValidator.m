@@ -320,6 +320,11 @@ classdef ResourceAllocationValidator
         end
 
         function [startSymbol, numSymbols] = decodeSLIV(sliv, symbolsPerSlot)
+            if ~(isnumeric(symbolsPerSlot) && isreal(symbolsPerSlot) && ...
+                    isscalar(symbolsPerSlot) && any(symbolsPerSlot == [12 14]))
+                error("sixgr:phy:frame:InvalidSymbolsPerSlot", ...
+                    "NR SLIV requires a 12- or 14-symbol slot context.");
+            end
             validateattributes(sliv, {'numeric'}, ...
                 {'scalar','integer','nonnegative','finite'});
             candidates = zeros(0, 2);
@@ -347,15 +352,21 @@ classdef ResourceAllocationValidator
                 {'scalar','integer','positive','finite'});
             validateattributes(symbolsPerSlot, {'numeric'}, ...
                 {'scalar','integer','positive','finite'});
+            if ~any(symbolsPerSlot == [12 14])
+                error("sixgr:phy:frame:InvalidSymbolsPerSlot", ...
+                    "NR SLIV requires a 12- or 14-symbol slot context.");
+            end
             if startSymbol + numSymbols > symbolsPerSlot
                 error("sixgr:phy:frame:InvalidTDRA", ...
                     "StartSymbol + NumSymbols exceeds SymbolsPerSlot.");
             end
-            if numSymbols - 1 <= floor(symbolsPerSlot / 2)
-                sliv = symbolsPerSlot * (numSymbols - 1) + startSymbol;
+            % TS 38.214 5.1.2.1 and 6.1.2.1 use radix 14 for BOTH CPs.
+            % Extended CP only restricts S+L<=12; it does not redefine
+            % the over-the-air startAndLength indicator.
+            if numSymbols - 1 <= 7
+                sliv = 14 * (numSymbols - 1) + startSymbol;
             else
-                sliv = symbolsPerSlot * (symbolsPerSlot - numSymbols + 1) + ...
-                    (symbolsPerSlot - 1 - startSymbol);
+                sliv = 14 * (15 - numSymbols) + (13 - startSymbol);
             end
         end
 

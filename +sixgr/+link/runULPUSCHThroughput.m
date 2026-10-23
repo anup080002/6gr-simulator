@@ -233,6 +233,7 @@ slotDur_s = localSlotDuration(cfgUL);
 
 trialSeed = NaN(numFrames,1);
 trialReplayStatus = repmat("not_attempted",numFrames,1);
+trialLinkEnergyEvidence = cell(numFrames,1);
 trialReplayMAT = strings(numFrames,1);
 trialReplayHash = strings(numFrames,1);
 trialFrame = startFrameIndex + (0:numFrames-1).';
@@ -272,6 +273,7 @@ trialPRB = NaN(numFrames,1);
 trialPRBStart = NaN(numFrames,1);
 trialSymbolStart = NaN(numFrames,1);
 trialNumSymbols = NaN(numFrames,1);
+trialResourceIntervals = repmat(sixgr.truth.executedResourceIntervals(),numFrames,1);
 trialLayers = NaN(numFrames,1);
 trialModulation = strings(numFrames,1);
 trialExperimentalTransport = false(numFrames,1);
@@ -505,6 +507,7 @@ trialPUSCHPathlossReferenceRS = strings(numFrames,1);
 trialPUSCHPowerControlSource = strings(numFrames,1);
 trialPUSCHPowerScale = NaN(numFrames,1);
 trialPUSCHPowerControlPathloss = NaN(numFrames,1);
+trialPUSCHPowerStateEvidence = cell(numFrames,1);
 trialAppliedShadow = NaN(numFrames,1);
 trialAppliedO2I = NaN(numFrames,1);
 trialAppliedLargeScaleGainSource = strings(numFrames,1);
@@ -747,6 +750,7 @@ trialSRSValidityState = strings(numFrames,1);
 trialCSIValidityState = strings(numFrames,1);
 trialSRSValid = false(numFrames,1);
 trialSRSAgeSlots = NaN(numFrames,1);
+trialAcceptedSRSEvidence = repmat(sixgr.truth.projectAcceptedSRSDecisionEvidence(),numFrames,1);
 trialTRSGatingActive = false(numFrames,1);
 trialTRSValidityState = strings(numFrames,1);
 trialTrackingEligibility = false(numFrames,1);
@@ -1002,6 +1006,7 @@ for n = 1:numFrames
             string(sixgr.util.structGet(grantSnapshotOverride, ...
                 "PHYGrantContextId", sixgr.util.structGet( ...
                 grantSnapshotOverride, "GrantContextId", ""))));
+        trialResourceIntervals(n)=sixgr.truth.resourceIntervalsFromObservedRE(observedREChunks{n},tx.Carrier,"PUSCH");
         trialTxWaveformColumns(n) = double(size(tx.Waveform, 2));
         observedREChunks{n}.ConfiguredSNR_dB = repmat(snr_dB,height(observedREChunks{n}),1);
         observedREChunks{n}.Seed = repmat(trialSeed(n),height(observedREChunks{n}),1);
@@ -1097,6 +1102,7 @@ for n = 1:numFrames
         trialCSIValidityState(n) = string(sixgr.util.structGet(grantSnapshot, "CSIValidityState", ""));
         trialSRSValid(n) = logical(sixgr.util.structGet(grantSnapshot, "SRSValid", false));
         trialSRSAgeSlots(n) = double(sixgr.util.structGet(grantSnapshot, "SRSAgeSlots", NaN));
+        trialAcceptedSRSEvidence(n)=sixgr.truth.projectAcceptedSRSDecisionEvidence(grantSnapshot);
         trsTrace = localResolveTRSRuntimeTrace(cfgFrame, grantSnapshot);
         trialTRSGatingActive(n) = logical(trsTrace.TRSGatingActive);
         trialTRSValidityState(n) = string(trsTrace.TRSValidityState);
@@ -1212,9 +1218,20 @@ for n = 1:numFrames
             powerGrant=struct('PRBSet',tx.PUSCH.PRBSet, ...
                 'DecodedDCIFields',cfgFrame.phy.pusch.receivedDCIAssignment.Fields);
         end
-        [txWaveformPC, powerCtrl, cfgFrameRx, puschPowerControlState] = ...
-            sixgr.link.bindPUSCHPowerControlContext(tx.Waveform, cfgFrame, tx, ...
-            powerGrant, puschPowerControlState);
+        if isfield(cfgFrame.phy.pusch,'receivedDCIAssignment') && ...
+                logical(sixgr.util.structGet(cfgFrame,'phy.pusch.powerControl.enabled',false))
+            powerOwner=sixgr.util.structGet(cfgFrame,'phy.pusch.receivedPowerControlState',[]);
+            assert(isa(powerOwner,'sixgr.link.ReceivedULPowerControlState') && isscalar(powerOwner), ...
+                'sixgr:power:MissingReceivedUEPowerState', ...
+                'Connected PUSCH power control requires persistent UE-owned command state.');
+            [txWaveformPC,powerCtrl,cfgFrameRx,puschPowerControlState,out.UEPowerControlState]= ...
+                powerOwner.resolvePUSCH(cfgFrame,cfgFrame.phy.pusch.receivedDCIAssignment,tx, ...
+                sixgr.util.structGet(cfgFrame,'phy.pusch.receivedTPCObservation',struct()));
+        else
+            [txWaveformPC, powerCtrl, cfgFrameRx, puschPowerControlState] = ...
+                sixgr.link.bindPUSCHPowerControlContext(tx.Waveform, cfgFrame, tx, ...
+                powerGrant, puschPowerControlState);
+        end
         tx.Waveform = txWaveformPC;
         [tx.Waveform, powerContext] = sixgr.rf.applyPowerContext( ...
             tx.Waveform, cfgFrameRx, "UL", txInfo,"ApplyPA",~prepareOnly);
@@ -1308,9 +1325,11 @@ for n = 1:numFrames
         trialPUSCHPowerControlSource(n) = string(powerCtrl.Source);
         trialPUSCHPowerScale(n) = double(powerCtrl.AmplitudeScale);
         trialPUSCHPowerControlPathloss(n) = double(powerCtrl.Pathloss_dB);
+        trialPUSCHPowerStateEvidence{n} = sixgr.link.puschPowerStateEvidence(powerCtrl);
         captureDiagnosticPathGains = logical(sixgr.util.structGet( ...
             cfgFrameRx, "outputs.phySignalDiagnosticEnabled", false)) && ...
             ~logical(sixgr.util.structGet(signalDiagnostic, "Available", false));
+        energyNoise=[]; energyMeasurement=[]; energyIdentity=struct();
         if receivedCompletion
             chState = p.Results.ReceivedContext.ChannelState;
             rxWave = p.Results.ReceivedContext.Observation.readComplete();
@@ -1319,6 +1338,18 @@ for n = 1:numFrames
             [rxWave, replay, chState, desiredScoringWaveform] = localApplyChannelAndAwgn( ...
                 tx.Waveform, snr_dB, chState, cfgFrameRx, tx, txInfo, ...
                 interferenceBundle, captureDiagnosticPathGains);
+            if isfield(replay,'LinkEnergyOriginalAWGNReceipt')
+                % Private post-hoc energy operands never enter receiver args.
+                energyNoise=replay.LinkEnergyOriginalAWGNReceipt;
+                energyMeasurement=replay.LinkEnergyOriginalMeasurementReceipt;
+                replay=rmfield(replay,{'LinkEnergyOriginalAWGNReceipt','LinkEnergyOriginalMeasurementReceipt'});
+                energyIdentity=struct('Direction',"UL",'Frame',trialFrame(n),'Slot',trialSlot(n), ...
+                    'Seed',trialSeed(n),'UEIndex',trialUEIndex(n),'RNTI',trialRNTI(n), ...
+                    'ConfiguredSNR_dB',double(sixgr.util.structGet(replay,'ConfiguredSNR_dB',snr_dB)), ...
+                    'RunTag',string(sixgr.util.structGet(cfg,'run.runTag',"")), ...
+                    'ScenarioID',string(sixgr.util.structGet(cfg,'run.scenarioID',sixgr.util.structGet(cfg,'meta.lls6gScenarioID',""))), ...
+                    'ConfigHash',string(sixgr.util.structGet(cfg,'meta.configHash',"")));
+            end
             trialAppliedPrecoderEvidence{n}=sixgr.link.exportIsolatedDataPrecoderEvidence( ...
                 tx,cfgFrameRx,chState,replay,struct('Direction',"UL", ...
                 'UEIndex',observedUEIndex,'ConfiguredSNR_dB',snr_dB, ...
@@ -1351,6 +1382,11 @@ for n = 1:numFrames
             end
             if isfield(cfgFrame.phy.pusch,'receivedHARQState')
                 cfgFrame.phy.pusch=rmfield(cfgFrame.phy.pusch,'receivedHARQState');
+            end
+            for ueOnlyField={'receivedPowerControlState','receivedTPCObservation'}
+                if isfield(cfgFrame.phy.pusch,ueOnlyField{1})
+                    cfgFrame.phy.pusch=rmfield(cfgFrame.phy.pusch,ueOnlyField{1});
+                end
             end
         end
         if receivedCompletion
@@ -1755,7 +1791,11 @@ for n = 1:numFrames
         trialLargeScaleSINRSource(n) = string(sixgr.util.structGet(replay, "LargeScaleSINRSource", ""));
         trialServingRSRP(n) = double(sixgr.util.structGet(replay, "ServingRSRP_dBm", NaN));
         trialServingRSRPSource(n) = string(sixgr.util.structGet(replay, "ServingRSRPSource", ""));
-        trialRuntimeEvidence{n} = localBuildRuntimeAntennaTimingEvidence("UL", cfgFrame, grantSnapshot, tx, txInfo, chState, replay);
+        trialRuntimeEvidence{n} = localBuildRuntimeAntennaTimingEvidence("UL", cfgFrame, grantSnapshot, tx, txInfo, chState, replay, rx);
+        if ~receivedCompletion && ~isempty(energyNoise)
+            trialLinkEnergyEvidence{n}=sixgr.link.captureLinkEnergyEvidence(tx,desiredScoringWaveform, ...
+                energyNoise,energyIdentity,string(tx.PowerContext.WaveformAmplitudeUnit),energyMeasurement);
+        end
         decodeEvidenceAvailable = trialDecodeAttempted(n) && trialULSCHDecodeAvailable(n) && ...
             trialLLRAvailable(n) && trialLLRFinite(n) && isfield(rx, "TransportBlock") && ...
             ~isempty(rx.TransportBlock);
@@ -2775,6 +2815,9 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         T.PRBCount = trialPRB(idx);
         T.SymbolStart = trialSymbolStart(idx);
         T.NumSymbols = trialNumSymbols(idx);
+        for resourceField=string(fieldnames(trialResourceIntervals)).'
+            T.(resourceField)=reshape([trialResourceIntervals(idx).(resourceField)],[],1);
+        end
         T.AppliedAWGNSNR_dB = trialAppliedAWGNSNR(idx);
         T.AppliedAWGNSNRSource = trialAppliedAWGNSNRSource(idx);
         T.InjectedCarrierPhaseOffset_deg = trialCarrierPhaseOffsetDeg(idx);
@@ -2979,6 +3022,7 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         T.PUSCHPowerControlSource = trialPUSCHPowerControlSource(idx);
         T.PUSCHPowerAmplitudeScale = trialPUSCHPowerScale(idx);
         T.PUSCHPowerControlPathloss_dB = trialPUSCHPowerControlPathloss(idx);
+        T=sixgr.link.bindDataChannelScoreRows(T,trialPUSCHPowerStateEvidence(idx));
         T.AppliedShadowFading_dB = trialAppliedShadow(idx);
         T.AppliedO2I_dB = trialAppliedO2I(idx);
         T.AppliedLargeScaleGainSource = trialAppliedLargeScaleGainSource(idx);
@@ -3050,6 +3094,10 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         T.CSIValidityState = trialCSIValidityState(idx);
         T.SRSValid = trialSRSValid(idx);
         T.SRSAgeSlots = trialSRSAgeSlots(idx);
+        srsEvidenceTable=struct2table(trialAcceptedSRSEvidence(idx),'AsArray',true);
+        for name=string(srsEvidenceTable.Properties.VariableNames)
+            T.(name)=srsEvidenceTable.(name);
+        end
         T.TRSGatingActive = trialTRSGatingActive(idx);
         T.TRSValidityState = trialTRSValidityState(idx);
         T.TrackingEligibility = trialTrackingEligibility(idx);
@@ -3110,6 +3158,15 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         T = localApplyRuntimeEvidenceColumns(T, trialRuntimeEvidence(idx));
         T = sixgr.link.appendMeasuredPHYEvidenceColumns(T, trialMeasuredPHYEvidence(idx));
         T = localDecorateTrialTruthFields(T, "UL", cfg);
+        T.LinkEnergyEvidenceJSON=strings(height(T),1);
+        T.LinkEnergyEvidenceSHA256=strings(height(T),1);
+        for energyRow=1:numel(idx)
+            energyEvidence=trialLinkEnergyEvidence{idx(energyRow)};
+            if isempty(energyEvidence), continue; end
+            bound=sixgr.link.bindLinkEnergyEvidence(T(energyRow,:),energyEvidence);
+            T.LinkEnergyEvidenceJSON(energyRow)=bound.LinkEnergyEvidenceJSON;
+            T.LinkEnergyEvidenceSHA256(energyRow)=bound.LinkEnergyEvidenceSHA256;
+        end
         if receivedCompletion
             % One received frozen grant: these are actual observation
             % extents, not values reconstructed from nominal slot numbers.
@@ -3169,7 +3226,7 @@ if isempty(carrier)
 end
 [measuredReceivedEnergy, receivedEnergyEvidence] = ...
     sixgr.phy.waveform.measureReceivedOccupiedREEnergy( ...
-        carrier,referenceWaveform,occupiedIndices,"SignalFamily","PUSCH");
+        carrier,referenceWaveform,occupiedIndices,"SignalFamily","PUSCH","RetainEnergyReceipt",true);
 % Keep fading, rank and precoder effects in the measured signal instead of
 % cancelling them by recalibrating AWGN from each received realization.
 % The TX scale only converts the configured normalized reference into the
@@ -3218,6 +3275,8 @@ noiseInfo.NoiseCalibrationVersion = char(string(referenceNoise.Version));
 noiseInfo.WaveformPowerUsedForAWGN = false;
 noiseInfo.SignalEnergyPerOccupiedRE = ...
     double(referenceNoise.SignalEnergyPerOccupiedRE);
+noiseInfo.LinkEnergyOriginalAWGNReceipt=referenceNoise;
+noiseInfo.LinkEnergyOriginalMeasurementReceipt=receivedEnergyEvidence;
 end
 
 function signalEnergy = localOccupiedRESignalEnergy(txInfo)
@@ -3521,14 +3580,7 @@ T.SourceArtifact = repmat("air_interface/csv/ul_pusch_trials.csv", n, 1);
 T.SourceTable = repmat("air_interface/csv/ul_pusch_trials.csv", n, 1);
 T.ArtifactClass = repmat("raw_runtime_trial_evidence", n, 1);
 T.SemanticState = string(T.RowLifecycleState);
-T.CountsTowardCoverage = ~logical(localOptionalColumn(T, "Crash", false)) & ~logical(localOptionalColumn(T, "IsWarmupFrame", false));
-runtimeStatus = strtrim(string(localOptionalColumn(T, "RuntimeMaterializationStatus", "")));
-runtimeEvidence = strtrim(string(localOptionalColumn(T, "RuntimeEvidenceSource", "")));
-activeRuntimeMask = ~logical(localOptionalColumn(T, "Crash", false));
-runtimeStatus(activeRuntimeMask & strlength(runtimeStatus) == 0) = "active_waveform_pusch_runtime";
-runtimeEvidence(activeRuntimeMask & strlength(runtimeEvidence) == 0) = "sixgr.link.runULPUSCHThroughput";
-T.RuntimeMaterializationStatus = runtimeStatus;
-T.RuntimeEvidenceSource = runtimeEvidence;
+T.CountsTowardCoverage = sixgr.util.linkTrialDecodeCoverage(T);
 T.MachineReadable = true(n, 1);
 T.HumanReadable = true(n, 1);
 end
@@ -3653,7 +3705,7 @@ else
 end
 end
 
-function row = localBuildRuntimeAntennaTimingEvidence(direction, cfg, grant, tx, txInfo, chState, replay)
+function row = localBuildRuntimeAntennaTimingEvidence(direction, cfg, grant, tx, txInfo, chState, replay, rx)
 userMeta = sixgr.util.structGet(cfg, "lls6g.userContext", struct());
 bsMeta = localResolveRuntimeAntennaMeta(userMeta, "RuntimeServingBSAntennaMeta", "RuntimeServingBSAntenna");
 ueMeta = localResolveRuntimeAntennaMeta(userMeta, "RuntimeUEAntennaMeta", "RuntimeUEAntenna");
@@ -3671,6 +3723,18 @@ channelMeta = localResolveChannelRuntimeMeta(chState, cfg, userMeta);
 interferenceMeta = localResolveInterferenceChannelRuntimeMeta(replay, channelMeta);
 
 row = localEmptyRuntimeEvidenceRow();
+% This builder is reached only after the actual prepared/direct TX and RX
+% call returned. A usable decode is separate from an executed NA capture.
+row.RuntimeMaterializationStatus = "active_waveform_pusch_runtime";
+row.RuntimeEvidenceSource = "sixgr.link.runULPUSCHThroughput_returned_receiver";
+stageEvidence = sixgr.link.summarizeDataReceiverStages(rx, direction);
+channelEvidence = sixgr.link.collectDataChannelExecutionEvidence(replay);
+for name = string(fieldnames(stageEvidence)).'
+    row.(name) = stageEvidence.(name);
+end
+for name = string(fieldnames(channelEvidence)).'
+    row.(name) = channelEvidence.(name);
+end
 row.Direction = string(direction);
 row.GrantContextId = string(sixgr.util.structGet(grant, "GrantContextId", ""));
 row.BSAntennaArrayClass = string(sixgr.util.structGet(bsMeta, "ArrayClass", ""));
@@ -4269,6 +4333,16 @@ row = struct( ...
     "InterferencePowerReferencePlane", "");
 row = sixgr.report.bindTransmitPowerEvidence(row, struct());
 row = sixgr.report.bindConverterEvidence(row, struct(), struct());
+stageEvidence = sixgr.link.summarizeDataReceiverStages();
+channelEvidence = sixgr.link.collectDataChannelExecutionEvidence();
+for name = string(fieldnames(stageEvidence)).'
+    row.(name) = stageEvidence.(name);
+end
+for name = string(fieldnames(channelEvidence)).'
+    row.(name) = channelEvidence.(name);
+end
+row.RuntimeMaterializationStatus = "";
+row.RuntimeEvidenceSource = "";
 end
 
 function id = localCompositeRFChainId(txId, rxId)
@@ -4511,24 +4585,14 @@ state.Meta = localNormalizeChannelRuntimeMeta(sixgr.util.structGet(ch, "Meta", s
 if logical(sixgr.util.structGet(ch, "IsFading", false)) && isfield(ch, "Object") && ~isempty(ch.Object)
     state.UseFading = true;
     state.Obj = ch.Object;
+    sixgr.channel.waveformChannelOutputContract(state.Obj);
     [padSamples, trimSamples] = localResolveChannelDelaySamples(ch.Object, fs);
     state.ChannelPadSamples = padSamples;
     state.ChannelTrimSamples = trimSamples;
     state.WarmupSamples = max(256, padSamples);
-    try
-        reset(state.Obj);
-    catch
-    end
-    try
-        warmup = zeros(state.WarmupSamples, numTx, 'like', tx.Waveform);
-        try
-            state.Obj(warmup);
-        catch
-            [~, ~] = state.Obj(warmup);
-        end
-    catch
-        state.WarmupSamples = 0;
-    end
+    reset(state.Obj);
+    warmup = zeros(state.WarmupSamples, numTx, 'like', tx.Waveform);
+    sixgr.channel.applyWaveformChannelOnce(state.Obj,warmup,false);
 end
 end
 
@@ -4648,12 +4712,9 @@ elseif isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false
     if padSamples > 0
         xIn = [x; zeros(padSamples, size(x,2), 'like', x)];
     end
-    try
-        [yRaw, pathGains] = state.Obj(xIn);
-    catch
-        yRaw = state.Obj(xIn);
-        pathGains = [];
-    end
+    [yRaw,pathGains,~,channelExecution] = ...
+        sixgr.channel.applyWaveformChannelOnce(state.Obj,xIn,true);
+    replay.ChannelModelApplied = channelExecution.ModelApplied;
     replay.ChannelFadingApplied = true;
     replay.ChannelFadingExecutionStatus = "applied_runtime_channel_object";
     replay.ChannelPathGainsAvailable = ~isempty(pathGains);
@@ -5100,6 +5161,10 @@ end
 assert(numel(varTypes) == numel(varNames), ...
     'sixgr:link:ULTrialSchemaTypeCountMismatch');
 T = table('Size', [0, numel(varNames)], 'VariableTypes', varTypes, 'VariableNames', varNames);
+resourceTemplate=sixgr.truth.executedResourceIntervals();
+for field=string(fieldnames(resourceTemplate)).'
+    T.(field)=repmat(resourceTemplate.(field),0,1);
+end
 T.EqualizerSolveCount=zeros(0,1);
 T.EqualizerUniqueSolveCount=zeros(0,1);
 T.EqualizerCovarianceFactorizationCount=zeros(0,1);
@@ -5149,6 +5214,8 @@ T.TxWaveformColumns = zeros(0,1);
 T.ReceiverReplayCaptureStatus = strings(0,1);
 T.ReceiverReplayMATFile = strings(0,1);
 T.ReceiverReplayMATSHA256 = strings(0,1);
+T.LinkEnergyEvidenceJSON = strings(0,1);
+T.LinkEnergyEvidenceSHA256 = strings(0,1);
 T=sixgr.link.addCFOObservationColumns(T,cell(0,1));
 T.PhysicalTxAntennas = zeros(0,1);
 T.RxWaveformBranches = zeros(0,1);
@@ -5378,6 +5445,8 @@ T.PUSCHPathlossReferenceRS = strings(0,1);
 T.PUSCHPowerControlSource = strings(0,1);
 T.PUSCHPowerAmplitudeScale = zeros(0,1);
 T.PUSCHPowerControlPathloss_dB = zeros(0,1);
+powerFields=struct2table(sixgr.link.puschPowerStateEvidence(struct()));
+T=[T powerFields([],:)];
 T.AppliedShadowFading_dB = zeros(0,1);
 T.AppliedO2I_dB = zeros(0,1);
 T.AppliedLargeScaleGainSource = strings(0,1);
@@ -5495,6 +5564,11 @@ T.SRSValidityState = strings(0,1);
 T.CSIValidityState = strings(0,1);
 T.SRSValid = false(0,1);
 T.SRSAgeSlots = zeros(0,1);
+srsEvidenceTable=struct2table(sixgr.truth.projectAcceptedSRSDecisionEvidence(),'AsArray',true);
+srsEvidenceTable=srsEvidenceTable([],:);
+for name=string(srsEvidenceTable.Properties.VariableNames)
+    T.(name)=srsEvidenceTable.(name);
+end
 T.TRSGatingActive = false(0,1);
 T.TRSValidityState = strings(0,1);
 T.TrackingEligibility = false(0,1);
@@ -7009,6 +7083,10 @@ preserveFields = ["UEIndex","RNTI","ServingCell","CQIUsed","RIUsed","PMI","CRI",
     "PDCCHGrantCORESETId","PDCCHGrantAggregationLevel","PDCCHGrantCandidateIndex","PDCCHGrantDCIFormat","GrantControlState", ...
     "PDCCHControlFailureReason","PDCCHControlEvidenceSource","ControlDecodeSource", ...
     "CellAcquisitionState","AccessState","SRSValidityState","CSIValidityState","SRSValid","SRSAgeSlots", ...
+    "SRSCausalMeasurementId","SRSCausalUsable","SRSCausalAgeSlots","SRSCausalStatus","LastSuccessfulSRSSlot", ...
+    "AcceptedSRSSpatialDecision","AcceptedSRSDecisionContext","SRSCurrentInstallation", ...
+    "AcceptedSRSCausalUsable","AcceptedSRSCausalAgeSlots","AcceptedSRSCausalStatus", ...
+    "SRI","SRSResourceIndicator", ...
     "TRSGatingActive","TRSValidityState","TrackingEligibility","TRSAgeSlots","LastSuccessfulTRSSlot","LastEstimatedTRSDopplerHz", ...
     "TRSStateSource","TRSRuntimeConsumer","TRSInfluencedDecision","TRSInfluenceDefinition","TRSReceiverIntegrationStatus","TRSReceiverIntegrationBlocker", ...
     "ExpectedUCIBits","MultiplexedUCIBits","HARQACKBits","MultiplexedHARQACKBits","UCIOnPUSCHApplied","UCIOnPUSCHSource", ...

@@ -78,6 +78,11 @@ for slot=1:runtimeSlot+1
             isfile(fullfile(exportRoot,exported.ChannelObservationMATFile)) && ...
             isfile(fullfile(exportRoot,exported.ChannelObservationSegmentsCSV)), ...
             'Same-execution scoring IQ must publish one scalar provenance row.');
+        archiveClock=owner.Events.NextSampleIndex;
+        localVerifyScoringArchiveReuse(exportRoot,exported,item.Planes,p, ...
+            item.Context.DesiredReferencePlane);
+        assert(owner.Events.NextSampleIndex==archiveClock, ...
+            'Archive validation must not advance or re-execute the physical channel.');
         before=owner.Events.NextSampleIndex;
         ch=owner.directionalChannelState(1,"DL");
         out=sixgr.link.completeTRSReception(p,observation,replay,ch, ...
@@ -162,4 +167,94 @@ end
 assert(seen && ~owner.hasPending("TRS",1));
 if queueWhileUL, fprintf('FUTURE_DL_TRS_PROJECTION_PASS: unequal arrays, queue during UL, no channel mutation.\n'); end
 ok=true;
+end
+
+function localVerifyScoringArchiveReuse(root,exported,planes,prepared,planeID)
+% Exercise the actual completed link observation above, not generated IQ.
+% Mutations are confined to independent test-owned copies. A damaged pair
+% must not be blessed with freshly calculated file hashes or overwritten.
+matRelative=exported.ChannelObservationMATFile;
+csvRelative=exported.ChannelObservationSegmentsCSV;
+matPath=fullfile(root,matRelative);
+csvPath=fullfile(root,csvRelative);
+hash=@sixgr.phy.waveform.WaveformHash.file;
+before=[hash(matPath),hash(csvPath)];
+infoBefore=[dir(matPath);dir(csvPath)];
+again=sixgr.truth.exportSharedScoringWaveformObservation( ...
+    root,table(1,'VariableNames',{'Slot'}),planes,prepared,planeID);
+infoAfter=[dir(matPath);dir(csvPath)];
+assert(isequaln(exported,again) && ...
+    isequal(before,[hash(matPath),hash(csvPath)]) && ...
+    isequal([infoBefore.datenum],[infoAfter.datenum]), ...
+    'An unchanged validated observation must reuse exact immutable artifacts.');
+original=load(matPath,'ManifestJSON','DesiredLinkWaveform','Evidence');
+csv=readtable(csvPath,'TextType','string','VariableNamingRule','preserve');
+cases=["waveform_value","waveform_class","waveform_shape", ...
+    "manifest_clock","evidence_identity","csv_operand","mat_only","csv_only"];
+for kind=cases
+    caseRoot=fullfile(root,'archive_integrity_negative',kind);
+    caseMAT=fullfile(caseRoot,matRelative);
+    caseCSV=fullfile(caseRoot,csvRelative);
+    mkdir(fileparts(caseMAT)); mkdir(fileparts(caseCSV));
+    if kind~="csv_only", copyfile(matPath,caseMAT); end
+    if kind~="mat_only", copyfile(csvPath,caseCSV); end
+    payload=original;
+    switch kind
+        case "waveform_value"
+            payload.DesiredLinkWaveform(1)=payload.DesiredLinkWaveform(1)+1;
+        case "waveform_class"
+            if isa(payload.DesiredLinkWaveform,'single')
+                payload.DesiredLinkWaveform=double(payload.DesiredLinkWaveform);
+            else
+                payload.DesiredLinkWaveform=single(payload.DesiredLinkWaveform);
+            end
+        case "waveform_shape"
+            payload.DesiredLinkWaveform=payload.DesiredLinkWaveform.';
+        case "manifest_clock"
+            manifest=jsondecode(payload.ManifestJSON);
+            manifest.StartSample=manifest.StartSample+1;
+            payload.ManifestJSON=string(jsonencode(manifest));
+        case "evidence_identity"
+            payload.Evidence.LinkID="wrong_link_for_negative_test";
+        case "csv_operand"
+            changedCSV=csv;
+            changedCSV.TimeSampleCount=changedCSV.TimeSampleCount+1;
+            writetable(changedCSV,caseCSV);
+    end
+    if any(kind==cases(1:5))
+        save(caseMAT,'-struct','payload','-v7.3');
+    end
+    existsBefore=[isfile(caseMAT),isfile(caseCSV)];
+    pairBefore=localPairHashes(caseMAT,caseCSV);
+    caught=false;
+    try
+        sixgr.truth.exportSharedScoringWaveformObservation( ...
+            caseRoot,table(1,'VariableNames',{'Slot'}),planes,prepared,planeID);
+    catch err
+        caught=true;
+        assert(any(string(err.identifier)==[ ...
+            "sixgr:truth:InvalidSharedScoringArtifact", ...
+            "sixgr:truth:IncompleteSharedScoringArtifacts"]), ...
+            'test:ScoringArchiveWrongFailure', ...
+            '%s must fail its artifact contract, not an unrelated error: %s',kind,err.identifier);
+    end
+    assert(caught,'test:ScoringArchiveCorruptionAccepted', ...
+        'The effective-link exporter accepted %s instead of validating saved contents.',kind);
+    assert(isequal(existsBefore,[isfile(caseMAT),isfile(caseCSV)]) && ...
+        isequal(pairBefore,localPairHashes(caseMAT,caseCSV)), ...
+        'test:ScoringArchiveOverwritten', ...
+        'Reject %s without replacing damaged evidence or completing a partial pair.',kind);
+end
+fprintf('SHARED_SCORING_ARCHIVE_REUSE_PASS unchanged=1 negative_cases=%d root=%s\n', ...
+    numel(cases),root);
+end
+
+function hashes=localPairHashes(matPath,csvPath)
+hashes=strings(1,2);
+paths=[string(matPath),string(csvPath)];
+for n=1:2
+    if isfile(paths(n))
+        hashes(n)=sixgr.phy.waveform.WaveformHash.file(paths(n));
+    end
+end
 end

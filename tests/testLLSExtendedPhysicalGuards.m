@@ -5,7 +5,7 @@ setup6GRSimToolkit("Verbose", false);
 
 testLDPCIterationResolver();
 testCQITableInferenceFollowsMCS();
-testDynamicPDSCHXOverhead();
+testConfiguredPDSCHXOverhead();
 testPhaseNoiseMaterializes();
 testOFDMWindowingMaterializesInTxPath();
 testPUSCHPi2BPSKTransformPrecodingMaterializes();
@@ -52,7 +52,7 @@ assert(strcmpi(char(sixgr.link.resolveConfiguredCQITable(cfg, "DL")), "table2"),
     "Runtime CQI resolution must not hardcode table1 when MCS/maxModulation implies table2.");
 end
 
-function testDynamicPDSCHXOverhead()
+function testConfiguredPDSCHXOverhead()
 cfg = sixgr.config.defaultConfig();
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.xOverhead", []);
 cfg = sixgr.util.structSet(cfg, "phy.ssb.enable", true);
@@ -60,8 +60,8 @@ cfg = sixgr.util.structSet(cfg, "phy.ssb.symbolLocations", [0 1 2 3]);
 cfg = sixgr.util.structSet(cfg, "phy.csirs.enable", true);
 cfg = sixgr.util.structSet(cfg, "phy.csirs.symbolLocations", 5);
 xOverhead = sixgr.phy.dl.resolvePDSCHXOverhead(cfg, [0 14]);
-assert(double(xOverhead) == 18, ...
-    "PDSCH N_oh must reflect three or more overlapping SSB/CSI-RS symbols.");
+assert(double(xOverhead) == 0, ...
+    "TS 38.214 N_oh is zero when xOverhead is absent; RS exclusions do not configure it.");
 
 cfgExplicit = sixgr.util.structSet(cfg, "phy.pdsch.xOverhead", 0);
 assert(double(sixgr.phy.dl.resolvePDSCHXOverhead(cfgExplicit, [0 14])) == 0, ...
@@ -183,6 +183,10 @@ end
 
 function testReferenceSINRDynamicRangeLimit()
 cfg = sixgr.config.defaultConfig();
+% This dynamic-range probe has one measured port and one receive branch;
+% do not inherit a fixed rank-two transmission from the default scenario.
+cfg.phy.pdsch.numLayers = 1;
+cfg.phy.pusch.numLayers = 1;
 cfg = sixgr.config.normalizeConfig(cfg);
 cfg = sixgr.util.structSet(cfg, "phy.csi.maxTrustedReferenceSINR_dB", 42);
 rxGrid = complex(zeros(12, 14, 1));

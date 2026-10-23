@@ -460,6 +460,7 @@
     "rf_chain_count": 2,
     "bs_static_power_w": 200,
     "bs_per_rf_chain_power_w": 10,
+    "bs_rf_chain_idle_power_fraction": 0.2,
     "bs_sleep_power_w": 20,
     "bs_pa_efficiency": 0.35,
     "ue_idle_power_w": 1.0,

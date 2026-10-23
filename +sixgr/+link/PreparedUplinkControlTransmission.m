@@ -84,6 +84,46 @@ classdef PreparedUplinkControlTransmission
             obj.NumReceiveAntennas=double(rxArray.NumElements);
         end
 
+        function [next,ratio]=bindSRSPowerAtEmission(obj,owner,sample)
+            % No waveform/channel rerun. Bind current h=f before the first
+            % nonzero SRS sample, retaining every received sample and clock.
+            assert(obj.Channel=="SRS" && string(sixgr.util.structGet( ...
+                obj.Metadata,'PowerEvidence.AdjustmentState',''))=="same_as_pusch", ...
+                'sixgr:srs:WrongEmissionPowerBinding','Only configured shared SRS adjustment is bound here.');
+            boundary=sixgr.link.srsResourceStartSample(obj.Tx,obj.StartSample,obj.SampleRateHz);
+            assert(sample==boundary, ...
+                'sixgr:srs:LatePowerBinding','Bind SRS power at its configured resource boundary, never after.');
+            old=obj.Metadata.PowerEvidence;
+            current=sixgr.rf.runtime.SRSPowerController.resolveSharedPUSCH( ...
+                owner,obj.ReceiverConfig,old.Request,sample,obj.SampleRateHz);
+            next=obj;
+            next.InputConfig.phy.srs.receivedPowerControlState=owner;
+            next.ReceiverConfig.phy.srs.receivedPowerControlState=owner;
+            fields=string(fieldnames(current));
+            for name=fields.'
+                next.Metadata.PowerEvidence.(name)=current.(name);
+            end
+            next.Metadata.PowerEvidence.BoundAtEmission=true;
+            ratio=10^((current.AppliedPower_dBm-old.AppliedPower_dBm)/20);
+            pc=obj.ReceiverConfig.lls6g.runtimePowerContext;
+            assert(~pc.PAApplied && pc.SignalSpecificPowerControl && ...
+                string(pc.WaveformAmplitudeUnit)=="sqrt_mW", ...
+                'sixgr:srs:InvalidEmissionPowerPlane','Power binds before shared node PA/RF in absolute units.');
+            pc.TotalTxPower_dBm=current.AppliedPower_dBm;
+            pc.TotalTxPower_mW=10^(current.AppliedPower_dBm/10);
+            pc.TotalTxPower_W=pc.TotalTxPower_mW*1e-3;
+            % Recompute the full measured power context, not selected labels.
+            % This scalar normalization has no RF/channel/RNG side effects.
+            [next.Tx.Waveform,pc]=sixgr.rf.applyPowerContext(obj.Tx.Waveform, ...
+                next.ReceiverConfig,'UL',struct('OFDM',obj.TxInfo.OFDMInfo), ...
+                'PowerContext',pc,'ApplyPA',false);
+            assert(norm(double(next.Tx.Waveform(:))-double(obj.Tx.Waveform(:))*ratio)<= ...
+                128*double(eps(class(obj.Tx.Waveform)))*max(norm(double(next.Tx.Waveform(:))),realmin), ...
+                'sixgr:srs:PowerRebindNotScalar','Rebinding must preserve every relative complex sample.');
+            next.Tx.PowerContext=pc;
+            next.ReceiverConfig.lls6g.runtimePowerContext=pc;
+        end
+
         function validateReceived(obj,channel,cfg,options)
             assert(obj.Channel==string(channel) && isequaln(obj.InputConfig,cfg) && ...
                 isequaln(obj.RequestBinding,obj.requestBinding(options)), ...

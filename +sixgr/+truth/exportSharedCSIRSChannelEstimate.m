@@ -1,6 +1,11 @@
-function row=exportSharedCSIRSChannelEstimate(root,row,prepared,reception,source,captures)
+function [row,selectionReference]=exportSharedCSIRSChannelEstimate(root,row,prepared,reception,source,captures)
 % Persist exact paired pilot operands only after practical CSI computation.
-[metrics,resources,evidence]=sixgr.truth.scoreSharedCSIRSChannel(prepared,reception,source,captures);
+selectionReference=struct();
+if nargout>1
+    [metrics,resources,evidence,selectionReference]=sixgr.truth.scoreSharedCSIRSChannel(prepared,reception,source,captures);
+else
+    [metrics,resources,evidence]=sixgr.truth.scoreSharedCSIRSChannel(prepared,reception,source,captures);
+end
 for name=string(fieldnames(metrics)).', row.(name)=metrics.(name); end
 if isempty(resources), return; end
 resources.UEIndex(:)=row.UEIndex;

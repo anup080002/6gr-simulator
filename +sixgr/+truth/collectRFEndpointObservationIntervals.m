@@ -7,7 +7,7 @@ observations=struct2table(repmat(localRow(),0,1));
 coverage=table('Size',[0 5],'VariableTypes',{'string','double','string','string','string'}, ...
     'VariableNames',{'SourceTable','SourceRow','Endpoint','Status','Reason'});
 executionConfigs=containers.Map('KeyType','char','ValueType','char');
-for domain=["DL","UL","PBCH","PRACH","PDCCH","PUCCH","SRS","CSIRS","TRS"]
+for domain=["DL","UL","PBCH","PRACH","PDCCH","PUCCH","SRS","CSIRS","TRS","CommonEnergyObservations"]
     T=sixgr.util.structGet(raw,domain,table());
     if ~istable(T)||isempty(T), continue; end
     for i=1:height(T)

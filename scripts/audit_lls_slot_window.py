@@ -7,16 +7,37 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from contextlib import contextmanager
 import csv
 import hashlib
 import json
 import math
 from pathlib import Path
 import sys
+import threading
 
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
+CSV_FIELD_LIMIT_LOCK = threading.RLock()
+
+
+@contextmanager
+def csv_field_limit_for_source(byte_size):
+    """Permit retained PHY vectors without truncation or an unbounded limit.
+
+    A decoded JSON/bit-vector field can exceed Python's 128-KiB default.
+    Its maximum legitimate character count is bounded by its source bytes.
+    Restore the process-global limit even if parsing rejects malformed input.
+    """
+    with CSV_FIELD_LIMIT_LOCK:
+        previous = csv.field_size_limit()
+        required = max(previous, min(sys.maxsize, int(byte_size) + 1))
+        try:
+            csv.field_size_limit(required)
+            yield
+        finally:
+            csv.field_size_limit(previous)
 
 
 class UniqueLoader(yaml.SafeLoader):
@@ -133,16 +154,19 @@ def read_sources(root, plan):
         with path.open("rb") as stream:
             for block in iter(lambda: stream.read(1024 * 1024), b""):
                 digest.update(block)
-        with path.open(encoding="utf-8-sig", newline="") as stream:
-            reader = csv.DictReader(stream)
-            if not reader.fieldnames or len(set(reader.fieldnames)) != len(reader.fieldnames):
-                raise ValueError(f"Missing/duplicate CSV columns: {spec['path']}")
-            rows = []
-            for ordinal, row in enumerate(reader, 1):
-                if None in row or any(v is None for v in row.values()):
-                    raise ValueError(f"Incomplete CSV record {ordinal}: {spec['path']}")
-                row = dict(row, AuditSourceRecord=ordinal, AuditSourceFile=spec["path"])
-                rows.append(row)
+        try:
+            with csv_field_limit_for_source(before.st_size), path.open(encoding="utf-8-sig", newline="") as stream:
+                reader = csv.DictReader(stream, strict=True)
+                if not reader.fieldnames or len(set(reader.fieldnames)) != len(reader.fieldnames):
+                    raise ValueError(f"Missing/duplicate CSV columns: {spec['path']}")
+                rows = []
+                for ordinal, row in enumerate(reader, 1):
+                    if None in row or any(v is None for v in row.values()):
+                        raise ValueError(f"Incomplete CSV record {ordinal}: {spec['path']}")
+                    row = dict(row, AuditSourceRecord=ordinal, AuditSourceFile=spec["path"])
+                    rows.append(row)
+        except csv.Error as error:
+            raise ValueError(f"Malformed CSV evidence in {spec['path']}: {error}") from error
         after = path.stat()
         if (before.st_size, before.st_mtime_ns, before.st_ino) != (after.st_size, after.st_mtime_ns, after.st_ino):
             raise ValueError(f"Source changed while reading; retry after writer stops: {path}")
@@ -161,6 +185,17 @@ def evaluate(plan, tables):
     def check(name, passed, detail, scope="handoff_window"):
         checks.append(dict(Check=name, Status="PASS" if passed else "FAIL", Detail=str(detail), Scope=scope))
 
+    def identity_value(row, key):
+        value = str(row.get(key, "") or "").strip()
+        return "" if value.lower() in {"", "nan", "null", "<missing>"} else value
+
+    # bindCoupledExecutionIdentity owns RunID/ExecutionID for filesystem
+    # execution. RunUUID is an optional artifact-store/database identifier;
+    # it is neither interchangeable with ExecutionID nor required to exist.
+    # Legacy audit inputs can still use RunUUID only when the canonical pair
+    # is entirely absent. A partial/broken canonical identity must fail.
+    canonical_identity = any(
+        "RunID" in r or "ExecutionID" in r for values in tables.values() for r in values)
     for name, spec in plan["inputs"].items():
         values = tables.get(name, [])
         field = spec["slot"]
@@ -170,14 +205,22 @@ def evaluate(plan, tables):
             check(f"{name}.slot_identity", all(math.isfinite(number(r, field)) and
                   number(r, field).is_integer() and number(r, field) >= 1 for r in values), field)
         # A single-point regression cannot join different sweep points/runs.
-        for key in ("RunUUID", "ConfigHash", "SweepPointIndex"):
-            identities = {r[key] for r in values if r.get(key, "") not in ("", "NaN", "nan")}
+        for key in ("RunUUID", "RunID", "ExecutionID", "ConfigHash", "SweepPointIndex"):
+            identities = {identity_value(r, key) for r in values if identity_value(r, key)}
             check(f"{name}.{key}.single", len(identities) <= 1, sorted(identities))
 
-    for key in ("RunUUID", "ConfigHash"):
-        ids = {r[key] for values in tables.values() for r in values
-               if r.get(key, "") not in ("", "NaN", "nan")}
-        check(f"joined.{key}", len(ids) == 1, f"Require one nonempty cross-table identity; observed {sorted(ids)}")
+    for key in ("RunUUID", "ConfigHash", *(("RunID", "ExecutionID") if canonical_identity else ())):
+        ids = {identity_value(r, key) for values in tables.values() for r in values if identity_value(r, key)}
+        optional = canonical_identity and key == "RunUUID"
+        check(f"joined.{key}", len(ids) <= 1 if optional else len(ids) == 1,
+              f"{'Optional artifact-store alias, if present must agree' if optional else 'Require one nonempty cross-table identity'}; observed {sorted(ids)}")
+    if canonical_identity:
+        physical_tables = {"pdsch", "pusch", "pdcch", "pucch", "csirs", "srs", "trs"}
+        unbound = [(name, index) for name, values in tables.items() for index, row in enumerate(values, 1)
+                   if (name in physical_tables or "RunID" in row or "ExecutionID" in row)
+                   and not all(identity_value(row, key) for key in ("RunID", "ExecutionID"))]
+        check("physical.canonical_execution_identity", not unbound,
+              f"RunID and ExecutionID required on every physical row and every row declaring either; unbound {unbound}")
     progress = selected.get("progress", [])
     check("completed_radio_clock", len(progress) == 1 and number(progress[0], "CompletedSlots") >= last,
           "Require the completed-slot counter, not CurrentSlot or CSV count")

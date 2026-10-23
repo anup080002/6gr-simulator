@@ -79,6 +79,11 @@ row=struct('NMSE_dB',score.dB,'NMSESource',evidence.Source, ...
     'ChannelEstimateReferenceEnergy',score.ReferenceEnergy, ...
     'ChannelEstimateResourcesCSV',"",'ChannelEstimateResourcesCSVSHA256',"", ...
     'ChannelEstimateMATFile',"",'ChannelEstimateMATFileSHA256',"");
+for field=string(fieldnames(score)).'
+    if startsWith(field,"ChannelSGCS"), row.(field)=score.(field); end
+end
+row.ChannelSGCSReferencePlane=evidence.ReferencePlane;
+row.ChannelSGCSReferenceSource=evidence.Source;
 root=string(sixgr.util.structGet(cfg,'run.rootRunFolder',""));
 if strlength(root)==0, return; end
 assert(isfolder(root),'sixgr:link:ChannelScoringRoot','Use the configured existing run folder.');

@@ -7,15 +7,17 @@ classdef CoupledWaveformStream < handle
         Events
         SampleRateHz
         Pending = struct('ID',{},'Kind',{},'UE',{},'Context',{},'Planes',{})
-        DataTransmissions = struct('Identity',{},'FirstActiveSample',{},'CommittedAtSample',{},'WaveformToElementMatrix',{})
+        DataTransmissions = struct('Identity',{},'FirstActiveSample',{},'CommittedAtSample',{},'WaveformToElementMatrix',{},'TransmitOccupancy',{})
         CSIRSTransmissions = struct('ComponentID',{},'SignalFamily',{}, ...
             'ServingCell',{},'Slot',{},'FirstActiveSample',{}, ...
             'CommittedAtSample',{},'EndSampleExclusive',{}, ...
             'SampleRateHz',{},'PhysicalConfigurationEpoch',{}, ...
             'ResourceSetID',{},'ResourceIDs',{},'WaveformMappedRE',{}, ...
             'ReferenceConfiguration',{},'ReportConfiguration',{}, ...
-            'FrameIdentity',{})
-        PUCCHTransmissions = struct('Identity',{},'FirstActiveSample',{},'CommittedAtSample',{},'WaveformToElementMatrix',{})
+            'FrameIdentity',{},'ExecutedResourceMaps',{},'TXAmplitudeScale',{}, ...
+            'TransmitterID',{},'TransmitStartSample',{},'TransmitObservationSHA256',{}, ...
+            'CarrierIdentity',{},'PopulationIdentity',{})
+        PUCCHTransmissions = struct('Identity',{},'FirstActiveSample',{},'CommittedAtSample',{},'WaveformToElementMatrix',{},'TransmitOccupancy',{})
         ControlObservationDispositions = struct('ID',{},'UE',{},'Reason',{},'CompletedAtSample',{},'TransferProof',{})
         SRSSuppressionLedger = struct('SRSObservationID',{},'PUCCHObservationID',{},'UE',{},'Decision',{},'Cancellation',{})
         PUSCHReceiveOnlyRegistrations = struct('ID',{},'UE',{},'GrantContextID',{},'StartSample',{},'EndSampleExclusive',{})
@@ -105,6 +107,11 @@ classdef CoupledWaveformStream < handle
                 end
             end
             obj.Physical.attach(obj.Events,'double');
+            if logical(sixgr.util.structGet(cfg,'lls6g.energy_efficiency.enabled',false)) || ...
+                    logical(sixgr.util.structGet(cfg,'rf.txSpatialPowerEnabled',false)) || ...
+                    logical(sixgr.util.structGet(cfg,'rf.modeledRadiatedPower.Enabled',false))
+                obj.Physical.enableRFExecutionLedger();
+            end
             if logical(sixgr.util.structGet(cfg, ...
                     'outputs.continuousRawIQCaptureEnabled',false))
                 rootRunFolder=string(sixgr.util.structGet( ...
@@ -320,7 +327,19 @@ classdef CoupledWaveformStream < handle
             end
             if isempty(armed)
                 obj.Serial=obj.Serial+1;
-                obj.Events.enqueue(tx,id,sixgr.phy.waveform.WaveformChunk(samples,prepared.StartSample));
+                chunk=sixgr.phy.waveform.WaveformChunk(samples,prepared.StartSample);
+                obj.Events.enqueue(tx,id,chunk);
+                if prepared.Channel=="SRS"
+                    % Original emitted component identity, before composition/RF.
+                    % A later permitted power replacement updates this from its
+                    % actual replacement receipt, never from desired-link IQ.
+                    context.SRSComponentBinding=struct( ...
+                        'ContractVersion',"sixgr.truth.emitted_SRS_component/v1", ...
+                        'ComponentID',id,'ComponentSHA256',chunk.SHA256, ...
+                        'TransmitterID',tx,'UE',ue,'StartSample',chunk.StartSample, ...
+                        'EndSampleExclusive',chunk.EndSample+1,'SampleRateHz',obj.SampleRateHz, ...
+                        'ConfigurationEpoch',obj.Physical.ConfigurationEpoch);
+                end
             else
                 id=obj.Pending(armed).ID; plan=obj.Pending(armed).Context;
                 appliedTiming=plan.PhysicalTiming;
@@ -342,10 +361,25 @@ classdef CoupledWaveformStream < handle
             obj.Events.decisionBoundary(boundary,prepared.StartSample+active-1);
             obj.Decisions(end+1)=struct('ID',boundary,'Kind',"ULTransmitBoundary", ...
                 'UE',ue,'Context',struct());
+            if prepared.Channel=="SRS" && string(sixgr.util.structGet( ...
+                    prepared.Metadata,'PowerEvidence.AdjustmentState',''))=="same_as_pusch"
+                boundary=id+"_power_binding";
+                resourceStart=sixgr.link.srsResourceStartSample( ...
+                    prepared.Tx,prepared.StartSample,prepared.SampleRateHz);
+                obj.Events.decisionBoundary(boundary,resourceStart);
+                obj.Decisions(end+1)=struct('ID',boundary,'Kind',"BindSRSPower", ...
+                    'UE',ue,'Context',struct('ObservationID',id));
+            end
             if prepared.Channel=="PUCCH"
                 txContext=struct('Prepared',prepared,'TransmissionIdentity',identity, ...
                     'FirstActiveSample',prepared.StartSample+active-1, ...
                     'WaveformToElementMatrix',cast(array.PortToElementMatrix,'like',prepared.Tx.Waveform));
+                occupancyIdentity=struct('Channel',"PUCCH",'TransmissionID',identity.TransmissionID, ...
+                    'ObservationID',id,'UEIndex',ue,'RNTI',identity.RNTI,'ServingCell',link.Cell, ...
+                    'TransmitterID',tx,'ClockDomain',"shared_physical_sample_clock/v1", ...
+                    'ClockEpoch',obj.Physical.ConfigurationEpoch);
+                txContext.TransmitOccupancy=sixgr.truth.captureTransmitOccupancy( ...
+                    samples,prepared.StartSample,obj.SampleRateHz,occupancyIdentity);
                 % The pre-sample boundary above only switches the RF link.
                 % Commit after one active sample has actually been consumed.
                 boundary=id+"_tx_committed";
@@ -384,6 +418,32 @@ classdef CoupledWaveformStream < handle
             end
             obj.resolvePreparedSRSPUCCHPriority(ue);
         end
+        function bindSRSPower(obj,ue,id,owner)
+            hit=find(string({obj.Pending.ID})==string(id));
+            assert(isscalar(hit) && obj.Pending(hit).UE==ue, ...
+                'sixgr:truth:SRSPowerObservationMismatch','Bind exactly the pending UE SRS observation.');
+            if obj.Pending(hit).Kind=="SuppressedSRSObservation", return; end
+            assert(obj.Pending(hit).Kind=="SRS",'sixgr:truth:SRSPowerObservationMismatch','SRS power cannot modify another channel.');
+            context=obj.Pending(hit).Context;
+            [prepared,~]=context.Prepared.bindSRSPowerAtEmission(owner,obj.Events.NextSampleIndex);
+            array=sixgr.rf.AntennaArrayFactory.build(prepared.ReceiverConfig,'ue', ...
+                'signal','srs','numPorts',size(prepared.Tx.Waveform,2));
+            samples=prepared.Tx.Waveform*cast(array.PortToElementMatrix.','like',prepared.Tx.Waveform);
+            chunk=sixgr.phy.waveform.WaveformChunk(samples,prepared.StartSample);
+            receipt=obj.Events.replaceUnemittedComponent("ue_"+ue,id,chunk);
+            assert(isfield(context,'SRSComponentBinding') && ...
+                context.SRSComponentBinding.ComponentSHA256==receipt.OriginalSampleSHA256 && ...
+                chunk.SHA256==receipt.ReplacementSampleSHA256 && ...
+                ~receipt.PreviouslyConsumedSamplesChanged, ...
+                'sixgr:truth:SRSComponentReplacementIdentity', ...
+                'Bind the original SRS component to this permitted actual replacement.');
+            context.SRSComponentBinding.ComponentSHA256=receipt.ReplacementSampleSHA256;
+            context.SRSComponentBinding.PowerReplacementReceipt=receipt;
+            context.Prepared=prepared; context.Config=prepared.InputConfig;
+            context.PowerBindingReceipt=receipt;
+            obj.Pending(hit).Context=context;
+        end
+
         function resolvePreparedSRSPUCCHPriority(obj,ue)
             % Do this only after actual UE encoding. A gNB receive-only
             % PUCCH window (e.g. missed DCI) must not suppress a UE's SRS.
@@ -592,6 +652,15 @@ classdef CoupledWaveformStream < handle
             % active contribution sample. Merely preparing/enqueueing IQ
             % must not count a transmitted TB or advance HARQ state.
             context.TransmissionIdentity=identity;
+            context.TransmitOccupancy=struct();
+            if direction=="UL"
+                occupancyIdentity=struct('Channel',"PUSCH",'TransmissionID',identity.TransmissionID, ...
+                    'ObservationID',id,'UEIndex',ue,'RNTI',identity.RNTI,'ServingCell',link.Cell, ...
+                    'TransmitterID',tx,'ClockDomain',"shared_physical_sample_clock/v1", ...
+                    'ClockEpoch',obj.Physical.ConfigurationEpoch);
+                context.TransmitOccupancy=sixgr.truth.captureTransmitOccupancy( ...
+                    samples,prepared.StartSample,obj.SampleRateHz,occupancyIdentity);
+            end
             % Retain the exact applied mapping, including its execution
             % precision. Rebuilding an array later is not applied evidence.
             context.WaveformToElementMatrix=projection;
@@ -1017,6 +1086,30 @@ classdef CoupledWaveformStream < handle
                 end
             end
         end
+        function archiveCompletedSampleOwners(obj,root)
+            % Retire completed sample owners only. Do not change pending
+            % sample coverage, channel/filter/RF/RNG state, retained scoring
+            % segments, grant identity, soft buffers or receiver decisions.
+            scope=sixgr.runtime.ExecutionStageProfiler.scope("checkpoint","archive_completed_samples"); %#ok<NASGU>
+            for k=1:numel(obj.Pending)
+                for j=1:numel(obj.Pending(k).Planes)
+                    observation=obj.Pending(k).Planes(j).Observation;
+                    if observation.isComplete(), observation.archiveCompleted(root); end
+                end
+            end
+            for k=1:numel(obj.ScheduledControlRegistrations)
+                observation=obj.ScheduledControlRegistrations{k}.TransmitObservation;
+                if isa(observation,'sixgr.phy.waveform.WaveformObservationBuffer') && observation.isComplete()
+                    observation.archiveCompleted(root);
+                end
+            end
+            for k=1:numel(obj.PUSCHReceiveOnlyCompletions)
+                for j=1:numel(obj.PUSCHReceiveOnlyCompletions{k}.Planes)
+                    observation=obj.PUSCHReceiveOnlyCompletions{k}.Planes(j).Observation;
+                    if observation.isComplete(), observation.archiveCompleted(root); end
+                end
+            end
+        end
         function [state,completed]=drainDataReceiveTail(obj,state,cfg,onReceived)
             % Scheduling is closed, but a transmitted allocation's channel/
             % receive-clock tail is not padding and still needs real RF/noise.
@@ -1067,6 +1160,12 @@ classdef CoupledWaveformStream < handle
         end
         function [state,completed]=advanceSlot(obj,state,cfg,onReceived,receiveTailEndSample)
             if nargin<4, onReceived=[]; end
+            if logical(sixgr.util.structGet(cfg,'lls6g.energy_efficiency.enabled',false)) || ...
+                    logical(sixgr.util.structGet(cfg,'rf.txSpatialPowerEnabled',false))
+                % Idempotent for current owners; legacy checkpoint owners
+                % begin their new record here, not retroactively at zero.
+                obj.Physical.enableRFExecutionLedger();
+            end
             drainingTail=nargin>=5;
             carrier=sixgr.phy.grid.makeCarrier(cfg);
             % Received grant ordinals may retain an integer MATLAB class.
@@ -1205,6 +1304,26 @@ classdef CoupledWaveformStream < handle
                                 reference=prepared.ReferenceIdentity;
                                 csirsEvent=prepared.Tx.CSIRSRuntimeEvent;
                                 config=p.Context.Config;
+                                resourceMaps=csirsEvent.ResourceEvents;
+                                logicalResources=sixgr.util.structGet(prepared.Tx.CSIRSInfo,'Resources',struct([]));
+                                if isempty(logicalResources)
+                                    % The singleton producer retains these original
+                                    % arrays directly, rather than a Resources list.
+                                    logicalResources=struct('ResourceID',prepared.Tx.CSIRSInfo.ResourceID, ...
+                                        'Indices',prepared.Tx.CSIRSIndices,'Symbols',prepared.Tx.CSIRSSymbols);
+                                end
+                                for resourceOrdinal=1:numel(resourceMaps)
+                                    logicalResource=logicalResources([logicalResources.ResourceID]==resourceMaps(resourceOrdinal).ResourceID);
+                                    assert(isscalar(logicalResource), ...
+                                        'sixgr:truth:CSIRSExecutedResourceIdentity', ...
+                                        'Every executed CSI-RS map needs its original logical pilot identity.');
+                                    resourceMaps(resourceOrdinal).LogicalPilotIndices=logicalResource.Indices;
+                                    resourceMaps(resourceOrdinal).LogicalPilotSymbols=logicalResource.Symbols;
+                                end
+                                carrier=prepared.Carrier;
+                                carrierIdentity=struct('NSizeGrid',carrier.NSizeGrid,'NStartGrid',carrier.NStartGrid, ...
+                                    'SubcarrierSpacing',carrier.SubcarrierSpacing,'CyclicPrefix',string(carrier.CyclicPrefix), ...
+                                    'NSlot',carrier.NSlot,'NFrame',carrier.NFrame);
                                 obj.CSIRSTransmissions(end+1)=struct( ...
                                     'ComponentID',componentID,'SignalFamily',"CSI-RS", ...
                                     'ServingCell',double(p.Context.ServingCell), ...
@@ -1219,7 +1338,14 @@ classdef CoupledWaveformStream < handle
                                     'WaveformMappedRE',double(csirsEvent.NRE), ...
                                     'ReferenceConfiguration',config.phy.csirs, ...
                                     'ReportConfiguration',config.phy.csi.reportConfiguration, ...
-                                    'FrameIdentity',config.phy.frame.DefaultIdentity);
+                                    'FrameIdentity',config.phy.frame.DefaultIdentity, ...
+                                    'ExecutedResourceMaps',resourceMaps, ...
+                                    'TXAmplitudeScale',prepared.PowerContext.AmplitudeScale, ...
+                                    'TransmitterID',extractBefore(string(item.ReceiverID),':tx'), ...
+                                    'TransmitStartSample',txObservation.StartSample, ...
+                                    'TransmitObservationSHA256',txObservation.sampleHash(), ...
+                                    'CarrierIdentity',carrierIdentity, ...
+                                    'PopulationIdentity',sixgr.util.structGet(p.Context,'PopulationIdentity',struct()));
                             else
                                 assert(isscalar(prior) && ...
                                     obj.CSIRSTransmissions(prior).CommittedAtSample==obj.Events.NextSampleIndex && ...
@@ -1296,7 +1422,8 @@ classdef CoupledWaveformStream < handle
                                 'Identity',d.Context.TransmissionIdentity, ...
                                 'FirstActiveSample',d.Context.FirstActiveSample, ...
                                 'CommittedAtSample',obj.Events.NextSampleIndex, ...
-                                'WaveformToElementMatrix',d.Context.WaveformToElementMatrix);
+                                'WaveformToElementMatrix',d.Context.WaveformToElementMatrix, ...
+                                'TransmitOccupancy',d.Context.TransmitOccupancy);
                         end
                         if d.Kind=="PUCCHTX"
                             assert(~drainingTail,'sixgr:truth:ReceiveTailContainsFuturePUCCHTX', ...
@@ -1311,7 +1438,8 @@ classdef CoupledWaveformStream < handle
                                 'Identity',d.Context.TransmissionIdentity, ...
                                 'FirstActiveSample',d.Context.FirstActiveSample, ...
                                 'CommittedAtSample',obj.Events.NextSampleIndex, ...
-                                'WaveformToElementMatrix',d.Context.WaveformToElementMatrix);
+                                'WaveformToElementMatrix',d.Context.WaveformToElementMatrix, ...
+                                'TransmitOccupancy',d.Context.TransmitOccupancy);
                         end
                         completed(end+1)=struct('ID',d.ID,'Kind',d.Kind,'UE',d.UE,'Context',d.Context,'Planes',struct([])); %#ok<AGROW>
                     end
@@ -1410,6 +1538,11 @@ classdef CoupledWaveformStream < handle
             if ~isempty(k)
                 if obj.Nodes(k).NumAntennas~=nAnt || ~isequaln(obj.Nodes(k).RF,rf)
                     error('sixgr:truth:InconsistentPhysicalNode','Every link sharing a radio must agree on its RF and antenna layout.');
+                end
+                if isTX
+                    obj.Physical.validateTransmitterInstallation(id,cfg,direction,nAnt);
+                else
+                    obj.Physical.validateReceiverInstallation(id,cfg,direction,nAnt);
                 end
                 return;
             end

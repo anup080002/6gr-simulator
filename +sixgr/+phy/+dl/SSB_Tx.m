@@ -192,6 +192,29 @@ scsCarrier.SubcarrierSpacing = carrierSCSKHz;
 scsCarrier.NSizeGrid = nSizeGrid;
 scsCarrier.NStartGrid = nStartGrid;
 cfgDL.SCSCarriers = {scsCarrier};
+if timing.SSBSubcarrierSpacingKHz ~= carrierSCSKHz
+    % SS/PBCH and common/SIB1 numerologies are separate carrier grids,
+    % sharing Point A and the explicitly resolved sample clock. The native
+    % generator requires the SS/PBCH SCS carrier even without a data BWP
+    % at that numerology. Do not change the MIB or data-carrier SCS to fit it.
+    ssbCarrierGrid = sixgr.phy.frame.TransmissionBandwidthCatalog.resolve( ...
+        "Role", "gNB", "FrequencyRange", rangeSubtype, ...
+        "CenterFrequencyHz", carrierFrequencyHz, ...
+        "ChannelBandwidthMHz", channelBandwidthMHz, ...
+        "SubcarrierSpacingKHz", timing.SSBSubcarrierSpacingKHz);
+    % Native wavegen centers the highest-SCS carrier. Preserve exactly the
+    % baseband center used by the common-carrier transmitter and receiver;
+    % merely setting both NStartGrid values to zero shifts that center.
+    ssbStart = (nStartGrid+nSizeGrid/2)*carrierSCSKHz/ ...
+        timing.SSBSubcarrierSpacingKHz-ssbCarrierGrid.NSizeGrid/2;
+    assert(ssbStart>=0 && abs(ssbStart-round(ssbStart))<1e-12, ...
+        'sixgr:phy:ssb:MixedNumerologyCarrierCenter', ...
+        'Mixed-SCS full carrier grids must share the exact baseband center; fractional RB offset %g is not implemented.',ssbStart);
+    ssbStart=round(ssbStart);
+    cfgDL.SCSCarriers{end+1} = nrSCSCarrierConfig( ...
+        'SubcarrierSpacing', timing.SSBSubcarrierSpacingKHz, ...
+        'NSizeGrid', ssbCarrierGrid.NSizeGrid, 'NStartGrid', ssbStart);
+end
 
 bwp = nrWavegenBWPConfig;
 bwp.SubcarrierSpacing = carrierSCSKHz;
@@ -205,7 +228,9 @@ ssb = nrWavegenSSBurstConfig;
 ssb.Enable = configuredSSB;
 ssb.BlockPattern = timing.BlockPattern;
 if isprop(ssb, "SubcarrierSpacingCommon")
-    ssb.SubcarrierSpacingCommon = timing.SSBSubcarrierSpacingKHz;
+    % MIB advertises the common/SIB1 numerology, not the SS/PBCH
+    % numerology. They differ for e.g. n77 SS30/common15 operation.
+    ssb.SubcarrierSpacingCommon = carrierSCSKHz;
 end
 if isprop(ssb, "PDCCHConfigSIB1")
     ssb.PDCCHConfigSIB1 = localPDCCHConfigSIB1(cfg);

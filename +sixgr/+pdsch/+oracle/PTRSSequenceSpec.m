@@ -24,6 +24,16 @@ classdef PTRSSequenceSpec
             indices = double(request.Indices0Based(:));
             nGridPRB = localInteger(request.GridNumPRB,1,inf);
             prbs = localVector(request.PRBSet,0,nGridPRB-1);
+            referenceOffset = 0;
+            if isfield(request,"ReferenceRBOffset")
+                referenceOffset = localInteger( ...
+                    request.ReferenceRBOffset,-inf,inf);
+            end
+            sequencePRBs = prbs + referenceOffset;
+            if any(sequencePRBs < 0)
+                error("sixgr:pdsch:oracle:InvalidPTRSSequenceField", ...
+                    "Allocated PRBs precede the DM-RS sequence reference point.");
+            end
             configType = localInteger( ...
                 request.DMRSConfigurationType,1,2);
             port = localInteger(request.AssociatedDMRSPort,0,23);
@@ -57,7 +67,7 @@ classdef PTRSSequenceSpec
             % point, so holes in a noncontiguous allocation must advance
             % the Gold sequence.  Generating only numel(PRBSet) blocks
             % incorrectly compacts those holes and changes PT-RS symbols.
-            fullSequenceRE = rePerPRB*(max(prbs)+1);
+            fullSequenceRE = rePerPRB*(max(sequencePRBs)+1);
             bits = sixgr.pdsch.oracle.GoldSequenceSpec( ...
                 cInit,2*fullSequenceRE);
             base = ((1-2*double(bits(1:2:end))) ...
@@ -74,7 +84,7 @@ classdef PTRSSequenceSpec
                         error("sixgr:pdsch:oracle:PTRSIndexOutsideSequenceMap", ...
                             "PT-RS index cannot be mapped to its associated DM-RS sequence.");
                     end
-                    m = prb*rePerPRB + localOrder;
+                    m = (prb+referenceOffset)*rePerPRB + localOrder;
                     % TS 38.211 7.4.1.2.1 reuses the underlying DM-RS
                     % pseudorandom sequence for PDSCH PT-RS.  The
                     % associated DM-RS port selects the PT-RS RE through
@@ -87,6 +97,8 @@ classdef PTRSSequenceSpec
             end
             result = struct( ...
                 "Sequence",sequence, ...
+                "ReferenceRBOffset",referenceOffset, ...
+                "PRBSetReferenceRelative",sequencePRBs, ...
                 "IndexBase","zero_based", ...
                 "StandardReference","TS_38.211_7.4.1.2");
         end

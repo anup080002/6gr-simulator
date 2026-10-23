@@ -29,6 +29,9 @@ initial_access:
       physical_element_count: 4
 reference_signals:
   pdsch_dmrs_ports: 4
+  # The type-1 ports 0:3 span groups 0 and 1. Reserve both for every
+  # permitted rank; never enlarge a frozen grant's reservation at runtime.
+  pdsch_dmrs_num_cdm_groups_without_data: 2
   pdsch_dmrs:
     port_set: [0, 1, 2, 3]
   csi_rs_port_count: 4

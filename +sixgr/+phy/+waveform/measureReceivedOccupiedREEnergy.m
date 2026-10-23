@@ -14,6 +14,7 @@ ip.addRequired("referenceWaveform", @localValidWaveform);
 ip.addRequired("occupiedIndices", @localValidIndices);
 ip.addParameter("SignalFamily", "data_or_reference_signal", ...
     @(v) ischar(v) || (isstring(v) && isscalar(v)));
+ip.addParameter("RetainEnergyReceipt", false, @(v) islogical(v) && isscalar(v));
 ip.parse(carrier, referenceWaveform, occupiedIndices, varargin{:});
 opt = ip.Results;
 
@@ -48,7 +49,8 @@ if ~all(finiteMask, "all")
     error("sixgr:phy:waveform:NonfiniteReceivedOccupiedRE", ...
         "The noiseless received occupied-RE observations must all be finite.");
 end
-signalEnergy = mean(abs(double(observations(:))).^2, "omitnan");
+energyValues=abs(double(observations)).^2;
+signalEnergy = mean(energyValues(:), "omitnan");
 if ~(isscalar(signalEnergy) && isfinite(signalEnergy) && signalEnergy > 0)
     error("sixgr:phy:waveform:InvalidReceivedOccupiedREEnergy", ...
         "Measured received occupied-RE energy must be positive and finite.");
@@ -71,6 +73,17 @@ evidence = struct( ...
     "ObservationCount", double(numel(observations)), ...
     "ConfiguredCyclicPrefix", char(string(carrier.CyclicPrefix)), ...
     "ConfiguredSubcarrierSpacing_kHz", double(carrier.SubcarrierSpacing));
+if opt.RetainEnergyReceipt
+    % Compact exact reduction of this already executed OFDM measurement.
+    % No second demodulation and no per-RE array duplication in trial CSV.
+    evidence.EnergySumPerReceiveBranch=sum(energyValues,1);
+    evidence.GridSize=[K L];
+    evidence.DataIndicesSHA256=string(sixgr.channel.ChannelFactory.runtimeNumericArraySHA256(indices));
+    evidence.UniqueTFSupportSHA256=string(sixgr.channel.ChannelFactory.runtimeNumericArraySHA256(tfIndices));
+    evidence.ReferenceWaveformSHA256=string(sixgr.channel.ChannelFactory.runtimeNumericArraySHA256(referenceWaveform));
+    evidence.ReferenceWaveformSize=size(referenceWaveform);
+    evidence.ReceiptReduction="exact_per_branch_sum_and_count_on_original_unique_TF_support";
+end
 end
 
 function tf = localValidWaveform(value)

@@ -186,6 +186,10 @@ cfg.phy.pdsch.precoding.normalizationConvention = "semi_unitary";
 cfg.phy.pdsch.precodingMatrix = cfg.phy.pdsch.precoding.matrix;
 cfg.phy.pdsch.W = cfg.phy.pdsch.precoding.matrix;
 cfg.phy.csirs.enable = false;
+% This standalone calibration comparison maps PDSCH/DM-RS/PT-RS only; it
+% neither installs an SSB Point-A relation nor includes SS/PBCH in its
+% independent reference grid. Do not inherit an unconfigured enabled SSB.
+cfg.phy.ssb.enable = false;
 end
 
 function [carrier, pdsch, acct] = localConfiguredPDSCH(cfg, v)

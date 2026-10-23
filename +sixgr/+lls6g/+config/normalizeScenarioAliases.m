@@ -6,6 +6,8 @@ ip.addRequired("cfg", @(x)builtin("isstruct", x) && isscalar(x));
 ip.addParameter("SourceFiles", strings(0,1), @(x)isstring(x) || iscellstr(x) || ischar(x));
 ip.addParameter("ConfigPath", "", @(x)ischar(x) || isstring(x));
 ip.addParameter("Authority", struct(), @(x)builtin("isstruct", x) && isscalar(x));
+ip.addParameter("EnergyAuthority", struct(), @(x)builtin("isstruct", x) && isscalar(x));
+ip.addParameter("LDPCIterationAuthority", struct(), @(x)builtin("isstruct", x) && isscalar(x));
 ip.parse(cfg, varargin{:});
 opt = ip.Results;
 authoredDuplex = localCaptureDuplexAuthorship(cfg, string(opt.ConfigPath));
@@ -18,6 +20,7 @@ end
 
 cfg = localEnsureConfigInheritance(cfg, string(opt.SourceFiles(:)), string(opt.ConfigPath));
 cfg = localEnsureScenarioSchemaVersion(cfg);
+cfg = localNormalizeLDPCIterations(cfg,opt.LDPCIterationAuthority,opt.Authority);
 cfg = localExpandCanonicalControl(cfg, sixgr.util.mergeStruct(newBase, oldBase));
 outputBackend = lower(strtrim(string(sixgr.util.structGet( ...
     cfg,"output.backend","filesystem"))));
@@ -143,7 +146,6 @@ cfg = localSyncValue(cfg, newBase, oldBase, "channel_coding.control_channel_fami
 cfg = localSyncValue(cfg, newBase, oldBase, "channel_coding.ldpc_base_graph", "coding.base_graph", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "coding.dl_coding_scheme", "coding.data_code_type", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "coding.control_coding_scheme", "coding.control_code_type", "identity");
-cfg = localSyncValue(cfg, newBase, oldBase, "coding.ldpc_max_iterations", "receiver_algorithms.decoder_iterations", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "modulation.dl_max_modulation", "modulation.dl_modulation_order", "modulation_to_order");
 cfg = localSyncValue(cfg, newBase, oldBase, "modulation.ul_max_modulation", "modulation.ul_modulation_order", "modulation_to_order");
 cfg = localInheritMCSTable(cfg, newBase, oldBase, "modulation.dl_mcs_table");
@@ -174,6 +176,11 @@ cfg = localSyncValue(cfg, newBase, oldBase, "ai_ml.model_name", "ai_ml.model_id"
 cfg = localSyncValue(cfg, newBase, oldBase, "ai_ml.fallback_mode", "ai_ml.fallback_enabled", "string_to_bool");
 cfg = localSyncValue(cfg, newBase, oldBase, "energy_and_complexity.throughput_per_watt", "kpis.energy_per_bit", "bool_to_metric");
 cfg = localSyncValue(cfg, newBase, oldBase, "energy_efficiency.enable", "kpis.energy_per_bit", "bool_to_metric");
+energyAuthority=opt.EnergyAuthority;
+if isempty(fieldnames(energyAuthority))
+    energyAuthority=sixgr.lls6g.config.mergeEnergyOperatingAuthority(struct(),opt.Authority);
+end
+cfg=sixgr.lls6g.config.normalizeEnergyOperatingPolicy(cfg,energyAuthority);
 cfg = localSyncValue(cfg, newBase, oldBase, "kpi_spec.mandatory_kpis", "kpis", "kpi_list_to_struct");
 cfg = localSyncValue(cfg, newBase, oldBase, "output_control.save_intermediate", "logging.save_intermediate", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "output_control.save_plots", "output.save_figures", "identity");
@@ -267,6 +274,7 @@ cfg = localApplyDeclaredRadioAliases(cfg, newBase);
 % legacy compatibility aliases so an inherited legacy field cannot silently
 % override an explicit feature enable/disable decision from the YAML file.
 cfg = localExpandCanonicalControl(cfg, newBase);
+cfg = localFinalizeLDPCIterationOverrides(cfg);
 % Canonical runtime_overrides are applied by the expansion above. Re-run
 % the fixed-sweep semantic projection afterwards so a child YAML that
 % overrides canonical_control.run.fixed_link_snr_grid_db cannot execute the
@@ -278,6 +286,64 @@ cfg = localEnsureOperatingPointMode(cfg);
 cfg = localEnforceDuplexIsolation(cfg, authoredDuplex);
 if isfield(cfg, "sixgrAliasAuthorityInternal")
     cfg = rmfield(cfg, "sixgrAliasAuthorityInternal");
+end
+end
+
+function cfg=localNormalizeLDPCIterations(cfg,authority,leaf)
+if isempty(fieldnames(authority))
+    authority=sixgr.lls6g.config.mergeLDPCIterationAuthority(struct(),leaf);
+    if isempty(fieldnames(authority.Canonical)) && isfield(cfg,'canonical_control')
+        canonical=sixgr.lls6g.config.mergeLDPCIterationAuthority(struct(), ...
+            struct('canonical_control',cfg.canonical_control));
+        authority=sixgr.lls6g.config.mergeLDPCIterationAuthority(canonical,authority);
+    end
+    if isempty(fieldnames(authority.Canonical)) && isempty(fieldnames(authority.Flat))
+        authority=sixgr.lls6g.config.mergeLDPCIterationAuthority(struct(),cfg);
+    end
+end
+% This option also crosses a public normalization boundary; never trust a
+% supplied compact accumulator merely because it is nonempty.
+authority=sixgr.lls6g.config.mergeLDPCIterationAuthority(authority,struct());
+cfg=localInstallLDPCIterationValue(cfg,authority);
+end
+
+function cfg=localFinalizeLDPCIterationOverrides(cfg)
+% Preserve the existing final runtime_overrides application/order. Resolve
+% only its iteration fields as a group; unrelated overrides are untouched.
+overrides=sixgr.util.structGet(cfg,'canonical_control.runtime_overrides',[]);
+authored=struct();
+for k=1:numel(overrides)
+    if ~isstruct(overrides) || ~isfield(overrides(k),'path') || ~isfield(overrides(k),'value')
+        continue;
+    end
+    path=strtrim(string(overrides(k).path));
+    if strlength(path)>0
+        authored=sixgr.util.structSet(authored,path,overrides(k).value);
+    end
+end
+authority=sixgr.lls6g.config.mergeLDPCIterationAuthority(struct(),authored);
+if isempty(fieldnames(authority.Flat)) && isempty(fieldnames(authority.Canonical))
+    % No deliberate iteration override: all final mirrors must still agree.
+    authority=sixgr.lls6g.config.mergeLDPCIterationAuthority(struct(),cfg);
+end
+cfg=localInstallLDPCIterationValue(cfg,authority);
+end
+
+function cfg=localInstallLDPCIterationValue(cfg,authority)
+selected=authority.Canonical;
+if isempty(fieldnames(selected)), selected=authority.Flat; end
+if isempty(fieldnames(selected)), return; end
+paths=["coding.max_decoder_iterations","coding.ldpc_max_iterations", ...
+    "receiver_algorithms.decoder_iterations"];
+for path=paths
+    cfg=sixgr.util.structSet(cfg,path,selected.Value);
+end
+% Update only already-installed canonical mirrors; do not create an active
+% canonical policy for a flat-only scenario.
+for path=["canonical_control.coding.max_decoder_iterations", ...
+        "canonical_control.receiver.decoder_iterations"]
+    [~,present]=localTryGetNestedValue(cfg,path);
+    if present, cfg=sixgr.util.structSet(cfg,path,selected.Value); end
 end
 end
 
@@ -1058,6 +1124,7 @@ mappings = {
     "energy.rf_chain_count", "energy_efficiency.rf_chain_count", "identity"
     "energy.bs_static_power_w", "energy_efficiency.bs_static_power_w", "identity"
     "energy.bs_per_rf_chain_power_w", "energy_efficiency.bs_per_rf_chain_power_w", "identity"
+    "energy.bs_rf_chain_idle_power_fraction", "energy_efficiency.bs_rf_chain_idle_power_fraction", "identity"
     "energy.bs_sleep_power_w", "energy_efficiency.bs_sleep_power_w", "identity"
     "energy.bs_pa_efficiency", "energy_efficiency.bs_pa_efficiency", "identity"
     "energy.ue_idle_power_w", "energy_efficiency.ue_idle_power_w", "identity"

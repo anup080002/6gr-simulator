@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import sys
 from pathlib import Path
 
@@ -10,6 +11,7 @@ sys.path.insert(0, str(REPO_ROOT / "apps"))
 
 import lls_output_contract as contract  # noqa: E402
 import lls_web_dashboard as dash  # noqa: E402
+import lls_contract_materializer as materializer  # noqa: E402
 
 
 def _read_csv(path: Path) -> list[dict[str, str]]:
@@ -18,8 +20,33 @@ def _read_csv(path: Path) -> list[dict[str, str]]:
 
 
 def test_contract_sections_and_context() -> None:
-    assert len(contract.REPORT_SECTIONS) == 25
+    assert len(contract.REPORT_SECTIONS) == 26
     assert len(contract.ANALYTICS_SECTIONS) == 19
+    study = next(section for section in contract.REPORT_SECTIONS
+                 if section["slug"] == "private-csi-selection-study")
+    assert study == {
+        "slug": "private-csi-selection-study",
+        "title": "Private retrospective CSI selection study (not received UCI or grant application)",
+        "domain": "measurement", "column_key": "measurement",
+        "tables": ["private_csi_selection_observations", "private_csi_selection_source_audit"],
+        "charts": ["Private CSI selection regret — fixed-CRI nominal-MMSE study"],
+    }
+    assert not any(section["slug"] == study["slug"] for section in contract.ANALYTICS_SECTIONS)
+    # Configuration enables the private study, never the mere presence of a
+    # file. Missing enabled evidence remains unavailable, not a received-UCI
+    # or grant-application measurement and not a manufactured zero chart.
+    for enabled in (False, True):
+        run = {"config_json": json.dumps({"kpi_spec": {"csi_selection_quality": {"enabled": enabled}}})}
+        policy = dash.extract_run_feature_policy(run)
+        assert policy["csi_selection_quality_enabled"] is enabled
+        for name in study["tables"]:
+            assert materializer.contract_artifact_is_policy_filtered(
+                f"reports/csv/{name}.csv", policy, contract_name=name) is (not enabled)
+        surface = dash.build_output_contract_surface(run, [], [], [], {})
+        visible = [section for section in surface["reports"] if section["slug"] == study["slug"]]
+        assert len(visible) == int(enabled)
+        if enabled:
+            assert all(item["evidence"]["status"] == "unavailable" for item in visible[0]["charts"])
     assert {"direction", "ue_id", "bs_id", "sfn", "slot", "symbol"}.issubset(contract.BASE_CONTEXT_COLUMNS)
     for kind in ("reports", "analytics"):
         for row in contract.iter_table_specs(kind):

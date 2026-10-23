@@ -1,0 +1,25 @@
+inherits:
+  - ./lls_tdd_pucch_independent_harq_csi_sr_fixture.yaml
+
+meta:
+  scenario_id: lls_tdd_received_csi_application_coexistence_fixture
+  description: Received CSI to scheduled data with disjoint PUSCH, SRS and PUCCH symbols.
+  purpose: Bounded coexistence integration allocation; not maximum throughput, an NR default mandate, or full n40 qualification.
+  research_class: optional_research_experiment
+
+# Keep the original collision fixture unchanged. This positive application
+# fixture explicitly reserves PUSCH 0:10, SRS 11, and PUCCH 12:13 in full UL
+# slots. No calendar, gate, TAG lifetime, threshold, power or seed is changed.
+# The parent's PUSCH 0:12 is shortened explicitly for this coexistence test;
+# eleven PUSCH symbols are not a default NR rule or a throughput optimum.
+# TS 38.211 V18.8.0 6.4.1.4.1: normal-CP symbol 11 is startPosition offset 2.
+# The YAML surface is the direct zero-based symbol, not that reverse offset.
+reference_signals:
+  srs:
+    symbol_start: 11
+
+pusch:
+  num_symbols: 11
+  time_domain_allocations:
+    - [0, 0, 11, 1]
+    - [1, 0, 11, 2]

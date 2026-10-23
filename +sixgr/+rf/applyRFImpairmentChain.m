@@ -52,6 +52,8 @@ if opt.ResolveOnly
 end
 xRef = x;
 y = x;
+chainPower=struct('Input',sixgr.rf.measurePhysicalChainPower(x,'rf_input'), ...
+    'PostPA',[],'Output',[]);
 if chain.IncludeTx && chain.TxDAC.Enabled && ...
         isfinite(chain.TxDAC.Reference.NumTransmitPorts) && ...
         size(x,2)~=chain.TxDAC.Reference.NumTransmitPorts
@@ -67,6 +69,7 @@ if chain.IncludeTx
     [y, stageRows] = localApplyIQStage(y, chain.TxIQ, "tx_iq", "tx", stageRows);
     [y, stageRows] = localApplyElementRFStage(y, chain.TxElementRF, cfg, "tx_element_rf", "tx", stageRows,stream);
     [y, stageRows] = localApplyPAStage(y, chain.TxPA, cfg, "tx_pa", "tx", stageRows,stream);
+    chainPower.PostPA=sixgr.rf.measurePhysicalChainPower(y,'post_tx_pa');
     [y, stageRows] = localApplyPhaseNoiseStage(y, chain.TxPhaseNoise, "tx_phase_noise", "tx", stageRows);
     [y, stageRows] = localApplyCFOStage(y, chain.TxCFO, "tx_cfo", "tx", stageRows,stream);
     [y, stageRows] = localApplyTimingStage(y, chain.TxTiming, "tx_timing", "tx", stageRows,stream);
@@ -92,6 +95,8 @@ end
 afterHash = localWaveformHash(y);
 evm = localEVM(xRef, y);
 replay = localBuildReplay(chain, stageRows, stageOrder, xRef, y);
+chainPower.Output=sixgr.rf.measurePhysicalChainPower(y,'rf_output');
+replay.RFChainPowerEvidence=chainPower;
 replay.RFProcessingMode="independent_block";
 replay.AGCControlModel="disabled";
 replay.AGCDecisionCausal=~logical(chain.RxAGC.Enabled && chain.IncludeRx);
@@ -231,7 +236,7 @@ chain.RxElementRF = localResolveElementRFConfig(cfg, "rx", direction, legacyToRx
 chain.TxSampleClockOffset = localResolveSampleClockOffsetConfig(cfg, "tx", legacyToTx);
 chain.RxSampleClockOffset = localResolveSampleClockOffsetConfig(cfg, "rx", legacyToRx);
 chain.TxDAC = localResolveDACConfig(cfg, fs, direction, includeTx);
-chain.TxPA = localResolvePAConfig(cfg, logical(applyPA));
+chain.TxPA = localResolvePAConfig(cfg, logical(applyPA),direction);
 chain.RxAGC = localResolveAGCConfig(cfg, logical(applyADC));
 chain.RxADC = localResolveADCConfig(cfg, logical(applyADC), fs);
 chain.CarrierPhase = localResolveCarrierPhaseConfig(cfg, endpoint, legacyToTx, legacyToRx);
@@ -402,7 +407,7 @@ cfgDAC = struct("Enabled", enabled, "Bits", bits, ...
     "Version", version, "SampleRate_Hz", double(fs));
 end
 
-function cfgPA = localResolvePAConfig(cfg, applyPA)
+function cfgPA = localResolvePAConfig(cfg, applyPA,direction)
 enabled = logical(applyPA) && logical(sixgr.util.structGet(cfg, "rf.pa.enable", ...
     sixgr.util.structGet(cfg, "phy.impairments.paNonlinearityEnabled", false)));
 backoff = double(sixgr.util.structGet(cfg, "rf.pa.backoff_dB", ...
@@ -410,7 +415,7 @@ backoff = double(sixgr.util.structGet(cfg, "rf.pa.backoff_dB", ...
 if ~isfinite(backoff)
     backoff = 0;
 end
-cfgPA = struct("Enabled", logical(enabled), "Backoff_dB", double(backoff), ...
+cfgPA = struct("Enabled", logical(enabled), "Backoff_dB", double(backoff), "Direction",string(direction), ...
     "Model", char(string(sixgr.util.structGet(cfg, "rf.pa.method", "memoryless"))));
 end
 
@@ -722,7 +727,7 @@ rows(end + 1, 1) = row;
 end
 
 function [y, rows] = localApplyPAStage(x, stageCfg, cfg, stageName, endpoint, rows,stream)
-fn = @(z) localApplyPAWithConfig(z, cfg);
+fn = @(z) localApplyPAWithConfig(z, cfg,stageCfg.Direction);
 if ~isempty(stream), fn=@(z)stream.applyPA(z); end
 [y, row] = localApplyGenericStage(x, stageCfg.Enabled, stageName, endpoint, fn);
 row.Parameter1Name = "backoff_dB";
@@ -959,6 +964,8 @@ replay = struct( ...
     "RFExecutedStageCount", double(nnz([rows.Executed])), ...
     "RFInputPower", localMeanPower(xRef), ...
     "RFOutputPower", localMeanPower(y), ...
+    "RFInputAllZero", ~any(xRef(:)), ...
+    "RFOutputAllZero", ~any(y(:)), ...
     "RFPowerDelta_dB", 10 * log10(max(localMeanPower(y), realmin) ./ max(localMeanPower(xRef), realmin)), ...
     "InjectedCFO_Hz", double(cfoHz), ...
     "CFOApplied", ~isempty(cfoRows) && any([cfoRows.Applied]), ...
@@ -1144,8 +1151,8 @@ rot = exp(1j * 2 * pi * double(cfoHz) / double(fs) .* n);
 y = x .* cast(rot, "like", x);
 end
 
-function y = localApplyPAWithConfig(x, cfg)
-[profile,canonical] = sixgr.rf.runtime.PAProfile.fromConfiguration(cfg);
+function y = localApplyPAWithConfig(x, cfg,direction)
+[profile,canonical] = sixgr.rf.runtime.PAProfile.fromConfiguration(cfg,direction);
 if canonical
     [y,~] = sixgr.rf.runtime.PAProfile.apply(x,profile);
     return;

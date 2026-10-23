@@ -57,7 +57,7 @@ categories:
       - { key: complexity_reduction_same_bler, label: complexity reduction at same BLER }
       - { key: cb_size_distribution, label: CB size distribution }
       - { key: segmentation_statistics, label: segmentation statistics }
-      - { key: puncturing_shortening_statistics, label: puncturing / shortening statistics }
+      - { key: puncturing_shortening_statistics, label: LDPC filler / inherent puncturing / rate-match selection counts }
   - code: D
     key: modulation_shaping_outputs
     name: Modulation / shaping outputs
@@ -123,9 +123,9 @@ categories:
       - { key: per_codeword_bler, label: per-codeword BLER }
       - { key: per_rank_throughput, label: per-rank throughput }
       - { key: equalizer_output_sinr, label: equalizer output SINR }
-      - { key: residual_interference_power, label: residual interference power }
+      - { key: decision_residual_symbol_power, label: Decision residual symbol power }
       - { key: harq_gain_per_retransmission, label: HARQ gain per retransmission }
-      - { key: rate_matching_overhead, label: rate matching overhead }
+      - { key: rate_matching_overhead, label: rate-match repetition / unselected-eligible fractions }
       - { key: rs_overhead_contribution, label: RS overhead contribution }
       - { key: beam_precoder_gain, label: beam / precoder gain }
       - { key: mtrp_gain, label: mTRP gain }
@@ -158,14 +158,21 @@ categories:
       - { key: ri_accuracy, label: RI accuracy }
       - { key: l1_sinr_accuracy, label: L1-SINR accuracy }
       - { key: rsrp_accuracy, label: RSRP accuracy }
+      - { key: cqi_field_delivery, label: Transmitted-to-decoded CQI field agreement (not CQI calibration) }
+      - { key: pmi_field_delivery, label: Transmitted-to-decoded full PMI agreement (not precoder optimality) }
+      - { key: ri_field_delivery, label: Transmitted-to-decoded RI agreement (not optimal rank) }
+      - { key: cri_field_delivery, label: Transmitted-to-decoded CRI agreement }
+      - { key: csi_bit_delivery, label: Transmitted-to-decoded CSI bit errors per actual report }
       - { key: csi_report_size, label: CSI report size }
       - { key: csi_reporting_overhead, label: CSI reporting overhead }
-      - { key: report_latency, label: CSI report radio latency }
+      - { key: report_latency, label: CSI measurement-to-delivery elapsed time (conditional engineering observation) }
       - { key: csi_aging_loss, label: CSI aging loss }
-      - { key: scheduler_application_loss, label: scheduler application loss }
+      - { key: scheduler_application_loss, label: Later feedback application observed (not scheduler-loss probability) }
       - { key: sgcs, label: SGCS }
       - { key: nmse, label: NMSE }
       - { key: dmrs_vs_csirs_comparison, label: DMRS-based vs CSI-RS-based comparison }
+      - { key: dmrs_channel_estimation_observations, label: Independently scored PDSCH DMRS channel observations }
+      - { key: csirs_channel_estimation_observations, label: Independently scored CSI-RS channel observations }
       - { key: srs_port_scaling_impact, label: SRS-port scaling impact }
       - { key: reciprocity_mismatch_impact, label: reciprocity mismatch impact }
       - { key: analog_jscc_jscm_robustness_metrics, label: analog / JSCC / JSCM robustness metrics }

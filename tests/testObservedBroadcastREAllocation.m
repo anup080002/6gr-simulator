@@ -46,6 +46,10 @@ for scenario=["lls_causal_tdd_connected_feedback_fixture.yaml","lls_causal_acces
     localReject(@()sixgr.truth.buildObservedBroadcastREAllocation(wrong,observation,1), ...
         'sixgr:truth:SIB1GridTimingMismatch');
     wrong=p;
+    wrong.Tx.SIB1Transmissions(1).SIB1WaveformStartSample=wrong.Tx.SIB1WaveformStartSample+1;
+    localReject(@()sixgr.truth.buildObservedBroadcastREAllocation(wrong,observation,1), ...
+        'sixgr:truth:SIB1GridTimingMismatch');
+    wrong=p;
     dataIndex=double(wrong.Tx.PDSCHTx.ResourcePlan.DataIndices(1))+1;
     wrong.Tx.PDSCHTx.Grid(dataIndex)=wrong.Tx.PDSCHTx.Grid(dataIndex)+1;
     localReject(@()sixgr.truth.buildObservedBroadcastREAllocation(wrong,observation,1), ...

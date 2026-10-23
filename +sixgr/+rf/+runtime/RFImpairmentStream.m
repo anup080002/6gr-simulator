@@ -26,6 +26,7 @@ classdef RFImpairmentStream < handle
         PAProfile struct = struct()
         PAState = []
         DelayState = []
+        TXSignalDependency struct = struct()
     end
     methods
         function obj=RFImpairmentStream(cfg,endpoint,direction,fs,nAnt,first,epoch,useLegacy,evidenceIdentity)
@@ -68,6 +69,7 @@ classdef RFImpairmentStream < handle
             obj.SampleRateHz=double(fs); obj.NumAntennas=double(nAnt);
             obj.OriginSample=double(first); obj.NextSampleIndex=double(first);
             obj.validateStatefulStages();
+            obj.TXSignalDependency=obj.resolveTXSignalDependency();
         end
 
         function out=apply(obj,chunk,expectedEpoch)
@@ -110,6 +112,24 @@ classdef RFImpairmentStream < handle
                 end
                 out.Chunk=sixgr.phy.waveform.WaveformChunk(out.Waveform,obj.NextSampleIndex);
                 out.ExecutionStage="actual_retained_rf_stream";
+                if obj.Chain.IncludeTx
+                    dependency=obj.TXSignalDependency;
+                    if isempty(fieldnames(dependency))
+                        % Historical serialized owners did not retain this
+                        % installation proof. Their PHY may continue; never
+                        % manufacture a qualified memory receipt afterwards.
+                        dependency=struct('ContractVersion',"sixgr.rf.executed_tx_signal_dependency/v1", ...
+                            'Available',false,'Status',"unavailable_original_installation_receipt_missing", ...
+                            'SampleRateHz',obj.SampleRateHz,'ConfigurationEpoch',obj.ConfigurationEpoch);
+                    end
+                    dependency.StartSample=obj.NextSampleIndex;
+                    dependency.EndSampleExclusive=obj.NextSampleIndex+size(x,1);
+                    dependency.OriginalInputChunkSHA256=string(chunk.SHA256);
+                    dependency.RFInputWaveformSHA256=string(out.Replay.RFInputWaveformSHA256);
+                    dependency.RFOutputWaveformSHA256=string(out.Replay.RFOutputWaveformSHA256);
+                    dependency.RFStageOrder=string(out.Replay.RFStageOrder);
+                    out.Replay.TXSignalDependency=dependency;
+                end
                 obj.NextSampleIndex=obj.NextSampleIndex+size(x,1);
                 obj.InputClass=string(class(x));
             catch cause
@@ -179,6 +199,41 @@ classdef RFImpairmentStream < handle
     methods (Access=private)
         function clearApplying(obj), obj.Applying=false; end
 
+        function d=resolveTXSignalDependency(obj)
+            % This contract describes the installed, actually executed
+            % streaming implementation, not nominal YAML delay spread.
+            % IQ uses the canonical instantaneous alpha*x+beta*conj(x)
+            % with literal zero DC offset; element mixing is instantaneous.
+            % PN/CFO are multiplicative and introduce no signal memory.
+            c=obj.Chain;
+            d=struct();
+            if ~c.IncludeTx, return; end
+            memory=0; delay=0; zeroPreserving=true; model="disabled";
+            paSHA=""; convention="disabled";
+            if c.TxPA.Enabled
+                model=lower(string(obj.PAProfile.Model));
+                if model=="memory_polynomial", memory=double(obj.PAProfile.MemoryDepth)-1; end
+                paSHA=string(sixgr.util.sha256Hex(uint8(unicode2native(jsonencode(obj.PAProfile),'UTF-8'))));
+            end
+            if c.TxTiming.Enabled, delay=double(c.TxTiming.TimingOffset_samples); end
+            if c.TxDAC.Enabled
+                convention=string(obj.DACProfile.Convention);
+                zeroPreserving=convention=="signed_midtread" && ...
+                    obj.DACProfile.DitherRMS==0 && obj.DACProfile.ApertureJitter_s==0;
+            end
+            d=struct('ContractVersion',"sixgr.rf.executed_tx_signal_dependency/v1", ...
+                'Available',zeroPreserving,'Status',"installed_zero_preserving_finite_signal_memory", ...
+                'SampleRateHz',obj.SampleRateHz,'ConfigurationEpoch',obj.ConfigurationEpoch, ...
+                'Endpoint',string(c.Endpoint),'Direction',string(c.Direction), ...
+                'MemorySamples',memory,'DelaySamples',delay, ...
+                'HistoryOriginSample',obj.OriginSample,'ZeroInputHistoryAtOrigin',true, ...
+                'ZeroPreserving',zeroPreserving,'AdditiveTXOutput',~zeroPreserving, ...
+                'PAModel',model,'PAProfileSHA256',paSHA,'DACConvention',convention, ...
+                'IQDCOffset',0,'SignalMemorySource',"installed_PA_memory_and_retained_integer_delay", ...
+                'AdditionalRFExecutions',0,'DependencyScope',"signal_dependency_not_oscillator_state");
+            if ~zeroPreserving, d.Status="unavailable_TX_quantizer_zero_input_not_zero"; end
+        end
+
         function validateStatefulStages(obj)
             c=obj.Chain;
             if c.IncludeTx, prefix="Tx"; else, prefix="Rx"; end
@@ -203,7 +258,7 @@ classdef RFImpairmentStream < handle
                 error('RF:StateEpochMismatch','The oscillator and retained RF owner must share the explicit configuration epoch.');
             end
             if c.IncludeTx && c.TxPA.Enabled
-                [obj.PAProfile,canonical]=sixgr.rf.runtime.PAProfile.fromConfiguration(obj.Configuration);
+                [obj.PAProfile,canonical]=sixgr.rf.runtime.PAProfile.fromConfiguration(obj.Configuration,c.Direction);
                 if ~canonical || ~any(lower(string(obj.PAProfile.Model))==["rapp","saleh","memory_polynomial"])
                     error('RF:StreamingPAProfileRequired','Use an explicit streaming-supported calibrated PA profile.');
                 end

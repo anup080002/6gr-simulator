@@ -34,6 +34,10 @@ for k=1:numel(channels)
     part.stage_waveform_port_count=repmat(double(stage.TxPortCount),height(part),1);
     part.observation_start_sample=repmat(double(stage.ObservationStartSample),height(part),1);
     part.observation_end_sample_exclusive=repmat(double(stage.ObservationEndSampleExclusive),height(part),1);
+    if channels(k)=="PRACH" && isfield(objects{k},'WaveformStartSample')
+        [~,native]=sixgr.truth.splitREAllocationDomains(part);
+        result.Msg1SampleIntervalEvidence=sixgr.truth.prachNativeSampleIntervals(native,objects{k}.Carrier);
+    end
     if channels(k)~="PRACH"
         % An allocation's producer grid is not necessarily the final shared
         % antenna grid. Do not label logical/control ports as 64 TXRUs.

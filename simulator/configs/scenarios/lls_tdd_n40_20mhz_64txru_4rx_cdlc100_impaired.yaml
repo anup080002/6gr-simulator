@@ -1,0 +1,235 @@
+inherits:
+  - ./lls_tdd_4ghz_20mhz_64txru_4rx_cdlc100_impaired.yaml
+  - ../bands/n40_20mhz_30khz_tdd.yaml
+
+meta:
+  scenario_id: lls_tdd_n40_20mhz_64txru_4rx_cdlc100_impaired
+  description: >
+    2.350 GHz n40, 20 MHz TDD, uniform 30 kHz SSB/data/control SCS, 51 PRBs,
+    four 30-kHz Case-C SSB beams on GSCN 5875, eight CSI-RS beams,
+    64-TXRU gNB and four-chain UE with received-feedback adaptive rank 1--4.
+    Retains the physical access/control/data, CDL-C/100 ns, RF impairments,
+    exact RE/TBS allocation and measurement exports of the common 20-MHz setup.
+    Fresh 60-slot (30 ms) run with no checkpoints. Short B4 PRACH also uses 30 kHz.
+    Absolute sqrt(mW) samples, UMa NLOS path loss and receiver thermal noise.
+    SINR is measured, not forced to 40 dB. Power budgets, noise figures and
+    converter/PA operating points are declared research assumptions; this
+    is not RF-device conformance qualification.
+  purpose: n40 full-chain integration with received CSI/SRS adaptation and full publication.
+  tags: [lls, truth, tdd, fr1, n40, 20mhz, 30khz, adaptive_rank, no_proxy]
+run_control:
+  total_slots: 60
+  total_time_ms: 30
+  measurement_slots: 60
+  measurement_time_ms: 30
+simulation:
+  noise_operating_mode: receiver_noise_figure_thermal_noise
+  # Required legacy scalar is NOT an applied SNR target in this mode.
+  snr_db: 0
+  snr_sweep_offsets_db: [0]
+  reference_sweep_enabled: false
+  adaptive_sweep_enabled: false
+  n_frames: 3
+  n_slots: 60
+  n_subframes: 30
+  min_duration_s: 0.03
+canonical_control:
+  launch:
+    run_class: ue_placement_geometry_lls
+    scenario_mode: ue_placement_geometry
+    sweep_enabled: false
+    fixed_link_campaign_enabled: false
+    geometry_enabled: true
+  integration:
+    run_mode: GEOMETRY_NETWORK
+    subprofile: connected_network
+    configured_snr_is_link_authority: false
+    power_reference_mode: absolute_calibrated_sqrt_mw
+integration:
+  run_mode: GEOMETRY_NETWORK
+  subprofile: connected_network
+  configured_snr_is_link_authority: false
+  power_reference_mode: absolute_calibrated_sqrt_mw
+channels:
+  pathloss_enabled: true
+  pathloss_model: nrPathLoss
+  pathloss_scenario: UMa
+  los_enabled: false
+  # Deterministic large-scale baseline; CDL-C fading remains enabled.
+  shadow_fading_enabled: false
+  o2i_model: none
+scenario:
+  bs:
+    height_m: 25
+  ue:
+    height_m: 1.5
+power_and_rf_frontend:
+  # Exact uncentered complex second moment of the composite physical-chain
+  # RF output. Preserve coherent cross terms; this is not itself TRP/EIRP.
+  tx_spatial_power_enabled: true
+  # Opt-in numerical field integration of original post-TX-RF covariance.
+  # Explicit quadrature is not continuous-peak, accepted-feed or hardware qualification.
+  modeled_radiated_power:
+    enabled: true
+    azimuth_count: 72
+    elevation_count: 36
+    scope: native_gain_pattern_post_tx_rf_model
+    coordinate_frame: installed_array_local_coordinates
+    frequency_scope: frequency_flat_installed_carrier_field_model
+    ue_reference:
+      rf_type: undeclared_UE_RF_type_model_only
+      requirement_boundary: internal_post_TX_RF_model_only
+      scope: modeled_integrated_array_not_hardware_qualification
+  # TS 38.104 V18.8.0 4.3.3: type 1-O uses the radiated interface boundary.
+  # This declaration does not convert the internal budget below into TRP/EIRP.
+  bs_reference:
+    rf_type: 1-O
+    requirement_boundary: RIB
+    budget_plane: internal_pre_rf_total
+    antenna_gain_owner: physical_array_channel
+    scope: modeled_integrated_array_not_hardware_qualification
+  # Total pre-RF budgets summed over physical TX chains, NOT per layer.
+  # Post-PA chain powers are internal measurements, NOT conducted TAB ratings
+  # or TRP/EIRP. Never restore PA loss or multiply this budget by layer count.
+  bs_tx_power_dbm: 30
+  ue_tx_power_dbm: 23
+  bs_noise_figure_db: 5
+  ue_noise_figure_db: 7
+  noise_figure: 5
+  downlink_power_normalization_policy: fixed_epre_over_configured_bwp
+  uplink_power_normalization_policy: active_ofdm_total_power
+  ssb_power_reference_policy: quantized_full_bwp_epre
+rf_frontend:
+  # Assumed physical RF operating points, not a measured instrument profile.
+  pa:
+    profile_id: RAPP_ABSOLUTE_ENDPOINT_8DB_V1
+    version: 1.0.0
+    reference_domain: absolute_endpoint_rms
+    reference_total_power_dl_dbm: 30
+    reference_total_power_ul_dbm: 23
+    reference_headroom_db: 8
+    # Saturation is 8 dB above the fixed per-chain nominal RMS. Do not also
+    # attenuate the entire absolute-power waveform by 8 dB a second time.
+    input_backoff_db: 0
+    saturation_amplitude: 1
+    coefficient_provenance: declared_absolute_endpoint_rapp_research_assumption_v1
+    power_restoration_allowed: false
+  dac:
+    profile_id: DAC_ABSOLUTE_ENDPOINT_12BIT_V1
+    version: 1.0.0
+    reference_domain: absolute_endpoint_rms
+    reference_total_power_dl_dbm: 30
+    reference_total_power_ul_dbm: 23
+    reference_headroom_db: 12
+    full_scale: 1
+  ul_power_control:
+    enabled: true
+    open_loop_enabled: true
+    closed_loop_enabled: true
+    phr_report_enabled: true
+    require_measured_reference_rs: true
+    configured_snr_pathloss_forbidden: true
+    # P0/alpha are configured study choices. PCMAX is a declared 23-dBm
+    # limit, not an implemented allocation-dependent UE RF/MPR certificate.
+    pusch: {p0_dbm: -80, p0_ue_db: 0, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
+    pucch: {p0_dbm: -80, alpha: 1.0, delta_tf_db: 0, pcmax_dbm: 23}
+    srs:
+      # TS 38.213 7.3.1: h=f, sampled at each SRS resource boundary.
+      # Separate SRS adjustment needs received DCI 2_3; never invent it.
+      adjustment_state: same_as_pusch
+      p0_dbm: -80
+      alpha: 0.8
+      delta_tf_db: 0
+      pcmax_dbm: 23
+      # Dedicated SRS resource-set pathloss reference, TS 38.213 7.3.1.
+      # This is deliberately explicit, not inherited from PUSCH/PUCCH.
+      pathloss_reference:
+        reference_signal_type: SSB
+        reference_signal_id: 0
+        pathloss_reference_rs_id: 1
+        maximum_age_slots: 20
+    prach: {p0_dbm: -100, alpha: 1.0, delta_tf_db: 0, pcmax_dbm: 23}
+impairments:
+  # Absolute PA headroom is declared at its fixed saturation reference above.
+  pa_output_backoff_dB: 0
+tdd_timing:
+  # This pins the catalog's pos0 base column, not the applied ACK deadline.
+  # TimingRelationEngine derives N1+d1,1 from the actual scheduled DM-RS:
+  # at mu=1, additionalPosition=2 uses N1=13 (TS 38.214 Table 5.3-1).
+  capability_profile_id: 38.214-v18.8.0-cap1-dmrs-pos0-mu1
+  n1_pdsch_processing_time_symbols: 10
+  n2_pusch_preparation_time_symbols: 12
+  dl_to_ul_guard_time_us: 8.138
+system:
+  scheduler:
+    maxPRBAllocationPerUE: 51
+scheduler:
+  max_prbs_per_grant: 51
+initial_access:
+  ssb:
+    # Four Type-0 SI occasions end in common slot 13 (mu=1).
+    observation_subframes: 7
+  sib1:
+    observation_subframes: 7
+random_access:
+  num_slots: 60
+  num_subframes: 30
+  # These common PDSCH assignments start at the MIB-derived CORESET0 RB.
+  msg2_pdsch:
+    prb_start: 15
+  msg4_pdsch:
+    prb_start: 15
+output:
+  profile: lls_tdd_n40_20mhz_64txru_4rx_cdlc100_impaired
+  phy_signal_diagnostic_fft_length: 1024
+
+# The band pack is composed after the eight-resource scenario. Its legacy
+# single-resource width must not replace this installed CSI resource set.
+reference_signals:
+  csi_rs_resource_num_rbs: [51, 51, 51, 51, 51, 51, 51, 51]
+  # Avoid SSB slots 0/1, SI slots 10:13 and the two-slot TRS burst 6/7.
+  csi_rs_offset_slots: 5
+  nzp_csi_rs:
+    periodicity: 5ms
+  csi_im:
+    num_rbs: 52
+    offset_slots: 5
+  srs:
+    # TS 38.211 Table 6.4.1.4.3-1: C_SRS=12/B_SRS=0 sounds 48 PRBs.
+    # Preserve literal coverage; do not label the remaining three RBs sounded.
+    c_srs: 12
+    num_rb: 51
+    expected_num_rb: 51
+    expected_bandwidth_coverage_percent: 94.11764705882354
+    full_carrier_coverage_tolerance_rb: 3
+  trs:
+    num_rb: 51
+    period_offset: 6
+csi_acquisition_and_reporting:
+  report_periodicity: 5ms
+  # Offset 8 uses legal special-slot PUCCH. The n_CSI_ref guard selects
+  # the preceding completed CSI occasion, never an unprocessed new report.
+
+# Post-reception optional study only. This does not select actual RI/PMI or
+# qualify PDSCH BLER, RF power, or NR-optimal reporting. Execution binds units.
+kpi_spec:
+  csi_selection_quality:
+    enabled: true
+    objective: mean_support_sum_log2_one_plus_linear_mmse_sinr
+    receiver: linear_mmse
+    power_normalization: unit_physical_chain_grid_coefficient_power
+    power_factor: 1
+    support: selected_resource_pilot_union
+    research_class: optional_research_experiment
+    classification: IMPLEMENTATION_POLICY
+    tie_absolute_tolerance: 0.0000000001
+    physical_power_tolerance: 0.0000000001
+
+# Model operating range for this band, not measured hardware bandwidth.
+# Keep the modeled element pattern/polarization and wavelength-based spacing;
+# do not inherit the 4-GHz parent's 3.9--4.1 GHz element validity interval.
+antenna_and_array:
+  bs_element_frequency_min_hz: 2300000000
+  bs_element_frequency_max_hz: 2400000000
+  ue_element_frequency_min_hz: 2300000000
+  ue_element_frequency_max_hz: 2400000000

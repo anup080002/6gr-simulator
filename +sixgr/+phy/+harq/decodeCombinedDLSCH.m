@@ -1,6 +1,9 @@
-function [ok,meanIter,tbBits]=decodeCombinedDLSCH(layout,recLLR,cfg)
+function [ok,meanIter,tbBits,diagnostics]=decodeCombinedDLSCH(layout,recLLR,cfg)
 % Decode received DL mother-code LLRs without a transmitter object.
 % TS 38.212 7.2.1-7.2.3: retained TB CRC and segmentation apply to every RV.
+% Transport acceptance follows the TB CRC and actual length, matching the
+% canonical nrDLSCHDecoder TB verdict. Optional diagnostics retain CB CRC
+% results separately; a CB CRC failure is not an additional TB rejection.
 fields={'Direction','TransportBlockSize','TBCRCType','TBCRCLength', ...
     'BaseGraph','MotherCodeLength','NumCodeBlocks','LiftingSize','B'};
 assert(isstruct(layout) && isscalar(layout) && all(isfield(layout,fields)) && ...
@@ -31,8 +34,18 @@ for c=1:C
     if ~isempty(it), iterations(c)=double(it(1)); end
 end
 [withCRC,cbError]=sixgr.phy.tb.desegmentLDPC(decoded,bgn,A+crcLength);
-[tbBits,tbOK]=sixgr.phy.tb.checkCRC(withCRC,char(crcType));
+[tbBits,tbOK,tbError]=sixgr.phy.tb.checkCRC(withCRC,char(crcType));
 tbBits=int8(tbBits(:));
-ok=logical(tbOK && ~any(cbError(:)) && numel(tbBits)==A);
+lengthMatch=numel(tbBits)==A;
+ok=logical(tbOK && lengthMatch);
 meanIter=mean(iterations,'omitnan');
+if nargout>3
+    diagnostics=struct('ContractVersion',"CombinedSCHDecodeDiagnostics/v1", ...
+        'Direction',"DL",'TransportBlockSize',A, ...
+        'DecodedTransportBlockLength',numel(tbBits), ...
+        'TransportBlockLengthMatch',logical(lengthMatch), ...
+        'TransportBlockCRCPass',logical(tbOK),'TransportBlockCRCError',logical(tbError), ...
+        'CodeBlockCRCError',cbError,'CodeBlockCRCPass',~logical(cbError), ...
+        'CRCPass',ok,'AcceptanceBasis',"transport_block_crc_and_length");
+end
 end

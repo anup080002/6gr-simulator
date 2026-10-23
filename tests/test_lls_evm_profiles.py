@@ -237,10 +237,14 @@ def test_full_capture_never_passes_with_missing_or_inconsistent_evidence(defect)
 
 
 def test_dft_despread_qam_is_valid_per_symbol_but_not_physical_subcarrier_evm():
+    # Declared CSV-format fixture only, not an executed PHY measurement.
     rows = list(csv.DictReader(io.StringIO(full_capture_payload().decode())))
-    for row in rows:
+    for index, row in enumerate(rows, 1):
         row["Direction"] = "UL"
         row["SymbolCoordinateDomain"] = "pre_transform_qam_positions"
+        row["SymbolOrderLinearIndexDomain"] = "native_pre_transform_allocation_position_key"
+        row["SymbolOrderLinearIndex"] = str(index)
+        row["SubcarrierIndex"] = "NaN"
     payload = encode_rows(rows)
     assert render(payload)["csv_status"] == "specialized_runtime_evm_dataset"
     path = "air_interface/csv/ul_constellation_samples.csv"

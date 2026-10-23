@@ -1,31 +1,12 @@
-ImageFile,ExpectedTitle,ExpectedXLabel,ExpectedYLabel,SourceCSV,MinimumWidth,MinimumHeight,MinimumAxes,MinimumSeries,MinimumFinitePoints
-rf_impact_cfo_magnitude.png,CFO magnitude impact,CFO,Residual error,rf_impact_cfo_timing.csv,900,600,1,2,20
-rf_impact_cfo_tracking.png,CFO tracking impact,Time,Residual CFO,rf_impact_cfo_timing.csv,900,600,1,2,20
-rf_impact_timing_offset.png,Timing-offset impact,Timing offset,BLER,rf_impact_cfo_timing.csv,900,600,1,2,20
-rf_impact_sco_drift.png,Sample-clock offset impact,SCO ppm,Drift,rf_impact_cfo_timing.csv,900,600,1,2,20
-rf_impact_phase_noise_mask.png,Phase-noise mask impact,Mask severity,EVM,rf_impact_phase_noise_iq.csv,900,600,1,2,20
-rf_impact_phase_noise_cpe_ici.png,CPE and ICI impact,Phase noise,Error power,rf_impact_phase_noise_iq.csv,900,600,1,2,20
-rf_impact_lo_correlation.png,LO correlation impact,Correlation,Per-chain error,rf_impact_phase_noise_iq.csv,900,600,1,2,20
-rf_impact_iq_imbalance.png,IQ imbalance impact,IQ mismatch,Image rejection,rf_impact_phase_noise_iq.csv,900,600,1,2,20
-rf_impact_iq_compensation.png,IQ compensation impact,Iteration,EVM,rf_impact_phase_noise_iq.csv,900,600,1,2,20
-rf_impact_pa_backoff.png,PA backoff impact,Backoff,ACLR,rf_impact_pa_dpd.csv,900,600,1,2,20
-rf_impact_pa_memory.png,PA memory impact,Memory depth,ACLR,rf_impact_pa_dpd.csv,900,600,1,2,20
-rf_impact_cfr_papr.png,CFR PAPR impact,CFR target,PAPR,rf_impact_pa_dpd.csv,900,600,1,2,20
-rf_impact_dpd_order.png,DPD order impact,DPD order,ACLR,rf_impact_pa_dpd.csv,900,600,1,2,20
-rf_impact_dpd_ageing.png,DPD ageing impact,Age,EVM,rf_impact_pa_dpd.csv,900,600,1,2,20
-rf_impact_dac_bits.png,DAC bit-depth impact,DAC bits,EVM,rf_impact_data_converters.csv,900,600,1,2,20
-rf_impact_adc_bits.png,ADC bit-depth impact,ADC bits,BLER,rf_impact_data_converters.csv,900,600,1,2,20
-rf_impact_adc_fullscale.png,ADC full-scale impact,Full scale,Clipping,rf_impact_data_converters.csv,900,600,1,2,20
-rf_impact_agc_dynamics.png,AGC dynamics impact,Time,Gain,rf_impact_data_converters.csv,900,600,1,2,20
-rf_impact_aperture_jitter.png,Aperture-jitter impact,Jitter,EVM,rf_impact_data_converters.csv,900,600,1,2,20
-rf_impact_noise_figure.png,Noise-figure impact,Noise figure,BLER,rf_impact_blocker_receiver.csv,900,600,1,2,20
-rf_impact_blocker_power.png,Blocker-power impact,Blocker power,Desensitization,rf_impact_blocker_receiver.csv,900,600,1,2,20
-rf_impact_blocker_offset.png,Blocker-offset impact,Frequency offset,BLER,rf_impact_blocker_receiver.csv,900,600,1,2,20
-rf_impact_reciprocal_mixing.png,Reciprocal-mixing impact,Blocker offset,Noise rise,rf_impact_blocker_receiver.csv,900,600,1,2,20
-rf_impact_intermodulation.png,Intermodulation impact,IIP3,IM3 power,rf_impact_blocker_receiver.csv,900,600,1,2,20
-rf_impact_evm_method.png,EVM-method impact,Method,EVM,rf_impact_waveform_quality.csv,900,600,1,2,20
-rf_impact_aclr.png,ACLR impact,Operating point,ACLR,rf_impact_waveform_quality.csv,900,600,1,2,20
-rf_impact_sem_obue.png,SEM and OBUE impact,Offset,Margin,rf_impact_waveform_quality.csv,900,600,1,2,20
-rf_impact_power_control.png,UL power-control impact,Pathloss,Transmit power,rf_impact_power_control.csv,900,600,1,2,20
-rf_impact_interaction_forest.png,RF interaction effects,Family,Effect,rf_impact_pairwise_effects.csv,900,600,1,2,20
-rf_impact_runtime_scaling.png,RF runtime scaling,Complexity,Runtime,rf_impact_runtime.csv,900,600,1,2,20
+ImageFile,ExpectedTitle,ExpectedXLabel,ExpectedYLabel,SourceCSV,XColumn,YColumn,AvailabilityColumn,SeriesColumns
+rf_impact_applied_cfo_waveform_error.png,Applied oscillator CFO versus time-waveform error (not receiver residual CFO),Applied start CFO (Hz),Time-waveform relative RMS error (%),rf_impact_cfo_timing.csv,AppliedCFOStart_Hz,WaveformRelativeRMSError_pct,AppliedCFOTraceAvailable,FamilyID;Role;ReferencePlane
+rf_impact_applied_phase_waveform_error.png,Actual applied phase trace versus time-waveform error,Applied phase RMS (rad),Time-waveform relative RMS error (%),rf_impact_phase_noise_iq.csv,AppliedPhaseRMS_rad,WaveformRelativeRMSError_pct,AppliedPhaseTraceAvailable,FamilyID;Role;ReferencePlane
+rf_impact_pa_sample_power.png,Actual PA input/output normalized sample power,Input mean normalized sample power,Output mean normalized sample power,rf_impact_pa_dpd.csv,InputMeanPower,OutputMeanPower,WaveformMetricsAvailable,FamilyID;Role;ReferencePlane
+rf_impact_pa_sample_papr.png,Actual output PAPR and time-waveform error,Output PAPR (dB),Time-waveform relative RMS error (%),rf_impact_pa_dpd.csv,OutputPAPR_dB,WaveformRelativeRMSError_pct,WaveformMetricsAvailable,FamilyID;Role;ReferencePlane
+rf_impact_converter_bits_error.png,Executed quantizer bits versus time-waveform error,Actual quantizer bits,Time-waveform relative RMS error (%),rf_impact_data_converters.csv,Bits,WaveformRelativeRMSError_pct,ADCResultAvailable,FamilyID;Role;FullScale;ReferencePlane
+rf_impact_converter_fullscale_clipping.png,Executed quantizer full scale and actual clipping fraction,Actual normalized full scale,Actual clipped complex-value fraction,rf_impact_data_converters.csv,FullScale,ClippingRatio,ADCResultAvailable,FamilyID;Role;Bits;ReferencePlane
+rf_impact_adc_bits.png,Transport-block BLER requires an actual decoder population,Actual quantizer bits,Transport-block BLER,rf_impact_data_converters.csv,Bits,BLER,BLERAvailable,FamilyID;Role;FullScale;ReferencePlane
+rf_impact_blocker_waveform_error.png,Actual injected blocker power and time-waveform error,Injected blocker normalized mean power,Time-waveform relative RMS error (%),rf_impact_blocker_receiver.csv,MeasuredBlockerPower,WaveformRelativeRMSError_pct,BlockerInjectionAvailable,FamilyID;Role;BlockerOffset_Hz;ReferencePlane
+rf_impact_declared_spectral_band_ratio.png,Measured rectangular-window two-sided band ratio (not normative ACLR),Assigned-band normalized power,Assigned to adjacent-band power ratio (dB),rf_impact_waveform_quality.csv,AssignedBandPower,MeasuredBandPowerRatio_dB,SpectrumAvailable,FamilyID;Role;ReferencePlane
+rf_impact_power_control_target.png,Assumed-input additive power budget (not NR channel-specific or measured TX power),Unclamped nominal budget (dBm),Clamped nominal budget (dBm),rf_impact_power_control.csv,RequestedPower_dBm,AppliedPowerTarget_dBm,PowerBudgetTargetAvailable,FamilyID;Role;ReferencePlane
+rf_impact_runtime_scaling.png,Measured serial component execution time,Actual original executions in family,Elapsed serial seconds,rf_impact_runtime.csv,ExecutedObservationCount,Runtime_s,RuntimeAvailable,FamilyID

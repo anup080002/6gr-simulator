@@ -75,7 +75,10 @@ assert(row.CompletedSlots==45 && row.CompletedSymbols==630 && row.RunCompletion=
 % Guard production wiring: completion is set only after shared receiver
 % drain; older checkpoints use the verified saved boundary, not trial rows.
 source=fileread(which('sixgr.truth.runWaveformLinkBundle'));
-start=strfind(source,'[runtimeState,~]=sixgr.truth.advanceSharedSlotWithULGrants(');
+% The coordinator now transfers only the updated owner (the old unused
+% second output retained a duplicate capture). Keep the same strict order
+% check against the current production call signature.
+start=regexp(source,'runtimeState\s*=\s*sixgr\.truth\.advanceSharedSlotWithULGrants\(');
 assert(numel(start)==1);
 tail=source(start:end);
 drain=strfind(tail,'localDrainSharedDataPlans(');

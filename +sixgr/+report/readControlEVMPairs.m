@@ -1,6 +1,8 @@
 function records=readControlEVMPairs(row,trialPath,verifyOnly)
 % Read legacy inline or checksum-bound full paired samples, never a proxy.
 if nargin<3, verifyOnly=false; end
+assert(istable(row) && height(row)==1, ...
+    'sixgr:report:ControlEVMDetailInput','Read one completed trial at a time.');
 records=struct([]);
 names=string(row.Properties.VariableNames);
 token=""; relative="";
@@ -11,15 +13,49 @@ if ismissing(relative), relative=""; end
 assert(strlength(token)==0 || strlength(relative)==0, ...
     'sixgr:report:AmbiguousControlEVMPairs','A trial cannot have two competing sample authorities.');
 if strlength(relative)==0
-    if strlength(token)>0 && ~verifyOnly, records=jsondecode(token); end
+    % Empty historical rows are legitimate. Declared samples/checksums
+    % without a source are not: returning an empty population would hide
+    % corrupted or incomplete evidence, including on publication-cache hits.
+    for field=["ControlEVMSamplesMATFileSHA256","ControlEVMSamplesContentSHA256"]
+        if ismember(field,names)
+            value=string(row.(field));
+            assert(ismissing(value) || strlength(value)==0, ...
+                'sixgr:report:ControlEVMDetailBinding', ...
+                'A retained-file checksum requires its run-relative sample binding.');
+        end
+    end
+    if strlength(token)>0
+        if ~verifyOnly, records=jsondecode(token); end
+    else
+        if ismember('ControlEVMSamplesCount',names)
+            count=row.ControlEVMSamplesCount;
+            assert(isnumeric(count) && isreal(count) && isscalar(count) && ...
+                (isnan(count) || count==0), ...
+                'sixgr:report:ControlEVMDetailBinding', ...
+                'A declared sample population requires retained inline or file evidence.');
+        end
+        if ismember('ControlEVMSamplesStorageContract',names)
+            contract=string(row.ControlEVMSamplesStorageContract);
+            assert(ismissing(contract) || any(contract==["", ...
+                "control_evm_pairs/v1","control_evm_pairs/v2"]), ...
+                'sixgr:report:ControlEVMDetailBinding', ...
+                'An empty observation cannot acquire an invented storage contract.');
+        end
+    end
     return;
 end
 required=["ControlEVMSamplesMATFileSHA256","ControlEVMSamplesContentSHA256", ...
     "ControlEVMSamplesStorageContract","ControlEVMSamplesCount"];
 assert(all(ismember(required,names)) && ...
-    row.ControlEVMSamplesStorageContract=="control_evm_pairs/v1" && ...
+    any(row.ControlEVMSamplesStorageContract==["control_evm_pairs/v1","control_evm_pairs/v2"]) && ...
     ~isempty(regexp(char(relative),'^air_interface/mat/control_evm/[a-f0-9]{64}\.mat$','once')), ...
     'sixgr:report:ControlEVMDetailBinding','A versioned run-relative immutable sample binding is required.');
+% Retain v1 as explicitly versioned historical evidence, not as upgraded
+% v2 sweep provenance. Both versions keep checksum/run/identity checks.
+count=row.ControlEVMSamplesCount;
+assert(isnumeric(count) && isreal(count) && isscalar(count) && ...
+    isfinite(count) && count>0 && count==fix(count), ...
+    'sixgr:report:ControlEVMDetailCount','A MAT binding must declare its positive complete sample population.');
 % These primary/mirrored CSV locations establish the owning run boundary.
 % An unbounded ancestor search can accidentally borrow another run's data.
 folder=string(fileparts(char(java.io.File(char(trialPath)).getAbsolutePath())));

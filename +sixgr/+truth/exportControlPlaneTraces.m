@@ -199,7 +199,8 @@ outPath = "";
 if ~(istable(T) && ~isempty(T))
     return;
 end
-sixgr.util.csvWriteTable(filePath, T);
+[~,stem]=fileparts(string(filePath));
+sixgr.util.csvWriteTable(filePath, T,"RoundTripNumericText",stem=="srs_trials");
 outPath = string(filePath);
 end
 

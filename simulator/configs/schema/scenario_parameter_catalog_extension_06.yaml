@@ -93,6 +93,9 @@
       "num_phy_antenna_elements": {"required": false, "type": "integer", "min": 1}
     }},
     "power_and_rf_frontend": {"parameters": {
+      "bs_reference": {"required": false, "type": "struct"},
+      "tx_spatial_power_enabled": {"required": false, "type": "boolean"},
+      "modeled_radiated_power": {"required": false, "type": "struct"},
       "bs_noise_figure_db": {"required": false, "type": "number", "min": 0},
       "ue_max_power_dbm": {"required": false, "type": "number"}
     }},

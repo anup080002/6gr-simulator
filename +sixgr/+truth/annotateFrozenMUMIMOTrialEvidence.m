@@ -18,7 +18,7 @@ logicalFields = "MUMIMOEnabled";
 numericFields = ["MUMIMOGroupSize","MUMIMOGroupId", ...
     "MUMIMOPairingMetricValue_dB","MUMIMOPairingWorstMetricValue_dB", ...
     "MUMIMORequiredLeakageThreshold_dB","MUMIMODesiredSubspaceGain_dB", ...
-    "MUMIMORequiredMinimumDesiredGain_dB","NumLogicalPorts","NumRFChains"];
+    "MUMIMORequiredMinimumDesiredGain_dB"];
 stringFields = ["MUMIMOPairingStatus","MUMIMOPairingMetricSource", ...
     "MUMIMOPairingEvidenceSource","MUMIMOPrecoderType", ...
     "MUMIMOSpatialDesignStatus","MUMIMOSpatialDesignContractVersion", ...
@@ -52,6 +52,37 @@ for fieldName = stringFields
             "Frozen grant field %s must be scalar text.", fieldName);
     end
     T.(char(fieldName)) = repmat(value, n, 1);
+end
+
+% These are shared architecture fields, not MU-only diagnostics. An absent
+% root alias in a SU grant must not erase same-transmission mapper/RF
+% evidence already bound by its producer. A present alias may fill a blank,
+% but cannot silently contradict the executed architecture.
+for fieldName = ["NumLogicalPorts","NumRFChains"]
+    raw=sixgr.util.structGet(grant,fieldName,NaN);
+    % Empty optional executable aliases carry no architecture claim, just
+    % like absent aliases. Only this reporting projection uses NaN; never
+    % insert it into the executable grant or replace producer evidence.
+    if isnumeric(raw) && isempty(raw)
+        value=NaN;
+    else
+        value=double(raw);
+    end
+    assert(isreal(value) && isscalar(value) && ...
+        (isnan(value) || (isfinite(value) && value>=1 && value==fix(value))), ...
+        'sixgr:truth:InvalidFrozenMUMIMOEvidence', ...
+        'Frozen architecture field %s must be a positive integer or NaN.',fieldName);
+    if ~ismember(fieldName,string(T.Properties.VariableNames))
+        T.(fieldName)=nan(n,1);
+    end
+    if isfinite(value)
+        existing=T.(fieldName);
+        assert(isnumeric(existing) && isreal(existing) && ...
+            all(isnan(existing) | existing==value,'all'), ...
+            'sixgr:truth:ConflictingFrozenAntennaEvidence', ...
+            'Frozen %s contradicts existing executed antenna evidence.',fieldName);
+        T.(fieldName)=repmat(value,n,1);
+    end
 end
 
 % Shared-resource execution is part of the immutable grant contract. Keep

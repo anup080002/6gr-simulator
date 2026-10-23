@@ -6,7 +6,8 @@ param(
     [int]$AfterCompletedSlot = 45,
     [double]$ArchiveReserveGiB = 24,
     [double]$RunReserveGiB = 30,
-    [switch]$InspectOnly
+    [switch]$InspectOnly,
+    [switch]$StopAfterNextCheckpoint
 )
 # User-authorized storage safety stop, not a PHY or acceptance override.
 # Only stop the exact selected MATLAB process after a NEW committed checkpoint.
@@ -59,7 +60,7 @@ while ($true) {
         break
     }
     if ($record -and [int]$record.CompletedSlotOneBased -gt $AfterCompletedSlot) {
-        if ($tight) {
+        if ($tight -or $StopAfterNextCheckpoint) {
             $statePath = [IO.Path]::GetFullPath([string]$record.Checkpoint)
             if (-not $statePath.StartsWith($checkpointRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
                 throw 'Checkpoint leaves the selected run checkpoint tree; no stop performed.'
@@ -78,7 +79,9 @@ while ($true) {
                 throw 'Process identity changed during verification; no stop performed.'
             }
             Stop-Process -Id $MatlabProcessId -ErrorAction Stop
-            [pscustomobject]@{Status='stopped_after_verified_checkpoint_storage_reserve';
+            $stopReason = 'stopped_after_verified_checkpoint_storage_reserve'
+            if ($StopAfterNextCheckpoint) { $stopReason = 'stopped_after_verified_checkpoint_requested_repair' }
+            [pscustomobject]@{Status=$stopReason;
                 ProcessId=$MatlabProcessId; CompletedSlot=$receipt.CompletedSlotOneBased;
                 NextSlot=$receipt.NextSlotOneBased; Checkpoint=$statePath;
                 StateSHA256=$receipt.StateSHA256; RunFreeGiB=$runFree/1GB;

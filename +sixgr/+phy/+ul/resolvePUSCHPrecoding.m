@@ -19,18 +19,25 @@ normalizationConvention = localResolveNormalizationConvention(cfg);
 nLayers = localPositiveInteger(localObjectValue(pusch, "NumLayers", 1), "NumLayers");
 arch = sixgr.rf.AntennaArrayFactory.resolvePortArchitecture(cfg, "ue", ...
     "Signal", "PUSCH", "MinimumPorts", max(1, nLayers));
-transformPrecoding = logical(localObjectValue(pusch, "TransformPrecoding", false));
+transformPrecoding = localObjectValue(pusch, "TransformPrecoding", false);
+if ~((islogical(transformPrecoding) || isnumeric(transformPrecoding)) && ...
+        isreal(transformPrecoding) && isscalar(transformPrecoding) && ...
+        isfinite(transformPrecoding) && any(transformPrecoding == [0 1]))
+    error("sixgr:phy:ul:PUSCHPrecoding:BadTransformPrecoding", ...
+        "TransformPrecoding must be an explicit scalar boolean.");
+end
+transformPrecoding = logical(transformPrecoding);
 scheme = string(localObjectValue(pusch, "TransmissionScheme", "nonCodebook"));
 isCodebook = strcmpi(char(scheme), "codebook");
 
-nPorts = double(localObjectValue(pusch, "NumAntennaPorts", NaN));
-if ~(isscalar(nPorts) && isfinite(nPorts) && nPorts >= 1)
+nPorts = localObjectValue(pusch, "NumAntennaPorts", []);
+if isempty(nPorts)
     nPorts = localResolvePUSCHConfiguredPorts(cfg);
 end
-if ~(isscalar(nPorts) && isfinite(nPorts) && nPorts >= 1)
+if isempty(nPorts)
     nPorts = double(arch.NumPorts);
 end
-nPorts = max(1, round(double(nPorts)));
+nPorts = localPositiveInteger(nPorts, "NumAntennaPorts");
 
 tpmi = NaN;
 receivedDCI=sixgr.util.structGet(cfg,'phy.pusch.receivedDCIAssignment',struct());
@@ -39,7 +46,7 @@ assert(~hasReceivedDCI || isCodebook, ...
     'sixgr:phy:ul:ReceivedPrecodingMismatch', ...
     'A received codebook command cannot authorize non-codebook transmission.');
 if isCodebook
-    tpmi = double(localObjectValue(pusch, "TPMI", NaN));
+    tpmi = localObjectValue(pusch, "TPMI", NaN);
     srsDecision = opt.SRSDecision;
     if isempty(srsDecision)
         srsDecision = sixgr.util.structGet(cfg,"phy.pusch.srsDecision",[]);
@@ -77,6 +84,8 @@ prec.WidebandOnly = true;
 prec.PMI = NaN;
 prec.PMIType = "";
 prec.CodebookMode = "";
+prec.EffectiveCodebookType = "";
+prec.CodebookTypeApplicable = false;
 prec.CodebookStatus = "";
 prec.CodebookCatalogSource = "";
 prec.CodebookCatalogValidTPMISet = [];
@@ -214,23 +223,26 @@ else
     prec.Source = "ul_pusch_native_codebook_tpmi";
     prec.ApplicationStage = "nrPUSCH_native_codebook_precoding_during_modulation";
 end
-prec.PMI = double(round(tpmi));
+prec.PMI = double(tpmi);
 prec.PMIType = "pusch_codebook";
 prec.CodebookMode = string(localObjectValue(pusch, "CodebookType", ...
     sixgr.util.structGet(cfg, "phy.pusch.codebookType", "")));
-if strlength(strtrim(prec.CodebookMode)) == 0
+if ~isscalar(prec.CodebookMode) || ismissing(prec.CodebookMode) || ...
+        strlength(strtrim(prec.CodebookMode)) == 0
     error("sixgr:phy:ul:PUSCHPrecoding:MissingCodebookType", ...
         "Codebook PUSCH requires an explicit resolved nrPUSCHConfig.CodebookType.");
 end
 prec.BeamformingApplied = true;
 prec.NativeCodebookApplied = true;
-catalog = sixgr.phy.ul.puschCodebookCatalog(nLayers, nPorts, transformPrecoding);
+catalog = sixgr.phy.ul.puschCodebookCatalog(nLayers, nPorts, transformPrecoding, prec.CodebookMode);
+prec.EffectiveCodebookType = catalog.EffectiveCodebookType;
+prec.CodebookTypeApplicable = catalog.CodebookTypeApplicable;
 prec.CodebookCatalogSource = string(catalog.Source);
 prec.CodebookCatalogValidTPMISet = double(catalog.ValidTPMISet);
 prec.CodebookCatalogNumCandidates = double(catalog.NumTPMICandidates);
 try
     [Wports, codebookStatus, Wtx, Winv] = sixgr.phy.ul.puschCodebookProjectionMatrix( ...
-        nLayers, nPorts, tpmi, transformPrecoding);
+        nLayers, nPorts, tpmi, transformPrecoding, prec.CodebookMode);
 catch ME
     error("sixgr:phy:ul:PUSCHPrecoding:UnsupportedCodebook", ...
         "Invalid PUSCH codebook configuration: %s", ME.message);
@@ -308,12 +320,12 @@ prec.SRI = double(sixgr.util.structGet(decision,"SRI",NaN));
 end
 
 function nPorts = localResolvePUSCHConfiguredPorts(cfg)
-nPorts = NaN;
+nPorts = [];
 paths = ["phy.pusch.NumAntennaPorts", "phy.pusch.numAntennaPorts", "phy.pusch.numPorts", "phy.pusch.nPorts"];
 for i = 1:numel(paths)
     value = sixgr.util.structGet(cfg, paths(i), []);
-    if isnumeric(value) && isscalar(value) && isfinite(double(value)) && double(value) >= 1
-        nPorts = max(1, round(double(value)));
+    if ~isempty(value)
+        nPorts = localPositiveInteger(value, paths(i));
         return;
     end
 end
@@ -407,7 +419,8 @@ prec.TotalPowerPreservingTrace = logical(isfinite(traceWWH) && abs(traceWWH - tr
 prec.TotalPowerPreservingNormalizedTrace = logical(isfinite(normalizedTrace) && abs(normalizedTrace - traceTarget) <= 1e-12 * max(1, traceTarget));
 end
 function localValidateCodebookInputs(nLayers, nPorts, tpmi)
-if ~(isscalar(tpmi) && isfinite(tpmi) && tpmi >= 0 && abs(tpmi - round(tpmi)) < 1e-9)
+if ~(isnumeric(tpmi) && isreal(tpmi) && isscalar(tpmi) && isfinite(tpmi) && ...
+        tpmi >= 0 && tpmi == fix(tpmi))
     error("sixgr:phy:ul:PUSCHPrecoding:BadTPMI", ...
         "PUSCH codebook TransmissionScheme requires a finite non-negative integer TPMI.");
 end
@@ -417,19 +430,19 @@ if nPorts < nLayers
         round(double(nPorts)), round(double(nLayers)));
 end
 allowedPorts = [1 2 4 8];
-if ~any(round(double(nPorts)) == allowedPorts)
+if ~any(double(nPorts) == allowedPorts)
     error("sixgr:phy:ul:PUSCHPrecoding:BadNumAntennaPorts", ...
         "PUSCH codebook NumAntennaPorts must be one of [1 2 4 8]. Got %d.", round(double(nPorts)));
 end
 end
 
 function value = localPositiveInteger(raw, name)
-value = double(raw);
-if ~(isscalar(value) && isfinite(value) && value >= 1 && abs(value - round(value)) < 1e-9)
+if ~(isnumeric(raw) && isreal(raw) && isscalar(raw) && isfinite(raw) && ...
+        raw >= 1 && raw == fix(raw))
     error("sixgr:phy:ul:PUSCHPrecoding:BadInteger", ...
         "%s must be a positive integer scalar.", char(string(name)));
 end
-value = round(value);
+value = double(raw);
 end
 
 function W = localRectIdentity(nPorts, nLayers, normalizationConvention)

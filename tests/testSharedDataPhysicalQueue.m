@@ -6,8 +6,15 @@ setup6GRSimToolkit('Verbose',false);
 % Data contexts retain the frozen Job; unlike PDCCH contexts they have no
 % top-level SNR field. This exact distinction caused a slot-31 runtime crash.
 source=string(fileread(which('sixgr.truth.runWaveformLinkBundle')));
-section=extractBetween(source,'function state=localCompleteSharedDataPlan(state,item)', ...
+delegate=extractBetween(source,'function state=localCompleteSharedDataPlan(state,item)', ...
     'function [state,dl,ul,dc,uc,ds,us]=localDrainSharedDataPlans');
+assert(isscalar(delegate) && contains(delegate, ...
+    'sixgr.truth.SharedDataCompletionRuntime.complete(state,item,@localAppendRuntimeLog)') && ...
+    ~contains(delegate,'executeGrantPHYJob('), ...
+    'The runner must delegate once, without retaining a second completion implementation.');
+source=string(fileread(which('sixgr.truth.SharedDataCompletionRuntime')));
+section=extractBetween(source,'function state=complete(state,item,logSink)', ...
+    'function [state,dl,ul,dc,uc,ds,us]=drain');
 compact=regexprep(section,'\.\.\.[^\r\n]*|\s+','');
 assert(isscalar(compact) && contains(compact, ...
     'bindSharedDataNoiseEvidence(item.Planes,p,c.DesiredReferencePlane,replay,job.SNR_dB)'), ...
@@ -58,7 +65,11 @@ grant.ControlDecodeOk=false; grant.PDCCHGrantBindingOk=false;
 grant.HARQ=allocated.HARQ;
 [state,context]=sixgr.truth.CoupledTruthRuntime.buildTrialContextFromGrant(state,dl,1,'DL',grant);
 context.PrepareOnly=true;
-job=sixgr.truth.buildGrantPHYJob(dl,'DL',cfg.channel.snr_dB,1,[],context);
+% Exercise the same exact TBS/HARQ/precoder preparation owner as the runner,
+% not a reduced test-only build-job path. This remains a declared MAC grant.
+dlUnprepared=dl;
+dl=sixgr.truth.bindPreparedDataPopulation(dl,state,context.GrantSnapshot,1,'DL',cfg.channel.snr_dB);
+job=sixgr.truth.GrantPreparation.buildJob(dl,'DL',cfg.channel.snr_dB,1,[],context);
 job.StartSlotIndex=1;
 result=sixgr.truth.executeGrantPHYJob(job);
 p=result.Result.PreparedTransmission;
@@ -74,7 +85,7 @@ end
 localReject(@()owner.queueData(1,p,struct()),'sixgr:truth:DuplicatePendingData');
 % A second same-UE grant can be enqueued before the first RX tail ends.
 % Preserve the exact new slot/grant identity, not a duplicated TB record.
-dl2=sixgr.phy.grid.applyRuntimeCarrierTimeline(dl,2);
+dl2=sixgr.phy.grid.applyRuntimeCarrierTimeline(dlUnprepared,2);
 dl2=sixgr.util.structSet(dl2,'lls6g.userContext.RuntimeSlotStartTime_s',p.EndSampleExclusive/p.SampleRateHz);
 g2=sixgr.link.resolveWaveformGrant(dl2,'DL',1,'Slot',2,'SFN',0,'ControlAbsoluteSlot',1);
 allocated2=state.DLHarq.allocate(g2.RNTI,2,g2.TBSBits/8,'NewData',true);
@@ -84,7 +95,8 @@ g2.ControlDecodeOk=false; g2.PDCCHGrantBindingOk=false;
 g2.HARQ=allocated2.HARQ;
 [state,context2]=sixgr.truth.CoupledTruthRuntime.buildTrialContextFromGrant(state,dl2,1,'DL',g2);
 context2.PrepareOnly=true;
-j2=sixgr.truth.buildGrantPHYJob(dl2,'DL',cfg.channel.snr_dB,1,[],context2);
+dl2=sixgr.truth.bindPreparedDataPopulation(dl2,state,context2.GrantSnapshot,1,'DL',cfg.channel.snr_dB);
+j2=sixgr.truth.GrantPreparation.buildJob(dl2,'DL',cfg.channel.snr_dB,1,[],context2);
 j2.StartSlotIndex=2;
 r2=sixgr.truth.executeGrantPHYJob(j2); p2=r2.Result.PreparedTransmission;
 owner.queueData(1,p2,struct('Purpose',"adjacent_grant_receive_tail_overlap",'Job',j2));

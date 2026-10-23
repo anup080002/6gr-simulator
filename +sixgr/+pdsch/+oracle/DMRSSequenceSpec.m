@@ -28,6 +28,19 @@ classdef DMRSSequenceSpec
             ports = localVector(request.DMRSPortSet, 0, 23, "DMRSPortSet");
             symbols = localVector(request.DMRSSymbols, 0, 13, "DMRSSymbols");
             prbs = localVector(request.PRBSet, 0, inf, "PRBSet");
+            % Grid indexing and sequence indexing have different origins.
+            % An omitted offset retains the original reference-aligned
+            % component API; the canonical producer always supplies it.
+            referenceOffset = 0;
+            if isfield(request,"ReferenceRBOffset")
+                referenceOffset = localInteger(request.ReferenceRBOffset, ...
+                    -inf,inf,"ReferenceRBOffset");
+            end
+            sequencePRBs = prbs + referenceOffset;
+            if any(sequencePRBs < 0)
+                error("sixgr:pdsch:oracle:InvalidDMRSSequenceField", ...
+                    "Allocated PRBs precede the DM-RS sequence reference point.");
+            end
             nid = localInteger(request.NIDNSCID, 0, 65535, "NIDNSCID");
             nscid = localInteger(request.NSCID, 0, 1, "NSCID");
             slot = localInteger(request.SlotNumber, 0, inf, "SlotNumber");
@@ -48,9 +61,9 @@ classdef DMRSSequenceSpec
                 rePerPRB = 4;
             end
             rePerSymbol = rePerPRB * numel(prbs);
-            fullSequenceRE = rePerPRB * (max(prbs) + 1);
+            fullSequenceRE = rePerPRB * (max(sequencePRBs) + 1);
             selectedRE = reshape(( ...
-                prbs(:) .* rePerPRB + (1:rePerPRB)).', 1, []);
+                sequencePRBs(:) .* rePerPRB + (1:rePerPRB)).', 1, []);
             sequence = complex(zeros(rePerSymbol * numel(symbols), ...
                 numel(ports)));
             cInit = zeros(numel(symbols), 1);
@@ -73,7 +86,7 @@ classdef DMRSSequenceSpec
                     % coordinate.  Do not compact gaps in a sparse PRBSet:
                     % enhanced type-1 four-chip covers otherwise acquire
                     % the wrong phase after a missing PRB.
-                    sequenceRE = reshape((prbs(:) .* rePerPRB ...
+                    sequenceRE = reshape((sequencePRBs(:) .* rePerPRB ...
                         + (0:(rePerPRB-1))).',[],1);
                     frequencyWeights = wf( ...
                         mod(sequenceRE,numel(wf))+1).';
@@ -92,6 +105,8 @@ classdef DMRSSequenceSpec
                 "SequenceInitPerSymbol", double(cInit), ...
                 "DMRSSymbols", double(symbols(:).'), ...
                 "DMRSPortSet", double(ports(:).'), ...
+                "ReferenceRBOffset",referenceOffset, ...
+                "PRBSetReferenceRelative",sequencePRBs, ...
                 "REPerPRBPerSymbol", double(rePerPRB), ...
                 "REPerSymbolPerPort", double(rePerSymbol), ...
                 "IndexBase", "zero_based", ...

@@ -50,7 +50,11 @@ assert(contains(code,'sixgr.truth.describeNoiseOperatingPoint(executedNoiseMode)
 assert(~contains(code,'localResolveCoupledRuntimeLinkSNR') && ...
     ~contains(code,'localEstimateCoupledRuntimeLargeScaleSINR'));
 assert(numel(strfind(code,'sixgr.truth.resolveWaveformOperatingPointMetadata('))==8);
-assert(contains(code,'sixgr.truth.resolveDeliveredLinkQuality(tempState, ueIdx, direction)'));
+preparation=fileread(which('sixgr.truth.GrantPreparation'));
+assert(contains(preparation,'sixgr.truth.resolveDeliveredLinkQuality(tempState, ueIdx, direction)'));
+assert(contains(code,'sixgr.truth.GrantPreparation.prepareCoupledGrantBatch(') && ...
+    contains(code,'sixgr.truth.queueSharedDataPlans(') && ...
+    ~contains(code,'function batch = localPrepareCoupledGrantBatch'));
 % Physical noise variance remains independent of the nominal label in both
 % duplex profiles. This invokes the actual power/noise ledger and resolver.
 for mode=["TDD","FDD"]

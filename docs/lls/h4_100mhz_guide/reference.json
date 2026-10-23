@@ -1,12 +1,12 @@
 {
   "scope": "configuration_snapshot_not_simulation_result",
   "scenario": "simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_adaptation.yaml",
-  "created": "2026-10-20 14:36:52",
+  "created": "2026-10-22 14:04:32",
   "matlab": "26.1.0.3312084 (R2026a) Update 4",
   "sources": [
     {
       "path": "simulator/configs/defaults/top_level_required_sections_01.yaml",
-      "sha256": "b7b50ffee741085859882ed0257920d1e3c785cf8a835f2b5793cab35388ede2"
+      "sha256": "7d040f889c0ac874f043b3a841c348459897262eb7fe72d88148d4699b74314d"
     },
     {
       "path": "simulator/configs/defaults/top_level_required_sections_02.yaml",
@@ -26,7 +26,7 @@
     },
     {
       "path": "simulator/configs/defaults/global.yaml",
-      "sha256": "3fe845abd1ab3c5da2eaaf64ef8528bc32347e15b52ae8b64e5888977bb3fe84"
+      "sha256": "d1da0e249791f39ba5ad72fcbc9e945dd369e27857a83a49b8dc07bd4c383c92"
     },
     {
       "path": "simulator/configs/defaults/logging.yaml",
@@ -106,15 +106,19 @@
     },
     {
       "path": "simulator/configs/mimo/ran1_h4_64txru_4rx.yaml",
-      "sha256": "9011e2c391661e568990d60cf26ff4ac929b68d9b231db7152b9f1241c765450"
+      "sha256": "ba09d0c4e3abb3f9e2f27516ca75b3b23d005bc593b443567c060e02f882cb25"
     },
     {
       "path": "simulator/configs/control/pdcch_joint_tdd_admission.yaml",
       "sha256": "28b8b06cb5bdd197e72400f93f3fb72c97c02802ff6ea5af97e0ea860ad655b9"
     },
     {
+      "path": "simulator/configs/energy/always_awake_baseline.yaml",
+      "sha256": "4fdb9367cc832ae173302b4b0ba5d569c66818b62fa330c3a1e74037a5898f68"
+    },
+    {
       "path": "simulator/configs/scenarios/h4_100_common_connected.yaml",
-      "sha256": "3976f678d3de46778602ca7cca7359578292eb03bd5ae61f40377deb29f4a053"
+      "sha256": "73506d4ce58d3f7b258971cf039a830f73c5617c2d7c64f20497b3f16931671e"
     },
     {
       "path": "simulator/configs/channels/ran1_4ghz_f2_cdlc100.yaml",
@@ -138,7 +142,7 @@
     },
     {
       "path": "simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_adaptation.yaml",
-      "sha256": "e078bd572ff9b1e76b668a153197c1433397690f9884c0f60ab48e37f479ec70"
+      "sha256": "c8ebb43a4fd70d1e56ea4c1bff783aa1d7dd179aefc6b54f348314718585184f"
     }
   ],
   "resolved": {
@@ -181,6 +185,7 @@
       "seed": 2.0260927E+7,
       "deterministic_mode": true,
       "runtime_checkpoint_enable": true,
+      "checkpoint_first_slot": 49,
       "runtime_checkpoint_keep": 3,
       "runtime_checkpoint_resume_from": "",
       "runtime_checkpoint_repair_reason": "",
@@ -227,7 +232,7 @@
       "total_slots": 100,
       "warmup_slots": 0,
       "measurement_slots": 100,
-      "checkpoint_every_slots": 1,
+      "checkpoint_every_slots": 3,
       "time_profiling_enable": false
     },
     "config_inheritance": {
@@ -259,6 +264,7 @@
         "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\simulator\\configs\\bands\\h4_100_4ghz_tdd.yaml",
         "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\simulator\\configs\\mimo\\ran1_h4_64txru_4rx.yaml",
         "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\simulator\\configs\\control\\pdcch_joint_tdd_admission.yaml",
+        "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\simulator\\configs\\energy\\always_awake_baseline.yaml",
         "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\simulator\\configs\\scenarios\\h4_100_common_connected.yaml",
         "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\simulator\\configs\\channels\\ran1_4ghz_f2_cdlc100.yaml",
         "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\simulator\\configs\\scenarios\\h4_100_cdlc100_connected_adaptive.yaml",
@@ -298,6 +304,7 @@
           "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\simulator\\configs\\bands\\h4_100_4ghz_tdd.yaml",
           "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\simulator\\configs\\mimo\\ran1_h4_64txru_4rx.yaml",
           "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\simulator\\configs\\control\\pdcch_joint_tdd_admission.yaml",
+          "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\simulator\\configs\\energy\\always_awake_baseline.yaml",
           "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\simulator\\configs\\scenarios\\h4_100_common_connected.yaml",
           "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\simulator\\configs\\channels\\ran1_4ghz_f2_cdlc100.yaml",
           "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\simulator\\configs\\scenarios\\h4_100_cdlc100_connected_adaptive.yaml",
@@ -583,7 +590,11 @@
       "bs_array_rows": 4,
       "bs_array_columns": 4,
       "ue_array_rows": 1,
-      "ue_array_columns": 2
+      "ue_array_columns": 2,
+      "bs_panel_center_spacing_horizontal_lambda": 2.5,
+      "bs_panel_center_spacing_vertical_lambda": 2.5,
+      "ue_panel_center_spacing_horizontal_lambda": 1.5,
+      "ue_panel_center_spacing_vertical_lambda": 1
     },
     "power_and_rf_frontend": {
       "bs_tx_power_dbm": 30,
@@ -6507,6 +6518,7 @@
       "rf_chain_count": 2,
       "bs_static_power_w": 200,
       "bs_per_rf_chain_power_w": 10,
+      "bs_rf_chain_idle_power_fraction": 0.2,
       "bs_sleep_power_w": 20,
       "bs_pa_efficiency": 0.35,
       "ue_idle_power_w": 1,
@@ -6517,7 +6529,7 @@
       "ue_tx_power_dbm": 23,
       "bs_rf_chain_count": 2,
       "ue_rf_chain_count": 2,
-      "sleep_state_model": "micro_sleep",
+      "sleep_state_model": "none",
       "duty_cycle_logging": true,
       "energy_per_bit_reporting": true,
       "ai_compute_energy_per_flop_score": 1E-6,
@@ -6528,10 +6540,12 @@
       "blind_decode_reduction_enabled": false,
       "cross_slot_scheduling_enabled": false,
       "active_sleep_tracking_enabled": false,
-      "race_to_sleep_enabled": true,
+      "race_to_sleep_enabled": false,
       "per_block_processing_energy_enabled": true,
       "rf_chain_energy_enabled": true,
       "wideband_narrowband_tradeoff_enabled": false,
+      "operating_state_policy": "always_awake",
+      "rf_inventory_source": "declared_endpoint_inventory",
       "enable": true
     },
     "kpis": {
@@ -8931,5 +8945,5 @@
     "SlotsPerFrame": 20
   },
   "source_root": "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main",
-  "scenario_hash": "3573d4428fc7f1bab53e8f0e62f9bc30c57e9829ed5f9d3005a7b28d40a0629d"
+  "scenario_hash": "2224ac25982878a6661b3448ef2adba2404967c05ecd59bd67344e9640bfce61"
 }

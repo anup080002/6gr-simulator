@@ -26,8 +26,14 @@ stream.Events.enqueue('gnb_1','ofdm_fixture',sixgr.phy.waveform.WaveformChunk(x,
 stream.Events.commitTransmissionsThrough('gnb_1',2*stop);
 stream.Events.commitTransmissionsThrough('ue_1',2*stop);
 stream.Events.observe('ue_1_rx:post_rf','across_checkpoint',0,2*stop);
-stream.Events.advanceUntilEvent(stop);
+stream.Events.observe('ue_1_rx:post_rf','completed_before_checkpoint',0,stop);
+prefix=stream.Events.advanceUntilEvent(stop);
 assert(stream.Events.NextSampleIndex==stop);
+completedObservation=prefix.Completed.Observation;
+completedSamples=completedObservation.readComplete();
+completedHash=completedObservation.sampleHash();
+completedObservation.archiveCompleted(root);
+state.TestArchivedObservation=completedObservation;
 rec=sixgr.truth.RuntimeTxIQStreamRecorder(root,cfg,fs);
 nodes=struct('ID',"gnb_1",'Direction',"DL",'NumPorts',nt);
 wave=x(1:16,:); replay=struct('Replay',struct( ...
@@ -67,6 +73,14 @@ ledgerCleanup=onCleanup(@()sixgr.runtime.RuntimeCallLedger.reset()); %#ok<NASGU>
 sixgr.runtime.RuntimeCallLedger.record(mfilename,'CHECKPOINT_TEST','DL',struct('Phase','before_save'));
 ledgerPrefix=sixgr.runtime.RuntimeCallLedger.snapshot();
 payload=struct('RuntimeState',state,'CompletedSlot',1,'RNG',rng,'ConfigHash',s.ConfigHash);
+% Same immutable resolved-config contract as the production runner. This
+% exercises saved-configuration requests with real native CDL/RF/HARQ state.
+metaFolder=fullfile(root,'meta'); if ~isfolder(metaFolder), mkdir(metaFolder); end
+resolvedFile=fullfile(metaFolder,'scenario_config_resolved.json');
+sixgr.util.jsonWrite(resolvedFile,s.toStruct());
+sixgr.util.jsonWrite(fullfile(metaFolder,'scenario_config_identity.json'), ...
+    struct('SchemaVersion','sixgr_resolved_config_identity/v1','ScenarioID',s.ScenarioID, ...
+    'ConfigHash',s.ConfigHash,'ResolvedJSONSHA256',sixgr.util.sha256File(resolvedFile)));
 path=sixgr.runtime.SlotCheckpoint.write(root,payload,s.toStruct(),source);
 sixgr.runtime.RuntimeCallLedger.record(mfilename,'CHECKPOINT_TEST','DL',struct('Phase','after_save'));
 sixgr.runtime.RuntimeCallLedger.flush();
@@ -84,6 +98,9 @@ assert(isscalar(archived) && strlength(string(archived.Snapshot))==0 && ...
     'Immutable receive-only archives need a verified dependency, not another full copy at every checkpoint.');
 assert(~receipt.SourceChanged && ~receipt.PrimaryStudyEligible);
 rs=restored.RuntimeState.SharedWaveformStream;
+assert(isequaln(restored.RuntimeState.TestArchivedObservation.readComplete(),completedSamples) && ...
+    restored.RuntimeState.TestArchivedObservation.sampleHash()==completedHash, ...
+    'Completed archived samples must restore exactly beside the live pending RX/channel state.');
 assert(rs.Events.ProcessorState==rs.Physical, ...
     'Restoring must preserve shared object identity, not make a second channel owner.');
 actual=rs.Events.advanceUntilEvent(2*stop);
@@ -101,7 +118,28 @@ requested=s.toStruct();
 requested.output.live_csv_png_interval_slots=5;
 requested.output.execution_stage_profile_enabled=true;
 requested.run_control.checkpoint_every_slots=1;
-[restoredRoot,lineage]=sixgr.runtime.SlotCheckpoint.prepareResume(path,requested,"",true);
+requestPath=fullfile(fileparts(path),'physical_continuation_request.yaml');
+sixgr.util.jsonWrite(requestPath,struct('checkpoint_continuation',struct( ...
+    'contract','sixgr_checkpoint_continuation/v1','checkpoint',path, ...
+    'state_sha256',receipt.StateSHA256,'config_hash',s.ConfigHash, ...
+    'repair_reason','same-source native CDL RF HARQ continuation qualification', ...
+    'operational_settings',sixgr.runtime.SlotCheckpoint.operationalSettings(requested))));
+savedRequest=sixgr.runtime.CheckpointContinuationRequest.fromFile(requestPath);
+[restoredRoot,lineage,lease]=sixgr.runtime.SlotCheckpoint.prepareResume(path,savedRequest,savedRequest.RepairReason,true);
+[handoff,handoffLineage]=lease.take(path,requested,savedRequest.RepairReason);
+assert(handoffLineage.ResumePreparationTiming.HandoffNativeDeserializations==0);
+hs=handoff.RuntimeState.SharedWaveformStream;
+assert(hs.Events.ProcessorState==hs.Physical, ...
+    'Prepared handoff must preserve one native CDL/RF owner.');
+continued=hs.Events.advanceUntilEvent(2*stop);
+assert(isequaln(continued.Completed.Observation.readComplete(), ...
+    expected.Completed.Observation.readComplete()), ...
+    'Single-load handoff must preserve exact channel/RF/noise/pending-window samples.');
+[handoffTB,handoffCRC]=handoff.RuntimeState.TestDecoder( ...
+    20*(1-2*double(retry)),'QPSK',1,2,0);
+assert(isequal(handoffTB,expectedTB) && isequal(handoffCRC,expectedCRC), ...
+    'Single-load handoff must preserve actual failed-attempt LDPC/HARQ state.');
+localReject(@()lease.take(path,requested,""),'sixgr:checkpoint:ResumeLeaseConsumed');
 assert(isequaln(lineage.CanonicalScenario,s.toStruct()), ...
     'Original scientific/config identity must remain intact.');
 resumedCfg=sixgr.runtime.SlotCheckpoint.applyOperationalSettings(cfg,lineage.RequestedOperationalSettings);
@@ -148,6 +186,8 @@ sixgr.util.jsonWrite(fullfile(root,'test_receipt.json'),struct('Ok',true, ...
     'NativeCDL_RF_ContinuationExact',true,'PendingWindowExact',true, ...
     'FailedAttemptPreserved',true,'IQAppendAfterRollback',sealed.Ok, ...
     'NativeLDPC_HARQ_RetryExact',true, ...
+    'SingleOwnerHandoffCDL_RF_HARQExact',true, ...
+    'SavedConfigurationRequestNativeContinuationExact',true, ...
     'ScientificScenarioChangeRejected',true,'CorruptedPrefixRejected',true, ...
     'EvidenceScope','focused_checkpoint_mechanics_not_full_scenario_acceptance'));
 disp('SLOT_CHECKPOINT_PASS'); ok=true;

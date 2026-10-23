@@ -50,6 +50,9 @@ out.NMSEReferenceSource = "";
 out.NMSEReferenceAGCGain_dB = NaN;
 out.TrueChannelOracleAvailable = false;
 out.TrueChannelNMSE_dB = NaN;
+referenceDefaults=sixgr.link.srsReferenceEvidence();
+for field=string(fieldnames(referenceDefaults)).', out.(field)=referenceDefaults.(field); end
+out.ChannelNMSEScoring=struct('Available',false);
 out.ChannelNMSEThreshold_dB = NaN;
 out.InterpolationLoss_dB = NaN;
 out.MismatchSensitivity_dB = NaN;
@@ -94,10 +97,8 @@ out.ServingRxPower_dBm = NaN;
 out.ServingRxPowerSource = "";
 out.PowerContextDirection = "";
 out.PowerContextTotalTxPower_dBm = NaN;
-out.SRSPowerControlAppliedPower_dBm = NaN;
-out.SRSPowerControlRequestedPower_dBm = NaN;
-out.SRSPowerControlPathlossSource = "";
-out.SRSPowerControlClipped = false;
+powerFields=sixgr.link.srsPowerControlEvidence();
+for field=string(fieldnames(powerFields)).', out.(field)=powerFields.(field); end
 out.TxRFExecutionStatus = "";
 out.TxRFStageOrder = "";
 out.TxRFAppliedStageCount = NaN;
@@ -191,6 +192,10 @@ out.SRSInterPortLeakageSource = "";
 out.SRSRSRPPerReceiveAntenna_dB_re_UnitOccupiedRE_Es = [];
 out.SRSRSRPSource = "";
 out.SRSRSRPStatus = "not_available";
+absoluteSRS=sixgr.phy.srs.measureSRSAntennaPower();
+for field=string(fieldnames(absoluteSRS)).', out.(field)=absoluteSRS.(field); end
+powerReference=sixgr.truth.scoreSharedSRSAntennaPower();
+for field=string(fieldnames(powerReference)).', out.(field)=powerReference.(field); end
 out.SpatialSignatureToken = "";
 out.SpatialSignatureSHA256 = "";
 out.SpatialSignatureRows = NaN;
@@ -308,14 +313,9 @@ try
     out.ServingRxPowerSource = char(string(sixgr.util.structGet(replay, "ServingRxPowerSource", "")));
     out.PowerContextDirection = char(string(sixgr.util.structGet(replay, "PowerContextDirection", "")));
     out.PowerContextTotalTxPower_dBm = double(sixgr.util.structGet(replay, "PowerContextTotalTxPower_dBm", NaN));
-    out.SRSPowerControlAppliedPower_dBm = double(sixgr.util.structGet( ...
-        replay,"SRSPowerControl.AppliedPower_dBm",NaN));
-    out.SRSPowerControlRequestedPower_dBm = double(sixgr.util.structGet( ...
-        replay,"SRSPowerControl.RequestedPower_dBm",NaN));
-    out.SRSPowerControlPathlossSource = char(string(sixgr.util.structGet( ...
-        replay,"SRSPowerControl.PathlossSource","")));
-    out.SRSPowerControlClipped = logical(sixgr.util.structGet( ...
-        replay,"SRSPowerControl.Clipped",false));
+    powerFields=sixgr.link.srsPowerControlEvidence( ...
+        sixgr.util.structGet(replay,'SRSPowerControl',struct()));
+    for field=string(fieldnames(powerFields)).', out.(field)=powerFields.(field); end
     out.TxRFExecutionStatus = char(string(sixgr.util.structGet( ...
         replay,"TxRFExecutionStatus","")));
     out.TxRFStageOrder = char(string(sixgr.util.structGet( ...
@@ -367,10 +367,21 @@ try
             noiseVarArgs={"TimingSearchWindowSamples",value};
         end
     end
+    antennaPowerArgs={};
+    if received
+        % This is the complete original pre-front-end observation, not the
+        % desired-link scoring waveform or a gain-corrected digital signal.
+        resource=struct('ResourceID',srsCfg.ResourceId,'ConfigHash',srsCfg.ConfigHash, ...
+            'AbsoluteSlot0',observedSlot0,'NCellID',double(tx.Carrier.NCellID));
+        antennaPowerArgs={'AntennaMeasurementObservation',context.PhysicalMeasurementObservation, ...
+            'AntennaMeasurementEvidence',sixgr.util.structGet(context,'PhysicalMeasurementEvidence',struct()), ...
+            'AntennaMeasurementResource',resource};
+    end
     [rx, rxInfo] = sixgr.phy.ul.SRS_Rx(rxWave, cfgSRS, ...
         "Carrier", tx.Carrier, ...
         "SRS", tx.SRS, ...
         "ReceivedExecutionEvidence", replay, ...
+        antennaPowerArgs{:}, ...
         noiseVarArgs{:}, ...
         "StrictNoiseVarianceRequired", strictNoiseVarianceRequired);
     out.ReceiveTiming=rx.Timing;
@@ -431,6 +442,7 @@ try
         rx,"SRSRSRPPerReceiveAntenna_dBm",[]));
     out.SRSAbsolutePowerStatus = string(sixgr.util.structGet( ...
         rx,"SRSAbsolutePowerStatus","not_available"));
+    for field=string(fieldnames(absoluteSRS)).', out.(field)=rx.(field); end
     out.SRSInterPortLeakageMatrix_dB = double(sixgr.util.structGet( ...
         rx,"SRSInterPortLeakageMatrix_dB",[]));
     out.SRSInterPortLeakageMatrixJSON = string(sixgr.util.structGet( ...
@@ -549,11 +561,16 @@ try
         nmseReferenceSource= ...
             "applied_channel_gain_truth_single_port_pilot_ratio_with_recorded_agc_gain_and_rx_timing";
         sharedScoringAvailable=true;
+        out.ChannelNMSEReferenceAvailable=true;
+        out.ChannelNMSEReferenceStatus="available_explicit_standalone_single_port_reference";
     elseif received && ~isempty(txWaveForReference)
         % Score after the practical receiver from the exact independently
         % retained desired-link IQ.  This executes no channel/RF model and
         % never becomes an estimator input.
-        referenceRxGrid=sixgr.phy.waveform.ofdmDemodulate(tx.Carrier,txWaveForReference);
+        [referenceRxGrid,referenceOFDM]=sixgr.phy.waveform.ofdmDemodulate(tx.Carrier,txWaveForReference);
+        [referenceAuthority,referenceProof]=sixgr.truth.proveSharedSRSChannelReference( ...
+            context,tx.Carrier,tx.SRSIndices,referenceOFDM,scoringClock,rx.Timing,scoringFrequency);
+        for field=string(fieldnames(referenceAuthority)).', out.(field)=referenceAuthority.(field); end
         [referenceGrid,~,referenceEstimatorInfo]=sixgr.phy.rx.channelEstimate( ...
             tx.Carrier,referenceRxGrid,tx.SRSIndices,tx.SRSSymbols, ...
             'UseFastMex',false,'StrictMode',true, ...
@@ -570,8 +587,8 @@ try
         phaseEquivalentScore=sixgr.phy.srs.pilotChannelPhaseEquivalentNMSE( ...
             rx.Hest,referenceGrid,tx.SRSIndices);
         referenceEvidence=struct( ...
-            'Source',"same_executed_desired_link_waveform_SRS_pilot_LS_common_receiver_LO_phase_equivalent", ...
-            'ReferencePlane',"effective_SRS_port_channel_from_actual_tx_RF_channel_loss_before_noise_rx_RF", ...
+            'Source',"composite_desired_link_pilot_LS_diagnostic_not_isolated_SRS", ...
+            'ReferencePlane',"composite_desired_link_before_noise_RX_RF", ...
             'RFImpairmentsIncluded',true,'ReceiverEstimatorInput',false, ...
             'TransmitterRFImpairmentsIncluded',true, ...
             'ReceiverRFImpairmentsIncluded',false, ...
@@ -584,9 +601,9 @@ try
         referenceEvidence.ReceiverCFOIncluded=false;
         if ~isempty(fieldnames(scoringClock))
             referenceEvidence.Source= ...
-                "same_executed_desired_link_waveform_SRS_pilot_LS_recorded_RX_clock_and_CFO_common_receiver_LO_phase_equivalent";
+                "composite_desired_link_pilot_LS_recorded_RX_clock_CFO_diagnostic_not_isolated_SRS";
             referenceEvidence.ReferencePlane= ...
-                "effective_SRS_port_channel_on_recorded_RX_timing_clock_with_executed_RX_CFO_before_noise_and_other_RX_RF";
+                "composite_desired_link_recorded_RX_timing_CFO_before_noise_other_RX_RF";
             referenceEvidence.ReceiverTimingIncluded=true;
             referenceEvidence.RecordedReceiverTimingOffset_samples= ...
                 scoringClock.RecordedReceiverTimingOffset_samples;
@@ -611,7 +628,15 @@ try
         % or an EVM inferred from NMSE/SINR. The reference has already been
         % placed on the executed RX clock. CDM-port overlap is counted once
         % on each physical RX branch; there is no gain or phase fit here.
-        evmEvidence=struct('Source',"same_executed_desired_link_received_pilot_grid", ...
+        out.CompositeDesiredLinkNMSE_dB=phaseEquivalentScore.dB;
+        out.CompositeDesiredLinkRawNMSE_dB=rawScore.dB;
+        out.CompositeDesiredLinkNMSESource=referenceEvidence.Source;
+        referenceEvidence.Isolation=referenceProof;
+        if out.ChannelNMSEReferenceAvailable
+        referenceEvidence.Source="same_executed_isolated_emitted_SRS_pilot_LS_recorded_RX_clock_CFO_common_receiver_LO_phase_equivalent";
+        referenceEvidence.ReferencePlane="isolated_emitted_SRS_effective_port_response_on_recorded_RX_clock_CFO_before_noise_other_RX_RF";
+        evmEvidence=struct('Source',"same_executed_isolated_emitted_SRS_received_pilot_grid", ...
+            'IsolatedComponentProved',true, ...
             'ReferencePlane',referenceEvidence.ReferencePlane, ...
             'ReceiverEstimatorInput',false,'GainOrPhaseFitted',false, ...
             'AdditionalChannelExecutions',0,'AdditionalRFExecutions',0);
@@ -631,6 +656,13 @@ try
         nmse=out.ChannelNMSEScoring.Linear;
         nmseReferenceSource=referenceEvidence.Source;
         sharedScoringAvailable=true;
+        else
+            % Preserve composite diagnostics separately. They cannot qualify
+            % SRS NMSE, EVM pairs, truth availability, or receiver acceptance.
+            nmse=NaN; nmseReferenceSource="unavailable_isolated_SRS_reference";
+            out.PreRXClockChannelNMSE_dB=NaN;
+            out.ChannelNMSEReferenceEvidence=referenceEvidence;
+        end
     elseif received && isfield(context,'ScoringChannelReferences') && ...
             ~isempty(context.ScoringChannelReferences)
         % Independent scoring happens AFTER the practical receiver. These
@@ -647,20 +679,19 @@ try
         referenceEvidence.ComparisonPhaseAligned=true;
         referenceEvidence.PhaseEquivalenceScope= ...
             phaseEquivalentScore.PhaseEquivalenceScope;
-        out.RawChannelNMSEScoring=rawScore;
-        out.RawChannelNMSE_dB=rawScore.dB;
-        out.ChannelNMSEScoring=phaseEquivalentScore;
-        out.ChannelNMSEPhaseAligned=true;
-        out.ChannelNMSECommonPhaseRotation_rad= ...
-            phaseEquivalentScore.CommonPhaseRotation_rad;
-        out.ChannelNMSEQualificationMode= ...
-            "common_receiver_LO_phase_equivalent_no_gain_fit";
+        % The nominal linear tensor is not the isolated emitted nonlinear
+        % SRS signal. Keep it diagnostic, not a substitute authority.
+        out.CompositeDesiredLinkRawNMSE_dB=rawScore.dB;
+        out.CompositeDesiredLinkNMSE_dB=phaseEquivalentScore.dB;
+        out.CompositeDesiredLinkNMSESource="nominal_linear_channel_tensor_pilot_diagnostic";
         out.ChannelNMSEReferenceEvidence=referenceEvidence;
-        nmse=out.ChannelNMSEScoring.Linear;
-        nmseReferenceSource=referenceEvidence.Source;
-        % Availability follows the validated executed-channel reference,
-        % not a fading-only label. Identity AWGN retains its own source tag.
-        sharedScoringAvailable=true;
+        nmse=NaN; nmseReferenceSource="unavailable_isolated_emitted_SRS_reference";
+    end
+    if received && ~sharedScoringAvailable
+        nmse=NaN; nmseReferenceSource="unavailable_isolated_SRS_reference";
+    elseif ~received && startsWith(string(nmseReferenceSource),"applied_channel_gain_truth")
+        out.ChannelNMSEReferenceAvailable=true;
+        out.ChannelNMSEReferenceStatus="available_explicit_standalone_execution_reference";
     end
     % Measurement uses the practical per-resource receiver channel, never
     % noiseless scoring references, configured Doppler or antenna averages.
@@ -692,13 +723,17 @@ try
     else
         out.NMSE_dB = 10*log10(nmse);
     end
-    out.TrueChannelNMSE_dB = double(out.NMSE_dB);
+    if out.ChannelNMSEReferenceAvailable
+        out.TrueChannelNMSE_dB = double(out.NMSE_dB);
+    end
     out.NMSEReferenceSource = char(string(nmseReferenceSource));
-    out.TrueChannelOracleAvailable = sharedScoringAvailable || ...
-        startsWith(string(nmseReferenceSource), "applied_channel_gain_truth");
+    out.TrueChannelOracleAvailable = logical(out.ChannelNMSEReferenceAvailable);
     out.ChannelNMSEThreshold_dB = localResolveSRSNMSEThreshold(cfgSRS);
     out.InterpolationLoss_dB = localInterpolationLossNormalized(symIdx, hEst, hTrue);
     out.MismatchSensitivity_dB = localStaticMismatchSensitivity(hTrue);
+    if received && ~out.ChannelNMSEReferenceAvailable
+        out.InterpolationLoss_dB=NaN; out.MismatchSensitivity_dB=NaN;
+    end
     out.QCLAccuracy = NaN; % Channel correlation does not validate QCL/TCI.
     out.ComputeLatency_ms = 1e3 * toc(tStart);
     out.ProcedureDelay_ms = 0;
@@ -1180,9 +1215,40 @@ function [waveform,cfgOut,powerEvidence,txRfReplay] = ...
         localPrepareSRSTransmitter(waveform,cfg,txInfo,tx,applyNodeRF)
 if nargin<5, applyNodeRF=true; end
 cfgOut = cfg;
+standaloneAWGN = lower(strtrim(string(sixgr.util.structGet( ...
+    cfg,"run.noiseOperatingMode","")))) == "standalone_awgn_snr_argument";
+referenceOnly=standaloneAWGN || sixgr.rf.isNormalizedFixedSNRPowerReference(cfg);
 pathloss_dB = localFirstFiniteScalar( ...
     sixgr.util.structGet(cfg,"lls6g.userContext.RuntimeServingPathloss_dB",[]), ...
     sixgr.util.structGet(cfg,"lls6g.userContext.RuntimeServingBasePathloss_dB",[]));
+pathlossSource=string(sixgr.util.structGet(cfg, ...
+    'lls6g.userContext.RuntimeServingPathlossSource',''));
+reference=sixgr.util.structGet(cfg,'lls6g.userContext.RuntimeSRSPowerReference',struct());
+requireMeasured=logical(sixgr.util.structGet(cfg, ...
+    'rf.frontend.ul_power_control.require_measured_reference_rs',false)) && ~referenceOnly;
+if requireMeasured
+    assert(logical(sixgr.util.structGet(reference,'Usable',false)), ...
+        'sixgr:srs:PathlossReferenceMeasurementMissing', ...
+        'SRS needs a causal measurement of its configured pathloss reference: %s.', ...
+        string(sixgr.util.structGet(reference,'Status','no_runtime_reference_context')));
+    configured=sixgr.phy.refsig.resolveConfiguredPathlossReference(cfg,'SRS');
+    assert(configured.Available && ...
+        isequaln(reference.ConfiguredReference,configured) && ...
+        strlength(reference.MeasurementId)>0 && ...
+        reference.AvailableSlot<=reference.ConsumerSlot && ...
+        reference.ProducerSlot<=reference.ConsumerSlot && ...
+        reference.ConsumerSlot-reference.ProducerSlot<=configured.MaximumAgeSlots && ...
+        reference.ConsumerSlot==double(sixgr.util.structGet(cfg, ...
+        'lls6g.userContext.RuntimeCurrentSlot',NaN)), ...
+        'sixgr:srs:PathlossReferenceContextMismatch', ...
+        'The measured SRS reference must match the current resource and causal clock.');
+    pathloss_dB=reference.Pathloss_dB;
+    pathlossSource="measured_reference_rs:"+reference.Source;
+else
+    % Keep legacy model-derived power explicitly model-derived. Never
+    % rewrite its source to imply that a receiver observed a reference RS.
+    pathlossSource="runtime_geometry_model:"+pathlossSource;
+end
 p0_dBm = localFirstFiniteScalar( ...
     sixgr.util.structGet(cfg,"rf.frontend.ul_power_control.srs.p0_dbm",[]), ...
     sixgr.util.structGet(cfg,"rf_frontend.ul_power_control.srs.p0_dbm",[]), ...
@@ -1211,12 +1277,9 @@ occupiedRB = double(sixgr.util.structGet(tx,"SRSOccupiedPRBCount",NaN));
 scsKHz = double(sixgr.util.structGet(cfg,"phy.numerology.scs_kHz",NaN));
 mu = log2(scsKHz/15);
 required = [pathloss_dB p0_dBm alpha deltaTF_dB pcmax_dBm occupiedRB mu];
-standaloneAWGN = lower(strtrim(string(sixgr.util.structGet( ...
-    cfg,"run.noiseOperatingMode","")))) == ...
-    "standalone_awgn_snr_argument";
-strictPowerAvailable = ~standaloneAWGN && ~any(~isfinite(required)) && occupiedRB >= 1 && ...
+strictPowerAvailable = ~referenceOnly && ~any(~isfinite(required)) && occupiedRB >= 1 && ...
     mu >= 0 && mu == round(mu);
-if ~strictPowerAvailable && ~standaloneAWGN
+if ~strictPowerAvailable && ~referenceOnly
     error("sixgr:link:SRS:MissingPowerControlAuthority", ...
         "SRS waveform execution requires YAML/runtime pathloss, P0, alpha, " + ...
         "delta-TF, PCMAX, occupied RB count and numerology for TS 38.213 power control.");
@@ -1235,11 +1298,40 @@ if strictPowerAvailable
     powerState = sixgr.rf.runtime.UplinkPowerControlState(epoch);
     request = struct("Channel","SRS","Mu",mu,"MRB",occupiedRB, ...
         "MeasuredPathloss_dB",pathloss_dB, ...
-        "PathlossSource","runtime_geometry_or_reference_rs_measurement", ...
+        "PathlossSource",pathlossSource, ...
         "P0_dBm",p0_dBm,"Alpha",alpha,"DeltaTF_dB",deltaTF_dB, ...
         "PCMAX_dBm",pcmax_dBm);
-    powerEvidence = sixgr.rf.runtime.SRSPowerController.resolve( ...
-        powerState,request);
+    mode=string(sixgr.util.structGet(cfg,'rf.frontend.ul_power_control.srs.adjustment_state',''));
+    closed=logical(sixgr.util.structGet(cfg,'rf.frontend.ul_power_control.closed_loop_enabled',false));
+    if mode=="same_as_pusch"
+        owner=sixgr.util.structGet(cfg,'phy.srs.receivedPowerControlState',[]);
+        fs=double(txInfo.OFDM.SampleRate);
+        % localBindRuntimeSRSConfig materializes the actual absolute SRS
+        % occasion in NSlot. Use the SAME origin as PreparedUplinkControl-
+        % Transmission, not an optional/stale user-card runtime slot.
+        slot0=double(tx.Carrier.NSlot);
+        first=sixgr.phy.frame.slotStartSample(tx.Carrier,slot0,fs);
+        if isfield(cfg,'SharedULTimingContext')
+            timing=sixgr.link.resolveConnectedULTransmissionTiming(cfg,first/fs,fs,size(waveform,1));
+            first=timing.TransmitStartSample;
+        end
+        boundary=sixgr.link.srsResourceStartSample(tx,first,fs);
+        powerEvidence=sixgr.rf.runtime.SRSPowerController.resolveSharedPUSCH( ...
+            owner,cfg,request,boundary,fs);
+    else
+        assert(~closed && any(mode==["","open_loop_only"]), ...
+            'sixgr:srs:AdjustmentStateNotWired', ...
+            'Closed-loop SRS needs explicit same_as_pusch state; separate SRS requires received DCI 2_3.');
+        powerEvidence = sixgr.rf.runtime.SRSPowerController.resolve(powerState,request);
+        powerEvidence.AdjustmentState="open_loop_only";
+        powerEvidence.StateOwner="explicit_no_closed_loop_srs";
+    end
+    powerEvidence.Request=request;
+    powerEvidence.MeasuredPathloss_dB=pathloss_dB;
+    powerEvidence.PCMAX_dBm=pcmax_dBm;
+    powerEvidence.MRB=occupiedRB;
+    powerEvidence.Mu=mu;
+    if requireMeasured, powerEvidence.Reference=reference; end
     powerContext.TotalTxPower_dBm = double(powerEvidence.AppliedPower_dBm);
     powerContext.TotalTxPowerSource = "ts_38_213_srs_power_control";
     powerContext.SignalSpecificPowerControl = true;
@@ -1249,10 +1341,10 @@ else
         "RequestedPower_dBm",NaN, ...
         "AppliedPower_dBm",NaN, ...
         "PowerHeadroom_dB",NaN,"Clipped",false, ...
-        "PathlossSource","not_applicable_standalone_awgn_reference", ...
-        "EvidenceClass","standalone_awgn_reference_not_production_power_control");
+        "PathlossSource","not_applicable_normalized_reference", ...
+        "EvidenceClass","normalized_reference_not_absolute_power_control");
     powerContext.TotalTxPowerSource = ...
-        "standalone_awgn_unit_occupied_re_reference_no_38_213_power_control";
+        "normalized_unit_occupied_re_reference_no_absolute_power_control";
     powerContext.SignalSpecificPowerControl = false;
 end
 powerContext.TotalTxPower_mW = 10.^(powerContext.TotalTxPower_dBm/10);

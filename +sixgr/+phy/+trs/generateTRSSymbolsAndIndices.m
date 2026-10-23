@@ -10,8 +10,8 @@ if ~isempty(resourceIDs)
         numel(unique(resourceIDs))==numel(resourceIDs), ...
         'sixgr:qcl:InvalidTRSResourceIDs','Declare one distinct NZP-CSI-RS ID per tracking resource.');
 end
-slotResources = repmat(localSlotResource(), 0, 1);
-mappingRows = repmat(localMappingRow(), 0, 1);
+slotResources = repmat(localSlotResource(), numel(slots), 1);
+mappingTables = cell(numel(slots),1);
 for ii = 1:numel(slots)
     carrier = resourceSet.Carrier;
     carrier.NSlot = mod(slots(ii),double(carrier.SlotsPerFrame));
@@ -40,35 +40,37 @@ for ii = 1:numel(slots)
     res.L = L;
     res.Ports = P;
     res.NRE = numel(ind);
-    slotResources(end+1, 1) = res; %#ok<AGROW>
-    for jj = 1:numel(ind)
-        row = localMappingRow();
-        row.RunId = string(cfg.RunId);
-        row.ConfigHash = string(cfg.ConfigHash);
-        row.Slot = double(slots(ii));
-        row.ResourceIndex = double(jj);
-        row.CSIRSResourceWithinSlot0Based=resourceOrdinals(jj);
-        if ~isempty(resourceIDs)
-            row.NZPCSIRSResourceID=resourceIDs((ii-1)*numel(resourceSet.Resources)+resourceOrdinals(jj)+1);
-        end
-        row.LinearIndex1Based = double(ind(jj));
-        row.Subcarrier0Based = double(sc(jj) - 1);
-        row.Symbol0Based = double(symIdx(jj) - 1);
-        row.Port0Based = double(portIdx(jj) - 1);
-        row.ReferenceSignal = "TRS_NZP_CSI_RS";
-        row.CSIRSRowNumber = double(resourceSet.CSIRS.RowNumber);
-        row.NumCSIRSPorts = double(resourceSet.CSIRS.NumCSIRSPorts);
-        row.CDMType = string(resourceSet.CSIRS.CDMType);
-        row.Density = string(resourceSet.CSIRS.Density);
-        row.TruthStatus = "real_lls_evidence";
-        mappingRows(end+1, 1) = row; %#ok<AGROW>
+    slotResources(ii, 1) = res;
+    % Preserve the exact prior row order/types/values without constructing
+    % one scalar struct per RE. This is also used during strict allocation
+    % validation, where repeated full-band table growth dominated scheduling.
+    n=numel(ind);
+    ids=nan(n,1);
+    if ~isempty(resourceIDs)
+        ids=reshape(resourceIDs((ii-1)*numel(resourceSet.Resources)+ ...
+            resourceOrdinals+1),[],1);
     end
+    mappingTables{ii}=table(repmat(string(cfg.RunId),n,1), ...
+        repmat(string(cfg.ConfigHash),n,1),repmat(double(slots(ii)),n,1), ...
+        (1:n).',double(resourceOrdinals),double(ids),double(ind(:)), ...
+        double(sc(:)-1),double(symIdx(:)-1),double(portIdx(:)-1), ...
+        repmat("TRS_NZP_CSI_RS",n,1), ...
+        repmat(double(resourceSet.CSIRS.RowNumber),n,1), ...
+        repmat(double(resourceSet.CSIRS.NumCSIRSPorts),n,1), ...
+        repmat(string(resourceSet.CSIRS.CDMType),n,1), ...
+        repmat(string(resourceSet.CSIRS.Density),n,1), ...
+        repmat("real_lls_evidence",n,1), ...
+        'VariableNames',fieldnames(localMappingRow()).');
 end
 
 out = struct();
 out.ResourceSet = resourceSet;
 out.SlotResources = slotResources;
-out.ResourceMappingTable = struct2table(mappingRows, "AsArray", true);
+if isempty(mappingTables)
+    out.ResourceMappingTable=struct2table(repmat(localMappingRow(),0,1),"AsArray",true);
+else
+    out.ResourceMappingTable=vertcat(mappingTables{:});
+end
 end
 
 function row = localSlotResource()

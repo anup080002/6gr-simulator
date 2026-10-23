@@ -6,7 +6,7 @@ row.ControlEVMSamplesJSON="";
 row.ControlEVMSamplesMATFile="";
 row.ControlEVMSamplesMATFileSHA256="";
 row.ControlEVMSamplesContentSHA256="";
-row.ControlEVMSamplesStorageContract="control_evm_pairs/v1";
+row.ControlEVMSamplesStorageContract="control_evm_pairs/v2";
 row.ControlEVMSamplesCount=0;
 if isempty(pairs), return; end
 if ~sixgr.util.persistenceEnabled()
@@ -17,7 +17,12 @@ if ~sixgr.util.persistenceEnabled()
     row.ControlEVMSamplesCount=sum(arrayfun(@(p)numel(p.SampleIndex),pairs));
     return;
 end
-identityNames=intersect(["Direction","UEIndex","CellID","RNTI","Slot","SNR_dB"], ...
+% Version 2 additionally binds the actual producer-supplied sweep identity.
+% In particular ConfiguredSNR_dB is not always accompanied by SNR_dB.
+% Never infer missing historical metadata or create another physical trial
+% merely by changing the labels of an already-retained sample population.
+identityNames=intersect(["Direction","UEIndex","CellID","RNTI","Slot","SNR_dB", ...
+    "SweepPointIndex","ConfiguredSNR_dB"], ...
     string(row.Properties.VariableNames),'stable');
 identity=table2struct(row(:,identityNames));
 descriptor=pairs;

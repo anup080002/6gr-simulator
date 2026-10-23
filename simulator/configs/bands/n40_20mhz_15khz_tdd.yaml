@@ -1,0 +1,50 @@
+inherits:
+  - ./n77_20mhz_15khz_tdd.yaml
+
+# TS 38.104: n40 2300--2400 MHz TDD, 20 MHz / 15 kHz = 106 PRBs.
+# Channel reference 2350 MHz -> NR-ARFCN 470000 (100-kHz raster).
+# Point A = 2350 MHz - 106*12*15 kHz/2 = 2340.460 MHz.
+# SSREF = Point A + (12*32+2)*15 kHz + 120*30 kHz = 2349.850 MHz.
+# SSREF = 1958*1.2 MHz + 5*50 kHz -> GSCN 5875, legal for n40.
+frequency:
+  band_name: n40
+  center_frequency_hz: 2350000000
+global_radio_scope:
+  carrier_frequency_hz: 2350000000
+bwp:
+  component_carriers:
+    - cc_id: 0
+      serving_cell_id: 1
+      scheduling_cc_ids: [0]
+      center_frequency_hz: 2350000000
+      band: n40
+      frequency_range: FR1
+      channel_bandwidth_mhz: 20
+      duplex_mode: TDD
+      dl_carrier_grid: {n_start_grid: 0, n_size_grid: 106, scs_khz: 15}
+      ul_carrier_grid: {n_start_grid: 0, n_size_grid: 106, scs_khz: 15}
+      carrier_indicator_map:
+        - {indicator: 0, scheduled_cc_id: 0}
+reference_signals:
+  ssb_case: Case C
+  ssb_scs_khz: 30
+  # TS 38.213 4.1: unpaired Case C at >=1.88 GHz has eight candidate
+  # positions. Four are transmitted; Lmax is not the active beam count.
+  ssb_lmax: 8
+  ssb_Lmax: 8
+initial_access:
+  band_context: n40
+  spectrum: unpaired
+  ssb:
+    case: Case C
+    scs_khz: 30
+    lmax: 8
+    positions_in_burst: '11110000'
+    per_ssb_power_db: [0, 0, 0, 0, 0, 0, 0, 0]
+    precoder_ids: [dft_ura_beam_0, dft_ura_beam_8, dft_ura_beam_16, dft_ura_beam_24, dft_ura_beam_32, dft_ura_beam_40, dft_ura_beam_48, dft_ura_beam_56]
+    precoder_codebook:
+      beam_indices: [0, 8, 16, 24, 32, 40, 48, 56]
+    n_crb_ssb: 32
+    k_ssb: 2
+random_access:
+  carrier_frequency_hz: 2350000000

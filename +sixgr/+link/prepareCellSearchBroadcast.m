@@ -35,6 +35,26 @@ if useRuntimeChannel
     try
         if isfield(tx, "Carrier") && ~isempty(tx.Carrier)
             txInfo.OFDM = nrOFDMInfo(tx.Carrier);
+            ssbSCS = double(sixgr.util.structGet(tx, ...
+                "SSBInfo.SSBTiming.SSBSubcarrierSpacingKHz", NaN));
+            validateattributes(ssbSCS, {'numeric'}, ...
+                {'scalar','real','finite','positive'});
+            mixedNumerology = ssbSCS ~= double(tx.Carrier.SubcarrierSpacing);
+            normalizedReference = sixgr.rf.isNormalizedFixedSNRPowerReference(cfg);
+            if mixedNumerology && normalizedReference
+                % The normalized fixed-Es authority in applyPowerContext
+                % preserves the emitted samples; it does not use the
+                % absolute-device full-BWP scaler. A common-SCS complex grid
+                % cannot represent both native numerologies. Retain the
+                % exact SSB and SI grids in tx, rather than resampling them
+                % into fictitious REs merely to satisfy an unused scaler.
+                % resolveSSBPowerContract already calibrates native SSB RE
+                % sample power to the declared common-carrier reference.
+                txInfo.PowerNormalizationGridSource = ...
+                    "native_ssb_and_sib1_producer_grids_normalized_no_composite_grid";
+                txInfo.SSBSubcarrierSpacingKHz = ssbSCS;
+                txInfo.CommonSubcarrierSpacingKHz = double(tx.Carrier.SubcarrierSpacing);
+            else
             % Bind fixed-EPRE normalization to the exact composite
             % waveform that carries SS/PBCH and SI-RNTI SIB1.  The
             % active-symbol grid is assembled from the retained production
@@ -48,6 +68,7 @@ if useRuntimeChannel
                 localExactCompositeActivePortGrid(tx);
             txInfo.PowerNormalizationGridSource = ...
                 "exact_producer_ssb_pbch_sib1_active_port_grids";
+            end
         end
     catch exception
         policy = lower(strtrim(string(sixgr.util.structGet(cfg, ...
@@ -118,7 +139,7 @@ ssbActive=find(reshape(any(any(ssbGrid~=0,1),3),[],1));
 % Use the same emitted domain as the SSB grid and waveform. A logical
 % waveform has no locally applied physical matrix; its measured port grid
 % is still exact and must not be rejected or expanded into element ports.
-transmissions=sixgr.util.structGet(tx,'SIB1Transmissions',tx);
+transmissions=sixgr.phy.broadcast.retainedSIB1Transmissions(tx);
 siGrids=cell(1,numel(transmissions));
 siActive=cell(size(siGrids)); siAbsolute0=cell(size(siGrids));
 absoluteSymbols0=double(ssbActive-1);

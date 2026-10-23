@@ -61,5 +61,7 @@ if base.Source=="executed_identity_AWGN_operator"
     evidence.Source="applied_identity_AWGN_operator_SRS_port_reference";
 elseif base.Source=="executed_fixed_matrix_AWGN_operator"
     evidence.Source="applied_fixed_matrix_AWGN_operator_SRS_port_reference";
+elseif base.Source=="executed_piecewise_matrix_AWGN_operator"
+    evidence.Source="applied_piecewise_matrix_AWGN_operator_SRS_port_reference";
 end
 end

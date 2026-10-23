@@ -9,6 +9,99 @@ const plain=html=>{const d=document.createElement('div');d.innerHTML=html;return
 const index=CHAPTERS.map(c=>`${c.title} ${c.lead} ${plain(c.body())}`.toLowerCase());
 const val=v=>v===undefined?'Not declared here':typeof v==='string'?v:JSON.stringify(v);
 const getPath=(obj,p)=>String(p).split('.').reduce((x,k)=>x?.[k],obj);
+// A real CSV parser: quoted commas/newlines and escaped quotes are valid in
+// the generated JSON-bearing documentation inventory.
+function parseCSV(text){
+ const rows=[];let row=[],field='',quoted=false;
+ for(let i=0;i<text.length;i++){
+  const c=text[i];
+  if(c==='"'){if(quoted&&text[i+1]==='"'){field+='"';i++;}else quoted=!quoted;}
+  else if(c===','&&!quoted){row.push(field);field='';}
+  else if((c==='\n'||c==='\r')&&!quoted){
+   if(c==='\r'&&text[i+1]==='\n')i++;
+   row.push(field);if(row.some(v=>v!==''))rows.push(row);row=[];field='';
+  }else field+=c;
+ }
+ if(quoted)throw Error('Incomplete quoted field in documentation CSV');
+ if(field||row.length){row.push(field);rows.push(row);}
+ return rows;
+}
+window.H4Guide.parseEvidenceCSV=parseCSV;
+function fieldReading(raw,label){
+ const key=String(raw),text=(key+' '+label).toLowerCase();
+ const rules=[
+  [/configured.*snr|appliedawgnsnr/,'Configured/applied experiment reference in dB, not automatically measured receiver SINR.'],
+  [/posteqsinr|post.equaliz.*sinr/,'Receiver post-equalization SINR. Read estimator/source/status and per-layer versus wideband scope.'],
+  [/nmse/,'Channel-error energy ratio in dB when numeric; inspect independent reference plane, coordinate matching and compared count.'],
+  [/evm/,'Error-vector metric or its provenance. RMS ratio and percent differ by100; reference type and applicability are essential.'],
+  [/rsrp|rssi|rsrq/,'Reference/total power or quality ratio. Use the exact suffix/plane: dBm requires calibration; normalized dB does not.'],
+  [/available.*sample|delivery|delivered|due.slot/,'Causal availability, delivery or scheduled due event; not necessarily resource/transmit time.'],
+  [/slot/,'Radio-slot identity: use the explicit zero/one-based and source/due/delivery convention; not wall-clock time.'],
+  [/cfo|frequency.*offset/,'Frequency offset estimate, correction or scoring reference in the stated plane. Do not replace an independent residual with injected minus applied.'],
+  [/timing|advance/,'Timing/correction/TA in named sample/Tc/time units. Capture offset, propagation and quantized command are distinct.'],
+  [/crc/,'Actual decoder CRC outcome or applicability; not an arbitrary SINR threshold and not necessarily semantic command acceptance.'],
+  [/rnti|ueindex|ue.id/,'Radio or simulator endpoint identity. UE index, temporary RNTI and operational C-RNTI need not be numerically equal.'],
+  [/tbs|tbsize|transportblock/,'Actual transport-block size/identity. Use exact grant/coding allocation; never reconstruct from aggregate served bits.'],
+  [/prb|symbolstart|numsymbols|recount|resource.*count/,'Executed allocation/resource-set quantity. Check index origin, unique-RE versus per-port counting and reserved/pilot overlap.'],
+  [/rank|layers/,'Configured capability, recommended rank or actual transmitted layers depending on field name. Do not substitute one for another.'],
+  [/pmi|precod|tci|qcl|beam/,'Spatial/control identity or application evidence. Check codebook/matrix domain, causal source and actual weights.'],
+  [/mcs|cqi|modulation|coderate/,'Adaptation/coding choice in a named table. Index alone is insufficient without direction, table authority and source feedback.'],
+  [/sha|hash/,'Content identity at its declared plane/serialization. A TX, RX-sample, CSV and MAT-file hash are not interchangeable.'],
+  [/bler|error.*count|trial.*count|confidence/,'Error/population statistic. Keep original TBs, retries, candidates and independent episodes distinct.'],
+  [/throughput|goodput|rate_mbps/,'Bit rate with a defined numerator and duration. Unique delivery differs from repeated scheduled TB bits.'],
+  [/status|source|scope|reason|role|applicable/,'Interpretation/provenance field. It limits the meaning of nearby numbers; missing, not applicable and failed are distinct.'],
+  [/_hz$|sample.rate/,'Frequency/rate in Hz; carrier center, sample rate, CFO and Doppler are different quantities.'],
+  [/_dbm$/,'Absolute power referenced to1mW; requires an explicitly calibrated plane.'],
+  [/_db$/,'Logarithmic ratio/reference in dB. Inspect the metric definition before assigning absolute-power meaning.']
+ ];
+ return (rules.find(([p])=>p.test(text))||[null,'Use the producer, exact column label and family explanation. This index does not invent a definition from an unfamiliar name.'])[1];
+}
+async function evidenceExplorer(stamp,params){
+ try{
+  const path='docs/lls/h4_100mhz_guide/evidence-catalog.csv';
+  const payload=await json('/api/source?path='+encodeURIComponent(path));if(stamp!==epoch)return;
+  const matrix=parseCSV(payload.text),head=matrix.shift();
+  const entries=matrix.map(values=>{
+   if(values.length!==head.length)throw Error('Documentation CSV row width mismatch');
+   const r=Object.fromEntries(head.map((k,i)=>[k,values[i]]));
+   return {...r,paths:JSON.parse(r.paths_json),fields:JSON.parse(r.fields_json),details:JSON.parse(r.details_json)};
+  });
+  const meta=entries.find(r=>r.kind==='inventory')?.details;
+  if(!meta||meta.scope!=='documentation_inventory_not_measurement_or_acceptance')throw Error('Unexpected inventory scope');
+  const rows=entries.filter(r=>r.kind!=='inventory');
+  $('evidence-inventory-summary').innerHTML=`<strong>Dated documentation inventory — not run acceptance.</strong><br>
+   Generated ${esc(meta.created_utc)}. ${rows.length} entries; ${rows.filter(r=>r.kind==='observed_file').length} observed files including snapshot revisions.<br>
+   Retained run: <code>${esc(meta.run_folder||'No run inspected')}</code><br>
+   Declared charts/tables are conditional capabilities, not completed outputs. Observed files are presence/header evidence only. Source hashes are retained in the downloadable inventory.`;
+  $('artifact-search').value=params.get('q')||'';
+  if([...$('artifact-kind').options].some(o=>o.value===params.get('kind')))$('artifact-kind').value=params.get('kind');
+  function renderRow(r){
+   const f=window.H4Guide.evidenceInterpretation(r);
+   const fieldRows=r.fields.map(item=>Array.isArray(item)?[String(item[0]),String(item[1])]:[String(item),'']);
+   const fieldHTML=fieldRows.length?`<details><summary>${fieldRows.length} ${r.kind==='dashboard_panel'?'display labels':'columns / mappings'}</summary>
+    ${T(['Raw column / label','Display label when mapped','Reading note (not schema validation)'],fieldRows.map(([raw,label])=>[
+      `<code>${esc(raw)}</code>`,esc(label),esc(fieldReading(raw,label))]))}</details>`:'No column schema extracted for this entry; inspect its exact source/manifest.';
+   const d=r.details;
+   const pairing=d.plotted_csv?`<p><strong>Live pair:</strong> <code>${esc(d.base+d.plotted_csv)}</code><br><code>${esc(d.base+d.png)}</code></p>`:'';
+   const presence=r.kind==='observed_file'?`<p><strong>Observed:</strong> ${esc(d.inspection)}.
+     ${Object.hasOwn(d,'first_record_seen')?`First record seen: ${d.first_record_seen?'yes':'no'}; width matches header: ${d.first_record_matches_header_width?'yes':'no'}.`:''}
+     ${d.changed_during_read?'Changed during inspection; not an atomic snapshot.':''}</p>`:'';
+   const sourceLink=!r.source?'':r.source.endsWith('.json')?
+    `<a href="https://github.com/anup080002/6gr-simulator/blob/main/${r.source.split('/').map(encodeURIComponent).join('/')}" target="_blank" rel="noopener noreferrer">Declaration · committed GitHub source ↗</a>`:
+    S(r.source,'Producer / declaration source');
+   return [`<strong>${esc(r.title)}</strong><br><span class="badge">${esc(r.kind.replaceAll('_',' '))}</span>
+      ${r.paths.map(p=>`<div><code>${esc(p)}</code></div>`).join('')}${pairing}${presence}`,
+     `<p><strong>Related interpretation:</strong> ${esc(f.title)}.</p><p>${esc(f.observe)}</p><p>${esc(f.plots)}</p>
+      <p class="doc-note">Topic matching is a reading aid, not proof of this artifact’s schema, availability or metric validity.</p>
+      ${sourceLink}<p><a href="#dashboard-reading">Full interpretation guide</a></p>`,
+     `${fieldHTML}<details><summary>Exact extracted metadata / applicability</summary><pre>${esc(JSON.stringify(d,null,2))}</pre></details>`];
+  }
+  const update=()=>{const q=$('artifact-search').value.trim().toLowerCase(),kind=$('artifact-kind').value;
+   table($('artifact-table'),rows.filter(r=>(!kind||r.kind===kind)&&JSON.stringify(r).toLowerCase().includes(q)),
+    ['Output / panel and identity','Meaning and useful observations','Exact fields and metadata'],renderRow,0,12);};
+  $('artifact-search').oninput=update;$('artifact-kind').onchange=update;update();
+ }catch(e){if(stamp===epoch)error('evidence-inventory-summary',e);}
+}
 function flatten(obj,prefix='',out=[]){Object.entries(obj||{}).forEach(([k,v])=>{const p=prefix?`${prefix}.${k}`:k;if(v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).length)flatten(v,p,out);else out.push({path:p,value:v});});return out;}
 function navigation(){const q=$('search').value.trim().toLowerCase();let group='',html='',count=0;CHAPTERS.forEach((c,i)=>{if(q&&!index[i].includes(q))return;count++;if(group!==c.group){group=c.group;html+=`<div class="nav-group">${esc(group)}</div>`;}html+=`<a href="#${c.id}"${c.id===current?' class="active" aria-current="page"':''}><span>${String(i+1).padStart(2,'0')}</span>${esc(c.title)}</a>`;});$('navigation').innerHTML=html||'<p>No chapter matches. Try a shorter term.</p>';$('navigation').setAttribute('aria-label',`${count} matching chapters`);}
 function table(target,rows,heads,rowFn,page=0,size=40){const pages=Math.max(1,Math.ceil(rows.length/size));page=Math.max(0,Math.min(page,pages-1));target.innerHTML=`<div class="pagination"><span>${rows.length?page*size+1:0}–${Math.min(rows.length,(page+1)*size)} of ${rows.length}</span><button data-prev ${!page?'disabled':''}>Previous</button><button data-next ${page===pages-1?'disabled':''}>Next</button><span>Page ${page+1}/${pages}</span></div>`+(rows.length?T(heads,rows.slice(page*size,(page+1)*size).map(rowFn)):'<p class="empty">No matches. Nothing has been substituted.</p>');target.querySelector('[data-prev]').onclick=()=>table(target,rows,heads,rowFn,page-1,size);target.querySelector('[data-next]').onclick=()=>table(target,rows,heads,rowFn,page+1,size);}
@@ -122,6 +215,7 @@ function route(){
   if(c.id==='configuration')configExplorer(stamp);
   if(c.id==='parameters')parameterExplorer(stamp,params);
   if(c.id==='scenarios')scenarioExplorer(stamp,params);
+  if(c.id==='output-atlas')evidenceExplorer(stamp,params);
 }
 $('search').oninput=navigation;$('menu').onclick=()=>{$('sidebar').classList.toggle('open');$('menu').setAttribute('aria-expanded',String($('sidebar').classList.contains('open')));};document.addEventListener('keydown',e=>{if(e.key==='Escape'){$('sidebar').classList.remove('open');$('menu').setAttribute('aria-expanded','false');}});
 try{document.body.classList.toggle('dark',localStorage.getItem('sixgr-guide-theme')==='dark');}catch{}

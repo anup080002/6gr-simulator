@@ -49,6 +49,33 @@ ulMaterialized = sixgr.phy.frame.ChannelAllocationMaterializer.materializePUSCH(
 assert(sum(ul.re_count) == size(unique( ...
     ulMaterialized.ActualCoordinates0Based, "rows"), 1), ...
     "UL runtime row RE count must equal exact executed occupied coordinates.");
+for direction=["DL","UL"]
+    if direction=="DL", observed=dl; tx=txDL; slot0=5;
+    else, observed=ul; tx=txUL; slot0=6; end
+    compact=sixgr.truth.resourceIntervalsFromObservedRE(observed,tx.Carrier);
+    actual=sixgr.truth.executedResourceIntervals(tx.Grid,slot0);
+    assert(compact.ExecutedResourceIntervalsJSON==actual.ExecutedResourceIntervalsJSON && ...
+        compact.ResourceGridPRBCount==actual.ResourceGridPRBCount && ...
+        compact.ResourceSymbolsPerSlot==actual.ResourceSymbolsPerSlot, ...
+        'test:ResourceCompactionMismatch','Compact %s occupancy differs from the actual TX grid.',direction);
+    % Repeated port rows cannot increase occupied bandwidth.
+    duplicate=sixgr.truth.resourceIntervalsFromObservedRE([observed;observed],tx.Carrier);
+    assert(isequal(compact,duplicate));
+    % A standalone executed TX has no network UE index. Its occupancy is
+    % still measurable, without replacing NaN identity with a fictitious UE.
+    unbound=sixgr.truth.buildObservedREAllocation(tx, ...
+        "Direction",direction,"AbsoluteSlot",slot0);
+    assert(all(isnan(unbound.ue_id)) && all(~ismissing(unbound.allocation_id)) && ...
+        numel(unique(unbound.allocation_id))==1 && ...
+        all(endsWith(unbound.allocation_id,"_ue_unbound")));
+    assert(isequal(compact,sixgr.truth.resourceIntervalsFromObservedRE(unbound,tx.Carrier)));
+    malformed=unbound(1,:); malformed.allocation_id=string(missing);
+    localAssertIdentifier(@() sixgr.truth.resourceIntervalsFromObservedRE(malformed,tx.Carrier), ...
+        'sixgr:truth:InvalidExecutedREIntervals');
+    localAssertIdentifier(@() sixgr.truth.buildObservedREAllocation(tx, ...
+        "Direction",direction,"AbsoluteSlot",slot0,"AllocationID",string(missing)), ...
+        'sixgr:truth:InvalidObservedREAllocationID');
+end
 
 dciBits = int8(mod((0:31).', 2));
 cfgPDCCH = cfg;
@@ -149,4 +176,15 @@ catch cause
     return;
 end
 error("test:MissingIndexRejection","Malformed executed indices were accepted.");
+end
+
+function localAssertIdentifier(fn,identifier)
+try
+    fn();
+catch cause
+    assert(strcmp(cause.identifier,identifier), ...
+        'Unexpected rejection: %s',cause.identifier);
+    return;
+end
+error('test:MissingIdentityRejection','Invalid allocation identity was accepted.');
 end

@@ -81,6 +81,15 @@ classdef WaveformEventRuntime < handle
             obj.Transmitters(k).CommittedThroughSample=double(stop);
         end
 
+        function receipt=replaceUnemittedComponent(obj,transmitterID,componentID,replacement)
+            obj.assertMutable();
+            k=obj.findID(obj.Transmitters,transmitterID,'Transmitter');
+            assert(obj.Transmitters(k).CommittedThroughSample==obj.NextSampleIndex, ...
+                'WAVEFORM:CommittedTransmission','Do not change a certified future transmitter interval.');
+            receipt=obj.Transmitters(k).Composer.replaceUnemittedComponent(componentID,replacement);
+            receipt.TransmitterID=string(transmitterID);
+        end
+
         function receipt=cancelUnemittedComponent(obj,transmitterID,componentID)
             obj.assertMutable();
             k=obj.findID(obj.Transmitters,transmitterID,'Transmitter');
@@ -143,9 +152,13 @@ classdef WaveformEventRuntime < handle
             unlock=onCleanup(@()obj.clearBusy()); %#ok<NASGU>
             try
                 inputs=struct('ID',{},'Chunk',{});
+                consumed=struct('TransmitterID',{},'CommittedThroughSample',{},'Receipt',{});
                 for k=1:numel(obj.Transmitters)
                     node=obj.Transmitters(k);
-                    inputs(end+1)=struct('ID',node.ID,'Chunk',node.Composer.readThrough(stop)); %#ok<AGROW>
+                    [chunk,receipt]=node.Composer.readThrough(stop);
+                    inputs(end+1)=struct('ID',node.ID,'Chunk',chunk); %#ok<AGROW>
+                    consumed(end+1)=struct('TransmitterID',node.ID, ...
+                        'CommittedThroughSample',node.CommittedThroughSample,'Receipt',receipt); %#ok<AGROW>
                 end
                 % A physical exception may have advanced mutable channel or
                 % oscillator handles. There is no safe automatic retry or
@@ -153,6 +166,10 @@ classdef WaveformEventRuntime < handle
                 [outputs,execution,nextState]=obj.Processor( ...
                     inputs,first,stop,obj.ProcessorState);
                 obj.validateOutputs(outputs,execution,first,stop);
+                % Closed schedules and actual consumed components. Empty
+                % lists explicitly prove an idle input interval; failed
+                % physical executions never publish this receipt.
+                execution.ExecutedContributors=consumed;
                 segment=struct('StartSample',first,'EndSampleExclusive',stop, ...
                     'Execution',execution);
                 metadataSegment=obj.metadataTraceSegment(segment);

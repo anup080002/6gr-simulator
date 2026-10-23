@@ -823,30 +823,9 @@ if ~isempty(intersect(dmrsSet, ptrsSet))
 end
 end
 
-function powerInfo = localBuildPrecodePowerInfo(layerSym, portSym, prec)
-W = double(prec.MatrixPorts);
-if isempty(W)
-    W = eye(max(1, round(double(prec.NumLayers))));
-end
-columnNorms = sqrt(sum(abs(W).^2, 1));
-gram = W' * W;
-identityRef = eye(size(gram));
-layerEnergy = sum(abs(layerSym(:)).^2);
-portEnergy = sum(abs(portSym(:)).^2);
-powerInfo = struct();
-powerInfo.ContractVersion = "PDSCHPrecodePower/v1";
-powerInfo.NormalizeW = logical(prec.NormalizeW);
-powerInfo.NumLayers = double(prec.NumLayers);
-powerInfo.NumPorts = double(prec.NumPorts);
-powerInfo.ColumnNorms = double(columnNorms);
-powerInfo.ColumnNormMaxError = double(max(abs(columnNorms(:) - 1), [], "omitnan"));
-powerInfo.OrthonormalColumnMaxError = double(max(abs(gram(:) - identityRef(:)), [], "omitnan"));
-powerInfo.LayerTotalEnergy = double(layerEnergy);
-powerInfo.PortTotalEnergy = double(portEnergy);
-powerInfo.TotalEnergyDelta = double(portEnergy - layerEnergy);
-powerInfo.TotalPowerMaxAbsError = double(abs(portEnergy - layerEnergy));
-powerInfo.TotalPowerRelativeError = double(abs(portEnergy - layerEnergy) / max(layerEnergy, eps));
-powerInfo.Equation = "X_equals_S_times_W_transpose";
+function powerInfo = localBuildPrecodePowerInfo(layerSym, portSym, prec, varargin)
+% Diagnose already-applied symbols against their declared matrix contract.
+powerInfo=sixgr.phy.dl.measurePDSCHPrecodePower(layerSym,portSym,prec,varargin{:});
 end
 
 function ctx = localBuildTxContext(tx, trBlk, tbCrc, codewords, txGrid, txWaveform, pdschInd, pdschSym, pdschAntInd, pdschAntSym, ...
@@ -1771,7 +1750,7 @@ codewordLayerMapping = localFinalizePDSCHCodewordLayerContract( ...
     codewordLayerMapping, pdschSym);
 prec = bundle.LegacyPrecoder;
 precodePowerInfo = localBuildPrecodePowerInfo( ...
-    pdschSym, pdschAntSym, prec);
+    pdschSym, pdschAntSym, prec,canonical.DataPrecoderTrace,bundle.PrecoderBundle);
 gridPortContract = localBuildResourceGridPortContract( ...
     canonical.Grid, pdschAntInd, pdschAntSym, ...
     dmrsAntInd, dmrsAntSym, ptrsAntInd, ptrsAntSym, ...
@@ -1982,6 +1961,13 @@ if executionProfile == "phy_calibration"
     receiverBundle.TransportBlocks = cell(1,numel(bundle.TransportBlocks));
     info.CalibrationReceiverBundle = receiverBundle;
 end
+% The PDSCH owner declares its reference before scaling, from the exact
+% original native BWP and applied matrix bundle. No matrix is rescaled.
+bwpSize=pdsch.NSizeBWP; if isempty(bwpSize), bwpSize=carrier.NSizeGrid; end
+bwpStart=pdsch.NStartBWP; if isempty(bwpStart), bwpStart=carrier.NStartGrid; end
+[tx,info]=localAttachPDSCHPowerReference(tx,info,struct( ...
+    'StartCarrierRelative',double(bwpStart)-double(carrier.NStartGrid), ...
+    'NumPRB',double(bwpSize),'Authority',"original_native_nrPDSCHConfig_resolved_BWP"));
 end
 
 function value = ternaryPDSCHProfile(condition, trueValue, falseValue)
@@ -2188,6 +2174,34 @@ info = struct( ...
     "StageTrace", canonical.StageTrace, ...
     "OFDM", canonical.OFDMInfo, ...
     "Source", "canonical_pdsch_transmitter_facade");
+if isfield(opt.IntegrationContext,'ActiveBWPStartPRB') && ...
+        isfield(opt.IntegrationContext,'ActiveBWPNumPRB')
+    bwp=struct('StartCarrierRelative',opt.IntegrationContext.ActiveBWPStartPRB, ...
+        'NumPRB',opt.IntegrationContext.ActiveBWPNumPRB, ...
+        'Authority',"original_non_strict_IntegrationContext_BWP");
+    if tx.StrictSchedulingOwnership, bwp.Authority="original_installed_IntegrationContext_BWP"; end
+else
+    % Only non-strict canonical component assignments can arrive without
+    % the mandatory installed BWP context; their reference is carrier-wide.
+    assert(~tx.StrictSchedulingOwnership,'sixgr:rf:PDSCHPowerReferenceBWP', ...
+        'Strict PDSCH power reference requires its original installed BWP.');
+    bwp=struct('StartCarrierRelative',0,'NumPRB',double(opt.Carrier.NSizeGrid), ...
+        'Authority',"explicit_non_strict_carrier_wide_component_assumption");
+end
+[tx,info]=localAttachPDSCHPowerReference(tx,info,bwp);
+end
+
+function [tx,info]=localAttachPDSCHPowerReference(tx,info,bwp)
+reference=sixgr.phy.dl.PDSCHFullBWPReference.build(tx,bwp);
+tx.PDSCHPowerReference=reference;
+info.PowerNormalizationSignal="PDSCH";
+info.PDSCHPowerReference=reference;
+info.PDSCHPowerReferenceBinding=reference.SourceBinding;
+if ~isfield(info,'TxContext')
+    % Value alias of the original canonical grid, not a second generated grid.
+    info.PortGrid=tx.Grid;
+    info.PowerNormalizationGridSource="original_canonical_PDSCH_transmitter_grid";
+end
 end
 
 function cells = localCanonicalTransportBlockCells(raw)

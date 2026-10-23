@@ -118,12 +118,18 @@ assert(isequaln(rngBefore,rng) && isequaln(state.ULHarq.Stats,stats) && ...
 % or filtering inactive UEs, including all its early no-grant branches.
 code=fileread(which('sixgr.truth.runWaveformLinkBundle'));
 first=regexp(code,'(?m)^function[^\r\n]*= localScheduleCoupledFutureULGrantsFromDLControl\(','start');
-last=strfind(code,'function decision = localResolveCoupledULTimingDecision');
-body=code(first:last-1);
+last=strfind(code,'function [state,pendingULGrants]=localTransmitCoupledFutureULGrants(');
+assert(isscalar(first) && isscalar(last) && first<last);
+wrapper=code(first:last-1);
+assert(isscalar(strfind(wrapper,'sixgr.truth.planFutureULGrants(')) && ...
+    ~contains(wrapper,'CoupledTruthRuntime.futureULPlanningView('), ...
+    'The production wrapper must delegate without constructing a competing planning view.');
+body=fileread(which('sixgr.truth.planFutureULGrants'));
 record=strfind(body,'sixgr.truth.evaluateULPlanningOpportunity(');
 future=strfind(body,'CoupledTruthRuntime.futureULPlanningView(');
-assert(isscalar(record)&&isscalar(future)&&record<future);
-assert(contains(body,'if ~opportunity.EligibleForUEScheduling') && ...
+guard=strfind(body,'if ~opportunity.EligibleForUEScheduling');
+assert(isscalar(record)&&isscalar(guard)&&isscalar(future)&&record<guard&&guard<future);
+assert(contains(body(guard:future),'return;') && ...
     ~contains(body,'localHasPendingCoupledULGrantForSlot'));
 ok=true;
 fprintf('H4_100_UL_PLANNING_TIMING_EVIDENCE_PASS\n');

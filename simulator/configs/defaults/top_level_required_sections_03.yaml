@@ -87,7 +87,19 @@
     "mandatory_kpis": ["bler", "throughput_mbps", "sinr", "spectral_efficiency"], "optional_kpis": ["evm", "sgcs", "nmse", "energy_per_bit"],
     "per_snr_curve_points": [-10, 0, 10], "target_bler_points": [0.1, 0.01], "target_latency_points": [1000], "target_energy_points": [1],
     "aggregation_rules": "mean", "confidence_interval_policy": "95pct", "percentile_policy": "p50_p90_p99", "comparison_policy": "baseline_delta",
-    "baseline_diff_policy": "absolute_and_relative"
+    "baseline_diff_policy": "absolute_and_relative",
+    "csi_selection_quality": {
+      "enabled": false,
+      "objective": "mean_support_sum_log2_one_plus_linear_mmse_sinr",
+      "receiver": "linear_mmse",
+      "power_normalization": "unit_physical_chain_grid_coefficient_power",
+      "power_factor": 1,
+      "support": "selected_resource_pilot_union",
+      "research_class": "optional_research_experiment",
+      "classification": "IMPLEMENTATION_POLICY",
+      "tie_absolute_tolerance": 1e-10,
+      "physical_power_tolerance": 1e-10
+    }
   },
   "sweeps_and_matrix": {
     "snr_sweep": {"enabled": true, "values_db": [-10, 0, 10]}, "sinr_sweep": {"enabled": false}, "esno_sweep": {"enabled": false},

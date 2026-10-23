@@ -45,6 +45,7 @@ multiUserDL = sixgr.util.structGet(rawTrials, "MultiUserDL", table());
 multiUserUL = sixgr.util.structGet(rawTrials, "MultiUserUL", table());
 
 artifacts.ChannelEstimationStatsPath = fullfile(layout.ReportCSVDir, "live_channel_estimation_stats.csv");
+artifacts.SRSChannelQualificationDiagnosticsPath = fullfile(layout.ReportCSVDir, "live_srs_channel_qualification_diagnostics.csv");
 artifacts.RankEstimationStatsPath = fullfile(layout.ReportCSVDir, "live_rank_estimation_stats.csv");
 artifacts.BeamSelectionStatsPath = fullfile(layout.ReportCSVDir, "live_beam_selection_stats.csv");
 artifacts.BeamP1AcquisitionStatsPath = fullfile(layout.ReportCSVDir, "live_beam_p1_acquisition_stats.csv");
@@ -70,11 +71,25 @@ artifacts.TodToaTracePath = fullfile(layout.ReportCSVDir, "tod_toa_trace.csv");
 artifacts.TimingPositioningEvidencePath = fullfile(layout.ReportCSVDir, "timing_positioning_runtime_evidence.csv");
 artifacts.ChannelImpulseResponsePath = fullfile(layout.ReportCSVDir, "channel_impulse_response.csv");
 
+% Validate the complete SRS source even when no operating-point axis is
+% available. These counts are diagnostics, not substitute measurement rows.
+[~, srsDiagnostics] = sixgr.report.summarizeSRSChannelReport(srsT);
+srsDiagnosticsT = struct2table(srsDiagnostics, "AsArray", true);
+nmseInputs={dlT,ulT,trsT,csirsRuntimeT}; nmseSignals=["DL","UL","TRS","CSI-RS"];
+nmseSummaries=cell(4,1); nmseAudits=cell(4,1);
+for k=1:4
+    [nmseSummaries{k},nmseAudits{k}]=sixgr.report.summarizeChannelNMSEReport(nmseInputs{k},nmseSignals(k));
+end
+nmseSummary=vertcat(nmseSummaries{:}); nmseAudit=vertcat(nmseAudits{:});
+artifacts.ChannelNMSEPopulationSummaryPath=fullfile(layout.ReportCSVDir,"live_channel_nmse_population_summary.csv");
+artifacts.ChannelNMSESourceAuditPath=fullfile(layout.ReportCSVDir,"live_channel_nmse_source_audit.csv");
 channelT = localBuildChannelStatsTable(dlT, ulT, srsT, trsT);
+channelT = localAppendIndependentNMSEStats(channelT,nmseSummary);
 rankT = localBuildRankStatsTable(dlT, ulT);
 [beamT, beamP1T, beamP2T, dataBeamT] = localBuildBeamStatsTable(dlT, ulT, pbchT, runFolder);
 csiT = localBuildCSIStatsTable(dlT, ulT);
 csirsT = localBuildCSIRSStatsTable(csirsRuntimeT, srsT, trsT);
+csirsT = localBindIndependentReferenceSummary(csirsT,nmseSummary);
 csirsT = sixgr.truth.canonicalizeLLSLiveSignalChainTable("csirs_stats", csirsT);
 linkAdaptationT = localBuildLinkAdaptationInputTable(cfg, dlT, ulT);
 symbolThroughputT = localBuildSymbolThroughputTable(cfg, dlT, ulT);
@@ -143,7 +158,10 @@ todToaT = localBuildTodToaTraceTable(trialCombinedT);
 timingPositioningT = localBuildTimingPositioningRuntimeEvidenceTable(trialCombinedT);
 channelImpulseT = sixgr.truth.buildChannelImpulseResponseTable(cfg);
 
-sixgr.util.csvWriteTable(artifacts.ChannelEstimationStatsPath, channelT);
+sixgr.util.csvWriteTable(artifacts.ChannelEstimationStatsPath, channelT, "PreserveSchema", true);
+sixgr.util.csvWriteTable(artifacts.SRSChannelQualificationDiagnosticsPath, srsDiagnosticsT, "PreserveSchema", true);
+sixgr.util.csvWriteTable(artifacts.ChannelNMSEPopulationSummaryPath,nmseSummary,"PreserveSchema",true,"RoundTripNumericText",true);
+sixgr.util.csvWriteTable(artifacts.ChannelNMSESourceAuditPath,nmseAudit,"PreserveSchema",true,"RoundTripNumericText",true);
 sixgr.util.csvWriteTable(artifacts.RankEstimationStatsPath, rankT);
 sixgr.util.csvWriteTable(artifacts.BeamSelectionStatsPath, beamT, "PreserveSchema", true);
 sixgr.util.csvWriteTable(artifacts.BeamP1AcquisitionStatsPath, beamP1T, "PreserveSchema", true);
@@ -173,6 +191,9 @@ rfInterferenceArtifacts = sixgr.analytics.writeRFInterferenceReconciliation( ...
     cfg, runFolder, rawTrials, mobilityArtifacts, slotTrace);
 
 artifacts.ChannelEstimationStats = channelT;
+artifacts.SRSChannelQualificationDiagnostics = srsDiagnosticsT;
+artifacts.ChannelNMSEPopulationSummary=nmseSummary;
+artifacts.ChannelNMSESourceAudit=nmseAudit;
 artifacts.RankEstimationStats = rankT;
 artifacts.BeamSelectionStats = beamT;
 artifacts.BeamP1AcquisitionStats = beamP1T;
@@ -212,13 +233,126 @@ end
 
 function T = localBuildChannelStatsTable(dlT, ulT, srsT, trsT)
 parts = { ...
-    localAggregateByDirectionAndSNR(dlT, "DL", ["PostEqSINR_dB","ReceiverHestSINR_dB","DecoderTruthProxySINR_dB","SystemLevelSINR_dB","LargeScaleSINR_dB","NMSE_dB","ChannelGain_dB","ConditionNumber_dB","TimingOffset_samples","EstimatedDopplerHz","PhaseTrackingError_deg"], localRuntimeTrialSource(dlT, "DL", false)), ...
-    localAggregateByDirectionAndSNR(ulT, "UL", ["PostEqSINR_dB","ReceiverHestSINR_dB","DecoderTruthProxySINR_dB","SystemLevelSINR_dB","LargeScaleSINR_dB","NMSE_dB","ChannelGain_dB","ConditionNumber_dB","TimingOffset_samples","EstimatedDopplerHz","PhaseTrackingError_deg"], localRuntimeTrialSource(ulT, "UL", false)), ...
+    localAggregateByDirectionAndSNR(dlT, "DL", ["PostEqSINR_dB","ReceiverHestSINR_dB","DecoderTruthProxySINR_dB","SystemLevelSINR_dB","LargeScaleSINR_dB","ChannelGain_dB","ConditionNumber_dB","TimingOffset_samples","EstimatedDopplerHz","PhaseTrackingError_deg"], localRuntimeTrialSource(dlT, "DL", false)), ...
+    localAggregateByDirectionAndSNR(ulT, "UL", ["PostEqSINR_dB","ReceiverHestSINR_dB","DecoderTruthProxySINR_dB","SystemLevelSINR_dB","LargeScaleSINR_dB","ChannelGain_dB","ConditionNumber_dB","TimingOffset_samples","EstimatedDopplerHz","PhaseTrackingError_deg"], localRuntimeTrialSource(ulT, "UL", false)), ...
     localAggregateByDirectionAndSNR(srsT, "SRS", ["SINR_dB","CQI","MCSIndex","RankEstimate","EstimatedRI","NMSE_dB","EstimatedDopplerHz","DopplerError_Hz","QCLAccuracy","TrackingFailureProbability"], "srs_trials"), ...
-    localAggregateByDirectionAndSNR(trsT, "TRS", ["NMSE_dB","EstimatedDopplerHz","DopplerError_Hz","PhaseTrackingError_deg","QCLAccuracy"], "trs_trials")};
+    localAggregateByDirectionAndSNR(trsT, "TRS", ["EstimatedDopplerHz","DopplerError_Hz","PhaseTrackingError_deg","QCLAccuracy"], "trs_trials")};
 T = localVertcat(parts);
 if isempty(T)
     T = localEmptySummaryTable();
+end
+T = localInitializeSRSNMSEMetadata(T);
+nmseRows = find(T.Direction == "SRS" & T.Metric == "NMSE_dB");
+if ~isempty(nmseRows)
+    axis = localMeasuredQualityAxis(srsT);
+    groupValues = localConfiguredSNRAggregationAxis(srsT, axis);
+    for r = reshape(nmseRows, 1, [])
+        stats = sixgr.report.summarizeSRSChannelReport(srsT(groupValues == T.SNR_dB(r), :));
+        T = localSetSRSNMSEMetadata(T, r, stats);
+    end
+end
+end
+
+function T = localInitializeSRSNMSEMetadata(T)
+% Unknown/non-SRS populations are not qualified by the SRS authority gate.
+n = height(T);
+T.NMSEMeasurementAvailable = nan(n, 1);
+T.NMSESampleCount = nan(n, 1);
+T.NMSEQualifiedTrials = nan(n, 1);
+T.NMSEAggregation = repmat("not_evaluated_by_SRS_gate", n, 1);
+T.NMSEPercentileDefinition = repmat("not_evaluated_by_SRS_gate", n, 1);
+T.NMSEReferenceGate = repmat("not_evaluated_by_SRS_gate", n, 1);
+T.StatisticalIndependenceClaimed = nan(n, 1);
+T.ConfidenceIntervalAvailable = nan(n, 1);
+end
+
+function T = localSetSRSNMSEMetadata(T, row, stats)
+T.NMSEMeasurementAvailable(row) = double(stats.MeasurementAvailable);
+T.NMSESampleCount(row) = stats.MeasuredTrials;
+T.NMSEQualifiedTrials(row) = stats.QualifiedTrials;
+T.NMSEAggregation(row) = stats.NMSEAggregation;
+T.NMSEPercentileDefinition(row) = "empirical_inverse_CDF_of_normalized_error_power_rank_ceil_p_N";
+T.NMSEReferenceGate(row) = "original_ChannelNMSEReferenceAvailable_equals_one";
+T.StatisticalIndependenceClaimed(row) = 0;
+T.ConfidenceIntervalAvailable(row) = 0;
+end
+
+function T=localInitializeIndependentNMSEMetadata(T)
+n=height(T);
+T.NMSEPopulationID=strings(n,1);
+T.NMSEPopulationSeriesID=strings(n,1);
+T.NMSEPopulationSeriesJSON=strings(n,1);
+T.NMSEReferencePlane=strings(n,1);
+T.NMSEReferenceSource=strings(n,1);
+T.NMSEReferenceRFImpairmentsIncluded=nan(n,1);
+T.NMSEPooled_dB=nan(n,1);
+T.NMSEPooledAvailable=nan(n,1);
+T.NMSEPooledStatus=strings(n,1);
+T.NMSESourceRowsJSON=strings(n,1);
+T.NMSEAggregationStatus=strings(n,1);
+end
+
+function T=localSetIndependentNMSEMetadata(T,k,s)
+T.NMSEPopulationID(k)=s.PopulationID;
+T.NMSEPopulationSeriesID(k)=s.PopulationSeriesID;
+T.NMSEPopulationSeriesJSON(k)=s.PopulationSeriesJSON;
+T.NMSEReferencePlane(k)=s.ReferencePlane;
+T.NMSEReferenceSource(k)=s.ReferenceSource;
+T.NMSEReferenceRFImpairmentsIncluded(k)=s.ReferenceRFImpairmentsIncluded;
+T.NMSEPooled_dB(k)=s.PooledNMSE_dB;
+T.NMSEPooledAvailable(k)=double(s.PooledEnergyAvailable);
+T.NMSEPooledStatus(k)=s.PooledEnergyStatus;
+T.NMSESourceRowsJSON(k)=s.SourceObservationRowsJSON;
+T.NMSEAggregationStatus(k)="available_original_producer_contract_not_archive_reaudit";
+T.NMSEAggregation(k)=s.MeanDefinition;
+T.NMSEPercentileDefinition(k)=s.PercentileDefinition;
+T.NMSEReferenceGate(k)=s.Adapter;
+T.NMSEMeasurementAvailable(k)=1;
+T.NMSESampleCount(k)=s.MeasurementCount;
+% Neither producer PASS nor a data CRC is an NMSE threshold qualification.
+T.NMSEQualifiedTrials(k)=NaN;
+T.StatisticalIndependenceClaimed(k)=0;
+T.ConfidenceIntervalAvailable(k)=0;
+end
+
+function T=localAppendIndependentNMSEStats(T,S)
+T=localInitializeIndependentNMSEMetadata(T);
+for k=1:height(S)
+    s=S(k,:); if s.Signal=="CSI-RS", continue; end
+    row=localSummaryRowTemplate();
+    row.Direction=s.Signal; row.TraceSource="original_producer_contract_"+s.Adapter;
+    row.SNR_dB=s.ConfiguredSNR_dB; row.SNR_dBValueRole=s.OperatingPointSource;
+    row.AggregationAxis="explicit_reference_support_population";
+    row.QualityAxis="not_attached_to_independent_channel_summary";
+    row.Metric="NMSE_dB"; row.MeanValue=s.MeanNMSE_dB;
+    row.P05Value=s.P05NMSE_dB; row.P95Value=s.P95NMSE_dB; row.SampleCount=s.MeasurementCount;
+    part=struct2table(row,'AsArray',true);
+    part=localInitializeIndependentNMSEMetadata(localInitializeSRSNMSEMetadata(part));
+    part=localSetIndependentNMSEMetadata(part,1,s);
+    T=[T;part]; %#ok<AGROW>
+end
+end
+
+function T=localBindIndependentReferenceSummary(T,S)
+T=localInitializeIndependentNMSEMetadata(T);
+for k=1:height(T)
+    signal="";
+    if T.TraceSource(k)=="tracking_rs_path", signal="TRS"; end
+    if T.TraceSource(k)=="csi_rs_runtime_trials", signal="CSI-RS"; end
+    if signal=="", continue; end
+    part=S(S.Signal==signal & S.ConfiguredSNR_dB==T.SNR_dB(k),:);
+    T.NMSEMeasurementAvailable(k)=double(~isempty(part));
+    T.NMSESampleCount(k)=sum(part.MeasurementCount);
+    if height(part)==1
+        T.MeanNMSE_dB(k)=part.MeanNMSE_dB;
+        T=localSetIndependentNMSEMetadata(T,k,part);
+    elseif isempty(part)
+        T.NMSEAggregationStatus(k)="unavailable_original_reference_contract";
+    else
+        % The legacy scalar feedback row has no reference/support key. Do
+        % not pool incompatible populations or replicate practical CQI/PMI.
+        T.NMSEAggregationStatus(k)="multiple_reference_support_populations_see_live_channel_nmse_population_summary";
+    end
 end
 end
 
@@ -918,6 +1052,8 @@ end
 end
 
 function T = localBuildCSIRSStatsTable(csirsRuntimeT, srsT, trsT)
+srsRows = zeros(0, 1);
+srsStatistics = cell(0, 1);
 rows = repmat(struct( ...
     "Direction", "", ...
     "TraceSource", "", ...
@@ -936,13 +1072,13 @@ if istable(csirsRuntimeT) && ~isempty(csirsRuntimeT)
     [snrAxis, snrRole] = localReferenceSignalSNRAxis(csirsRuntimeT);
     snrList = unique(snrAxis(isfinite(snrAxis)), "stable");
     for i = 1:numel(snrList)
-        mask = abs(snrAxis - snrList(i)) < 1e-9;
+        mask = snrAxis == snrList(i);
         rows(end+1,1) = struct( ... %#ok<AGROW>
             "Direction", "DL", ...
             "TraceSource", "csi_rs_runtime_trials", ...
             "SNR_dB", double(snrList(i)), ...
             "SNR_dBValueRole", snrRole, ...
-            "MeanNMSE_dB", localMean(csirsRuntimeT, "NMSE_dB", mask), ...
+            "MeanNMSE_dB", NaN, ... % Bound below from compatible producer-contract populations.
             "MeanPilotResidualNMSE_dB", localMean(csirsRuntimeT, "PilotResidualNMSE_dB", mask), ...
             "MeanWidebandCQI", localMean(csirsRuntimeT, "CQI", mask), ...
             "MeanPMI", localMean(csirsRuntimeT, "PMI", mask), ...
@@ -956,11 +1092,11 @@ if istable(trsT) && ~isempty(trsT)
     [snrAxis, snrRole] = localReferenceSignalSNRAxis(trsT);
     snrList = unique(snrAxis(isfinite(snrAxis)), "stable");
     for i = 1:numel(snrList)
-        mask = abs(snrAxis - snrList(i)) < 1e-9;
+        mask = snrAxis == snrList(i);
         rows(end+1,1) = struct( ... %#ok<AGROW>
             "Direction", "DL", "TraceSource", "tracking_rs_path", ...
             "SNR_dB", double(snrList(i)), "SNR_dBValueRole", snrRole, ...
-            "MeanNMSE_dB", localMean(trsT, "NMSE_dB", mask), ...
+            "MeanNMSE_dB", NaN, ... % Bound below from compatible producer-contract populations.
             "MeanPilotResidualNMSE_dB", NaN, ...
             "MeanWidebandCQI", NaN, "MeanPMI", NaN, "MeanCRI", NaN, ...
             "MeanCSIPayloadBitLength", NaN, "SampleCount", double(nnz(mask)), ...
@@ -971,17 +1107,20 @@ if istable(srsT) && ~isempty(srsT)
     [snrAxis, snrRole] = localReferenceSignalSNRAxis(srsT);
     snrList = unique(snrAxis(isfinite(snrAxis)), "stable");
     for i = 1:numel(snrList)
-        mask = abs(snrAxis - snrList(i)) < 1e-9;
+        mask = snrAxis == snrList(i);
+        stats = sixgr.report.summarizeSRSChannelReport(srsT(mask, :));
         rows(end+1,1) = struct( ... %#ok<AGROW>
             "Direction", "UL", "TraceSource", "srs_feedback_path", ...
             "SNR_dB", double(snrList(i)), "SNR_dBValueRole", snrRole, ...
-            "MeanNMSE_dB", localMean(srsT, "NMSE_dB", mask), ...
+            "MeanNMSE_dB", stats.NMSE_dB, ...
             "MeanPilotResidualNMSE_dB", NaN, ...
             "MeanWidebandCQI", localMeanFirstExisting(srsT(mask,:), ["WidebandCQI","CQI"]), ...
             "MeanPMI", localMeanFirstExisting(srsT(mask,:), ["PMI","EstimatedTPMI","TPMI"]), ...
             "MeanCRI", NaN, "MeanCSIPayloadBitLength", NaN, ...
             "SampleCount", double(nnz(mask)), ...
-            "Notes", "UL sounding summary from actual SRS receiver evidence at this operating point.");
+            "Notes", "SRS source-row summary; SampleCount counts all source rows, NMSESampleCount only independent-reference measurements. NMSE uses mean linear normalized error; qualification additionally requires the original finite threshold and PASS. No independent-trial or confidence-interval claim.");
+        srsRows(end+1, 1) = numel(rows); %#ok<AGROW>
+        srsStatistics{end+1, 1} = stats; %#ok<AGROW>
     end
 end
 if isempty(rows)
@@ -994,6 +1133,10 @@ if isempty(rows)
         'MeanCSIPayloadBitLength','SampleCount','Notes','MeanPilotResidualNMSE_dB'});
 else
     T = struct2table(rows, "AsArray", true);
+end
+T = localInitializeSRSNMSEMetadata(T);
+for k = 1:numel(srsRows)
+    T = localSetSRSNMSEMetadata(T, srsRows(k), srsStatistics{k});
 end
 end
 
@@ -2673,6 +2816,11 @@ snrList = unique(groupValues(isfinite(groupValues)), "stable");
 rows = repmat(localSummaryRowTemplate(), 0, 1);
 for s = 1:numel(snrList)
     mask = abs(groupValues - snrList(s)) < 1e-9;
+    if string(direction) == "SRS"
+        % Original distinct operating points must not duplicate one another
+        % merely because their numeric labels happen to be close.
+        mask = groupValues == snrList(s);
+    end
     qualityValues = double(axis.Values_dB(mask));
     qualityValues = qualityValues(isfinite(qualityValues));
     for f = 1:numel(fields)
@@ -2680,8 +2828,25 @@ for s = 1:numel(snrList)
         if ~ismember(metric, string(sourceT.Properties.VariableNames))
             continue;
         end
-        vals = double(sourceT{mask, char(metric)});
-        vals = vals(isfinite(vals));
+        isSRSNMSE = string(direction) == "SRS" && metric == "NMSE_dB";
+        metricQualityValues = qualityValues;
+        if isSRSNMSE
+            slice = sourceT(mask, :);
+            stats = sixgr.report.summarizeSRSChannelReport(slice);
+            if ~stats.MeasurementAvailable, continue; end
+            nmse = sixgr.truth.numericMeasurementColumn(slice.NMSE_dB, "NMSE_dB");
+            authority = sixgr.truth.numericMeasurementColumn( ...
+                slice.ChannelNMSEReferenceAvailable, "ChannelNMSEReferenceAvailable");
+            valid = (isfinite(nmse) | nmse == -Inf) & authority == 1;
+            vals = sort(nmse(valid));
+            % Companion measured quality describes exactly this NMSE
+            % population, not the excluded composite/unreferenced rows.
+            metricQualityValues = double(axis.Values_dB(mask));
+            metricQualityValues = metricQualityValues(valid & isfinite(metricQualityValues));
+        else
+            vals = double(sourceT{mask, char(metric)});
+            vals = vals(isfinite(vals));
+        end
         if isempty(vals)
             continue;
         end
@@ -2695,14 +2860,21 @@ for s = 1:numel(snrList)
         row.QualityValueRole = string(axis.ValueRole);
         row.QualitySource = string(axis.Source);
         row.Metric = string(metric);
-        row.MeanValue = mean(vals, "omitnan");
-        row.P05Value = localPercentile(vals, 5);
-        row.P95Value = localPercentile(vals, 95);
+        if isSRSNMSE
+            row.MeanValue = stats.NMSE_dB;
+            % Nearest-rank error-power quantiles, not interpolation in dB.
+            row.P05Value = vals(ceil(.05*numel(vals)));
+            row.P95Value = stats.P95NMSE_dB;
+        else
+            row.MeanValue = mean(vals, "omitnan");
+            row.P05Value = localPercentile(vals, 5);
+            row.P95Value = localPercentile(vals, 95);
+        end
         row.SampleCount = double(numel(vals));
-        row.QualityMean_dB = mean(qualityValues, "omitnan");
-        row.QualityP05_dB = localPercentile(qualityValues, 5);
-        row.QualityP95_dB = localPercentile(qualityValues, 95);
-        row.QualitySampleCount = double(numel(qualityValues));
+        row.QualityMean_dB = mean(metricQualityValues, "omitnan");
+        row.QualityP05_dB = localPercentile(metricQualityValues, 5);
+        row.QualityP95_dB = localPercentile(metricQualityValues, 95);
+        row.QualitySampleCount = double(numel(metricQualityValues));
         rows(end+1,1) = row; %#ok<AGROW>
     end
 end
@@ -3199,6 +3371,13 @@ if ~isempty(sixgr.util.structGet(cfg,'channel.awgnSpatialMatrixDL',[]))
     T.TransmitElementPatternSource(isAWGN)="not_applied_awgn_fixed_matrix_channel";
     T.ReceiveElementPatternSource(isAWGN)="not_applied_awgn_fixed_matrix_channel";
     T.AntennaChannelConsistencyStatus(awgnOk)="pass_not_applicable_awgn_fixed_matrix_channel";
+    if isequal(sixgr.util.structGet(cfg,'channel.awgnBeamFailureRecoveryEnabled',false),true)
+        T.ChannelObjectClass(isAWGN)="explicit_piecewise_matrix_sample_operator";
+        T.ElementPatternChannelApplicability(isAWGN)="not_applicable_awgn_piecewise_matrix_channel";
+        T.TransmitElementPatternSource(isAWGN)="not_applied_awgn_piecewise_matrix_channel";
+        T.ReceiveElementPatternSource(isAWGN)="not_applied_awgn_piecewise_matrix_channel";
+        T.AntennaChannelConsistencyStatus(awgnOk)="pass_not_applicable_awgn_piecewise_matrix_channel";
+    end
 end
 missingDimensions = isAWGN & ~dimensionEvidence;
 T.AntennaChannelConsistencyStatus(missingDimensions) = ...

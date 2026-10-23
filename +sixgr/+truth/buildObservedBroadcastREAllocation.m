@@ -11,8 +11,9 @@ assert(txObservation.isComplete() && txObservation.SampleRateHz==fs && ...
 base=txObservation.StartSample/(fs/(1000*carrier.SlotsPerSubframe));
 assert(isfinite(base) && base>=0 && base==fix(base), ...
     'sixgr:truth:BroadcastGridOriginMismatch','Broadcast starts on a canonical carrier slot boundary.');
-assert(tx.SSBInfo.SSBTiming.SSBSubcarrierSpacingKHz==carrier.SubcarrierSpacing, ...
-    'sixgr:truth:BroadcastGridNumerologyMismatch','Do not invent an equal-numerology grid for mixed numerology.');
+if tx.SSBInfo.SSBTiming.SSBSubcarrierSpacingKHz~=carrier.SubcarrierSpacing
+    T=sixgr.truth.buildObservedSSBNativeAllocation(prepared,txObservation,cellID);
+else
 logicalGrid=tx.SSBWaveInfo.ResourceGridSSBurst.ResourceGrid;
 portGrid=tx.SSBWaveInfo.SSBComposite.TransmitPortResourceGrid;
 assert(size(logicalGrid,1)==240 && size(logicalGrid,3)==1 && ...
@@ -64,7 +65,8 @@ for cycle=0:period:size(logicalGrid,2)-1
 end
 assert(isequal(used,logicalGrid~=0),'sixgr:truth:UnclassifiedBroadcastGrid', ...
     'Every transmitted SS/PBCH RE must have exact signal ownership.');
-transmissions=sixgr.util.structGet(tx,'SIB1Transmissions',tx);
+end
+transmissions=sixgr.phy.broadcast.retainedSIB1Transmissions(tx);
 for occasion=1:numel(transmissions)
 si=transmissions(occasion);
 mapping=si.SIB1SpatialMapping;
@@ -96,10 +98,35 @@ for channel=["PDCCH","PDSCH"]
         part=source(keep,:); part.port_index(:)=port-1;
         parts{port}=localMetadata(part,prepared,txObservation,NaN,mapping.SSBIndex,65535,mapped.Grid);
     end
-    T=[T;vertcat(parts{:})]; %#ok<AGROW>
+    T=localAppendDomains(T,vertcat(parts{:}));
 end
 end
 T=sixgr.truth.deduplicateObservedREAllocation(T);
+end
+
+function T=localAppendDomains(T,S)
+% Different native clocks require different metadata, never invented values.
+names=union(T.Properties.VariableNames,S.Properties.VariableNames,'stable');
+for name=string(names)
+    if ~ismember(name,T.Properties.VariableNames)
+        T.(name)=localMissingLike(S.(name),height(T));
+    elseif ~ismember(name,S.Properties.VariableNames)
+        S.(name)=localMissingLike(T.(name),height(S));
+    end
+end
+T=[T(:,names);S(:,names)];
+end
+
+function values=localMissingLike(example,n)
+if isstring(example)
+    values=strings(n,1);
+elseif isnumeric(example)
+    values=NaN(n,1);
+elseif islogical(example)
+    values=false(n,1);
+else
+    error('sixgr:truth:UnsupportedBroadcastMetadata','Unsupported native-grid metadata type %s.',class(example));
+end
 end
 
 function T=localMetadata(T,p,observation,ssb,associated,rnti,grid)
