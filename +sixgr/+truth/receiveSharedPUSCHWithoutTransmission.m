@@ -68,6 +68,7 @@ decision=struct('ReceiverAttempt',receiverAttempt,'DecodeAttempted',rx.ULSCHDeco
     'CRCPass',false,'SoftBuffer',[]);
 ul=struct('CurrentCRCAvailable',rx.ULSCHDecodeAttempted,'CurrentCRCPass',false, ...
     'CombinedDecodeAttempted',false,'CombinedCRCPass',false,'DecodedBits',int8([]), ...
+    'CombinedLDPCDiagnostics',struct(), ...
     'CombiningApplied',false,'ReceiverKey',receiverAttempt.Attempt.ReceiverKey);
 if rx.ULSCHDecodeAttempted
     current=sixgr.link.resolveULHARQReceiverOutcome(rx,[]);
@@ -75,10 +76,13 @@ if rx.ULSCHDecodeAttempted
         'CurrentLayout',rx.CodingLayout,'HARQKey',receiverAttempt.Attempt.ReceiverKey);
     final=current;
     if ~isempty(priorSoft) && ~current.CurrentDecodeOK
-        [pass,~,bits]=sixgr.phy.harq.decodeCombinedULSCH(rx.CodingLayout,combined,cfg);
+        [pass,~,bits,combinedDiagnostics]=sixgr.phy.harq.decodeCombinedULSCH(rx.CodingLayout,combined,cfg);
         final=sixgr.link.resolveULHARQReceiverOutcome(rx,struct('CRCPass',pass,'TransportBlock',bits));
         ul.CombinedDecodeAttempted=true;
         ul.CombinedCRCPass=pass;
+        % Preserve separate actual combined policy/parity, not a replacement
+        % for the original current observation retained in result.Receiver.
+        ul.CombinedLDPCDiagnostics=combinedDiagnostics;
     end
     ul.CurrentCRCPass=current.CurrentDecodeOK;
     ul.DecodedBits=final.DecodedTransportBlockBits;

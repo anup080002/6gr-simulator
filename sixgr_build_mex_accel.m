@@ -37,15 +37,9 @@ catch ME
     out.Notes(end+1,1) = "FFT PAPR kernel build skipped: " + string(ME.message);
 end
 
-try
-    M = coder.typeof(0, [inf inf], [1 1]);
-    codegen -config cfg sixgr_ldpc_decode_batch_kernel ...
-        -args {M, 0, 0, uint8(0)};
-    out.Built(end+1,1) = "sixgr_ldpc_decode_batch_kernel_mex";
-catch ME
-    out.Failed(end+1,1) = "sixgr_ldpc_decode_batch_kernel_mex";
-    out.Notes(end+1,1) = "LDPC batch kernel build skipped: " + string(ME.message);
-end
+% The v1 one-bit LDPC ABI is retired. Exact v2 MATLAB dispatch remains
+% available; do not rebuild or advertise an unqualified replacement MEX.
+out.Notes(end+1,1)="LDPC: exact v2 MATLAB execution; v1 MEX retired.";
 
 try
     Vc = coder.typeof(complex(0), [inf 1], [1 0]);

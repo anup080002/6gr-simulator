@@ -22,6 +22,10 @@ classdef WaveformEventRuntime < handle
         Windows = struct('ReceiverID',{},'ID',{},'Start',{},'Stop',{},'Segments',{})
         Boundaries = struct('ID',{},'Sample',{})
         BoundaryIDs = strings(0,1)
+        % Compact ORIGINAL accepted enqueue identities, not IQ or emission
+        % evidence. Only requested receipts are retained by this owner.
+        EnqueueReceipts = struct('TransmitterID',{},'ComponentID',{},'Receipt',{})
+        ValidatedReferenceInterval = []
     end
     methods
         function obj=WaveformEventRuntime(fs,first,processor,processorState)
@@ -58,7 +62,7 @@ classdef WaveformEventRuntime < handle
             obj.Receivers(end+1)=struct('ID',id,'Dispatcher',dispatcher);
         end
 
-        function enqueue(obj,transmitterID,componentID,chunk)
+        function receipt=enqueue(obj,transmitterID,componentID,chunk)
             obj.assertMutable();
             k=obj.findID(obj.Transmitters,transmitterID,'Transmitter');
             if isa(chunk,'sixgr.phy.waveform.WaveformChunk') && isscalar(chunk) && ...
@@ -66,7 +70,60 @@ classdef WaveformEventRuntime < handle
                 error('WAVEFORM:CommittedTransmission', ...
                     'A committed transmitter interval cannot acquire another component.');
             end
+            if nargout>0 && isa(chunk,'sixgr.phy.waveform.WaveformChunk') && isscalar(chunk)
+                % Do not issue an exact-coordinate receipt for an interval
+                % whose exclusive endpoint cannot be represented. Check
+                % before registration so rejection cannot leave a component.
+                first=chunk.StartSample; count=size(chunk.Samples,1);
+                assert(isscalar(first) && isreal(first) && isfinite(first) && ...
+                    first>=0 && first==fix(first) && count>0 && ...
+                    first<=flintmax-count && chunk.EndSample==first+count-1 && ...
+                    obj.NextSampleIndex<=flintmax && ...
+                    obj.Transmitters(k).CommittedThroughSample<=flintmax, ...
+                    'WAVEFORM:EnqueueReceiptClock', ...
+                    'Enqueue receipts require exactly representable absolute sample bounds.');
+            end
             obj.Transmitters(k).Composer.enqueue(componentID,chunk,obj.SampleRateHz);
+            if nargout>0
+                % A successful enqueue binds the original prepared component,
+                % not its emission. Only advanceUntilEvent publishes successful
+                % ExecutedContributors. Reuse the immutable chunk's existing
+                % sample hash; do not copy or rehash its potentially large IQ.
+                receipt=struct('ContractVersion',"sixgr.waveform.enqueued_component/v1", ...
+                    'Source',"original_event_runtime_accepted_component_not_physical_execution", ...
+                    'TransmitterID',string(obj.Transmitters(k).ID), ...
+                    'ComponentID',string(componentID), ...
+                    'StartSample',chunk.StartSample, ...
+                    'EndSampleExclusive',chunk.EndSample+1, ...
+                    'SampleRateHz',obj.SampleRateHz, ...
+                    'NumTransmitAntennas',double(size(chunk.Samples,2)), ...
+                    'NumericClass',string(class(chunk.Samples)), ...
+                    'OriginalSampleSHA256',chunk.SHA256, ...
+                    'HashSerialization',"WaveformChunk.SHA256_numeric", ...
+                    'EnqueuedAtSample',obj.NextSampleIndex, ...
+                    'CommittedThroughSample',obj.Transmitters(k).CommittedThroughSample, ...
+                    'PhysicalExecutionPerformed',false);
+                receipt.ReceiptSHA256=string(sixgr.util.sha256Hex(jsonencode(receipt)));
+                obj.EnqueueReceipts(end+1)=struct('TransmitterID',string(transmitterID), ...
+                    'ComponentID',string(componentID),'Receipt',receipt);
+            end
+        end
+
+        function receipt=originalEnqueueReceipt(obj,transmitterID,componentID)
+            obj.assertMutable();
+            hit=find(string({obj.EnqueueReceipts.TransmitterID})==string(transmitterID)& ...
+                string({obj.EnqueueReceipts.ComponentID})==string(componentID));
+            assert(isscalar(hit),'WAVEFORM:OriginalEnqueueReceipt', ...
+                'Require one original accepted enqueue receipt; never infer it from a reference waveform.');
+            receipt=obj.EnqueueReceipts(hit).Receipt;
+        end
+
+        function authority=originalValidatedReferenceInterval(obj)
+            % No public caller can create this capability. It exists only
+            % between original output validation and the pre-dispatch commit.
+            assert(obj.Busy&&~isempty(obj.ValidatedReferenceInterval), ...
+                'WAVEFORM:ReferenceCommitAuthority','No original validated interval is awaiting commit.');
+            authority=obj.ValidatedReferenceInterval;
         end
 
         function commitTransmissionsThrough(obj,transmitterID,stop)
@@ -151,12 +208,13 @@ classdef WaveformEventRuntime < handle
             obj.Busy=true;
             unlock=onCleanup(@()obj.clearBusy()); %#ok<NASGU>
             try
-                inputs=struct('ID',{},'Chunk',{});
+                inputs=struct('ID',{},'Chunk',{},'ProspectiveContributors',{});
                 consumed=struct('TransmitterID',{},'CommittedThroughSample',{},'Receipt',{});
                 for k=1:numel(obj.Transmitters)
                     node=obj.Transmitters(k);
                     [chunk,receipt]=node.Composer.readThrough(stop);
-                    inputs(end+1)=struct('ID',node.ID,'Chunk',chunk); %#ok<AGROW>
+                    inputs(end+1)=struct('ID',node.ID,'Chunk',chunk, ...
+                        'ProspectiveContributors',receipt); %#ok<AGROW>
                     consumed(end+1)=struct('TransmitterID',node.ID, ...
                         'CommittedThroughSample',node.CommittedThroughSample,'Receipt',receipt); %#ok<AGROW>
                 end
@@ -170,6 +228,19 @@ classdef WaveformEventRuntime < handle
                 % lists explicitly prove an idle input interval; failed
                 % physical executions never publish this receipt.
                 execution.ExecutedContributors=consumed;
+                if isa(nextState,'sixgr.truth.SharedWaveformPhysicalRuntime')
+                    % Reference value-state is committed only after every
+                    % original physical output passes validation, and BEFORE
+                    % an observation or callback can see model eligibility.
+                    identities=struct('ID',{},'SHA256',{});
+                    for output=outputs
+                        identities(end+1)=struct('ID',output.ID,'SHA256',output.Chunk.SHA256);
+                    end
+                    obj.ValidatedReferenceInterval=struct('First',first,'Stop',stop, ...
+                        'Contributors',consumed,'Outputs',identities);
+                    execution=nextState.commitReferenceInterval(obj,execution);
+                    obj.ValidatedReferenceInterval=[];
+                end
                 segment=struct('StartSample',first,'EndSampleExclusive',stop, ...
                     'Execution',execution);
                 metadataSegment=obj.metadataTraceSegment(segment);
@@ -205,6 +276,7 @@ classdef WaveformEventRuntime < handle
                 event.Execution=execution;
                 event.PhysicalExecutionPerformed=true;
             catch cause
+                obj.ValidatedReferenceInterval=[];
                 obj.Faulted=true;
                 obj.FailureIdentifier=string(cause.identifier);
                 rethrow(cause);

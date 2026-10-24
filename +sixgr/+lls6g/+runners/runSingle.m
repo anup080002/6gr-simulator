@@ -2107,8 +2107,6 @@ for i = 1:numel(overrides)
     subScenario = sixgr.lls6g.config.normalizeScenarioAliases(subScenario, ...
         "SourceFiles", scfg.SourceFiles, "ConfigPath", scfg.ConfigPath, ...
         "Authority", overrideConfig);
-    sixgr.lls6g.config.validateScenarioConfig(subScenario, "Kind", "scenario", "AllowPartial", false, ...
-        "Context", scfg.ConfigPath + "::sweep::" + label);
     if baseProfile == "waveform_bundle"
         subScenario.scenario.runner_profile = "waveform_bundle";
     elseif baseProfile == "ai_benchmark"
@@ -2117,6 +2115,10 @@ for i = 1:numel(overrides)
         error("sixgr:lls6g:runner:UnsupportedSweepBaseProfile", ...
             "Unsupported scenario.sweep.base_profile '%s'.", baseProfile);
     end
+    % Validate the actual dispatched child, not the orchestration wrapper.
+    % An enabled parent CSI audit also preflights these child dependencies.
+    sixgr.lls6g.config.validateScenarioConfig(subScenario, "Kind", "scenario", "AllowPartial", false, ...
+        "Context", scfg.ConfigPath + "::sweep::" + label);
     subScfg = sixgr.lls6g.config.ScenarioConfig(subScenario, ...
         "SourceFiles", scfg.SourceFiles, "ConfigPath", scfg.ConfigPath, ...
         "ConfigHash", sixgr.lls6g.config.hashResolvedScenario(subScenario), ...
@@ -5803,7 +5805,8 @@ end
 function caps = localExactMexCapabilities()
 caps = struct();
 caps.AWGNKernel = logical(exist("sixgr_awgn_complex_kernel_mex", "file") == 3);
-caps.LDPCBatchDecodeKernel = logical(exist("sixgr_ldpc_decode_batch_kernel_mex", "file") == 3);
+caps.LDPCBatchDecodeKernel = false; % Old one-bit MEX ABI is not qualified for exact policy/parity.
+caps.LDPCExactBatchMATLAB = logical(exist("sixgr_ldpc_decode_batch_kernel_v2","file")==2);
 caps.StructGetKernel = logical(exist("sixgr_struct_get_mex", "file") == 3);
 caps.FFTPAPRKernel = logical(exist("sixgr_fft_papr_kernel_mex", "file") == 3);
 caps.CorrelationMetricKernel = logical(exist("sixgr_corr_metric_kernel_mex", "file") == 3);
@@ -5923,7 +5926,14 @@ end
 function tf = localUsesReceiverNoiseMeasurement(cfg)
 mode = lower(strtrim(string(sixgr.util.structGet(cfg, "run.noiseOperatingMode", ...
     "receiver_noise_figure_thermal_noise"))));
-tf = mode == "receiver_noise_figure_thermal_noise";
+switch mode
+    case {"receiver_noise_figure_thermal_noise","absolute_reference_esn0"}
+        tf=true;
+    case "standalone_awgn_snr_argument"
+        tf=false;
+    otherwise
+        error('sixgr:truth:UnsupportedSharedNoisePowerReference','Unsupported receiver quality mode %s.',mode);
+end
 end
 
 function grid = localBuildPhysicalOperatingPointGrid(snr_dB)
@@ -5997,6 +6007,11 @@ replay.InjectedNoiseVariance = double(nVar);
 if isfinite(nVar) && nVar > 0
     replay.NoiseVarianceSource = "pdcch_runner_reference_waveform_awgn";
 end
+if string(replay.NoiseOperatingMode)=="absolute_reference_esn0"
+    replay.AbsoluteReferenceNoiseInjectedSampleVariance_mW=double(nVar);
+    replay.AbsoluteReferenceNoiseInjectionDomain='receiver_sample_waveform_pre_composite_front_end';
+    replay.NoiseVarianceSource='absolute_nominal_reference_PSD_times_actual_sample_rate_sqrt_mW';
+end
 [y,replay] = sixgr.link.applyCompositeReceiverFrontEnd(y,cfgReplay,sampleRateHz,replay,"Direction","DL");
 replay = sixgr.link.applyCompositeFrontEndVarianceReplay(replay);
 nVar = replay.InjectedNoiseVariancePostCompositeFrontEnd;
@@ -6037,6 +6052,13 @@ if noiseMode == "receiver_noise_figure_thermal_noise"
     y = x;
     nVar = NaN;
     return;
+elseif noiseMode=="absolute_reference_esn0"
+    nVar=sixgr.link.resolveAbsoluteReferenceNoiseVariance(replay);
+    n=sqrt(nVar/2).*(randn(size(x),"like",real(x))+1i*randn(size(x),"like",real(x)));
+    y=x+cast(n,"like",x);
+    return;
+elseif noiseMode~="standalone_awgn_snr_argument"
+    error('sixgr:link:UnsupportedNoiseOperatingMode','Unsupported runner noise mode %s.',noiseMode);
 end
 appliedSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
 nVar = localRunnerResolveConfiguredSNRNoiseVariance(referenceWaveform, appliedSNR_dB);

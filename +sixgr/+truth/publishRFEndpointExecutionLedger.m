@@ -10,8 +10,11 @@ spatialPath=string(fullfile(layout.RFCSVDir,'rf_endpoint_tx_spatial_power_interv
 radiationPath=string(fullfile(layout.RFCSVDir,'rf_endpoint_modeled_radiation_intervals.csv'));
 fieldPath=string(fullfile(layout.RFDir,'mat','rf_endpoint_radiation_fields.mat'));
 nativePath=string(fullfile(layout.RFDir,'mat','rf_endpoint_radiation_native_bindings.mat'));
+linearPath=string(fullfile(layout.RFCSVDir,'rf_endpoint_tx_linear_reference_model_intervals.csv'));
+linearLibraryPath=string(fullfile(layout.RFDir,'mat','rf_endpoint_tx_linear_reference_model_library.mat'));
 artifact=struct('Available',false,'CSV',"",'Manifest',"",'CoverageCSV',"", ...
     'ChainPowerCSV',"",'TXSpatialPowerCSV',"",'ModeledRadiationCSV',"",'RadiationFieldMAT',"", ...
+    'TXLinearReferenceModelCSV',"",'TXLinearReferenceLibraryMAT',"", ...
     'Evidence',[],'PhysicalReplayExecuted',false,'HardwareOperatingStateAvailable',false);
 owner=sixgr.util.structGet(raw,'CoupledRuntime.SharedWaveformStream',[]);
 e=sixgr.util.structGet(raw,'RFEndpointExecutionEvidence',[]);
@@ -30,9 +33,11 @@ if ~isempty(e)
     spatialComplete=sixgr.truth.validateTXSpatialPowerIntervals(spatial,e.Intervals,chain);
     localCheckSpatialCompleteness(e,cfg,spatialComplete);
     [radiation,library,native,radiationComplete]=localRadiationEvidence(e,cfg,spatial);
+    [linear,linearLibrary,linearComplete]=localLinearReferenceEvidence(e,cfg);
     % Configuration/lifecycle identity accompanies producer clock identity.
     meta=rmfield(e,intersect(fieldnames(e),{'Intervals','Coverage','ChainPowerIntervals','TXSpatialPowerIntervals', ...
-        'TXRadiationIntervals','TXRadiationLibrary','TXRadiationNativeBindings'}));
+        'TXRadiationIntervals','TXRadiationLibrary','TXRadiationNativeBindings', ...
+        'TXLinearReferenceIntervals','TXLinearReferenceLibrary'}));
     meta.Inventory=table2struct(e.Inventory);
     meta.ConfigHash=string(sixgr.util.structGet(cfg,'meta.configHash',""));
     meta.ExecutionID=string(sixgr.util.structGet(cfg,'run.executionID', ...
@@ -81,6 +86,23 @@ if ~isempty(e)
     end
     e.TXRadiationIntervals=radiation; e.TXRadiationLibrary=library; e.TXRadiationNativeBindings=native;
     e.ModeledRadiationCompleteFromOrigin=radiationComplete;
+    meta.TXLinearReferenceCompleteFromOrigin=linearComplete;
+    if ~isempty(linearLibrary)
+        if isfile(linearLibraryPath)
+            stored=load(linearLibraryPath,'Library');
+            assert(isfield(stored,'Library')&&isequaln(stored.Library,linearLibrary), ...
+                'sixgr:truth:TXLinearReferenceArchiveChanged','Never overwrite another installed model library.');
+        else
+            sixgr.util.matSave(linearLibraryPath,struct('Library',linearLibrary),'UseArtifactStore',false);
+        end
+        linear=sixgr.truth.bindCoupledExecutionIdentity(linear,cfg,"TX_LINEAR_REFERENCE_IMPLEMENTATION_POLICY");
+        sixgr.util.csvWriteTable(linearPath,linear,'PreserveSchema',true,'RoundTripNumericText',true);
+        meta.TXLinearReferenceLibraryFileSHA256=string(sixgr.util.sha256File(linearLibraryPath));
+        meta.TXLinearReferenceIntervalsFileSHA256=string(sixgr.util.sha256File(linearPath));
+        meta.TXLinearReferenceScope="optional_implementation_policy_fixed_linear_model_with_signed_residual_cross_energy_not_standardized_power";
+    end
+    e.TXLinearReferenceIntervals=linear; e.TXLinearReferenceLibrary=linearLibrary;
+    e.TXLinearReferenceCompleteFromOrigin=linearComplete;
     sixgr.util.jsonWrite(metaPath,meta);
 elseif isfile(metaPath)
     % Terminal/report-only execution must read the exact committed record,
@@ -161,8 +183,39 @@ elseif isfile(metaPath)
         end
     end
     [~,~,~,e.ModeledRadiationCompleteFromOrigin]=localRadiationEvidence(e,cfg,e.TXSpatialPowerIntervals);
+    e.TXLinearReferenceIntervals=sixgr.truth.txLinearReferenceInterval();
+    e.TXLinearReferenceLibrary=struct([]);
+    if isfield(meta,'TXLinearReferenceLibraryFileSHA256')||isfield(meta,'TXLinearReferenceIntervalsFileSHA256')
+        paths=[linearLibraryPath,linearPath];
+        names=["TXLinearReferenceLibraryFileSHA256","TXLinearReferenceIntervalsFileSHA256"];
+        for k=1:numel(paths)
+            assert(isfile(paths(k))&&isfield(meta,names(k))&& ...
+                string(sixgr.util.sha256File(paths(k)))==string(meta.(names(k))), ...
+                'sixgr:truth:TXLinearReferenceFileHash','Original model library/interval artifact is missing or changed.');
+        end
+        stored=load(linearLibraryPath,'Library');
+        assert(isfield(stored,'Library'),'sixgr:truth:TXLinearReferenceFileHash','Original model library is absent.');
+        e.TXLinearReferenceLibrary=stored.Library;
+        prototype=sixgr.truth.txLinearReferenceInterval(); types=struct();
+        for name=string(prototype.Properties.VariableNames), types.(name)=class(prototype.(name)); end
+        e.TXLinearReferenceIntervals=sixgr.util.csvReadTable(linearPath,'TextType','string','ColumnTypes',types);
+        for k=1:numel(paths)
+            assert(string(sixgr.util.sha256File(paths(k)))==string(meta.(names(k))), ...
+                'sixgr:truth:TXLinearReferenceFileHash','Model evidence changed during read.');
+        end
+    end
+    [~,~,e.TXLinearReferenceCompleteFromOrigin]=localLinearReferenceEvidence(e,cfg);
 end
-if isempty(e), return; end
+if isempty(e)
+    % An explicitly enabled original-owner diagnostic must not silently
+    % disappear from final/report-only publication. Its recording owner is
+    % installed at stream origin; a receiver observation or a new empty
+    % ledger cannot reconstruct missing original RF intervals.
+    assert(~logical(sixgr.util.structGet(cfg,'rf.txLinearReference.Enabled',false)), ...
+        'sixgr:truth:TXLinearReferenceMissingOwner', ...
+        'Enabled TX reference publication requires the original execution ledger or its verified retained archive.');
+    return;
+end
 artifact.Available=~isempty(e.Intervals); artifact.CSV=csvPath;
 artifact.Manifest=metaPath; artifact.CoverageCSV=coveragePath; artifact.Evidence=e;
 if isfield(e,'ChainPowerIntervals') && ~isempty(e.ChainPowerIntervals), artifact.ChainPowerCSV=chainPath; end
@@ -171,6 +224,29 @@ if isfield(e,'TXSpatialPowerIntervals') && ~isempty(e.TXSpatialPowerIntervals)
 end
 if isfield(e,'TXRadiationLibrary')&&~isempty(e.TXRadiationLibrary)
     artifact.ModeledRadiationCSV=radiationPath; artifact.RadiationFieldMAT=fieldPath;
+end
+if isfield(e,'TXLinearReferenceLibrary')&&~isempty(e.TXLinearReferenceLibrary)
+    artifact.TXLinearReferenceModelCSV=linearPath; artifact.TXLinearReferenceLibraryMAT=linearLibraryPath;
+end
+end
+
+function [T,library,complete]=localLinearReferenceEvidence(e,cfg)
+T=sixgr.util.structGet(e,'TXLinearReferenceIntervals',sixgr.truth.txLinearReferenceInterval());
+library=sixgr.util.structGet(e,'TXLinearReferenceLibrary',struct([]));
+chain=sixgr.util.structGet(e,'ChainPowerIntervals',sixgr.truth.rfChainPowerInterval());
+complete=sixgr.truth.validateTXLinearReferenceIntervals(T,library,e.Intervals,chain);
+if isfield(e,'TXLinearReferenceCompleteFromOrigin')
+    declared=e.TXLinearReferenceCompleteFromOrigin;
+    assert(islogical(declared)&&isscalar(declared)&&declared==complete, ...
+        'sixgr:truth:TXLinearReferenceCompleteness','Declared model coverage disagrees with original intervals.');
+end
+enabled=sixgr.util.structGet(cfg,'rf.txLinearReference.Enabled',false);
+assert(islogical(enabled)&&isscalar(enabled),'sixgr:truth:TXLinearReferenceCompleteness','Explicit logical model enable policy required.');
+if istable(e.Inventory), roles=string(e.Inventory.Role); else, roles=string({e.Inventory.Role}); end
+assert((enabled&&numel(library)==nnz(roles=="TX"))||(~enabled&&isempty(library)), ...
+    'sixgr:truth:TXLinearReferenceCompleteness','Only explicitly enabled TX models may publish a complete owner library.');
+if enabled&&e.EndSampleExclusive>e.OriginSample&&any(roles=="TX")
+    assert(complete,'sixgr:truth:TXLinearReferenceCompleteness','Enabled model intervals cannot be omitted.');
 end
 end
 

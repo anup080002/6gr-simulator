@@ -31,6 +31,8 @@ searchWindow = [0 max(0,size(receiverInput,1)-prepared.NumSamples)];
 reception = sixgr.phy.refsig.receiveCSIRSWaveform( ...
     prepared.Carrier,prepared.ReceiverConfig,receiverInput,physicalInput, ...
     searchWindow,replay);
+[reception,measurementPlane]=sixgr.truth.bindSharedCSIRSMeasurementPlane( ...
+    reception,item,replay,state.SharedWaveformStream);
 [csi,reportInfo] = sixgr.phy.refsig.computeCSIRSFeedback( ...
     prepared.Carrier,prepared.ReceiverConfig,reception);
 assert(~reportInfo.PDSCHDecodeAttempted && ...
@@ -43,6 +45,9 @@ context.UEIndex = double(item.UE);
 trialStruct = sixgr.truth.buildIndependentCSIRSTrialRow( ...
     prepared.ReceiverConfig,prepared,reception,csi,context);
 row = struct2table(trialStruct,"AsArray",true);
+for name=string(fieldnames(measurementPlane)).'
+    row.(name)=measurementPlane.(name);
+end
 % The completed parent owns the receive-window identity. Its planes need not
 % carry an ID, and a measurement digest is not a substitute for this window.
 % Retain it even when private selection-quality scoring is disabled.
@@ -53,7 +58,7 @@ for name=string(fieldnames(receivedEvidence)).'
     row.(name)=receivedEvidence.(name);
 end
 row.PhysicalMeasurementObservationSHA256=pre.sampleHash();
-row.PhysicalMeasurementObservationHashPlane="receiver_antenna_connector_pre_composite_front_end";
+row.PhysicalMeasurementObservationHashPlane=measurementPlane.PhysicalMeasurementReferencePlane;
 % Execute only after practical CSI reception/report calculation. This
 % measures the actual transmitter chain; it never claims RX-pilot EVM.
 paired=sixgr.phy.refsig.pairCSIRSTransmitterSymbols(prepared,transmitted);
@@ -99,23 +104,28 @@ if isfield(context,'PopulationIdentity')
     row=sixgr.truth.bindCSIObservationPopulation( ...
         row,context.PopulationIdentity,records(hit),string(context.ComponentID));
 end
-% Independent prerequisite only, after practical measurement/reporting. A
-% completed desired LINK is not automatically an isolated CSI port. Keep
-% multiport/resource and finite-memory contamination explicitly unsupported;
-% this does not provide a power oracle or change any UE recommendation.
-try
-    isolation=sixgr.truth.sharedCSIRSComponentIsolation( ...
-        item,reception,desired,channelSource,replay,state.SharedWaveformStream);
-catch cause
-    isolation=sixgr.truth.sharedCSIRSComponentIsolation();
-    isolation.Status="unavailable_original_CSI_reference_isolation_proof_failed";
-    isolation.ErrorIdentifier=string(cause.identifier);
+% Post-receiver audit only: one original isolation proof followed, when
+% supported, by the recorded pre-RF operator on the same executed desired
+% contribution. No reference is fed to Hest, reporting or the scheduler.
+% A composite multiport/nonlinear LINK is not a port-3000 reference; that
+% missing attribution remains an explicit unavailable diagnostic.
+[powerComparison,isolation]=sixgr.truth.scoreSharedCSIRSPower( ...
+    item,reception,desired,channelSource,replay,state.SharedWaveformStream);
+for field=string(fieldnames(powerComparison)).'
+    row.(field)=powerComparison.(field);
 end
 row.CSIRSReferenceIsolationAvailable=isolation.Available;
 row.CSIRSReferenceIsolationStatus=string(isolation.Status);
 row.CSIRSReferenceIsolationEvidenceJSON=string(jsonencode(isolation));
 row.CSIRSReferenceIsolationEvidenceSHA256=sixgr.util.sha256Hex(char(row.CSIRSReferenceIsolationEvidenceJSON));
 row.CSIRSReferenceIsolationErrorIdentifier=string(isolation.ErrorIdentifier);
+% Separate optional MODEL comparison for every original resource/port 3000.
+% This does not turn the aggregate nonlinear link into isolated port truth.
+modelComparison=sixgr.truth.scoreSharedCSIRSLinearPortModel( ...
+    item,reception,desired,channelSource,replay,state.SharedWaveformStream);
+for field=string(fieldnames(modelComparison)).'
+    row.(field)=modelComparison.(field);
+end
 if logical(sixgr.util.structGet(prepared.ReceiverConfig,'measurements.csiSelectionQuality.Enabled',false))
     [row,selectionReference]=sixgr.truth.exportSharedCSIRSChannelEstimate( ...
         storageRoot,row,prepared,reception,channelSource,channelCaptures);

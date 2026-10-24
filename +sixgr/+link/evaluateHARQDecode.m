@@ -1,5 +1,8 @@
 function diag = evaluateHARQDecode(tx, rx, cfg, combinedPrev)
 %EVALUATEHARQDECODE Evaluate current and HARQ-combined decode outcomes.
+% CurrentDecodeOK retains this diagnostic's historical TX-bit comparison.
+% Complete decoder policy/parity receipts do not make that diagnostic a
+% receiver-only or MAC-delivery acceptance contract.
 
 if nargin < 4
     combinedPrev = [];
@@ -20,7 +23,8 @@ rxBits = int8(sixgr.util.structGet(rx, "TransportBlock", int8([])));
 rxBits = rxBits(:);
 
 [combinedLLR, combineInfo] = localCombineRateRecoveredLLR(combinedPrev, recLLR, rxLayout);
-[combinedOK, combinedDecIt] = localDecodeCombinedLLR(tx, combinedLLR, cfg, txLayout);
+[combinedOK, combinedDecIt, policyReceipt, parity] = ...
+    localDecodeCombinedLLR(combinedLLR, cfg, txLayout);
 [bitErr, bitsCompared] = localBitErrors(txBits, rxBits);
 [cbgFailMask, cbgErrors, cbgCount, cbgBLER] = localCBGFailureStats(rx, tx);
 
@@ -49,6 +53,13 @@ diag.CBGCount = double(cbgCount);
 diag.CBGBLER = double(cbgBLER);
 diag.DecoderIterations = double(mean(double(sixgr.util.structGet(rx, "ActiveIterations", NaN)), "omitnan"));
 diag.CombinedDecoderIterations = double(combinedDecIt);
+diag.CombinedLDPCPolicyReceipt = policyReceipt;
+diag.CombinedFinalParityChecks = parity;
+parityCells = parity;
+if ~iscell(parityCells), parityCells = {parityCells}; end
+stage = "initial_decode";
+if logical(combineInfo.Applied), stage = "harq_combined_decode"; end
+diag.CombinedLDPCParityEvidence = sixgr.phy.phycode.summarizeLDPCParity(parityCells, stage);
 diag.MeasuredSINR_dB = localExtractSINR(rx);
 diag.Notes = "";
 end
@@ -251,14 +262,19 @@ else
     y = sum(double(x), "omitnan");
 end
 end
-function [ok, meanIter] = localDecodeCombinedLLR(tx, recLLR, cfg, layout)
+function [ok, meanIter, policyReceipt, parity] = localDecodeCombinedLLR(recLLR, cfg, layout)
 ok = false;
 meanIter = NaN;
+policyReceipt = struct();
+parity = [];
 if iscell(recLLR)
     okVec = false(1, numel(recLLR));
     iterVec = NaN(1, numel(recLLR));
+    policyReceipt = cell(size(recLLR));
+    parity = cell(size(recLLR));
     for c = 1:numel(recLLR)
-        [okVec(c), iterVec(c)] = localDecodeCombinedLLR(tx, recLLR{c}, cfg, localCellOrScalar(layout, c, struct()));
+        [okVec(c), iterVec(c), policyReceipt{c}, parity{c}] = ...
+            localDecodeCombinedLLR(recLLR{c}, cfg, localCellOrScalar(layout, c, struct()));
     end
     ok = all(okVec);
     meanIter = mean(iterVec(isfinite(iterVec)), "omitnan");
@@ -277,30 +293,13 @@ nCB = size(X, 2);
 if nRow ~= double(layout.MotherCodeLength) || nCB ~= double(layout.NumCodeBlocks)
     return;
 end
-decCbs = zeros(nRow, nCB, 'int8');
-itVec = NaN(nCB, 1);
-maxLen = 0;
-alg = char(string(sixgr.util.structGet(cfg, "phy.ldpc.algorithm", "Normalized min-sum")));
-maxIter = sixgr.phy.phycode.resolveLDPCMaxIterations(cfg);
-
-for c = 1:nCB
-    [d, it] = sixgr.phy.phycode.ldpcDecode(X(:, c), double(layout.BaseGraph), maxIter, alg);
-    d = int8(d(:));
-    Ld = min(numel(d), nRow);
-    if Ld > 0
-        decCbs(1:Ld, c) = d(1:Ld);
-        maxLen = max(maxLen, Ld);
-    end
-    it = it(:);
-    if ~isempty(it)
-        itVec(c) = double(it(1));
-    end
-end
-if maxLen <= 0
-    return;
-end
-
-decCbs = decCbs(1:maxLen, :);
+policy = sixgr.phy.phycode.resolveLDPCPolicy(cfg);
+maxIter = sixgr.phy.phycode.resolveLDPCMaxIterations(cfg, ...
+    'Direction', sixgr.util.structGet(layout, 'Direction', ''));
+[decCbs, itVec, parity, policyReceipt] = sixgr.phy.phycode.decodeLDPCConfigured( ...
+    X, double(layout.BaseGraph), maxIter, policy, ...
+    logical(sixgr.util.structGet(policy, 'useMexBatchDecode', false)));
+decCbs = int8(decCbs);
 tbCrc = sixgr.phy.tb.desegmentLDPC(decCbs, layout);
 [~, crcOk] = sixgr.phy.tb.checkCRC(tbCrc, char(string(layout.TBCRCType)));
 ok = logical(crcOk);

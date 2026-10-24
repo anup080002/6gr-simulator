@@ -88,7 +88,14 @@ sections:
       noise_operating_mode:
         required: false
         type: string
-        allowed_values: [receiver_noise_figure_thermal_noise, standalone_awgn_snr_argument]
+        allowed_values: [receiver_noise_figure_thermal_noise, standalone_awgn_snr_argument, absolute_reference_esn0]
+      # No reference geometry or nominal budget is defaulted. This optional
+      # research definition does not change the existing thermal default.
+      absolute_reference_esn0:
+        required: false
+        type: struct
+        nested_rule: absolute_reference_noise_policy
+        requirement_class: IMPLEMENTATION_POLICY
   bwp:
     required: false
     parameters:
@@ -366,8 +373,8 @@ sections:
   coding:
     parameters:
       ldpc_lifting_size_z_selection: {required: false, type: string}
-      ldpc_schedule_type: {required: false, type: string}
-      ldpc_min_sum_offset: {required: false, type: number}
+      ldpc_schedule_type: {required: false, type: string, allowed_values: [flooding, layered]}
+      ldpc_min_sum_offset: {required: false, type: number, min: 0}
       polar_reliability_sequence_source: {required: false, type: string}
       polar_rate_matching_type: {required: false, type: string}
   mimo:
@@ -471,6 +478,16 @@ sections:
       phase7_execution_validation: {required: false, type: struct, nested_rule: validation_phase7_execution_validation}
       causal_phy_chain_audit: {required: false, type: struct, nested_rule: validation_causal_phy_chain_audit}
 nested_sections:
+  absolute_reference_noise_policy:
+    parameters:
+      reference_policy: {required: true, type: string, allowed_values: [nominal_full_bwp_unity_array]}
+      reference_pathloss_scenario: {required: true, type: string, allowed_values: [UMa]}
+      reference_bs_position_m: {required: true, type: number_list, min_items: 3, max_items: 3}
+      reference_ue_position_m: {required: true, type: number_list, min_items: 3, max_items: 3}
+      reference_los: {required: true, type: boolean}
+      nominal_dl_tx_power_dbm: {required: true, type: number}
+      nominal_ul_tx_power_dbm: {required: true, type: number}
+      classification: {required: true, type: string, allowed_values: [optional_research_experiment]}
   validation_causal_phy_chain_audit:
     parameters:
       enabled: {required: true, type: boolean}

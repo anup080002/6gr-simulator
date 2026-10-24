@@ -7,6 +7,10 @@ root=fullfile(pwd,'results','validation','completed_sch_outcome_reporting', ...
 assert(~isfolder(root),'Refuse to overwrite earlier reporting evidence.');
 scfg=sixgr.lls6g.config.loadScenarioConfig( ...
     'simulator/configs/scenarios/lls_tdd_5mhz_rank2_4tx2rx_awgn_0db.yaml');
+% Exercise the actual legacy report plot/CSV consumers, not only the new
+% outcome audit. This is an explicit export-only fixture, never a PHY run.
+data=scfg.toStruct(); data.output.artifact_contract_engine.enabled=false;
+scfg=sixgr.lls6g.config.ScenarioConfig(data);
 manifest=struct('CodeVersion',"test",'CodeDetail',"declared_receiver_contract_no_PHY", ...
     'RandomSeed',1,'GeneratedUTC',"test",'RunnerProfile',"test", ...
     'RunCompletion',"completed",'DeterministicMode',"test");
@@ -66,6 +70,12 @@ for index=[5 10]
 end
 r=legacyReport.CategoryRows(legacyReport.CategoryRows.MetricKey=="fer_tb_error_rate",:);
 assert(~isempty(r) && ~any(r.CountsTowardCoverage) && all(isnan(r.ValueNumeric)));
+
+% A code-block error fraction is not a transport-block CRC outcome, even
+% when the rest of the receiver lifecycle fields are positive.
+codeBlockOnly=removevars(dl,{'BLER','CRCPass'});
+[~,codeBlockAudit]=publish("code_block_metric_without_TB_CRC",codeBlockOnly,ul([],:));
+assert(~any(codeBlockAudit.CompletedReceiverOutcomeAvailable) && all(isnan(codeBlockAudit.CRCError)));
 
 % Invalid scalar authority must fail before results are reduced. Numeric
 % columns are intentionally double: assigning 2 into logical would coerce it.
@@ -133,6 +143,7 @@ fprintf('COMPLETED_SCH_OUTCOME_REPORTING_PASS declared_fixture=1 PHY_executions=
             c=out.Coverage(out.Coverage.MetricKey==key,:);
             assert(~isempty(c) && ~any(c.CountsTowardCoverage));
         end
+        checkDiagnosticConsumers(layout.ReportCSVDir,a);
     end
 end
 
@@ -162,6 +173,11 @@ if direction=="UL"
     T.RuntimeMaterializationStatus(:)="active_waveform_pusch_runtime";
 end
 T.Source=repmat("",n,1);
+% Deliberately incompatible old scalar metrics must never override the
+% completed receiver CRC. These are declared test operands, not measurements.
+T.BLER=repmat(.875,n,1); T.CodeBlockBLER=repmat(.125,n,1);
+T.PostEqSINR_dB=(1:n).'; T.BER=(1:n).'/1000;
+T.Goodput_Mbps=ones(n,1); % Ensures heatmap CSV exists even without eligible CRC.
 T.FixtureScope=repmat("declared_report_boundary_not_executed_PHY",n,1);
 T.ObservationID="declared_"+direction+"_"+string((1:n).');
 T.Seed=(101:100+n).'; % Per-trial seeds must not singleton-fragment cohorts.
@@ -186,6 +202,58 @@ T.ApproximationMode(21)="fast_proxy";
 T.ExecutionBackend(22)="scheduler_coded_transmitter_pre_node_rf";
 T.RuntimeEvidenceSource(23)="unsupported_new_receiver_contract";
 T.Source(24)="synthetic_from_fast_kernel_fixture";
+end
+
+function checkDiagnosticConsumers(csvDir,audit)
+eligible=audit.CompletedReceiverOutcomeAvailable==1;
+expected=audit(eligible,:);
+for item={"bler_vs_sinr.csv","YValue"; "ber_vs_bler.csv","XValue"}.'
+    path=fullfile(csvDir,item{1});
+    if isempty(expected)
+        if isfile(path)
+            rows=sixgr.util.csvReadTable(path,'TextType','string');
+            assert(isempty(rows),'No completed CRC means no BLER relationship samples.');
+        end
+        continue;
+    end
+    assert(isfile(path),'Required actual relationship CSV was not produced: %s.',path);
+    rows=sixgr.util.csvReadTable(path,'TextType','string');
+    assert(height(rows)==height(expected));
+    for k=1:height(rows)
+        ref=expected(expected.Entity==rows.Direction(k) & expected.SourceRow==rows.SourceRow(k),:);
+        assert(height(ref)==1 && rows.(item{2})(k)==ref.CRCError, ...
+            'Relationship BLER must retain only the exact eligible original CRC outcome.');
+    end
+end
+binsPath=fullfile(csvDir,'bler_vs_measured_posteq_sinr_bins_diagnostic.csv');
+if ~isempty(expected)
+    assert(isfile(binsPath),'Actual post-EQ bin CSV must be exercised.');
+    bins=sixgr.util.csvReadTable(binsPath,'TextType','string');
+    for entity=["DL","UL"]
+        b=bins(bins.Direction==entity,:); e=expected(expected.Entity==entity,:);
+        assert(sum(b.SampleCount)==height(e) && sum(b.CRCErrorCount)==sum(e.CRCError));
+        assert(all(abs(b.BLER-b.CRCErrorCount./b.SampleCount)<1e-12) && ...
+            ~any(b.StatisticalIndependenceClaimed));
+    end
+elseif isfile(binsPath)
+    assert(isempty(sixgr.util.csvReadTable(binsPath,'TextType','string')));
+end
+for name=["heatmap_band_feature_kpi","heatmap_impairment_kpi","heatmap_beam_rank_trp_kpi"]
+    path=fullfile(csvDir,name+".csv");
+    % The impairment-only panel can legitimately be absent when no original
+    % measurements remain; the other two contain declared throughput here.
+    if ~isfile(path)
+        assert(isempty(expected) && name=="heatmap_impairment_kpi"); continue;
+    end
+    rows=sixgr.util.csvReadTable(path,'TextType','string');
+    for entity=["DL","UL"]
+        r=rows(rows.Feature==entity+" BLER",:); e=expected(expected.Entity==entity,:);
+        assert(height(r)==1 && r.CompletedDecodeAttemptCount==height(e) && ...
+            r.CRCErrorCount==sum(e.CRCError) && ~r.StatisticalIndependenceClaimed);
+        if isempty(e), assert(isnan(r.KPIValue));
+        else, assert(abs(r.KPIValue-sum(e.CRCError)/height(e))<1e-12); end
+    end
+end
 end
 
 function checkRows(rows,direction,populations)

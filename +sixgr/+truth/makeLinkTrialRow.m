@@ -6,6 +6,10 @@ dopp = double(sixgr.util.structGet(cfg, "channel.doppler_Hz", ...
     sixgr.util.structGet(cfg, "channel.dopplerHz", sixgr.util.structGet(cfg, "channel.fading.maxDoppler_Hz", 0))));
 row = struct();
 row.Direction = string(direction);
+noiseFields=sixgr.link.absoluteReferenceNoisePublication();
+for noiseField=string(fieldnames(noiseFields)).'
+    row.(noiseField)=noiseFields.(noiseField);
+end
 nativeEvidence=sixgr.truth.prachNativeSampleIntervals();
 for nativeField=string(fieldnames(nativeEvidence)).'
     row.(nativeField)=nativeEvidence.(nativeField);

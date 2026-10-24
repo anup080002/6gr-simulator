@@ -2435,8 +2435,15 @@ methods(Static, Access=private)
     end
 
     function tf = usesReceiverNoiseMeasurementMode(cfgOrState)
-        tf = sixgr.truth.CoupledTruthRuntime.noiseOperatingModeFromConfig(cfgOrState) == ...
-            "receiver_noise_figure_thermal_noise";
+        mode=sixgr.truth.CoupledTruthRuntime.noiseOperatingModeFromConfig(cfgOrState);
+        switch mode
+            case {"receiver_noise_figure_thermal_noise","absolute_reference_esn0"}
+                tf=true;
+            case "standalone_awgn_snr_argument"
+                tf=false;
+            otherwise
+                error('sixgr:truth:UnsupportedSharedNoisePowerReference','Unsupported receiver quality mode %s.',mode);
+        end
     end
 
     function state = advanceFrameImpl(state, absoluteFrame, snr_dB)
@@ -15959,8 +15966,12 @@ methods(Static, Access=private)
         airPath = fullfile(layout.AirInterfaceCSVDir, fileName);
         preserveSchema = strcmpi(string(fileName), "csi_rs_trials.csv");
         if istable(T) && ~isempty(T)
-            sixgr.util.csvWriteTable(controlPath, T, "PreserveSchema", preserveSchema);
-            sixgr.util.csvWriteTable(airPath, T, "PreserveSchema", preserveSchema);
+            % CSI comparison scalars and their exact original JSON operands
+            % must survive both primary mirrors without decimal rounding.
+            sixgr.util.csvWriteTable(controlPath, T, "PreserveSchema", preserveSchema, ...
+                "RoundTripNumericText", preserveSchema);
+            sixgr.util.csvWriteTable(airPath, T, "PreserveSchema", preserveSchema, ...
+                "RoundTripNumericText", preserveSchema);
             sixgr.report.exportControlEVMSamples(airPath,T);
             return;
         end
@@ -21012,7 +21023,16 @@ methods(Static, Access=private)
             userMeta.RuntimeUEAntennaMeta = bundleEntry.InterfererUEAntennaMeta;
         end
         cfgOut = sixgr.util.structSet(cfgOut, "lls6g.userContext", userMeta);
-        cfgOut = sixgr.util.structSet(cfgOut, "run.noiseOperatingMode", "receiver_noise_figure_thermal_noise");
+        % Retain the historical contribution policy for existing modes;
+        % never discard a new absolute-reference contract or unknown mode.
+        switch sixgr.truth.CoupledTruthRuntime.noiseOperatingModeFromConfig(cfgOut)
+            case {"receiver_noise_figure_thermal_noise","standalone_awgn_snr_argument"}
+                cfgOut=sixgr.util.structSet(cfgOut,"run.noiseOperatingMode","receiver_noise_figure_thermal_noise");
+            case "absolute_reference_esn0"
+                % Original frozen N0 is independent of contribution geometry.
+            otherwise
+                error('sixgr:truth:UnsupportedSharedNoisePowerReference','Unsupported contribution noise policy.');
+        end
     end
 
     function value = largeScaleValue(ls, fieldName, rowIdx, colIdx)

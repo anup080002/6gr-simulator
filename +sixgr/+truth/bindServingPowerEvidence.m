@@ -11,7 +11,7 @@ row.RxPower_dBm=NaN;
 row.RxPowerSource="unavailable_no_calibrated_receiver_power_observation";
 % This compatibility alias may represent an explicitly absolute model,
 % never a measured waveform power. Path loss alone does not calibrate IQ.
-if lower(mode)=="receiver_noise_figure_thermal_noise" && ...
+if any(lower(mode)==["receiver_noise_figure_thermal_noise","absolute_reference_esn0"]) && ...
         logical(sixgr.util.structGet(state,'LargeScaleState.PathlossEnabled',false))
     row.RxPower_dBm=model;
     row.RxPowerSource="model_link_budget_not_receiver_sample_measurement";

@@ -887,6 +887,11 @@ desiredWave=y;
 [preFrontEndWaveform,preFrontEndNVar] = ...
     localAddTrackingNoise(y,replay,snr_dB,txInfo);
 replay.InjectedNoiseVariance = double(preFrontEndNVar);
+if string(replay.NoiseOperatingMode)=="absolute_reference_esn0"
+    replay.AbsoluteReferenceNoiseInjectedSampleVariance_mW=double(preFrontEndNVar);
+    replay.AbsoluteReferenceNoiseInjectionDomain='receiver_sample_waveform_pre_composite_front_end';
+    replay.NoiseVarianceSource='absolute_nominal_reference_PSD_times_actual_sample_rate_sqrt_mW';
+end
 [y,replay] = sixgr.link.applyCompositeReceiverFrontEnd( ...
     preFrontEndWaveform,cfg,sampleRateHz,replay,"Direction","DL");
 replay = sixgr.link.applyCompositeFrontEndVarianceReplay(replay);
@@ -940,6 +945,13 @@ if noiseMode == "receiver_noise_figure_thermal_noise"
     y = x;
     nVar = NaN;
     return;
+elseif noiseMode=="absolute_reference_esn0"
+    nVar=sixgr.link.resolveAbsoluteReferenceNoiseVariance(replay);
+    n=sqrt(nVar/2).*(randn(size(x),"like",real(x))+1i*randn(size(x),"like",real(x)));
+    y=x+cast(n,"like",x);
+    return;
+elseif noiseMode~="standalone_awgn_snr_argument"
+    error('sixgr:link:UnsupportedNoiseOperatingMode','Unsupported TRS noise mode %s.',noiseMode);
 end
 [y, nVar] = localAddAwgn(x, double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", snr_dB)));
 end

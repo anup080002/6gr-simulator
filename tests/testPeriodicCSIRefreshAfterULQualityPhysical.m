@@ -1,0 +1,9 @@
+function ok=testPeriodicCSIRefreshAfterULQualityPhysical()
+% Unchanged 50-slot four-port physical fixture, not a full n40 campaign.
+[ok,evidence]=testReceivedSpatialRankTransitions('UL');
+assert(ok && evidence.WaveformExecuted && ...
+    evidence.PeriodicCSIRefreshAfterULQuality.Observed, ...
+    'test:PhysicalCSIRefreshNotObserved', ...
+    'No actual UL-completion -> same-obligation periodic CSI refresh witness; retain incomplete coverage.');
+disp('PERIODIC_CSI_AFTER_UL_QUALITY_PHYSICAL_PASS');
+end

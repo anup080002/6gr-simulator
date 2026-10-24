@@ -1356,14 +1356,10 @@ for entity=["DL","UL"]
     localValidateSCHAuthorityImport(fullPath,source,[flags,"FallbackFlag","PlaceholderFlag"]);
     if isempty(source), continue; end
     n=height(source); vars=string(source.Properties.VariableNames);
-    normalized=table(localSCHTextColumn(source,"Direction"),localSCHTextColumn(source,"Status"), ...
-        'VariableNames',{'Direction','Status'});
-    for field=flags, normalized.(field)=localSCHFlagColumn(source,field); end
+    [~,normalized,eligible,sourceCompatible]=localCompletedSCHErrorSamples(source);
     suppliedDirection=upper(strtrim(normalized.Direction));
     assert(all(suppliedDirection=="" | suppliedDirection==entity), ...
         'sixgr:report:SCHOutcomeDirection','%s trial source contains a different direction.',entity);
-    sourceCompatible=localSCHSourceCompatible(source,entity);
-    eligible=sixgr.util.linkTrialDecodeCoverage(normalized) & sourceCompatible;
     status=upper(strtrim(normalized.Status));
     executionFailure=normalized.Crash==1 | status=="CRASH";
     digest=""; if isfile(fullPath), digest=string(sixgr.util.sha256File(fullPath)); end
@@ -1408,6 +1404,27 @@ for id=unique(audit.PopulationID,'stable').'
     r.SourceRowsJSON=string(jsonencode(rows.SourceRow.'));
     populations=[populations;struct2table(r,'AsArray',true)]; %#ok<AGROW>
 end
+end
+
+function [errors,normalized,eligible,compatible]=localCompletedSCHErrorSamples(T)
+% One aggregate CRC outcome per completed original SCH decode attempt.
+% Reuse this authority for every report reduction, including diagnostics.
+% BLER/CodeBlockBLER and Status alone never supply TB outcome authority.
+flags=["FinalizedFlag","PartialRowFlag","Crash","IsWarmupFrame", ...
+    "DecodeAttempted","DecodeUsable","DLSCHDecodeAttempted","DLSCHDecodeAvailable", ...
+    "ULSCHDecodeAttempted","ULSCHDecodeAvailable","CRCApplicable","CRCPass"];
+normalized=table(localSCHTextColumn(T,"Direction"),localSCHTextColumn(T,"Status"), ...
+    'VariableNames',{'Direction','Status'});
+for field=flags, normalized.(field)=localSCHFlagColumn(T,field); end
+direction=upper(strtrim(normalized.Direction));
+compatible=false(height(T),1);
+for entity=["DL","UL"]
+    selected=direction==entity;
+    compatible(selected)=localSCHSourceCompatible(T(selected,:),entity);
+end
+eligible=sixgr.util.linkTrialDecodeCoverage(normalized) & compatible;
+errors=nan(height(T),1);
+errors(eligible)=1-normalized.CRCPass(eligible);
 end
 
 function localValidateSCHAuthorityImport(path,source,flags)
@@ -4049,22 +4066,18 @@ end
 end
 
 function T = localClusteringGainPenaltyRows(cat, metric, ctx)
-T = localEmptyMetricTable();
-delta = localProbeMetricScalar(ctx.Tables.RFEnergy, "prach_common_channel_clustering_energy_effect");
-enabled = localConfigFlag(ctx, ...
-    ["signals_and_channels_common.common_signal_clustering.enable_flag", ...
-    "signals_and_channels_common.ssb.energy_saving_policy", ...
-    "signals_and_channels_common.pbch.energy_saving_policy", ...
-    "energy_efficiency.common_channel_clustering_enabled", ...
-    "random_access.beam_clustering_enabled", ...
-    "random_access.ro_clustering_enabled"], false);
-note = "Clustering gain / penalty is exported from the RF-energy probe. Zero indicates either disabled clustering or no observed delta under the executed scenario.";
-if ~isfinite(delta)
-    delta = 0;
-end
-T = [T; ... %#ok<AGROW>
-    localMetricTableRow(cat, metric, "system", "clustering_enabled", "available", double(enabled), "", "bool", "rf/csv/probe_rf_energy.csv", note); ...
-    localMetricTableRow(cat, metric, "system", "delta_energy_j", "available", delta, "", "J", "rf/csv/probe_rf_energy.csv", note)];
+% The current energy producer has no matched baseline/candidate execution
+% contract. Neither a configured policy nor a finite legacy probe value
+% establishes a counterfactual gain. In particular absence is not zero.
+% Keep original probes untouched; a future paired producer must bind both
+% execution identities, observation windows and energy-model assumptions
+% before this consumer can publish even an exactly zero measured delta.
+note = "Matched executed baseline and candidate energy evidence is required. " + ...
+    "The current producer has no paired-execution contract; configuration flags and " + ...
+    "legacy probe scalars (including zero) cannot establish clustering gain or penalty. " + ...
+    "Original probe rows are preserved without replacement or averaging.";
+T = localMetricTableRow(cat, metric, "system", "delta_energy_j", ...
+    "not_available", NaN, "", "J", "rf/csv/probe_rf_energy.csv", note);
 end
 
 function T = localCSIIndependentAccuracyRequirementRows(cat,metric)
@@ -6185,7 +6198,9 @@ function pathOut = localPlotMeasuredPostEqSINRBinsDiagnostic(ctx, imgDir)
 fileName = "bler_vs_measured_posteq_sinr_bins_diagnostic.png";
 pathOut = "";
 chartRows = repmat(struct("BinCenterPostEqSINR_dB", NaN, "BLER", NaN, "Direction", "", ...
-    "SampleCount", NaN, "CurveConstruction", "diagnostic_posteq_sinr_binning", ...
+    "SampleCount", NaN, "CRCErrorCount", NaN, ...
+    "OutcomeDefinition", "completed_SCH_attempt_aggregate_CRC_error", ...
+    "StatisticalIndependenceClaimed", false, "CurveConstruction", "diagnostic_posteq_sinr_binning", ...
     "XAxisRole", "diagnostic_posteq_sinr_bin_center_db"), 0, 1);
 chartRows = localAppendMeasuredPostEqSINRBinRows(chartRows, ctx.Tables.DL, "DL");
 chartRows = localAppendMeasuredPostEqSINRBinRows(chartRows, ctx.Tables.UL, "UL");
@@ -6272,6 +6287,9 @@ for binIdx = 1:(numel(edges) - 1)
         "BLER", double(mean(y(binMask), "omitnan")), ...
         "Direction", string(direction), ...
         "SampleCount", double(nnz(binMask)), ...
+        "CRCErrorCount", double(sum(y(binMask))), ...
+        "OutcomeDefinition", "completed_SCH_attempt_aggregate_CRC_error", ...
+        "StatisticalIndependenceClaimed", false, ...
         "CurveConstruction", "diagnostic_posteq_sinr_binning", ...
         "XAxisRole", "diagnostic_posteq_sinr_bin_center_db");
 end
@@ -6293,16 +6311,7 @@ end
 end
 
 function y = localDiagnosticBLERSamples(T)
-y = [];
-vars = string(T.Properties.VariableNames);
-if ismember("BLER", vars)
-    y = localCoerceNumericVector(T.BLER);
-elseif ismember("CRCPass", vars)
-    crc = localCoerceNumericVector(T.CRCPass);
-    valid = isfinite(crc);
-    y = nan(size(crc));
-    y(valid) = 1 - double(crc(valid) > 0);
-end
+y = localCompletedSCHErrorSamples(T);
 end
 
 function edges = localDiagnosticPostEqSINRBinEdges(x)
@@ -6451,6 +6460,12 @@ if ~(istable(T) && ~isempty(T))
     return;
 end
 token = string(varName);
+% Resolve the outcome contract before accepting any historical BLER column.
+if lower(strtrim(token))=="bler"
+    values=localDerivedBLERMetric(T);
+    available=any(isfinite(values));
+    return;
+end
 % These historical aliases were derived from post-EQ SINR, target rate and
 % an unjustified layer factor. Even a supplied legacy column is not a
 % qualified energy operand. Branch-mean support ratios have distinct names
@@ -6490,14 +6505,7 @@ end
 end
 
 function values = localDerivedBLERMetric(T)
-values = localTrialMetricColumn(T, ["BLER","CodeBlockBLER"], NaN);
-if any(isfinite(values))
-    return;
-end
-crc = localTrialMetricColumn(T, "CRCPass", NaN);
-values = nan(size(crc));
-mask = isfinite(crc);
-values(mask) = double(crc(mask) <= 0);
+values = localCompletedSCHErrorSamples(T);
 end
 
 function values = localDerivedBERMetric(T)
@@ -8339,6 +8347,18 @@ values = values(1:n);
 T = table(repmat(string(rowLabel), n, 1), labels, values, ...
     repmat(string(curveConstruction), n, 1), repmat("diagnostic_only", n, 1), ...
     'VariableNames', ["RowLabel","Feature","KPIValue","CurveConstruction","truth_status"]);
+T.CompletedDecodeAttemptCount=nan(n,1);
+T.CRCErrorCount=nan(n,1);
+T.OutcomeDefinition=repmat("",n,1);
+T.StatisticalIndependenceClaimed=false(n,1);
+for entity=["DL","UL"]
+    selected=labels==entity+" BLER";
+    errors=localCompletedSCHErrorSamples(ctx.Tables.(entity));
+    counted=isfinite(errors);
+    T.CompletedDecodeAttemptCount(selected)=nnz(counted);
+    T.CRCErrorCount(selected)=sum(errors(counted));
+    T.OutcomeDefinition(selected)="completed_SCH_attempt_aggregate_CRC_error_mixed_population_diagnostic";
+end
 sixgr.util.ensureFolder(ctx.Layout.ReportCSVDir);
 sixgr.util.csvWriteTable(fullfile(ctx.Layout.ReportCSVDir, fileName), T);
 end
@@ -8348,15 +8368,8 @@ value = localMeanColumnFallback(T, ["Goodput_Mbps","OfferedThroughput_Mbps","Thr
 end
 
 function value = localRuntimeTrialBLERMean(T)
-value = localMeanColumn(T, "BLER");
-if isfinite(value)
-    return;
-end
-crc = localFiniteColumn(T, "CRCPass");
-if isempty(crc)
-    return;
-end
-value = mean(double(crc(:) <= 0), "omitnan");
+errors = localCompletedSCHErrorSamples(T);
+value = mean(errors(isfinite(errors)));
 end
 
 function localWriteMeasuredSINRRangeSection(fid, ctx, header)

@@ -1,53 +1,8 @@
-function [decCB, decLen, actNumIter, parityHead] = sixgr_ldpc_decode_batch_kernel(recLLR, bgn, maxNumIter, useNormMinSum)
-%#codegen
-% sixgr_ldpc_decode_batch_kernel
-% Coder-friendly LDPC batch decode kernel for code-block matrices.
-
-N = size(recLLR,1);
-C = size(recLLR,2);
-
-decCB = zeros(N, C, 'int8');
-decLen = zeros(C, 1);
-actNumIter = zeros(C, 1);
-parityHead = zeros(C, 1);
-
-for c = 1:C
-    llr = recLLR(:,c);
-    if useNormMinSum ~= 0
-        [d, it, pc] = localDecodeOneCB(llr, bgn, maxNumIter, 'Algorithm', 'Normalized min-sum');
-    else
-        [d, it, pc] = localDecodeOneCB(llr, bgn, maxNumIter);
-    end
-
-    d = d(:);
-    L = min(numel(d), N);
-    if L > 0
-        decCB(1:L, c) = int8(d(1:L));
-    end
-    decLen(c) = L;
-
-    if isempty(it)
-        actNumIter(c) = 0;
-    else
-        actNumIter(c) = it(1);
-    end
-
-    if isempty(pc)
-        parityHead(c) = 0;
-    else
-        parityHead(c) = pc(1);
-    end
-end
-end
-
-function [d, it, pc] = localDecodeOneCB(llr, bgn, maxNumIter, varargin)
-try
-    [d, it, pc] = nrLDPCDecode(llr, bgn, maxNumIter, varargin{:}, 'EarlyTermination', true);
-catch ME
-    if contains(string(ME.message), "EarlyTermination") || contains(string(ME.identifier), "EarlyTermination")
-        [d, it, pc] = nrLDPCDecode(llr, bgn, maxNumIter, varargin{:});
-    else
-        rethrow(ME);
-    end
-end
+function varargout=sixgr_ldpc_decode_batch_kernel(varargin) %#ok<STOUT,INUSD>
+%SIXGR_LDPC_DECODE_BATCH_KERNEL Retired one-bit algorithm/parity-head ABI.
+% Keeping a loud compatibility boundary prevents old scripts from silently
+% substituting BP for LBP/OMS or reporting one check as complete CB evidence.
+error('sixgr:phy:RetiredLDPCBatchABI', ...
+    ['Use sixgr.phy.phycode.decodeLDPCConfigured or the explicit v2 kernel. ' ...
+     'The v1 binary is not a qualified implementation of this contract.']);
 end

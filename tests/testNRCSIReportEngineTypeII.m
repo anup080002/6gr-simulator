@@ -61,6 +61,11 @@ for alphabet=[4 8]
     ri=nr5g.internal.nrRISelect(carrier,csirs,reference,H,nVar,'MaxSE');
     [cqi,pmi,ci,pi]=nr5g.internal.nrCQIReport(carrier,csirs,reference,dmrs,ri,H,nVar);
     assert(actual.RI==ri && ismember(ri,ranks{1}) && actual.CQI==cqi(1));
+    decision=actual.RankSelectionEvidence;
+    assert(decision.SelectedRank==ri && isequal(decision.RankDomain,ranks{1}) && ...
+        decision.RankSearchCallCount==numel(ranks{1}) && ...
+        actual.SelectionInfo.SelectedMetric==decision.SelectedObjective && ...
+        ~decision.DecodedBLERAvailable && ~decision.IndependentSelectionQualityVerified);
     assert(isequal(actual.PMISet,pmi) && isnan(actual.PMI));
     assert(abs(actual.CQIEffectiveSINR_dB-ci.EffectiveSINR(1))<1e-12);
     expectedReceiverSINR=10*log10(expm1(mean(log1p(pi.SINRPerREPMI),'all')));

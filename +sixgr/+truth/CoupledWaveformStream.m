@@ -109,7 +109,8 @@ classdef CoupledWaveformStream < handle
             obj.Physical.attach(obj.Events,'double');
             if logical(sixgr.util.structGet(cfg,'lls6g.energy_efficiency.enabled',false)) || ...
                     logical(sixgr.util.structGet(cfg,'rf.txSpatialPowerEnabled',false)) || ...
-                    logical(sixgr.util.structGet(cfg,'rf.modeledRadiatedPower.Enabled',false))
+                    logical(sixgr.util.structGet(cfg,'rf.modeledRadiatedPower.Enabled',false)) || ...
+                    logical(sixgr.util.structGet(cfg,'rf.txLinearReference.Enabled',false))
                 obj.Physical.enableRFExecutionLedger();
             end
             if logical(sixgr.util.structGet(cfg, ...
@@ -1022,9 +1023,19 @@ classdef CoupledWaveformStream < handle
             assert(size(samples,2)==node.NumAntennas, ...
                 'sixgr:truth:SharedDLPhysicalAntennaLayout','Queued DL must match the registered physical gNB radio.');
             component=string(kind)+"_"+tx+"_"+first;
+            referenceEnabled=false;
+            if kind=="CSIRS"
+                referenceEnabled=obj.Physical.assertCSIRSPortReferenceSupport( ...
+                    obj.Events,link.ID,tx,prepared);
+            end
             prior=find(string({obj.Components.ID})==component,1);
             if isempty(prior)
-                obj.Events.enqueue(tx,component,sixgr.phy.waveform.WaveformChunk(samples,first));
+                if kind=="CSIRS"
+                    enqueueReceipt=obj.Events.enqueue(tx,component, ...
+                        sixgr.phy.waveform.WaveformChunk(samples,first)); %#ok<NASGU>
+                else
+                    obj.Events.enqueue(tx,component,sixgr.phy.waveform.WaveformChunk(samples,first));
+                end
                 obj.Components(end+1)=struct('ID',component,'TX',tx,'Start',first,'Samples',samples);
             elseif ~isequal(obj.Components(prior).Samples,samples)
                 error('sixgr:truth:InconsistentCellBroadcast', ...
@@ -1036,6 +1047,12 @@ classdef CoupledWaveformStream < handle
                 context.ComponentID=component;
                 context.TransmitterPlane=tx+":tx";
                 context.ServingCell=double(link.Cell);
+                if referenceEnabled
+                    [context.CSIRSPortReferencePlanes,context.CSIModelAggregatePlane, ...
+                        context.CSIModelResidualPlane]=obj.Physical.registerCSIRSPortReferences( ...
+                        obj.Events,link.ID,tx,"ue_"+ue+"_rx",component,prepared);
+                    context.CSIPortReferenceScope="optional_fixed_linear_model_not_actual_nonlinear_port_truth";
+                end
             end
             if kind=="PBCH"
                 context=sixgr.truth.compactBroadcastReceiveContext(context);
@@ -1043,6 +1060,11 @@ classdef CoupledWaveformStream < handle
             planes=[tx+":tx","ue_"+ue+"_rx:pre_rf","ue_"+ue+"_rx:post_rf"];
             receiveEnd=first+prepared.NumSamples;
             if kind=="CSIRS", receiveEnd=prepared.ReceiveEndSampleExclusive; end
+            if referenceEnabled
+                modelPlanes=[string({context.CSIRSPortReferencePlanes.PlaneID}), ...
+                    context.CSIModelAggregatePlane,context.CSIModelResidualPlane];
+                for plane=modelPlanes, obj.Events.observe(plane,id,first,receiveEnd); end
+            end
             for plane=planes
                 last=receiveEnd;
                 if plane==tx+":tx", last=first+prepared.NumSamples; end
@@ -1161,7 +1183,9 @@ classdef CoupledWaveformStream < handle
         function [state,completed]=advanceSlot(obj,state,cfg,onReceived,receiveTailEndSample)
             if nargin<4, onReceived=[]; end
             if logical(sixgr.util.structGet(cfg,'lls6g.energy_efficiency.enabled',false)) || ...
-                    logical(sixgr.util.structGet(cfg,'rf.txSpatialPowerEnabled',false))
+                    logical(sixgr.util.structGet(cfg,'rf.txSpatialPowerEnabled',false)) || ...
+                    logical(sixgr.util.structGet(cfg,'rf.modeledRadiatedPower.Enabled',false)) || ...
+                    logical(sixgr.util.structGet(cfg,'rf.txLinearReference.Enabled',false))
                 % Idempotent for current owners; legacy checkpoint owners
                 % begin their new record here, not retroactively at zero.
                 obj.Physical.enableRFExecutionLedger();
@@ -1620,6 +1644,9 @@ elseif string(pending.Kind)=="PUSCHReceiveOnly"
     count=2; % Actual pre/post RF only: no invented UE transmitter plane.
 else
     count=3+double(isfield(pending.Context,'DesiredReferencePlane'));
+    if isfield(pending.Context,'CSIRSPortReferencePlanes')
+        count=count+numel(pending.Context.CSIRSPortReferencePlanes)+2;
+    end
 end
 end
 

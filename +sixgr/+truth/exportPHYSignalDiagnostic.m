@@ -35,6 +35,7 @@ for i = 1:numel(directions)
     reasons(i) = reason;
     if valid
         localValidateGridPopulation(snapshot);
+        snapshot.PublicationClockContract=localClockContract(snapshot);
         snapshots{i} = snapshot;
         sourceT = localAppendCompatibleTable(sourceT, snapshot.SourceTable);
     else
@@ -117,6 +118,12 @@ artifacts = struct( ...
     "ULAvailable", ~isempty(fieldnames(snapshots{2})), ...
     "DLReason", reasons(1), ...
     "ULReason", reasons(2));
+artifacts.ReconstructionScope="capture_local_samples_not_radio_clock_qualification";
+for i=1:numel(directions)
+    direction=directions(i); clock=localClockContract(snapshots{i});
+    artifacts.(direction+"RadioClockStatus")=localClockStatus(clock);
+    artifacts.(direction+"RadioClockSourceContractConsistent")=clock.RadioClockSourceContractConsistent;
+end
 deferredRows=0;
 for i=1:numel(snapshots)
     deferredRows=deferredRows+double(sixgr.util.structGet(snapshots{i},'DeferredChannelGrid.RowCount',0));
@@ -126,6 +133,27 @@ end
 artifacts.SourceTableComplete=deferredRows==0;
 artifacts.SourceRowCount=height(sourceT)+deferredRows;
 artifacts.DeferredChannelGridRowCount=deferredRows;
+end
+
+function summary=localClockContract(snapshot)
+state=sixgr.truth.PHYDiagnosticClockContract.initialize();
+T=sixgr.util.structGet(snapshot,'SourceTable',table());
+if istable(T)
+    for first=1:8192:height(T)
+        state=sixgr.truth.PHYDiagnosticClockContract.observe(state,T(first:min(height(T),first+8191),:));
+    end
+end
+template=sixgr.util.structGet(snapshot,'DeferredChannelGrid.Template',table());
+if istable(template)&&~isempty(template)
+    state=sixgr.truth.PHYDiagnosticClockContract.observe(state,template);
+end
+summary=sixgr.truth.PHYDiagnosticClockContract.summarize(state);
+summary.ScanScope="snapshot_rows_and_deferred_grid_template";
+end
+
+function status=localClockStatus(summary)
+states=unique(string({summary.Groups.Status}));
+if isempty(states), status="unavailable"; else, status=strjoin(states,"|"); end
 end
 
 function localValidateGridPopulation(snapshot)
@@ -201,6 +229,10 @@ if any(upper(strtrim(string(T.Direction))) ~= upper(string(direction)))
     return;
 end
 snapshotIds = unique(strtrim(string(T.SnapshotID)), "stable");
+if any(ismissing(snapshotIds)|strlength(snapshotIds)==0)
+    reason="snapshot_identity_missing";
+    return;
+end
 snapshotIds = snapshotIds(strlength(snapshotIds) > 0);
 if numel(snapshotIds) ~= 1
     reason = "snapshot_mixes_multiple_trial_ids";
@@ -216,6 +248,10 @@ if any(lower(strtrim(string(T.CurveConstruction))) ~= "runtime_same_trial_phy_si
 end
 if any(lower(strtrim(string(T.SourceArtifact))) ~= "runtime_phy_arrays_same_trial")
     reason = "snapshot_source_artifact_invalid";
+    return;
+end
+if any(lower(strtrim(string(T.Status))) ~= "available")
+    reason="snapshot_status_not_available";
     return;
 end
 estimatorSource = strtrim(string(T.ChannelEstimateSource));
@@ -346,7 +382,7 @@ legend(ax, "Location", "best", "NumColumns", 2);
 
 ax = nexttile(tl);
 axis(ax, "off");
-localWriteContextCard(ax, meta, cfg);
+localWriteContextCard(ax, meta, cfg,localClockStatus(snapshot.PublicationClockContract));
 
 ax = nexttile(tl, [1 2]);
 txSpec = T(string(T.Panel) == "spectrum" & string(T.Series) == "tx", :);
@@ -408,7 +444,7 @@ title(tl, direction + " PHY signal diagnostic - same-trial runtime evidence", ..
     "FontWeight", "bold");
 end
 
-function localWriteContextCard(ax, meta, cfg)
+function localWriteContextCard(ax, meta, cfg,clockStatus)
 configuredSNR = localDisplayNumber(sixgr.util.structGet(meta, "ConfiguredSNR_dB", NaN), "%.2f");
 postEqSINR = localDisplayNumber(sixgr.util.structGet(meta, "PostEqSINR_dB", NaN), "%.2f");
 evm = localDisplayNumber(sixgr.util.structGet(meta, "EVM_rms_pct", NaN), "%.2f");
@@ -423,8 +459,10 @@ lines = [ ...
     "Snapshot: " + string(sixgr.util.structGet(meta, "SnapshotID", "")); ...
     "Scenario: " + scenarioId; ...
     "UE / RNTI: " + string(sixgr.util.structGet(meta, "UEIndex", NaN)) + " / " + string(sixgr.util.structGet(meta, "RNTI", NaN)); ...
-    "Frame / slot / TB: " + string(sixgr.util.structGet(meta, "Frame", NaN)) + " / " + ...
+    "Retained trial Frame / Slot / TB: " + string(sixgr.util.structGet(meta, "Frame", NaN)) + " / " + ...
         string(sixgr.util.structGet(meta, "Slot", NaN)) + " / " + string(sixgr.util.structGet(meta, "TBId", "")); ...
+    "Radio-clock source contract: " + clockStatus + " (not PHY qualification)"; ...
+    "Slot convention: " + string(sixgr.util.structGet(meta,"SlotConvention","undeclared")); ...
     "Channel: " + string(sixgr.util.structGet(meta, "ChannelModel", "")) + " " + string(sixgr.util.structGet(meta, "DelayProfile", "")); ...
     "Mod / MCS / layers: " + string(sixgr.util.structGet(meta, "Modulation", "")) + " / " + ...
         string(sixgr.util.structGet(meta, "MCSIndex", NaN)) + " / " + string(sixgr.util.structGet(meta, "Layers", NaN)); ...

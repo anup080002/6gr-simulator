@@ -279,6 +279,7 @@
   },
   "power_and_rf_frontend": {
     "modeled_radiated_power": {"enabled": false},
+    "tx_linear_reference": {"enabled": false, "model": "fixed_first_order_pa_identity_dac", "classification": "optional_research_experiment"},
     "bs_tx_power_dbm": 23,
     "ue_tx_power_dbm": 23,
     "ue_noise_figure_db": 5,

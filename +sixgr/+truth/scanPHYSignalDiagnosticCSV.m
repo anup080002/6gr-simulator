@@ -12,6 +12,8 @@ emptyDirection=struct('RowCount',0,'SnapshotIDs',strings(0,1), ...
     'SnapshotMissing',false,'Panels',strings(0,1), ...
     'Tuple',strings(1,0),'TupleConsistent',true);
 summary.DL=emptyDirection; summary.UL=emptyDirection;
+clockState=sixgr.truth.PHYDiagnosticClockContract.initialize();
+summary.ClockContract=sixgr.truth.PHYDiagnosticClockContract.summarize(clockState);
 if ~isfile(filePath), return; end
 summary.Present=true;
 % Supply the schema before datastore construction: a legitimate header-only
@@ -34,13 +36,15 @@ ds=tabularTextDatastore(char(filePath),'Delimiter',',','ReadSize',readSize, ...
 % hex hashes or an early numeric row from controlling later string import.
 tupleColumns=["Frame","Slot","UEIndex","RNTI","TBId"];
 needed=["SnapshotID","Panel","Series","Direction","CurveConstruction", ...
-    "truth_status","SourceArtifact","Status",tupleColumns];
+    "truth_status","SourceArtifact","Status",tupleColumns, ...
+    sixgr.truth.PHYDiagnosticClockContract.inputColumns()];
 selected=names(ismember(names,needed));
 if isempty(selected), selected=names(1); end
 ds.SelectedVariableNames=cellstr(selected);
 countMap=containers.Map('KeyType','char','ValueType','double');
 while hasdata(ds)
     T=read(ds); n=height(T);
+    clockState=sixgr.truth.PHYDiagnosticClockContract.observe(clockState,T);
     summary.RowCount=summary.RowCount+n;
     summary.MaxChunkRows=max(summary.MaxChunkRows,n);
     summary.TruthOK=summary.TruthOK && localAll(T,'truth_status','real_lls_evidence');
@@ -88,6 +92,7 @@ for j=1:numel(keys)
     RowCount(j)=countMap(keys{j});
 end
 summary.PanelSeriesCounts=table(Panel,Series,RowCount);
+summary.ClockContract=sixgr.truth.PHYDiagnosticClockContract.summarize(clockState);
 end
 
 function values=localText(T,name)

@@ -13,6 +13,7 @@ import sqlite3
 import tempfile
 import textwrap
 from collections import Counter, defaultdict
+from decimal import Decimal, InvalidOperation
 from contextlib import closing, contextmanager, nullcontext
 from functools import lru_cache
 from itertools import chain, islice
@@ -32,7 +33,7 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-10-23-contract-v119-pusch-uci-owner-population"
+MATERIALIZER_VERSION = "2026-10-23-contract-v120-diagnostic-source-clock-contract"
 FILESYSTEM_CONTRACT_CACHE_PATH = (
     "artifact_generation/browser_contract_exact_source_cache.json"
 )
@@ -613,7 +614,8 @@ def contract_artifact_is_policy_filtered(
     if int(policy.get("max_spatial_measurement_rank", policy.get("max_spatial_rank", 1)) or 1) <= 1 and name == "condition number distribution":
         return True
 
-    if not bool(policy.get("absolute_rx_power_calibrated", False)) and name in {
+    if not bool(policy.get("absolute_power_reference_configured",
+                           policy.get("absolute_rx_power_calibrated", False))) and name in {
         "rsrp/csi-rsrp timeline",
         "servingrsrp / rsrp / csi-rsrp trends",
     }:
@@ -9181,6 +9183,91 @@ def _availability_audit_chart(
     }
 
 
+def rsrp_value_provenance(row: dict[str, Any], field: str) -> dict[str, Any]:
+    """Classify the original field, never infer reception from a dBm suffix.
+
+    Serving link-budget power is an implementation/model result. It remains
+    useful, but is not an SS/CSI/SRS receiver measurement or hardware calibration.
+    """
+    sources = {"ServingRSRP_dBm": ("ServingRSRPSource",), "RSRP_dBm": ("RSRPSource",),
+               "CSI_RSRP_dBm": ("CSI_RSRPSource",)}
+    planes = {"ServingRSRP_dBm": ("ServingRSRPReferencePlane", "RSRPReferencePlane"),
+              "RSRP_dBm": ("RSRPReferencePlane",),
+              "CSI_RSRP_dBm": ("CSI_RSRPReferencePlane", "MeasurementReferencePlane")}
+    source = _row_text(row, *sources.get(field, ()))
+    plane = _row_text(row, *planes.get(field, ()))
+    value = _row_float(row, field)
+    classification = "unqualified_original_power_missing_or_unsupported_provenance"
+    modeled = source in {"large_scale_pathloss_applied_per_reference_re_power", "large_scale_per_reference_re_power"}
+    received_sources = {"nrChannelEstimate_port3000_reference_RE_power_per_receive_branch",
+                        "received_flat_LS_noise_debiased_port3000_reference_RE_power",
+                        "received_CDM_despread_CSI_IM_noise_debiased_port3000_reference_RE_power"}
+    if value is not None and modeled:
+        classification = "modeled_large_scale_reference_RE_power"
+    elif (value is not None and source in received_sources and plane
+          and not any(token in plane.lower() for token in ("normalized", "unavailable", "unknown"))):
+        classification = "received_source_labeled_reference_RE_power_not_accuracy_qualified"
+    return {"value_dbm": value, "source": source, "reference_plane": plane,
+            "classification": classification, "modeled": value is not None and modeled,
+            "received": classification.startswith("received_source_labeled_"),
+            "standardized_accuracy_qualified": False, "hardware_qualified": False}
+
+
+def _runtime_source_labeled_rsrp_chart(chart_name, existing, fetch_artifact_bytes, run_id):
+    paths = ["reports/csv/live_rsrp_serving_trace.csv", "reports/csv/live_link_adaptation_input_table.csv",
+             "reports/csv/table_cqi_pmi_ri.csv", "air_interface/csv/dl_pdsch_trials.csv"]
+    plotted, series = [], {}
+    used_path = ""
+    source_row_count = 0
+    # Alternative projections of the same evidence are not additional trials.
+    for candidate in paths:
+        path, rows = _first_available_rows(existing, fetch_artifact_bytes, [candidate])
+        candidate_rows, candidate_series = [], {}
+        for index, row in enumerate(rows, 1):
+            for label, field in (("Serving RSRP", "ServingRSRP_dBm"), ("RSRP", "RSRP_dBm"), ("CSI-RSRP", "CSI_RSRP_dBm")):
+                evidence = rsrp_value_provenance(row, field)
+                if evidence["value_dbm"] is None:
+                    continue
+                slot = _row_float(row, "Slot")
+                x_value = slot if slot is not None else float(index)
+                coordinate = "original_Slot" if slot is not None else "source_row_index_not_radio_time"
+                identity = {name: _row_text(row, name) for name in
+                            ("SweepPointIndex", "ConfiguredSNR_dB", "UEID", "UEIndex", "ServingCell", "CellID",
+                             "ResourceID", "ResourceSetID", "BeamID", "ReceiveColumnIndex", "ObservationID")}
+                eligible = evidence["modeled"] or evidence["received"]
+                kind = "Modeled" if evidence["modeled"] else "Received" if evidence["received"] else "Unqualified"
+                name = f"{kind} {label} | {evidence['source'] or 'source unavailable'} | {evidence['reference_plane'] or 'plane not published'}"
+                scope = " | ".join(f"{key}={value}" for key, value in identity.items() if value)
+                name += f" | {scope} | {coordinate}"
+                candidate_rows.append(dict(run_id=run_id, chart_name=chart_name, slot_or_sample=x_value,
+                    coordinate_source=coordinate, series_name=name, metric_value=evidence["value_dbm"],
+                    original_field=field, source_table_logical_path=path, source_row_index=index,
+                    power_source=evidence["source"], power_reference_plane=evidence["reference_plane"],
+                    evidence_class=evidence["classification"], plotted=eligible,
+                    standardized_accuracy_qualified=False, hardware_qualified=False, **identity))
+                if eligible:
+                    candidate_series.setdefault(name, []).append([x_value, evidence["value_dbm"]])
+        if candidate_series:
+            plotted, series, used_path = candidate_rows, candidate_series, path
+            source_row_count = len(rows)
+            break
+    if not series:
+        return None
+    note = ("Source-labeled reference-RE power: modeled link-budget predictions and received-source observations "
+            "remain separate. A dBm value is not hardware calibration or independent accuracy qualification. "
+            "Unknown-source values are retained in the CSV but are not plotted; relative grid dB is excluded.")
+    return {"csv_bytes": _encode_rows_from_dicts(plotted),
+            "img_bytes": _render_multi_series_svg(chart_name, note,
+                [{"name": name, "points": points} for name, points in series.items()],
+                [f"original rows={source_row_count}; scalar records={len(plotted)}", "Model and received provenance retained"],
+                x_label="Original slot / explicitly identified source-row index", y_label="RSRP / CSI-RSRP (dBm)",
+                max_points_per_series=None, pad_constant_axes=True, show_all_series=True,
+                wrap_legend=True, wrap_subtitle=True),
+            "csv_status": "source_labeled_model_and_received_power_dataset",
+            "image_status": "generated_source_labeled_power_svg", "source_table_path": used_path,
+            "source_row_count": source_row_count, "note": note}
+
+
 def _explicit_runtime_metric_chart_materialization(
     chart_name: str,
     existing: dict[str, dict[str, Any]],
@@ -9188,6 +9275,8 @@ def _explicit_runtime_metric_chart_materialization(
     run_id: int,
 ) -> dict[str, Any] | None:
     """Render explicitly mapped runtime metrics without numeric-column guessing."""
+    if chart_name in {"RSRP/CSI-RSRP timeline", "ServingRSRP / RSRP / CSI-RSRP trends"}:
+        return _runtime_source_labeled_rsrp_chart(chart_name, existing, fetch_artifact_bytes, run_id)
     specs: dict[str, dict[str, Any]] = {
         "TB size over time": {"sources": ["reports/csv/live_pdsch_transport_block_table.csv"], "fields": ["tbs_bits", "TBSBits", "TBSize_bits"], "kind": "timeline", "label": "Transport block size (bits)"},
         "MCS/code-rate timeline": {"sources": ["reports/csv/live_pdsch_transport_block_table.csv", "air_interface/csv/dl_pdsch_trials.csv"], "fields": ["code_rate", "TargetCodeRate"], "kind": "timeline", "label": "Target code rate"},
@@ -9200,7 +9289,6 @@ def _explicit_runtime_metric_chart_materialization(
         "UCI bit count distribution": {"sources": ["reports/csv/live_uci_table.csv", "air_interface/csv/pucch_trials.csv"], "fields": ["UCIBitCount", "ExpectedBitCount"], "kind": "distribution", "label": "UCI bit count"},
         "SRS validity timeline": {"sources": ["reports/csv/live_srs_stage_table.csv", "air_interface/csv/srs_trials.csv"], "fields": ["SRSRuntimeEvidenceUsable", "MeasurementUsable", "DetectionUsable"], "kind": "timeline", "label": "SRS usable flag"},
         "channel estimate quality trend": {"sources": ["reports/csv/live_srs_channel_estimation_table.csv", "air_interface/csv/srs_trials.csv", "reports/csv/live_measurement_table.csv"], "fields": ["NMSE_dB", "TrueChannelNMSE_dB", "nmse_db"], "kind": "timeline", "label": "Channel-estimate NMSE (dB)"},
-        "RSRP/CSI-RSRP timeline": {"sources": ["reports/csv/live_rsrp_serving_trace.csv", "air_interface/csv/dl_pdsch_trials.csv"], "fields": ["ServingRSRP_dBm", "RSRP_dBm", "CSI_RSRP_dBm"], "kind": "timeline", "label": "RSRP / CSI-RSRP (dBm)"},
         "CQI / PMI / RI / CRI timeline": {"sources": ["reports/csv/live_measurement_table.csv", "reports/csv/live_link_adaptation_input_table.csv"], "fields": ["wideband_cqi", "WidebandCQI", "ri", "RI"], "kind": "timeline", "label": "Reported CQI / RI"},
         "MU grouping summary": {"sources": ["packet_flow/csv/live_dl_scheduler_grants.csv", "packet_flow/csv/live_ul_scheduler_grants.csv"], "fields": ["MUMIMOGroupSize"], "kind": "distribution", "label": "MU-MIMO group size"},
         "UE Tx power timeline": {"sources": ["reports/csv/live_ue_power_state.csv", "reports/csv/live_power_runtime_table.csv"], "fields": ["ul_tx_power_dbm"], "kind": "timeline", "label": "UE Tx power (dBm)"},
@@ -9248,7 +9336,6 @@ def _explicit_runtime_metric_chart_materialization(
         "PBCH/PDCCH/PUCCH detection and decode timelines": {"sources": ["air_interface/csv/pbch_trials.csv", "air_interface/csv/pdcch_trials.csv", "air_interface/csv/pucch_trials.csv"], "fields": ["DecodeSuccess", "CRCPass", "PUCCHDecodeOk"], "x_fields": ["Slot"], "kind": "timeline", "label": "Control decode success"},
         "per-channel reliability breakdown": {"sources": ["reports/csv/control_pass_rates.csv"], "fields": ["PassRate", "SuccessRate", "Rate"], "kind": "distribution", "label": "Channel reliability"},
         "per-format reliability breakdown": {"sources": ["air_interface/csv/pucch_trials.csv"], "fields": ["PUCCHDecodeOk", "DecodeSuccess", "CRCPass"], "kind": "distribution", "label": "PUCCH format reliability"},
-        "ServingRSRP / RSRP / CSI-RSRP trends": {"sources": ["reports/csv/live_rsrp_serving_trace.csv", "air_interface/csv/dl_pdsch_trials.csv"], "fields": ["ServingRSRP_dBm", "RSRP_dBm", "CSI_RSRP_dBm"], "x_fields": ["Slot"], "kind": "timeline", "label": "RSRP / CSI-RSRP (dBm)"},
         "per-beam quality plot": {"sources": ["reports/csv/live_beam_selection_table.csv"], "fields": ["selected_beam_gain_db", "best_beam_gain_db", "beam_gain_gap_db"], "x_fields": ["selected_beam_index"], "kind": "timeline", "label": "Beam quality (dB)"},
         "per-layer quality plot": {"sources": ["beamforming/csv/mimo_layer_metrics.csv"], "fields": ["PostEqSINRdB", "ChannelEstimateNMSEdB"], "x_fields": ["LayerIndex"], "kind": "timeline", "label": "Per-layer quality (dB)"},
         "inter-user leakage": {"sources": ["reports/csv/live_interference_table.csv"], "fields": ["measured_inter_user_leakage_db"], "x_fields": ["slot"], "kind": "timeline", "label": "Independently measured inter-user leakage (dB)"},
@@ -9907,6 +9994,7 @@ def _runtime_spectral_chart(
     records = [row for row in exact_rows
                if _row_text(row, "SnapshotID") == selected.get(_row_text(row, "Direction").upper() or "UNKNOWN", "")]
     spectra: dict[str, list[list[float]]] = defaultdict(list)
+    spectrum_metadata = {}
     sample_rates: set[float] = set()
     for row in records:
         frequency_hz = _row_float(row, "XValue")
@@ -9916,6 +10004,9 @@ def _runtime_spectral_chart(
         direction = _row_text(row, "Direction").upper() or "UNKNOWN"
         endpoint = _row_text(row, "Series").upper()
         spectra[f"{direction} {endpoint}"].append([float(frequency_hz) / 1e6, float(spectral_db)])
+        spectrum_metadata[f"{direction} {endpoint}"] = {
+            "snapshot_id": _row_text(row, "SnapshotID"), "direction": direction,
+            **_diagnostic_clock_fields(row)}
         sample_rate = _row_float(row, "SampleRate_Hz")
         if sample_rate is not None and sample_rate > 0:
             sample_rates.add(float(sample_rate))
@@ -9933,6 +10024,7 @@ def _runtime_spectral_chart(
                     "run_id": run_id,
                     "chart_name": chart_name,
                     "series_name": name,
+                    **spectrum_metadata[name],
                     "frequency_mhz": frequency_mhz,
                     "relative_spectral_level_db": psd_db,
                     "measurement_domain": "bounded_runtime_fft_common_reference",
@@ -9941,6 +10033,7 @@ def _runtime_spectral_chart(
             )
     note = ("Bounded FFT from exact same-trial runtime I/Q using the producer's common spectral reference. "
             "It is a diagnostic relative spectrum, not an absolute dBm/Hz spectrum-mask or Keysight conformance result.")
+    note += " Radio-clock source contract: " + ",".join(sorted({r["_radio_clock_status"] for r in records})) + "; frequency-local plot, not absolute-time qualification."
     if chart_name in {"occupied bandwidth", "out-of-band spectral summaries if measurable"}:
         tx_key = next((key for key in spectra if key.endswith(" TX")), "")
         if not tx_key:
@@ -9981,7 +10074,8 @@ def _runtime_spectral_chart(
         )
     return {
         "csv_bytes": _encode_dict_rows(
-            ["run_id", "chart_name", "series_name", "frequency_mhz", "relative_spectral_level_db", "measurement_domain", "source_table_logical_path"],
+            ["run_id", "chart_name", "series_name", "snapshot_id", "direction", *_DIAGNOSTIC_CLOCK_OUTPUT,
+             "frequency_mhz", "relative_spectral_level_db", "measurement_domain", "source_table_logical_path"],
             csv_rows,
         ),
         "img_bytes": _render_multi_series_svg(
@@ -11196,22 +11290,166 @@ def _runtime_energy_summary_chart(
     }
 
 
-def _diagnostic_panel_rows(existing, fetch_artifact_bytes, panels):
+_DIAGNOSTIC_CLOCK_NUMBERS = ("SFN", "CarrierNFrame", "CarrierNSlot", "SCS_kHz",
+    "SlotsPerFrame", "AbsoluteSlot", "RuntimeAbsoluteSlotIndex0", "Slot")
+_DIAGNOSTIC_CLOCK_TEXT = ("SFNSource", "SlotConvention", "AbsoluteSlotConvention", "AbsoluteSlotSource")
+_DIAGNOSTIC_CLOCK_OUTPUT = ("radio_clock_status", "radio_clock_scope", "absolute_slot",
+    "absolute_slot_convention", "absolute_slot_source", "sfn_source", "slot_convention")
+
+
+def _diagnostic_clock_claim(raw):
+    """Validate declared metadata only; never infer an epoch from SFN."""
+    values, invalid = {}, False
+    for name in _DIAGNOSTIC_CLOCK_NUMBERS:
+        token = str(raw.get(name, "")).strip()
+        if token.lower() in {"", "nan", "missing", "<missing>"}:
+            values[name] = None
+            continue
+        try:
+            number = Decimal(token)
+            valid = number.is_finite() and number == number.to_integral_value() and 0 <= number <= 2**53 - 1
+        except (InvalidOperation, ValueError):
+            valid = False
+        if valid:
+            values[name] = int(number)
+        else:
+            values[name], invalid = None, True
+    texts = {name: str(raw.get(name, "")).strip() for name in _DIAGNOSTIC_CLOCK_TEXT}
+    status = _diagnostic_clock_tuple_status(values, texts)
+    return values, texts, "invalid" if invalid else status
+
+
+def _diagnostic_clock_tuple_status(v, t):
+    sfn, frame, slot, scs, per_frame, absolute, runtime, report = [v.get(k) for k in _DIAGNOSTIC_CLOCK_NUMBERS]
+    convention = t.get("SlotConvention", "")
+    allowed = {"", "independent_trial_index", "one_based_absolute_slot", "zero_based_absolute_slot",
+               "one_based_slot_within_frame", "zero_based_slot_within_frame"}
+    if (sfn is not None and sfn >= 1024) or per_frame == 0 or convention not in allowed:
+        return "invalid"
+    if t.get("AbsoluteSlotConvention", "") not in {"", "zero_based_absolute_slot"}:
+        return "invalid"
+    if report == 0 and convention.startswith("one_based"):
+        return "invalid"
+    supported = scs in {15, 30, 60, 120, 240, 480, 960}
+    if supported and per_frame is not None and per_frame != 10 * scs // 15:
+        return "conflict"
+    arithmetic_frame = per_frame if per_frame is not None else (10 * scs // 15 if supported else None)
+    if sfn is not None and frame is not None and sfn != frame % 1024:
+        return "conflict"
+    if absolute is not None and runtime is not None and absolute != runtime:
+        return "conflict"
+    if report is not None and arithmetic_frame:
+        if convention == "one_based_slot_within_frame" and report > arithmetic_frame:
+            return "invalid"
+        if convention == "zero_based_slot_within_frame" and report >= arithmetic_frame:
+            return "invalid"
+    for epoch in (absolute, runtime):
+        if epoch is None:
+            continue
+        if report is not None:
+            if convention == "one_based_absolute_slot" and report != epoch + 1:
+                return "conflict"
+            if convention == "zero_based_absolute_slot" and report != epoch:
+                return "conflict"
+        if arithmetic_frame:
+            if slot is not None and epoch % arithmetic_frame != slot % arithmetic_frame:
+                return "conflict"
+            if sfn is not None and (epoch // arithmetic_frame) % 1024 != sfn:
+                return "conflict"
+            if frame is not None and (epoch // arithmetic_frame) % 1024 != frame % 1024:
+                return "conflict"
+            if report is not None:
+                if convention == "one_based_slot_within_frame" and report != epoch % arithmetic_frame + 1:
+                    return "conflict"
+                if convention == "zero_based_slot_within_frame" and report != epoch % arithmetic_frame:
+                    return "conflict"
+    required = (sfn, frame, slot, scs, per_frame, absolute)
+    if (any(x is None for x in required) or not supported
+        or t.get("SFNSource") != "executed_nrCarrierConfig_NFrame_mod1024"
+        or t.get("AbsoluteSlotConvention") != "zero_based_absolute_slot"
+        or t.get("AbsoluteSlotSource") not in {"executed_runtime_absolute_slot_index0", "bound_runtime_AbsoluteSlotIndex0"}
+        or (convention not in {"", "independent_trial_index"} and report is None)):
+        return "unavailable"
+    return "consistent"
+
+
+def _diagnostic_source_audit(existing, fetch_artifact_bytes):
+    """Full-row authentication; bounded state per (direction, snapshot)."""
+    path = "reports/csv/phy_signal_diagnostic_source.csv"
+    groups, digest, count = {}, hashlib.sha256(), 0
+    with _first_available_csv_stream(existing, fetch_artifact_bytes, [path]) as (_, rows):
+        for row in rows:
+            digest.update(json.dumps(row, separators=(",", ":"), ensure_ascii=False).encode("utf-8") + b"\n")
+            count += 1
+            for field, expected in (("Status", "available"), ("truth_status", "real_lls_evidence"),
+                    ("SourceArtifact", "runtime_phy_arrays_same_trial"),
+                    ("CurveConstruction", "runtime_same_trial_phy_signal_snapshot")):
+                if _row_text(row, field).strip().lower() != expected:
+                    raise ValueError(f"Invalid PHY diagnostic {field} at source row {count}")
+            direction, snapshot = _row_text(row, "Direction").upper(), _row_text(row, "SnapshotID")
+            identity = tuple(_row_text(row, k).strip() for k in ("Frame", "Slot", "UEIndex", "RNTI", "TBId"))
+            if direction not in {"DL", "UL"} or not snapshot or any(v.lower() in {"", "nan", "missing", "<missing>"} for v in identity):
+                raise ValueError(f"Invalid PHY diagnostic trial identity at source row {count}")
+            key = (direction, snapshot)
+            group = groups.setdefault(key, {"identity": identity, "last": None, "values": {}, "texts": {}, "states": set()})
+            if group["identity"] != identity:
+                raise ValueError(f"Conflicting PHY diagnostic trial identity at source row {count}")
+            raw_tuple = tuple(_row_text(row, k) for k in (*_DIAGNOSTIC_CLOCK_NUMBERS, *_DIAGNOSTIC_CLOCK_TEXT))
+            if raw_tuple != group["last"]:
+                group["last"] = raw_tuple
+                numbers, texts, state = _diagnostic_clock_claim(row)
+                group["states"].add(state)
+                for field, value in numbers.items():
+                    if value is None or (field == "Slot" and texts["SlotConvention"] in {"", "independent_trial_index"}):
+                        continue
+                    if field in group["values"] and group["values"][field] != value:
+                        group["states"].add("conflict")
+                    group["values"].setdefault(field, value)
+                for field, value in texts.items():
+                    if not value:
+                        continue
+                    if field in group["texts"] and group["texts"][field] != value:
+                        group["states"].add("conflict")
+                    group["texts"].setdefault(field, value)
+                combined = _diagnostic_clock_tuple_status(group["values"], group["texts"])
+                if combined in {"invalid", "conflict"}:
+                    group["states"].add(combined)
+    for group in groups.values():
+        group["status"] = next((state for state in ("invalid", "conflict", "unavailable") if state in group["states"]), "consistent")
+    return {"groups": groups, "digest": digest.digest(), "rows": count}
+
+
+def _diagnostic_clock_fields(row):
+    return {"radio_clock_status": row["_radio_clock_status"],
+            "radio_clock_scope": "exported_source_contract_only_not_PHY_qualification",
+            "absolute_slot": _row_text(row, "AbsoluteSlot"),
+            "absolute_slot_convention": _row_text(row, "AbsoluteSlotConvention"),
+            "absolute_slot_source": _row_text(row, "AbsoluteSlotSource"),
+            "sfn_source": _row_text(row, "SFNSource"), "slot_convention": _row_text(row, "SlotConvention")}
+
+
+def _diagnostic_panel_rows(existing, fetch_artifact_bytes, panels, audit=None):
     """Visit the entire source, retaining only the requested measurement plane.
 
     No prefix cap: a malformed final selected row must not disappear. Other
     planes are not substitutes for the requested plane. Files close on error.
     """
     path = "reports/csv/phy_signal_diagnostic_source.csv"
+    audit = audit if audit is not None else _diagnostic_source_audit(existing, fetch_artifact_bytes)
+    digest, count = hashlib.sha256(), 0
     with _first_available_csv_stream(existing, fetch_artifact_bytes, [path]) as (_, rows):
         for row in rows:
+            digest.update(json.dumps(row, separators=(",", ":"), ensure_ascii=False).encode("utf-8") + b"\n")
+            count += 1
             if _row_text(row, "Panel") not in panels:
                 continue
-            for field, expected in (("Status", "available"), ("truth_status", "real_lls_evidence"),
-                                    ("SourceArtifact", "runtime_phy_arrays_same_trial")):
-                if _row_text(row, field).strip().lower() != expected:
-                    raise ValueError(f"Invalid PHY diagnostic {field} in selected measurement plane")
+            key = (_row_text(row, "Direction").upper(), _row_text(row, "SnapshotID"))
+            if key not in audit["groups"]:
+                raise ValueError("PHY diagnostic identity changed after source audit")
+            row["_radio_clock_status"] = audit["groups"][key]["status"]
             yield row
+    if count != audit["rows"] or digest.digest() != audit["digest"]:
+        raise ValueError("PHY diagnostic source changed after full-row source audit")
 
 
 def _runtime_hest_grid_stream(chart_name, existing, fetch_artifact_bytes, run_id):
@@ -11222,11 +11460,12 @@ def _runtime_hest_grid_stream(chart_name, existing, fetch_artifact_bytes, run_id
     through finalization, persistence and lineage; small outputs retain bytes.
     """
     source_path = "reports/csv/phy_signal_diagnostic_source.csv"
+    audit = _diagnostic_source_audit(existing, fetch_artifact_bytes)
     counts, pairs = Counter(), {}
     first_hash = hashlib.sha256()
 
     def rows():
-        for row in _diagnostic_panel_rows(existing, fetch_artifact_bytes, {"channel_estimate_grid"}):
+        for row in _diagnostic_panel_rows(existing, fetch_artifact_bytes, {"channel_estimate_grid"}, audit):
             if _row_text(row, "Series") == "receiver_hest_exact_tensor":
                 yield row
 
@@ -11239,15 +11478,17 @@ def _runtime_hest_grid_stream(chart_name, existing, fetch_artifact_bytes, run_id
         snapshot = _row_text(row, "SnapshotID")
         if not snapshot:
             raise ValueError("Hest grid requires a captured snapshot identity")
+        key = (_row_text(row, "Direction").upper(), snapshot)
         pair = (_row_text(row, "RxPortIndex0Based"), _row_text(row, "TxPortIndex0Based"))
         if not all(pair):
             raise ValueError("Hest grid requires explicit RX/TX port identities")
-        counts[snapshot] += 1
-        pairs[snapshot] = min(pairs.get(snapshot, pair), pair)
+        counts[key] += 1
+        pairs[key] = min(pairs.get(key, pair), pair)
     if not counts:
         return None
-    snapshot = max(counts, key=counts.get)
-    raster_pair = pairs[snapshot]
+    selected_key = max(counts, key=counts.get)
+    direction, snapshot = selected_key
+    raster_pair = pairs[selected_key]
     value_field = "Phase_deg" if chart_name == "channel phase heatmap" else "Magnitude_dB"
     # Mapping/order matches the canonical plotted CSV. Undefined phases and
     # true zero coefficients are retained, not dropped or replaced by floors.
@@ -11263,7 +11504,7 @@ def _runtime_hest_grid_stream(chart_name, existing, fetch_artifact_bytes, run_id
         ("phase_delta_time_rad", "PhaseDeltaTime_rad"), ("grid_sha256", "GridSHA256"),
     ]
     header = ["run_id", "chart_name", "snapshot_id", *[name for name, _ in mapping],
-              "raster_color_offset", "source_table_logical_path"]
+              *_DIAGNOSTIC_CLOCK_OUTPUT, "raster_color_offset", "source_table_logical_path"]
     output = _csv_output_buffer()
     text = io.TextIOWrapper(output, encoding="utf-8", newline="")
     writer = csv.writer(text, lineterminator="\n")
@@ -11273,13 +11514,14 @@ def _runtime_hest_grid_stream(chart_name, existing, fetch_artifact_bytes, run_id
     try:
         for row in rows():
             fingerprint(second_hash, row)
-            if _row_text(row, "SnapshotID") != snapshot:
+            if (_row_text(row, "Direction").upper(), _row_text(row, "SnapshotID")) != selected_key:
                 continue
             values = []
             for name, source in mapping:
                 number = _row_float(row, source) if name in {"magnitude_db", "phase_deg"} else None
                 values.append(number if number is not None else _row_text(row, source))
-            writer.writerow([run_id, chart_name, snapshot, *values, 0.0, source_path])
+            writer.writerow([run_id, chart_name, snapshot, *values,
+                             *_diagnostic_clock_fields(row).values(), 0.0, source_path])
             written += 1
             if (_row_text(row, "RxPortIndex0Based"), _row_text(row, "TxPortIndex0Based")) != raster_pair:
                 continue
@@ -11291,7 +11533,7 @@ def _runtime_hest_grid_stream(chart_name, existing, fetch_artifact_bytes, run_id
             coordinates[(x, y)] = _row_float(row, value_field)
             if first_raster is None:
                 first_raster = row
-        if first_hash.digest() != second_hash.digest() or written != counts[snapshot]:
+        if first_hash.digest() != second_hash.digest() or written != counts[selected_key]:
             raise ValueError("PHY diagnostic source changed during two-pass materialization")
         text.flush()
     except Exception:
@@ -11312,6 +11554,7 @@ def _runtime_hest_grid_stream(chart_name, existing, fetch_artifact_bytes, run_id
             [str(int(x)) for x in xs], [str(int(y)) for y in ys], matrix,
             [f"snapshot={snapshot}", f"raster_rx_port={raster_pair[0]}", f"raster_tx_port={raster_pair[1]}",
              f"direction={_row_text(first_raster, 'Direction')} slot={_row_text(first_raster, 'Slot')}",
+             f"radio_clock_contract={first_raster['_radio_clock_status']}; capture-local RE plot, not absolute-time qualification",
              f"all_port_rows_in_csv={written}", "color_offset=0", f"source={source_path}",
              "evidence=receiver_Hest_exact_tensor"],
             "Zero-based subcarrier index", "Zero-based OFDM symbol index", physical_color_label=label),
@@ -11394,6 +11637,7 @@ def _runtime_phy_signal_diagnostic_chart(
             groups[(snapshot, direction, series, antenna)].append([i_value, q_value])
             csv_rows.append({
                 "run_id": run_id, "chart_name": chart_name, "snapshot_id": snapshot,
+                **_diagnostic_clock_fields(row),
                 "direction": direction, "ue_index": _row_text(row, "UEIndex"),
                 "cell_id": _row_text(row, "CellID"), "sfn": _row_text(row, "SFN"),
                 "slot": _row_text(row, "Slot"), "series": series,
@@ -11501,6 +11745,7 @@ def _runtime_phy_signal_diagnostic_chart(
                 "run_id": run_id,
                 "chart_name": chart_name,
                 "snapshot_id": snapshot_id,
+                **_diagnostic_clock_fields(row),
                 "direction": direction,
                 "ue_index": _row_text(row, "UEIndex"),
                 "cell_id": _row_text(row, "CellID"),
@@ -11559,6 +11804,7 @@ def _runtime_phy_signal_diagnostic_chart(
                 [
                     "run_id", "chart_name", "snapshot_id", "direction", "ue_index",
                     "cell_id", "sfn", "slot", "sample_index", "time_s", "endpoint",
+                    *_DIAGNOSTIC_CLOCK_OUTPUT,
                     "i_value", "q_value", "magnitude", "phase_rad", "sample_rate_hz",
                     "source_table_logical_path",
                 ],
@@ -11571,6 +11817,7 @@ def _runtime_phy_signal_diagnostic_chart(
                     f"snapshots={len(set(row['snapshot_id'] for row in csv_rows))}",
                     f"source={source_path}",
                     "evidence=runtime_same_trial_phy_arrays",
+                    "radio_clock_contract=" + ",".join(sorted({r["radio_clock_status"] for r in csv_rows})) + "; capture-local time, not absolute radio timeline",
                 ],
                 x_label="Time (s)",
                 y_label=("Phase (rad)" if chart_name == "phase vs sample" else
@@ -11618,6 +11865,7 @@ def _runtime_phy_signal_diagnostic_chart(
             power_points.append([delay_ns, power_linear])
             csv_rows.append({
                 "run_id": run_id, "chart_name": chart_name, "snapshot_id": snapshot_id,
+                **_diagnostic_clock_fields(row),
                 "direction": _row_text(row, "Direction"), "ue_index": _row_text(row, "UEIndex"),
                 "cell_id": _row_text(row, "CellID"), "sfn": _row_text(row, "SFN"),
                 "slot": _row_text(row, "Slot"), "series": _row_text(row, "Series"),
@@ -11633,7 +11881,7 @@ def _runtime_phy_signal_diagnostic_chart(
         evidence = "executed_runtime_path_gain_tensor" if panel.startswith("true_") else "receiver_channel_estimate_ifft"
         return {
             "csv_bytes": _encode_dict_rows(
-                ["run_id", "chart_name", "snapshot_id", "direction", "ue_index", "cell_id", "sfn", "slot", "series", "delay_s", "delay_ns", "i_value", "q_value", "magnitude_db", "phase_deg", "power_linear", "tensor_sha256", "source_table_logical_path"],
+                ["run_id", "chart_name", "snapshot_id", *_DIAGNOSTIC_CLOCK_OUTPUT, "direction", "ue_index", "cell_id", "sfn", "slot", "series", "delay_s", "delay_ns", "i_value", "q_value", "magnitude_db", "phase_deg", "power_linear", "tensor_sha256", "source_table_logical_path"],
                 csv_rows,
             ),
             "img_bytes": _render_multi_series_svg(
@@ -11682,6 +11930,7 @@ def _runtime_phy_signal_diagnostic_chart(
             phase_points.append([frequency_mhz, float(phase_deg)])
             csv_rows.append({
                 "run_id": run_id, "chart_name": chart_name, "snapshot_id": snapshot_id,
+                **_diagnostic_clock_fields(row),
                 "direction": _row_text(row, "Direction"), "ue_index": _row_text(row, "UEIndex"),
                 "cell_id": _row_text(row, "CellID"), "sfn": _row_text(row, "SFN"),
                 "slot": _row_text(row, "Slot"), "frequency_offset_hz": float(frequency_hz),
@@ -11694,7 +11943,7 @@ def _runtime_phy_signal_diagnostic_chart(
             return None
         return {
             "csv_bytes": _encode_dict_rows(
-                ["run_id", "chart_name", "snapshot_id", "direction", "ue_index", "cell_id", "sfn", "slot", "frequency_offset_hz", "i_value", "q_value", "magnitude_db", "phase_deg", "tensor_sha256", "source_table_logical_path"],
+                ["run_id", "chart_name", "snapshot_id", *_DIAGNOSTIC_CLOCK_OUTPUT, "direction", "ue_index", "cell_id", "sfn", "slot", "frequency_offset_hz", "i_value", "q_value", "magnitude_db", "phase_deg", "tensor_sha256", "source_table_logical_path"],
                 csv_rows,
             ),
             "img_bytes": _render_multi_series_svg(
@@ -11740,6 +11989,7 @@ def _runtime_phy_signal_diagnostic_chart(
                 "run_id": run_id,
                 "chart_name": chart_name,
                 "snapshot_id": snapshot_id,
+                **_diagnostic_clock_fields(row),
                 "direction": _row_text(row, "Direction"),
                 "cell_id": _row_text(row, "CellID"),
                 "ue_index": _row_text(row, "UEIndex"),
@@ -11760,6 +12010,7 @@ def _runtime_phy_signal_diagnostic_chart(
                 [
                     "run_id", "chart_name", "snapshot_id", "direction", "cell_id",
                     "ue_index", "sfn", "slot", "ofdm_symbol_index", "subcarrier_index",
+                    *_DIAGNOSTIC_CLOCK_OUTPUT,
                     "magnitude_db", "phase_deg", "channel_estimate_source",
                     "channel_estimate_method", "source_table_logical_path",
                 ], csv_rows,
@@ -12608,6 +12859,10 @@ def _specialized_chart_materialization(
     run_id: int,
 ) -> dict[str, Any] | None:
     chart_name = str(chart_name or "")
+    if chart_name in {"RSRP/CSI-RSRP timeline", "ServingRSRP / RSRP / CSI-RSRP trends"}:
+        # Do not fall through to numeric-column or legacy calibrated-RSRP
+        # rendering when original source/plane authority is absent.
+        return _runtime_source_labeled_rsrp_chart(chart_name, existing, fetch_artifact_bytes, run_id)
     from lls_csi_selection_quality import chart_materialization as selection_chart
     selection = selection_chart(chart_name, existing, fetch_artifact_bytes, run_id)
     if selection is not None:
@@ -14315,37 +14570,6 @@ def _specialized_chart_materialization(
                         "source_table_path": la_path,
                         "source_row_count": len(csv_rows),
                         "note": "Comparison chart derived only from runtime-applied noise calibration and measured SINR fields; configured, proxy, and large-scale preview values are not charted as quality.",
-                    }
-            if chart_name == "ServingRSRP / RSRP / CSI-RSRP trends":
-                rsrp_rows = la_rows
-                # Absolute RSRP is a power-per-reference-RE quantity in dBm.
-                # CSI_RSRP_dB is a relative digital-grid power and must never
-                # be mixed with calibrated dBm values on this axis.
-                series_specs = [("Serving RSRP", "ServingRSRP_dBm"), ("RSRP", "RSRP_dBm"), ("CSI-RSRP", "CSI_RSRP_dBm")]
-                series: list[dict[str, Any]] = []
-                csv_rows: list[dict[str, Any]] = []
-                for series_name, field_name in series_specs:
-                    points: list[list[float]] = []
-                    for idx, row in enumerate(rsrp_rows, start=1):
-                        x_val = _row_float(row, "Slot", "Frame")
-                        if x_val is None:
-                            x_val = float(idx)
-                        y_val = _row_float(row, field_name)
-                        if y_val is None:
-                            continue
-                        points.append([float(x_val), float(y_val)])
-                        csv_rows.append({"run_id": run_id, "chart_name": chart_name, "slot_or_sample": x_val, "series_name": series_name, "metric_value": y_val, "source_table_logical_path": la_path})
-                    if points:
-                        series.append({"name": series_name, "points": _downsample_points(points, 160)})
-                if series:
-                    return {
-                        "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "slot_or_sample", "series_name", "metric_value", "source_table_logical_path"], csv_rows),
-                        "img_bytes": _render_multi_series_svg(chart_name, "Calibrated serving RSRP and CSI-RSRP power per reference RE from runtime measurement exports.", series, [f"rows={len(rsrp_rows)}", "Unit authority: absolute dBm only"], x_label="Slot / sample", y_label="RSRP per reference RE (dBm)"),
-                        "csv_status": "specialized_runtime_measurement_dataset",
-                        "image_status": "generated_specialized_runtime_summary_svg",
-                        "source_table_path": la_path,
-                        "source_row_count": len(csv_rows),
-                        "note": "RSRP trend chart contains only calibrated absolute dBm fields; relative digital-grid CSI_RSRP_dB is excluded.",
                     }
             if chart_name == "CQI / PMI / RI / CRI / SSBRI trends":
                 series_specs = [("CQI", "WidebandCQI"), ("PMI", "PMI"), ("RI", "RI"), ("CRI", "CRI"), ("SSBRI", "SSBRI")]

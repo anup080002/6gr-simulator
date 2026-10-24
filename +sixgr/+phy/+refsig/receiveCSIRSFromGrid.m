@@ -280,6 +280,10 @@ function obs = localMeasurePhysicalCSIRSRSP(obs, carrier, cfg, rxGrid, ...
         physicalSource,execution)
 % Select the units from the executed amplitude contract, not configured
 % transmit power. Normalized occupied-RE grids must not be scaled to watts.
+% Free-text input labels are declarations, not executed array/connector proof.
+obs.PhysicalMeasurementDeclaredReferencePlane=string(physicalReferencePlane);
+physicalReferencePlane="supplied_receive_columns_pre_RX_front_end";
+obs.PhysicalMeasurementReferencePlane=physicalReferencePlane;
 powerContext = sixgr.util.structGet(cfg, "lls6g.runtimePowerContext", struct());
 amplitudeUnit = string(sixgr.util.structGet( ...
     powerContext, "WaveformAmplitudeUnit", ""));
@@ -311,13 +315,13 @@ if isempty(physicalGrid)
         obs.MeasurementErrors = char(string(physicalGridStatus));
         return;
     end
-    % Direct PHY callers without a composite receiver front end already
-    % provide an antenna-plane grid.  This is the only permitted fallback;
-    % a post-AGC/ADC grid is never reverse-labeled as physical dBm.
+    % Absence of an RF impairment does not establish an antenna connector
+    % or an installed array mapping. Retain only the supplied-grid scope.
     physicalGrid = rxGrid;
     physicalOFDMInfo = ofdmInfo;
     physicalGridStatus = "available_direct_receiver_grid_no_composite_front_end";
-    physicalReferencePlane = "receiver_antenna_connector_no_composite_front_end";
+    physicalReferencePlane = "supplied_receive_grid_columns_no_composite_front_end";
+    obs.PhysicalMeasurementReferencePlane=physicalReferencePlane;
     physicalSource = "receiveCSIRSFromGrid_direct_receiver_grid";
 end
 if ~startsWith(string(physicalGridStatus), "available")
@@ -816,6 +820,8 @@ obs.PhysicalMeasurementWaveformStatus = "not_attempted";
 obs.PhysicalMeasurementWaveformSource = "";
 obs.MeasurementErrors = "";
 obs.PhysicalMeasurementStatus = "not_attempted";
+obs.PhysicalMeasurementReferencePlane = "unavailable_measurement_plane";
+obs.PhysicalMeasurementDeclaredReferencePlane = "";
 obs.PhysicalMeasurementStandard = "";
 obs.MeasurementSource = "";
 obs.ResourceExtractionAttempted = false;

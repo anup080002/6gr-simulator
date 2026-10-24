@@ -1,0 +1,113 @@
+inherits:
+  - ./lls_tdd_n40_20mhz_64txru_4rx_cdlc100_impaired.yaml
+
+meta:
+  scenario_id: lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep
+  description: >
+    Six independent n40 2.350 GHz, 20 MHz, 30 kHz absolute-power connected
+    executions at nominal receive-reference Es/N0 30, 20, 10, 0, -10 and -20 dB,
+    in that descending order.
+    Each child executes 60 slots (30 ms), including physical initial access,
+    retaining the parent's UMa NLOS attenuation, CDL-C/100 ns fading,
+    64-TXRU gNB/four-chain UE, physical RF operators, absolute sqrt(mW)
+    samples, UL power control/PHR, measured RSRP/SINR, received CSI/SRS
+    adaptive rank 1--4, beam reporting, ILLA/OLLA and HARQ.
+    A declared nominal full-BWP unity-array reference uses fixed 30/23 dBm
+    DL/UL budgets and native nrPathLoss at the explicit reference geometry.
+    Its noise PSD is frozen per child/direction and is independent of actual
+    received samples, fading, beam/rank, scheduled powers and UL power control.
+    These points are NOT measured SINR targets, thermal-noise qualification,
+    a normative 3GPP normalization formula or hardware-accuracy certification.
+    Configured noise figures remain metadata and are not added to this
+    controlled noise. Original child measurements and failures are retained.
+  purpose: Joint absolute UMa reference-Es/N0 and separately measured SINR comparison.
+  research_class: optional_research_experiment
+  maturity_tag: experimental
+  scenario_group: connected_tdd_bandwidth_validation
+  tags: [lls, truth, tdd, fr1, n40, 20mhz, 30khz, cdl-c, uma, absolute_power, adaptive_rank, nominal_reference_esn0, no_proxy]
+
+# Keep original GEOMETRY_NETWORK/connected_network authority and all physical
+# propagation/RF/power-control settings. This parent only changes the explicit
+# noise reference and owns the sequential independent children.
+run_control:
+  runtime_checkpoint_enable: false
+  total_slots: 60
+  total_time_ms: 30
+  measurement_slots: 60
+  measurement_time_ms: 30
+
+simulation:
+  link_direction: both
+  noise_operating_mode: absolute_reference_esn0
+  snr_db: 0
+  absolute_reference_esn0:
+    reference_policy: nominal_full_bwp_unity_array
+    reference_pathloss_scenario: UMa
+    # Explicit NORMALIZATION reference, not current/estimated UE geometry.
+    reference_bs_position_m: [0, 0, 25]
+    reference_ue_position_m: [85, 0, 1.5]
+    reference_los: false
+    nominal_dl_tx_power_dbm: 30
+    nominal_ul_tx_power_dbm: 23
+    classification: optional_research_experiment
+  snr_sweep_offsets_db: [0]
+  reference_sweep_enabled: false
+  adaptive_sweep_enabled: false
+  monte_carlo_iterations: 1
+  # Fresh access/channel/RF/traffic/beam/LA/HARQ owners at each point.
+  random_seed: 20260927
+  deterministic_mode: true
+  n_frames: 3
+  n_slots: 60
+  n_subframes: 30
+  min_duration_s: 0.03
+
+sweeps_and_matrix:
+  snr_sweep:
+    enabled: false
+    state_policy: independent_link_state_per_point
+    initial_access_state_policy: independent_per_point
+    values_db: [0]
+
+scenario:
+  runner_profile: generic_sweep
+  sweep:
+    base_profile: waveform_bundle
+    execution_error_policy: retain_failure_and_continue
+    output_name: lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep
+    # Preserve failed access/decoding and unavailable populations. No forced
+    # rank, detector, current-sample normalization or successful rescue rows.
+    overrides:
+      - label: reference_esn0_30_db
+        config:
+          meta: {scenario_id: lls_tdd_n40_20mhz_reference_esn0_30db}
+          simulation: {snr_db: 30, random_seed: 20260927}
+          output: {profile: lls_tdd_n40_20mhz_reference_esn0_30db}
+      - label: reference_esn0_20_db
+        config:
+          meta: {scenario_id: lls_tdd_n40_20mhz_reference_esn0_20db}
+          simulation: {snr_db: 20, random_seed: 20260927}
+          output: {profile: lls_tdd_n40_20mhz_reference_esn0_20db}
+      - label: reference_esn0_10_db
+        config:
+          meta: {scenario_id: lls_tdd_n40_20mhz_reference_esn0_10db}
+          simulation: {snr_db: 10, random_seed: 20260927}
+          output: {profile: lls_tdd_n40_20mhz_reference_esn0_10db}
+      - label: reference_esn0_0_db
+        config:
+          meta: {scenario_id: lls_tdd_n40_20mhz_reference_esn0_0db}
+          simulation: {snr_db: 0, random_seed: 20260927}
+          output: {profile: lls_tdd_n40_20mhz_reference_esn0_0db}
+      - label: reference_esn0_m10_db
+        config:
+          meta: {scenario_id: lls_tdd_n40_20mhz_reference_esn0_m10db}
+          simulation: {snr_db: -10, random_seed: 20260927}
+          output: {profile: lls_tdd_n40_20mhz_reference_esn0_m10db}
+      - label: reference_esn0_m20_db
+        config:
+          meta: {scenario_id: lls_tdd_n40_20mhz_reference_esn0_m20db}
+          simulation: {snr_db: -20, random_seed: 20260927}
+          output: {profile: lls_tdd_n40_20mhz_reference_esn0_m20db}
+
+output:
+  profile: lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep

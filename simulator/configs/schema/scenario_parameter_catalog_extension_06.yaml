@@ -70,8 +70,8 @@
       "small_uci_coding": {"required": false, "type": "string"},
       "ldpc_base_graph_selection": {"required": false, "type": "string"},
       "ldpc_max_iterations": {"required": false, "type": "integer", "min": 1},
-      "ldpc_algorithm": {"required": false, "type": "string"},
-      "ldpc_scaling_factor": {"required": false, "type": "number"},
+      "ldpc_algorithm": {"required": false, "type": "string", "allowed_values": ["Belief propagation", "Layered belief propagation", "Normalized min-sum", "Offset min-sum"]},
+      "ldpc_scaling_factor": {"required": false, "type": "number", "min_exclusive": 0, "max": 1},
       "ldpc_early_termination": {"required": false, "type": "boolean"},
       "polar_list_size": {"required": false, "type": "integer", "min": 1},
       "crc_type_tb": {"required": false, "type": "string"},
@@ -96,6 +96,7 @@
       "bs_reference": {"required": false, "type": "struct"},
       "tx_spatial_power_enabled": {"required": false, "type": "boolean"},
       "modeled_radiated_power": {"required": false, "type": "struct"},
+      "tx_linear_reference": {"required": false, "type": "struct", "nested_rule": "tx_linear_reference_policy", "default": {"enabled": false, "model": "fixed_first_order_pa_identity_dac", "classification": "optional_research_experiment"}, "requirement_class": "IMPLEMENTATION_POLICY", "description": "Opt-in same-execution fixed-linear TX model reference; not nonlinear per-port truth or standardized power accuracy."},
       "bs_noise_figure_db": {"required": false, "type": "number", "min": 0},
       "ue_max_power_dbm": {"required": false, "type": "number"}
     }},
@@ -486,6 +487,11 @@
     }}
   },
   "nested_sections": {
+    "tx_linear_reference_policy": {"parameters": {
+      "enabled": {"required": true, "type": "boolean"},
+      "model": {"required": true, "type": "string", "allowed_values": ["fixed_first_order_pa_identity_dac"]},
+      "classification": {"required": true, "type": "string", "allowed_values": ["optional_research_experiment"]}
+    }},
     "run_control_gating": {"parameters": {
       "preAttachUEsBeforeMeasurement": {"required": false, "type": "boolean"}
     }},

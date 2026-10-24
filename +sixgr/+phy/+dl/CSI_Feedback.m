@@ -1358,10 +1358,15 @@ if isfinite(reportedCQI) && ~isfinite(csi.SINR_dB)
 end
 csi.NumRxAnt = double(size(Hwb,1));
 csi.NumTxPorts = double(size(Hwb,2));
-csi.ReportCQI = contains(lower(string(core.ChannelStateInformationMode)),"cqi");
-csi.ReportPMI = contains(lower(string(core.ChannelStateInformationMode)),"pmi");
-csi.ReportRI = contains(lower(string(core.ChannelStateInformationMode)),"ri");
-csi.ReportCRI = contains(lower(string(core.ChannelStateInformationMode)),"cri");
+% Reporting policy follows exact configured quantities, not substring
+% matches (CRI is not RI) or the number of serialized bits. In particular,
+% one-port cri-ri-cqi still requests RI with its implicit value one, while
+% its typed payload correctly has no RI bits.
+reportingPolicy = core.CSIReportConfiguration.reportingPolicy();
+csi.ReportCQI = reportingPolicy.ReportCQI;
+csi.ReportPMI = reportingPolicy.ReportPMI;
+csi.ReportRI = reportingPolicy.ReportRI;
+csi.ReportCRI = reportingPolicy.ReportCRI;
 sixgr.config.assertRuntimeFeatureUse(cfg, "cqi_reporting", csi.ReportCQI, ...
     "CSI_Feedback.strict.CQI");
 sixgr.config.assertRuntimeFeatureUse(cfg, "pmi_reporting", csi.ReportPMI, ...

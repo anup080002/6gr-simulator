@@ -142,6 +142,152 @@ def wilson_interval(failures, trials, z=1.959963984540054):
     return max(0, center - half_width), min(1, center + half_width)
 
 
+# Mirror linkTrialDecodeCoverage and exportLLSReportingBundle's supplied-source
+# contract. This is original receiver-row acceptance, not archive reexecution
+# or statistical independence. Status, BLER and CB CRCs cannot supply TB CRCs.
+SCH_COHORT_FIELDS = (
+    "RunID RunTag ExecutionID ScenarioID ConfigHash RandomSeed ChannelSeed "
+    "SourceRandomSeed SourceChannelSeed PreparedRandomSeed PreparedChannelSeed "
+    "SweepPointIndex ConfiguredSNR_dB SNR_dB UEIndex UEID RNTI ServingCell CellID "
+    "ReceiverID ReceiverClockDomain ReceiverClockEpoch ConfigurationEpoch RFConfigurationEpoch "
+    "ChannelModelApplied ChannelModel ChannelFadingApplied DopplerHz Layers NumLayers "
+    "MCS MCSIndex MCSTable MCSMappingTable Modulation CodeRate TargetCodeRate NumCodewords ActualNumCodewords "
+    "DecoderCRCInputDomain HARQSoftCombiningApplied HARQCombiningApplied IsRetransmission "
+    "HARQIsRetransmission HARQRound RV HARQRV TBSizeBits TBSize_bits TBSBits OriginalTBSBits "
+    "CurrentTBSBits RateMatchedBits PRBSet PRBSetJSON PRBs NumPRB PRBStart PRBCount AllocatedPRBCount "
+    "TBSInputNPRB TBSInputNREPerPRB TBSInputTargetCodeRate TBSInputXOverhead "
+    "SymbolAllocation SymbolStart SymbolLength StartSymbol NumSymbols HARQContextHash "
+    "PrecodingMode PrecodingNumPorts PrecodingNumLayers PrecodingMatrixSHA256 AppliedPrecoderSHA256 "
+    "PrecoderSHA256 AppliedPrecoderPMI AppliedPrecoderPMIType AppliedPrecoderCodebookMode "
+    "ExecutionProfile ExecutionTaxonomy ExecutionBackend "
+    "ApproximationMode RuntimeEvidenceSource RuntimeMaterializationStatus E2EAirModel Source"
+).split()
+
+
+def _sch_flag(row, field):
+    value = str(row.get(field, "")).strip().lower()
+    if value in {"", "nan"}:
+        return None
+    if value in {"true", "false"}:
+        return int(value == "true")
+    numeric = number(value)
+    if numeric not in (0, 1):
+        raise ValueError(f"SCH {field} requires original 0/1 or unavailable, got {value!r}")
+    return int(numeric)
+
+
+def _sch_acceptance(row, direction):
+    supplied_direction = str(row.get("Direction", "")).strip().upper()
+    if supplied_direction and supplied_direction != direction:
+        raise ValueError("SCH source file and original Direction disagree")
+    # Optional labels cannot create authority; explicit proxy or unknown
+    # backends cannot override otherwise positive receiver flags.
+    backends = {"scheduler_shared_stream_receiver", "scheduler_grant_waveform_chain"}
+    backends |= ({"canonical_pdsch_compatibility_facades", "legacy_pdsch_calibration_facades"}
+                 if direction == "DL" else {"canonical_pusch_waveform_chain"})
+    channel = "pdsch" if direction == "DL" else "pusch"
+    runner = "runDLPDSCHThroughput" if direction == "DL" else "runULPUSCHThroughput"
+    allowed = {"ApproximationMode": {"none"}, "ExecutionBackend": backends,
+               "RuntimeEvidenceSource": {f"sixgr.link.{runner}_returned_receiver"},
+               "RuntimeMaterializationStatus": {f"active_waveform_{channel}_runtime"}}
+    for field, choices in allowed.items():
+        value = str(row.get(field, "")).strip()
+        if value and value not in choices:
+            return False, "supplied_source_contract_incompatible"
+    for field in ("Source", "E2EAirModel"):
+        value = str(row.get(field, "")).strip().lower()
+        if value in {"lut", "logistic", "fast_proxy", "synthetic", "fallback"} or value.startswith(("synthetic_from_fast_kernel", "fast_proxy_")):
+            return False, "supplied_source_contract_incompatible"
+    for field in ("FallbackFlag", "PlaceholderFlag"):
+        if field in row and _sch_flag(row, field) != 0:
+            return False, "supplied_source_contract_incompatible"
+    prefix = "DLSCH" if direction == "DL" else "ULSCH"
+    required = {"FinalizedFlag": 1, "PartialRowFlag": 0, "Crash": 0,
+                "IsWarmupFrame": 0, "DecodeAttempted": 1, "DecodeUsable": 1,
+                prefix + "DecodeAttempted": 1, prefix + "DecodeAvailable": 1,
+                "CRCApplicable": 1}
+    flags = {field: _sch_flag(row, field) for field in required}
+    crc = _sch_flag(row, "CRCPass")
+    status = str(row.get("Status", "")).strip().upper()
+    if flags["Crash"] == 1 or status == "CRASH":
+        return False, "execution_failure_not_radio_decode_failure"
+    if not supplied_direction or any(value is None for value in flags.values()) or crc is None:
+        return False, "missing_original_receiver_lifecycle_authority"
+    if any(flags[field] != wanted for field, wanted in required.items()) or status not in {"PASS", "FAIL"}:
+        return False, "unavailable_or_inapplicable_completed_SCH_CRC"
+    return True, ""
+
+
+def _sch_attempt_class(row):
+    flags = [_sch_flag(row, field) for field in ("IsRetransmission", "HARQIsRetransmission")]
+    supplied = [flag for flag in flags if flag is not None]
+    if len(set(supplied)) > 1:
+        raise ValueError("Contradictory original SCH retransmission flags")
+    # No assumed HARQRound index origin, RV=0 inference, or reconstructed TB.
+    return ("retry" if supplied[0] else "first") if supplied else "unknown"
+
+
+def _sch_source_sha256(path):
+    digest = hashlib.sha256()
+    with io_path(Path(path)).open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _sch_observations(progress):
+    observations = []
+    for point in progress["points"]:
+        if point["status"] not in {"passed", "failed"}:
+            continue
+        child = Path(point["run_folder"])
+        config_path = io_path(child / "meta/scenario_config_resolved.json")
+        config_hash = _sch_source_sha256(config_path) if config_path.is_file() else ""
+        for direction, filename in (("DL", "dl_pdsch_trials.csv"), ("UL", "ul_pusch_trials.csv")):
+            path = child / "air_interface/csv" / filename
+            if not io_path(path).is_file():
+                continue
+            digest = _sch_source_sha256(path)
+            source = f"sweeps/{child.name}/air_interface/csv/{filename}"
+            trials = read_rows(path, strict=True)
+            fingerprints = [hashlib.sha256(json.dumps(row, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                            for row in trials]
+            multiplicity = {}
+            for value in fingerprints:
+                multiplicity[value] = multiplicity.get(value, 0) + 1
+            for index, (row, fingerprint) in enumerate(zip(trials, fingerprints), 1):
+                eligible, reason = _sch_acceptance(row, direction)
+                attempt = _sch_attempt_class(row)
+                if multiplicity[fingerprint] > 1:
+                    eligible, reason = False, "duplicate_original_row_identity_unresolved"
+                cohort = {field: row[field] for field in SCH_COHORT_FIELDS if field in row}
+                # No cross-point compatibility inferred from equal MCS/rank.
+                cohort.update(PointIndex=point["index"], Direction=direction,
+                              ChildConfigSHA256=config_hash, AttemptClass=attempt)
+                if attempt != "first":
+                    # A round number is not a complete conditional soft-buffer
+                    # history. Keep retries individual until an explicit
+                    # original-history population contract exists.
+                    cohort["UnresolvedHistorySourceRow"] = index
+                cohort_json = json.dumps(cohort, sort_keys=True, separators=(",", ":"))
+                observations.append(dict(PointIndex=point["index"], Direction=direction,
+                    ConfiguredSNR_dB=point["configured_snr_db"], SourceCSV=source,
+                    SourceSHA256=digest, SourceRow=index, ChildConfigSHA256=config_hash,
+                    AttemptClass=attempt, CompletedReceiverOutcomeAvailable=eligible,
+                    ExclusionReason=reason, OriginalCRCPass=row.get("CRCPass", ""),
+                    PopulationID=hashlib.sha256(cohort_json.encode()).hexdigest(),
+                    PopulationJSON=cohort_json, StatisticalIndependenceClaimed=False,
+                    # Keep only reduction operands between children, not large
+                    # retained LLR/IQ JSON columns. Original rows remain in the
+                    # unchanged, hash-identified source and concatenated CSV.
+                    _row={field: row[field] for field in
+                          ("CRCPass", "MeasuredTrialSINR_dB", "Goodput_Mbps", "MCSIndex", "MCS",
+                           "Layers", "RankIndicator", "Rank", "Modulation") if field in row}))
+            if _sch_source_sha256(path) != digest:
+                raise RuntimeError(f"SCH source changed during snapshot: {path}")
+    return observations
+
+
 def concatenate_csv(destination, sources):
     """Stream exact rows; union schemas, preserve missing cells and row identity."""
     fields = list(PROVENANCE)
@@ -215,6 +361,13 @@ def export_overview(root, progress, *, save_images=True):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     rows = []
+    observations = _sch_observations(progress)
+    audit_fields = ["PointIndex", "Direction", "ConfiguredSNR_dB", "SourceCSV", "SourceSHA256",
+                    "SourceRow", "ChildConfigSHA256", "AttemptClass", "CompletedReceiverOutcomeAvailable",
+                    "ExclusionReason", "OriginalCRCPass", "PopulationID", "PopulationJSON",
+                    "StatisticalIndependenceClaimed"]
+    write_csv(root / "reports/csv/sweep_sch_outcome_audit.csv", audit_fields,
+              [{field: observation[field] for field in audit_fields} for observation in observations])
     fields = {"MeanMeasuredSINR_dB": "MeasuredTrialSINR_dB",
               "MeanAttemptGoodput_Mbps": "Goodput_Mbps", "MeanMCSIndex": "MCSIndex",
               "MeanExecutedLayers": "Layers"}
@@ -226,6 +379,9 @@ def export_overview(root, progress, *, save_images=True):
                        Direction=direction, DataAvailability="not_completed",
                        TrialCount="", CRCObservedCount="", FailureCount="", AttemptBLER="",
                        AttemptBLER_CI_Low="", AttemptBLER_CI_High="",
+                       FirstAttemptCount="", RetryAttemptCount="", UnknownAttemptClassCount="",
+                       ExcludedRowCount="", StatisticalIndependenceClaimed=False,
+                       PopulationScope="descriptive_all_completed_attempts_not_initial_or_residual_TB_BLER",
                        SourceCSV=f"sweeps/{path.parents[2].name}/air_interface/csv/{filename}")
             for target in fields:
                 row[target] = ""
@@ -237,15 +393,19 @@ def export_overview(root, progress, *, save_images=True):
                 row["DataAvailability"] = "source_missing"
                 rows.append(row)
                 continue
-            trials = read_rows(path, strict=True)
-            crc = [number(r.get("CRCPass")) for r in trials]
-            crc = [v for v in crc if v in (0, 1)]
+            observed = [o for o in observations if o["PointIndex"] == point["index"] and o["Direction"] == direction]
+            accepted = [o for o in observed if o["CompletedReceiverOutcomeAvailable"]]
+            trials = [o["_row"] for o in accepted]
+            crc = [_sch_flag(r, "CRCPass") for r in trials]
             failures = sum(v == 0 for v in crc)
-            ci_low, ci_high = wilson_interval(failures, len(crc))
-            row.update(DataAvailability=("measured_rows_present" if trials else "source_present_empty"),
-                       TrialCount=len(trials), CRCObservedCount=len(crc), FailureCount=failures,
+            row.update(DataAvailability=("completed_SCH_rows_present" if trials else
+                                         "no_eligible_completed_SCH_rows" if observed else "source_present_empty"),
+                       TrialCount=len(observed), CRCObservedCount=len(crc), FailureCount=failures,
                        AttemptBLER=(failures / len(crc) if crc else ""),
-                       AttemptBLER_CI_Low=ci_low, AttemptBLER_CI_High=ci_high)
+                       FirstAttemptCount=sum(o["AttemptClass"] == "first" for o in accepted),
+                       RetryAttemptCount=sum(o["AttemptClass"] == "retry" for o in accepted),
+                       UnknownAttemptClassCount=sum(o["AttemptClass"] == "unknown" for o in accepted),
+                       ExcludedRowCount=len(observed)-len(accepted))
             for target, source in fields.items():
                 values = [number(r.get(source)) for r in trials]
                 values = [v for v in values if v is not None]
@@ -254,20 +414,25 @@ def export_overview(root, progress, *, save_images=True):
             rows.append(row)
     columns = ["PointIndex", "Label", "ConfiguredSNR_dB", "PointStatus", "Direction",
                "DataAvailability", "TrialCount", "CRCObservedCount", "FailureCount", "AttemptBLER",
-               "AttemptBLER_CI_Low", "AttemptBLER_CI_High", "SourceCSV"]
+               "AttemptBLER_CI_Low", "AttemptBLER_CI_High", "SourceCSV", "FirstAttemptCount",
+               "RetryAttemptCount", "UnknownAttemptClassCount", "ExcludedRowCount",
+               "StatisticalIndependenceClaimed", "PopulationScope"]
     columns += [item for field in fields for item in (field, field + "_Count")]
     write_csv(root / "reports/csv/sweep_link_comparison.csv", columns, rows)
     bler_columns = ["PointIndex", "Label", "ConfiguredSNR_dB", "PointStatus", "Direction",
                     "DataAvailability", "CRCObservedCount", "FailureCount", "AttemptBLER",
-                    "AttemptBLER_CI_Low", "AttemptBLER_CI_High", "SourceCSV"]
+                    "AttemptBLER_CI_Low", "AttemptBLER_CI_High", "SourceCSV", "FirstAttemptCount",
+                    "RetryAttemptCount", "UnknownAttemptClassCount", "ExcludedRowCount",
+                    "StatisticalIndependenceClaimed", "PopulationScope"]
     write_csv(root / "reports/csv/sweep_bler_vs_configured_snr.csv", bler_columns,
               [{field: row.get(field, "") for field in bler_columns} for row in rows])
-    measured_bler_rows = measured_sinr_bler_rows(progress)
+    measured_bler_rows = measured_sinr_bler_rows(progress, observations=observations)
     measured_bler_columns = ["Direction", "MCSIndex", "Modulation", "Rank",
         "PostEqSINR_dB_BinCenter", "PostEqSINR_dB_BinMin", "PostEqSINR_dB_BinMax",
         "ObservedSINRMin_dB", "ObservedSINRMax_dB", "TrialCount", "FailureCount", "BLER",
         "BLER_CI_Low", "BLER_CI_High", "SourcePointIndices", "SourceConfiguredSNR_dB",
-        "SourceCSVSet", "EvidenceClass"]
+        "SourceCSVSet", "EvidenceClass", "PopulationID", "PopulationJSON", "AttemptClass",
+        "SourceRowsJSON", "SourceSHA256", "StatisticalIndependenceClaimed"]
     write_csv(root / "reports/csv/sweep_bler_vs_measured_sinr.csv",
               measured_bler_columns, measured_bler_rows)
     if not save_images:
@@ -275,7 +440,7 @@ def export_overview(root, progress, *, save_images=True):
     fig, axes = plt.subplots(2, 2, figsize=(13, 8), constrained_layout=True)
     for ax, (metric, label) in zip(axes.flat, [
         ("MeanMeasuredSINR_dB", "Mean measured trial SINR (dB)"),
-        ("AttemptBLER", "CRC failure fraction (all recorded attempts)"),
+        ("AttemptBLER", "CRC failure fraction (completed attempts only)"),
         ("MeanAttemptGoodput_Mbps", "Mean per-attempt goodput (Mbps; not wall-clock rate)"),
         ("MeanExecutedLayers", "Mean executed layers (not capability)")]):
         available = False
@@ -284,7 +449,7 @@ def export_overview(root, progress, *, save_images=True):
             xs = [p["configured_snr_db"] for p in progress["points"]]
             ys = [number(by_point.get(p["index"], {}).get(metric)) for p in progress["points"]]
             available = available or any(v is not None for v in ys)
-            ax.plot(xs, [v if v is not None else math.nan for v in ys], "o-", label=direction)
+            ax.plot(xs, [v if v is not None else math.nan for v in ys], "o", label=direction)
         ax.set(xlabel="Configured occupied-RE reference SNR (dB)", ylabel=label)
         ax.set_xticks([p["configured_snr_db"] for p in progress["points"] if p["configured_snr_db"] is not None])
         ax.grid(True, alpha=0.25)
@@ -302,48 +467,44 @@ def export_overview(root, progress, *, save_images=True):
     plot_measured_sinr_bler(root, measured_bler_rows)
 
 
-def measured_sinr_bler_rows(progress):
-    """Aggregate only CRC-observed trials on their receiver-measured SINR axis."""
+def measured_sinr_bler_rows(progress, *, observations=None):
+    """Descriptive completed-SCH fractions, not independent or fixed-link BLER."""
     groups = {}
-    for point in progress["points"]:
-        if point["status"] not in {"passed", "failed"}:
+    for observation in (_sch_observations(progress) if observations is None else observations):
+        if not observation["CompletedReceiverOutcomeAvailable"]:
             continue
-        for direction, filename in (("DL", "dl_pdsch_trials.csv"), ("UL", "ul_pusch_trials.csv")):
-            path = Path(point["run_folder"]) / "air_interface/csv" / filename
-            if not io_path(path).is_file():
-                continue
-            for row in read_rows(path, strict=True):
-                sinr = number(row.get("MeasuredTrialSINR_dB"))
-                crc = number(row.get("CRCPass"))
-                if sinr is None or crc not in (0, 1):
-                    continue
-                mcs = number(row.get("MCSIndex", row.get("MCS")))
-                rank = number(row.get("Layers", row.get("RankIndicator", row.get("Rank"))))
-                modulation = str(row.get("Modulation", "")).strip() or "unavailable"
-                lower = math.floor(sinr)
-                key = (direction, mcs, modulation, rank, lower)
-                bucket = groups.setdefault(key, dict(sinr=[], crc=[], points=set(), snrs=set(), sources=set()))
-                bucket["sinr"].append(sinr)
-                bucket["crc"].append(crc)
-                bucket["points"].add(point["index"])
-                bucket["snrs"].add(point["configured_snr_db"])
-                bucket["sources"].add(f"sweeps/{Path(point['run_folder']).name}/air_interface/csv/{filename}")
+        row = observation["_row"]
+        sinr = number(row.get("MeasuredTrialSINR_dB"))
+        if sinr is None:
+            continue
+        mcs = number(row.get("MCSIndex", row.get("MCS")))
+        rank = number(row.get("Layers", row.get("RankIndicator", row.get("Rank"))))
+        modulation = str(row.get("Modulation", "")).strip() or "unavailable"
+        lower = math.floor(sinr)
+        key = (observation["Direction"], mcs, modulation, rank, lower, observation["PopulationID"])
+        bucket = groups.setdefault(key, dict(sinr=[], crc=[], observations=[]))
+        bucket["sinr"].append(sinr)
+        bucket["crc"].append(_sch_flag(row, "CRCPass"))
+        bucket["observations"].append(observation)
     rows = []
-    for (direction, mcs, modulation, rank, lower), bucket in sorted(
-            groups.items(), key=lambda item: (item[0][0], item[0][4], str(item[0][1]), item[0][2], str(item[0][3]))):
+    for (direction, mcs, modulation, rank, lower, population_id), bucket in sorted(
+            groups.items(), key=lambda item: str(item[0])):
         count = len(bucket["crc"])
         failures = sum(value == 0 for value in bucket["crc"])
-        ci_low, ci_high = wilson_interval(failures, count)
+        original = bucket["observations"][0]
         rows.append(dict(Direction=direction, MCSIndex="" if mcs is None else mcs,
             Modulation=modulation, Rank="" if rank is None else rank,
             PostEqSINR_dB_BinCenter=lower + 0.5, PostEqSINR_dB_BinMin=lower,
             PostEqSINR_dB_BinMax=lower + 1, ObservedSINRMin_dB=min(bucket["sinr"]),
             ObservedSINRMax_dB=max(bucket["sinr"]), TrialCount=count, FailureCount=failures,
-            BLER=failures / count, BLER_CI_Low=ci_low, BLER_CI_High=ci_high,
-            SourcePointIndices="|".join(map(str, sorted(bucket["points"]))),
-            SourceConfiguredSNR_dB="|".join(str(value) for value in sorted(bucket["snrs"])),
-            SourceCSVSet="|".join(sorted(bucket["sources"])),
-            EvidenceClass="cross_run_observed_crc_and_receiver_post_equalization_sinr"))
+            BLER=failures / count, BLER_CI_Low="", BLER_CI_High="",
+            SourcePointIndices=str(original["PointIndex"]),
+            SourceConfiguredSNR_dB=original["ConfiguredSNR_dB"],
+            SourceCSVSet=original["SourceCSV"], SourceSHA256=original["SourceSHA256"],
+            SourceRowsJSON=json.dumps([o["SourceRow"] for o in bucket["observations"]]),
+            PopulationID=population_id, PopulationJSON=original["PopulationJSON"],
+            AttemptClass=original["AttemptClass"], StatisticalIndependenceClaimed=False,
+            EvidenceClass="completed_SCH_attempt_CRC_fraction_no_independence_claim"))
     return rows
 
 
@@ -354,21 +515,16 @@ def plot_configured_snr_bler(root, progress, rows):
         indexed = {row["PointIndex"]: row for row in rows if row["Direction"] == direction}
         xs = [point["configured_snr_db"] for point in progress["points"]]
         ys = [number(indexed.get(point["index"], {}).get("AttemptBLER")) for point in progress["points"]]
-        low = [number(indexed.get(point["index"], {}).get("AttemptBLER_CI_Low")) for point in progress["points"]]
-        high = [number(indexed.get(point["index"], {}).get("AttemptBLER_CI_High")) for point in progress["points"]]
         y = [value if value is not None else math.nan for value in ys]
-        lower_error = [(value - lo) if value is not None and lo is not None else math.nan
-                       for value, lo in zip(ys, low)]
-        upper_error = [(hi - value) if value is not None and hi is not None else math.nan
-                       for value, hi in zip(ys, high)]
-        ax.errorbar(xs, y, yerr=[lower_error, upper_error], marker="o", capsize=3, label=direction)
-    ax.set(xlabel="Configured occupied-RE reference SNR (dB)", ylabel="Initial-attempt BLER",
-           ylim=(-0.03, 1.03), title="Observed initial-attempt BLER vs configured SNR")
+        ax.plot(xs, y, "o", label=direction)
+    ax.set(xlabel="Configured occupied-RE reference SNR (dB)", ylabel="Completed-attempt CRC failure fraction",
+           ylim=(-0.03, 1.03), title="Descriptive completed-SCH attempts vs configured SNR")
     ax.set_xticks([point["configured_snr_db"] for point in progress["points"]
                    if point["configured_snr_db"] is not None])
     ax.grid(True, alpha=0.25)
     ax.legend()
-    ax.text(0.01, 0.01, "Gaps are unavailable populations; bars are 95% Wilson intervals.",
+    ax.text(0.01, 0.01, "All completed attempts, including retries; not initial/residual TB BLER.\n"
+            "Gaps are unavailable; no independence or confidence-interval claim.",
             transform=ax.transAxes, fontsize=9)
     atomic_write(root / "reports/image/sweep_bler_vs_configured_snr.png",
                  lambda path: fig.savefig(path, dpi=300))
@@ -382,22 +538,22 @@ def plot_measured_sinr_bler(root, rows):
         direction_rows = [row for row in rows if row["Direction"] == direction]
         series = {}
         for row in direction_rows:
-            key = (row["MCSIndex"], row["Modulation"], row["Rank"])
+            key = (row["MCSIndex"], row["Modulation"], row["Rank"], row["PopulationID"], row["AttemptClass"], row["SourcePointIndices"])
             series.setdefault(key, []).append(row)
         for key, values in sorted(series.items(), key=lambda item: str(item[0])):
             values.sort(key=lambda row: row["PostEqSINR_dB_BinCenter"])
             ax.plot([row["PostEqSINR_dB_BinCenter"] for row in values],
-                    [row["BLER"] for row in values], "o-",
-                    label=f"MCS {key[0]} | {key[1]} | rank {key[2]}")
-        ax.set(xlabel="Receiver post-equalization SINR (dB)", ylabel="Initial-attempt BLER",
+                    [row["BLER"] for row in values], "o",
+                    label=f"point {key[5]} | {key[4]} | MCS {key[0]} | rank {key[2]} | {key[3][:8]}")
+        ax.set(xlabel="Receiver post-equalization SINR (dB)", ylabel="Completed-attempt CRC failure fraction",
                ylim=(-0.03, 1.03), title=direction)
         ax.grid(True, alpha=0.25)
         if series:
             ax.legend(fontsize=7)
         else:
-            ax.text(0.5, 0.5, "No CRC-observed trials with measured SINR.",
+            ax.text(0.5, 0.5, "No completed SCH trials with measured SINR.",
                     ha="center", va="center", transform=ax.transAxes)
-    fig.suptitle("BLER vs measured SINR; populations separated by MCS, modulation and rank")
+    fig.suptitle("Descriptive completed-SCH fractions; point/PHY/HARQ populations separate; no independence claim")
     atomic_write(root / "reports/image/sweep_bler_vs_measured_sinr.png",
                  lambda path: fig.savefig(path, dpi=300))
     plt.close(fig)
@@ -495,9 +651,13 @@ def standardized_measurement_rows(progress):
                 with path.open(encoding="utf-8-sig", newline="") as handle:
                     reader = csv.DictReader(handle)
                     header = reader.fieldnames or []
+                    if len(header) != len(set(header)):
+                        raise ValueError(f"Duplicate original measurement CSV columns: {path}")
                     if not set(STANDARD_MEASUREMENT_FIELDS).issubset(header):
                         continue
                     for source_row_index, source in enumerate(reader, 1):
+                        if None in source or any(value is None for value in source.values()):
+                            raise ValueError(f"Malformed original measurement row: {path}:{source_row_index}")
                         row = {
                             "PointIndex": point["index"],
                             "Label": point["label"],
@@ -535,6 +695,75 @@ def standardized_measurement_rows(progress):
     return availability_rows, measured_rows
 
 
+def _validated_measurement_series(row):
+    """Only the current original NMSE publisher contract licenses a line.
+
+    Hash exact UTF-8 bytes, as summarizeChannelNMSEReport/sha256Hex do; never
+    canonicalize and hash a newly manufactured substitute definition. Other
+    publishers and historical unknown metadata remain readable marker data.
+    This validates supplied scope, not the original PHY or accuracy.
+    """
+    token = str(row.get("PopulationSeriesJSON", ""))
+    digest = str(row.get("PopulationSeriesID", "")).strip()
+    if (not _is_nmse_measurement(row)
+            or row.get("SourceArtifact") != "reports/csv/channel_nmse_population_summary.csv"
+            or not re.fullmatch(r"[0-9a-fA-F]{64}", digest)
+            or hashlib.sha256(token.encode("utf-8")).hexdigest() != digest.lower()):
+        return False
+
+    def strict_object(text):
+        def pairs(items):
+            result = {}
+            for key, value in items:
+                if key in result:
+                    raise ValueError("Duplicate original population field")
+                result[key] = value
+            return result
+        value = json.loads(text, object_pairs_hook=pairs,
+                           parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)))
+        if not isinstance(value, dict):
+            raise ValueError("Original population must be a scalar object")
+        return value
+
+    try:
+        series = strict_object(token)
+        fields = {"Signal", "Adapter", "ReferenceSource", "ReferencePlane",
+                  "ReferenceRFImpairmentsIncluded", "ComparedValues", "PilotResourceCount",
+                  "PopulationJSON", "SupportConfigurationJSON"}
+        if set(series) != fields:
+            return False
+        if any(not isinstance(series[name], str) or not series[name].strip()
+               for name in ("Signal", "Adapter", "ReferenceSource", "ReferencePlane")):
+            return False
+        if series["Signal"] != row.get("Entity"):
+            return False
+        if series["Adapter"] not in {
+                "shared_data_independent_pilot_score/v1", "isolated_executed_data_scoring/v1",
+                "TRS_independent_complex_pilot_score/v1", "CSI_RS_nominal_linear_pilot_score/v1"}:
+            return False
+        for name in ("ComparedValues", "PilotResourceCount"):
+            value = series[name]
+            if value is None and name == "PilotResourceCount" and series["Adapter"] == "isolated_executed_data_scoring/v1":
+                continue
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0 or value != int(value):
+                return False
+        if series["PilotResourceCount"] is not None and series["PilotResourceCount"] > series["ComparedValues"]:
+            return False
+        if not isinstance(series["ReferenceRFImpairmentsIncluded"], (int, float, bool)) or series["ReferenceRFImpairmentsIncluded"] not in (0, 1):
+            return False
+        if series["SupportConfigurationJSON"] != row.get("SupportConfigurationJSON"):
+            return False
+        strict_object(series["SupportConfigurationJSON"])
+        original = strict_object(str(row.get("PopulationJSON", "")))
+        expected = {key: value for key, value in original.items() if key not in {
+            "SweepPointIndex", "SweepAggregatePointIndex", "PointIndex", "ConfiguredSNR_dB", "SNR_dB"}}
+        recorded = strict_object(series["PopulationJSON"])
+        # Serialization here is equality checking only, not a replacement hash.
+        return json.dumps(recorded, sort_keys=True) == json.dumps(expected, sort_keys=True)
+    except (ValueError, TypeError, OverflowError):
+        return False
+
+
 def _measurement_series_key(row):
     base = (str(row.get("Entity", "")).strip() or "all",
             str(row.get("Statistic", "")).strip() or "value")
@@ -542,7 +771,7 @@ def _measurement_series_key(row):
     series_json = str(row.get("PopulationSeriesJSON", "")).strip()
     if bool(series_id) != bool(series_json):
         raise ValueError("An explicit population series requires its original ID and definition together")
-    if series_id:
+    if series_id and _validated_measurement_series(row):
         # The producer excludes ONLY declared operating-point coordinates.
         # Run/config/seed/reference/support compatibility remains explicit.
         return (*base, "publisher_series", series_id, series_json,
@@ -554,14 +783,11 @@ def _measurement_series_key(row):
         # compatibility. Preserve its complete supplied definition and scope.
         return (*base, "point_population", *population,
                 str(row.get("PointIndex", "")), str(row.get("ConfiguredSNR_dB", "")))
-    if _is_nmse_measurement(row):
-        # Historical report rows do not declare compatible supports/planes.
-        # Preserve their original scalars, without a mean of dB means or a
-        # cross-point line that would imply unretained cohort equivalence.
-        return (*base, "legacy_source_row", str(row.get("SourceOutputTable", "")),
-                str(row.get("SourceOutputRow", "")), str(row.get("PointIndex", "")),
-                str(row.get("ConfiguredSNR_dB", "")))
-    return base
+    # Applies to ALL metrics, not only NMSE: equal labels/units do not bind
+    # beams, resources, power planes or compatible child configurations.
+    return (*base, "legacy_source_row", str(row.get("SourceOutputTable", "")),
+            str(row.get("SourceOutputRow", "")), str(row.get("PointIndex", "")),
+            str(row.get("ConfiguredSNR_dB", "")))
 
 
 def _stagger_overlapping_measurement_ticks(fig, ax):
@@ -591,11 +817,16 @@ def _plot_standardized_metric(path, progress, rows, title, unit):
 
     fig, ax = plt.subplots(figsize=(10, 5.8), constrained_layout=True)
     series = {}
+    series_point_indices = {}
+    coordinate_point_indices = {}
     zero_error_rows = []
     unplaced_rows = []
     for row in rows:
         key = _measurement_series_key(row)
         coordinate = _plot_operating_point(row)
+        point_index = row.get("PointIndex")
+        series_point_indices.setdefault(key, set()).add(point_index)
+        coordinate_point_indices.setdefault((key, coordinate), set()).add(point_index)
         if coordinate is None:
             unplaced_rows.append(row)
             series.setdefault(key, {})
@@ -626,7 +857,29 @@ def _plot_standardized_metric(path, progress, rows, title, unit):
                 label = "_nolegend_"
             # Duplicate x coordinates remain separate points, not a vertical
             # interpolated curve or an invented per-point mean.
-            mode = "o-" if len(set(xs)) == len(xs) else "o"
+            line_authorized = key[2] == "publisher_series" and len(set(xs)) == len(xs)
+            mode = "o-" if line_authorized else "o"
+            if line_authorized:
+                # A planned but unavailable point must break the line, not
+                # disappear into a straight segment. Gap coordinates below
+                # are renderer-only NaNs; no invented measurement CSV row.
+                order = {point["index"]: index for index, point in enumerate(progress["points"])}
+                present = series_point_indices[key]
+                render_x, render_y = [], []
+                previous = None
+                for x, y in points:
+                    ids = coordinate_point_indices[(key, x)]
+                    if previous is not None:
+                        all_ids = previous | ids
+                        known = all(value in order for value in all_ids)
+                        positions = [order[value] for value in all_ids] if known else []
+                        gap = not known or any(point["index"] not in present
+                            for point in progress["points"][min(positions):max(positions)+1])
+                        if gap:
+                            render_x.append(math.nan); render_y.append(math.nan)
+                    render_x.append(x); render_y.append(y)
+                    previous = ids
+                xs, ys = render_x, render_y
             ax.plot(xs, ys, mode, linewidth=1.2, markersize=4, label=label)
     elif len(series) <= 12:
         for key, by_snr in sorted(series.items(), key=lambda item: str(item[0])):
@@ -752,15 +1005,22 @@ def export_standardized_measurement_curves(root, progress, *, save_images=True):
 
 
 def _annotate_parent_csv_frequency(root, center_frequency_hz):
-    """Add the resolved carrier to every mutable parent campaign CSV."""
+    """Label parent configuration without overwriting child measurement identity.
+
+    A parent frequency is not evidence of the carrier actually used by every
+    child. Exact concatenations retain their original fields unchanged.
+    """
     for path in sorted((root / "reports/csv").rglob("*.csv")):
+        if path.name.startswith("sweep_combined__"):
+            continue
         rows = read_rows(path, strict=True)
-        with path.open(encoding="utf-8-sig", newline="") as handle:
+        with io_path(path).open(encoding="utf-8-sig", newline="") as handle:
             fields = next(csv.reader(handle), [])
-        if "CenterFrequencyHz" not in fields:
-            fields = ["CenterFrequencyHz", *fields]
+        field = "ParentConfiguredCenterFrequencyHz"
+        if field not in fields:
+            fields = [field, *fields]
         for row in rows:
-            row["CenterFrequencyHz"] = center_frequency_hz
+            row[field] = center_frequency_hz
         write_csv(path, fields, rows)
 
 
@@ -771,16 +1031,16 @@ def _write_common_campaign_exports(root, progress, config, measurement_manifest,
     center_frequency_hz = config.get("frequency", {}).get("center_frequency_hz", "")
 
     point_fields = list(progress["points"][0]) if progress["points"] else ["index"]
-    write_csv(out_csv / "point_status.csv", ["CenterFrequencyHz", *point_fields], [
-        {"CenterFrequencyHz": center_frequency_hz, **point} for point in progress["points"]
+    write_csv(out_csv / "point_status.csv", ["ParentConfiguredCenterFrequencyHz", *point_fields], [
+        {"ParentConfiguredCenterFrequencyHz": center_frequency_hz, **point} for point in progress["points"]
     ])
 
     _, measured = standardized_measurement_rows(progress)
-    metric_fields = ["CenterFrequencyHz", "PointIndex", "Label", "ConfiguredSNR_dB",
+    metric_fields = ["ParentConfiguredCenterFrequencyHz", "PointIndex", "Label", "ConfiguredSNR_dB",
                      "PointStatus", *STANDARD_MEASUREMENT_FIELDS, *MEASUREMENT_POPULATION_FIELDS, *MEASUREMENT_OPERATING_POINT_FIELDS, "SourceOutputTable",
                      "SourceOutputRow", "EvidenceClass"]
     write_csv(out_csv / "metrics_long.csv", metric_fields, [
-        {"CenterFrequencyHz": center_frequency_hz, **row} for row in measured
+        {"ParentConfiguredCenterFrequencyHz": center_frequency_hz, **row} for row in measured
     ])
 
     # These aliases preserve the existing scientifically defined populations.
@@ -797,11 +1057,11 @@ def _write_common_campaign_exports(root, progress, config, measurement_manifest,
 
     # Calibration rows retain both configured and receiver-measured axes.
     comparison = read_rows(out_csv / "sweep_link_comparison.csv")
-    calibration_fields = ["CenterFrequencyHz", "PointIndex", "Label", "ConfiguredSNR_dB",
+    calibration_fields = ["ParentConfiguredCenterFrequencyHz", "PointIndex", "Label", "ConfiguredSNR_dB",
                           "PointStatus", "Direction", "DataAvailability",
                           "MeanMeasuredSINR_dB", "MeanMeasuredSINR_dB_Count", "SourceCSV"]
     write_csv(out_csv / "sinr_calibration.csv", calibration_fields, [
-        {field: (center_frequency_hz if field == "CenterFrequencyHz" else row.get(field, ""))
+        {field: (center_frequency_hz if field == "ParentConfiguredCenterFrequencyHz" else row.get(field, ""))
          for field in calibration_fields} for row in comparison
     ])
     if save_images:
@@ -845,7 +1105,8 @@ def _write_common_campaign_exports(root, progress, config, measurement_manifest,
         "FailedPointCount": progress["failed"],
         "EvidenceMode": "cross_run_execution_backed_truth_only",
         "StandardizedMeasurementPlotCount": len(measurement_manifest),
-        "ScopeBoundary": "terrestrial_single_carrier_tdd_fixed_4ghz_stage0",
+        "ScopeBoundary": "configured_generic_sweep_not_full_study_qualification",
+        "CarrierMetadataScope": "parent_configuration_not_verification_of_child_carriers",
     }
     atomic_write(root / "reports/campaign_manifest.json",
                  lambda path: path.write_text(json.dumps(manifest, indent=2), encoding="utf-8"))
@@ -915,11 +1176,6 @@ def export_sweep(folder):
         stem = re.sub(r"[^A-Za-z0-9_-]", "_", Path(relative).stem)[:65]
         suffix = Path(relative).suffix.lower()
         target = f"reports/{'csv' if suffix == '.csv' else 'image'}/sweep_combined__{stem}__{identity}{suffix}"
-        signature = hashlib.sha256(json.dumps({
-            "version": 2,
-            "points": [(p["index"], p["status"], p["configured_snr_db"]) for p in progress["points"]],
-            "sources": [(p["index"], io_path(f).stat().st_size, io_path(f).stat().st_mtime_ns)
-                        for p, f, _ in sources]}).encode()).hexdigest()
         source_points = {p["index"] for p, _, _ in sources}
         row = dict(SourceRelativePath=relative, CombinedArtifact=target,
                    SourcePoints="|".join(str(p["index"]) for p, _, _ in sources),
@@ -927,20 +1183,37 @@ def export_sweep(folder):
                        if p["status"] in {"passed", "failed"} and p["index"] not in source_points),
                    NotCompletedPoints="|".join(str(p["index"]) for p in progress["points"]
                        if p["status"] not in {"passed", "failed"}),
-                   SourceSignature=signature, Status="written", Error="",
+                   SourceSignature="", OutputSHA256="", Status="written", Error="",
                    EvidenceClass="cross_run_exact_rows" if suffix == ".csv" else "cross_run_labeled_original_raster_panels")
         prior = previous.get(relative, {})
         try:
-            if not (prior.get("SourceSignature") == signature and prior.get("Status") == "written" and io_path(root / target).is_file()):
+            # Size/mtime are not content identity: a corrected measurement
+            # can have the same byte count and preserved filesystem times.
+            source_hashes = [(p["index"], _sch_source_sha256(f)) for p, f, _ in sources]
+            signature = hashlib.sha256(json.dumps({
+                "version": 3,
+                "points": [(p["index"], p["label"], p["status"], p["configured_snr_db"])
+                           for p in progress["points"]],
+                "sources": source_hashes}, sort_keys=True).encode()).hexdigest()
+            row["SourceSignature"] = signature
+            output_hash = (_sch_source_sha256(root / target)
+                           if io_path(root / target).is_file() else "")
+            if not (prior.get("SourceSignature") == signature and prior.get("Status") == "written"
+                    and output_hash and prior.get("OutputSHA256") == output_hash):
                 if suffix == ".csv":
                     concatenate_csv(root / target, sources)
                 else:
                     comparison_png(root / target, sources, progress["points"])
+            # Do not receipt a source that changed during publication as an
+            # immutable snapshot. The next call can retry the finished child.
+            if source_hashes != [(p["index"], _sch_source_sha256(f)) for p, f, _ in sources]:
+                raise ValueError("Child source content changed during comparative publication")
+            row["OutputSHA256"] = _sch_source_sha256(root / target)
         except (OSError, ValueError, RuntimeError, csv.Error) as exc:
             row.update(Status="failed", Error=str(exc))
         manifest.append(row)
     fields = ["SourceRelativePath", "CombinedArtifact", "SourcePoints", "MissingCompletedPoints",
-              "NotCompletedPoints", "SourceSignature", "Status", "Error", "EvidenceClass"]
+              "NotCompletedPoints", "SourceSignature", "OutputSHA256", "Status", "Error", "EvidenceClass"]
     write_csv(receipt_path, fields, manifest)
     export_overview(root, progress, save_images=save_images)
     measurement_manifest = export_standardized_measurement_curves(

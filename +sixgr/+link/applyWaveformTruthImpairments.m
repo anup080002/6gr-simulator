@@ -136,7 +136,10 @@ end
 
 noiseMode = lower(strtrim(string(sixgr.util.structGet( ...
     replay, "NoiseOperatingMode", "receiver_noise_figure_thermal_noise"))));
-if noiseMode == "receiver_noise_figure_thermal_noise"
+if any(noiseMode == ["receiver_noise_figure_thermal_noise","absolute_reference_esn0"])
+    if noiseMode=="absolute_reference_esn0"
+        replay.InjectedNoiseVariance=sixgr.link.resolveAbsoluteReferenceNoiseVariance(replay);
+    else
     thermalNoisePower_dBm = double(sixgr.util.structGet( ...
         replay, "ThermalNoisePower_dBm", NaN));
     if ~(isfinite(thermalNoisePower_dBm))
@@ -145,6 +148,7 @@ if noiseMode == "receiver_noise_figure_thermal_noise"
              "bandwidth and receiver noise figure."]);
     end
     replay.InjectedNoiseVariance = sixgr.link.resolveReceiverThermalNoiseVariance(replay);
+    end
     noiseState = sixgr.util.structGet(state, "ReceiverNoiseState", struct());
     origin = double(sixgr.util.structGet(noiseState, "OriginSample", startSample));
     runSeed = sixgr.util.structGet(cfg, "run.seed", []);
@@ -158,15 +162,27 @@ if noiseMode == "receiver_noise_figure_thermal_noise"
             sixgr.util.structGet(cfg,"channel.fc_Hz",[])), ...
         "OriginSample",origin,"SampleRateHz",fs,"Direction",direction, ...
         "Role","physical_receiver_thermal_noise");
+    if noiseMode=="absolute_reference_esn0"
+        identity.Role="physical_receiver_absolute_reference_noise";
+        identity.ReferenceContractSHA256=replay.AbsoluteReferenceNoise.ReferenceContractSHA256;
+    end
     digest = sixgr.util.sha256Hex(uint8(unicode2native(jsonencode(identity),"UTF-8")));
     noiseSeed = hex2dec(extractBefore(digest,9));
     [y, state.ReceiverNoiseState] = sixgr.link.addRuntimeComplexNoise( ...
         y,replay.InjectedNoiseVariance,noiseSeed,startSample,noiseState);
+    if noiseMode=="absolute_reference_esn0"
+        replay.AbsoluteReferenceNoiseInjectedSampleVariance_mW=replay.InjectedNoiseVariance;
+        replay.AbsoluteReferenceNoiseInjectionDomain='receiver_sample_waveform_pre_composite_front_end';
+    end
     replay.NoisePowerSource = "thermal_noise_plus_receiver_nf_absolute_sqrt_mW_samples";
+    if noiseMode=="absolute_reference_esn0"
+        replay.NoisePowerSource=replay.AbsoluteReferenceNoise.Source;
+        replay.NoiseVarianceSource="absolute_nominal_reference_PSD_times_actual_sample_rate_sqrt_mW";
+    end
     replay.NoiseSequenceSource = "persistent_threefry_time_major_complex_draws";
     replay.NoiseStreamSeed = noiseSeed;
     replay.NoiseStreamOriginSample = origin;
-else
+elseif noiseMode=="standalone_awgn_snr_argument"
     appliedSnr_dB = double(sixgr.util.structGet( ...
         replay, "AppliedAWGNSNR_dB", snr_dB));
     fixedSNRReference = logical(sixgr.util.structGet(cfg, ...
@@ -236,6 +252,9 @@ else
         [y, replay.InjectedNoiseVariance] = ...
             localAddAwgnAtEffectiveSNR(y, appliedSnr_dB);
     end
+else
+    error('sixgr:link:UnsupportedNoiseOperatingMode', ...
+        'Unsupported initial-access noise mode %s.',noiseMode);
 end
 % These are the exact final samples handed to the decoder. RawWaveform and
 % CorrectedWaveform above retain their earlier synchronization-stage roles.

@@ -3,6 +3,21 @@ function fields=ssbPowerReferenceEvidence(source)
 % Empty values describe unavailable fields, never substitute trial rows.
 if nargin<1, source=struct(); end
 fields=struct();
+defaults=sixgr.phy.refsig.buildSSBPowerMeasurementReceipt();
+score=sixgr.truth.scoreSharedSSBPower();
+for name=string(fieldnames(score)).'
+    defaults.(name)=score.(name);
+end
+for name=string(fieldnames(defaults)).'
+    value=sixgr.util.structGet(source,name,defaults.(name));
+    if islogical(defaults.(name)), value=logical(value);
+    elseif isstring(defaults.(name)), value=string(value);
+    else, value=double(value);
+    end
+    assert(isscalar(value),'sixgr:link:SSBPowerEvidenceShape', ...
+        'One original receipt/comparison value per SSB observation is required.');
+    fields.(name)=value;
+end
 for name=["SS_RSRP_dB_re_UnitOccupiedRE_Es","SS_RSRPRawObserved_dB_re_UnitOccupiedRE_Es", ...
         "ReferenceSignalTxEPRE_dB_re_UnitOccupiedRE_Es","MeasuredReferenceSignalChannelGain_dB", ...
         "SSMeasurementFFTSize","ReferenceSignalTxMeasurementFFTSize", ...

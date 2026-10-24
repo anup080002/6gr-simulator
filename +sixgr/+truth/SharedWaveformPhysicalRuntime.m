@@ -19,6 +19,17 @@ classdef SharedWaveformPhysicalRuntime < handle
         ScoringPlanes = struct('ID',{},'LinkID',{},'RX',{})
         ChannelReferenceRequests = struct('LinkID',{},'RX',{},'Start',{},'End',{})
         RFExecutionLedger = []
+        % Separate diagnostic VALUE states. Historical owners remain empty;
+        % never invent an aggregate model's missing original input history.
+        TXLinearReferences = struct('ID',{},'Binding',{})
+        LinearChannels = struct('ID',{},'Model',{})
+        CSIRSReferenceParents = struct('TX',{},'Parent',{})
+        CSIRSReferencePlanes = struct('ID',{},'LinkID',{},'TX',{},'RX',{},'Component',{}, ...
+            'Model',{},'RetireAfterSample',{})
+        CSIModelPlanes = struct('ID',{},'ResidualID',{},'LinkID',{},'RX',{})
+        PendingReferenceCommit = []
+        ReferenceEvent = []
+        ReferenceLinkEndpoints = struct('LinkID',{},'Direction',{},'TX',{},'RX',{})
     end
     methods
         function obj=SharedWaveformPhysicalRuntime(fs,first,epoch)
@@ -41,11 +52,22 @@ classdef SharedWaveformPhysicalRuntime < handle
             if enabled
                 binding=sixgr.rf.InstalledTXRadiationBinding.freeze(array,metadata,rf,id,policy,reference);
             end
+            linearPolicy=sixgr.rf.InstalledTXLinearReference.resolvePolicy(cfg);
+            if ~isempty(linearPolicy)&&linearPolicy.Enabled
+                installed=sixgr.rf.InstalledTXLinearReference.freeze(rf,id,linearPolicy);
+                obj.TXLinearReferences(end+1)=struct('ID',id,'Binding',installed);
+            end
             obj.Transmitters(end+1)=struct('ID',id,'RF',rf,'Radiation',binding);
         end
 
         function validateTransmitterInstallation(obj,id,cfg,direction,nAnt)
             k=obj.findID(obj.Transmitters,id); node=obj.Transmitters(k);
+            linearPolicy=sixgr.rf.InstalledTXLinearReference.resolvePolicy(cfg);
+            wanted=~isempty(linearPolicy)&&linearPolicy.Enabled;
+            referenceIndex=find(string({obj.TXLinearReferences.ID})==string(id));
+            assert(wanted==~isempty(referenceIndex),'RF:TXLinearReferenceInstallationChanged', ...
+                'A registered TX owner cannot enable or disable a reference model after registration.');
+            if wanted, obj.TXLinearReferences(referenceIndex).Binding.validatePolicy(cfg); end
             [enabled,array,metadata,policy,reference]=localRadiationInstallation(cfg,direction);
             retained=isfield(node,'Radiation')&&~isempty(node.Radiation);
             assert(enabled==retained&&string(direction)==string(node.RF.Chain.Direction)&& ...
@@ -80,6 +102,11 @@ classdef SharedWaveformPhysicalRuntime < handle
                 variance=sixgr.link.resolveReceiverThermalNoiseVariance(ledger);
                 ledger.SharedNoiseCalibrationSource= ...
                     'receiver_thermal_noise_psd_times_sample_bandwidth';
+            elseif noiseMode=="absolute_reference_esn0"
+                variance=sixgr.link.resolveAbsoluteReferenceNoiseVariance(ledger);
+                ledger.SharedNoiseCalibrationSource=ledger.AbsoluteReferenceNoise.Source;
+                ledger.NoiseVarianceSource='absolute_nominal_reference_PSD_times_actual_sample_rate_sqrt_mW';
+                ledger.SampleNoiseVariance=variance;
             elseif noiseMode=="standalone_awgn_snr_argument"
                 carrier=sixgr.phy.grid.makeCarrier(cfg);
                 calibration=sixgr.phy.waveform.calibrateOFDMNoiseTransform(carrier);
@@ -101,7 +128,7 @@ classdef SharedWaveformPhysicalRuntime < handle
                 ledger.ThermalNoisePSD_mWPerHz=NaN;
             else
                 error('WAVEFORM:SharedNoiseOperatingModeUnsupported', ...
-                    'Shared waveform execution requires thermal-noise or fixed occupied-RE Es/N0 authority; got %s.',noiseMode);
+                    'Shared waveform execution requires explicit thermal, absolute-reference or fixed occupied-RE noise authority; got %s.',noiseMode);
             end
             validateattributes(variance,{'numeric'},{'real','scalar','finite','positive'});
             seed=sixgr.util.structGet(cfg,'run.seed',[]);
@@ -114,6 +141,9 @@ classdef SharedWaveformPhysicalRuntime < handle
                 'Role','physical_receiver_noise','NoiseOperatingMode',char(noiseMode), ...
                 'ConfiguredSNR_dB',double(sixgr.util.structGet(ledger, ...
                     'RequestedAWGNReferenceSNR_dB',NaN)));
+            if noiseMode=="absolute_reference_esn0"
+                identity.ReferenceContractSHA256=ledger.AbsoluteReferenceNoise.ReferenceContractSHA256;
+            end
             digest=sixgr.util.sha256Hex(uint8(unicode2native(jsonencode(identity),'UTF-8')));
             noiseSeed=hex2dec(extractBefore(digest,9));
             evm=sixgr.util.structGet(cfg,'rf.rx.additiveEVMStudy',struct('enabled',false));
@@ -180,6 +210,8 @@ classdef SharedWaveformPhysicalRuntime < handle
             obj.Links(end+1)=struct('ID',id,'TX',tx,'RX',rx,'State',state, ...
                 'Config',cfg,'LossReplay',ledger,'TrailingIdleSamples',0, ...
                 'TXRadiationInstallation',radiation,'SignalDependency',dependency);
+            obj.ReferenceLinkEndpoints(end+1)=struct('LinkID',id,'Direction',string(state.Direction), ...
+                'TX',string(txID),'RX',string(rxID));
         end
 
         function attach(obj,runtime,precision)
@@ -187,6 +219,8 @@ classdef SharedWaveformPhysicalRuntime < handle
             assert(isa(runtime,'sixgr.phy.waveform.WaveformEventRuntime') && ...
                 runtime.SampleRateHz==obj.SampleRateHz && runtime.NextSampleIndex==obj.NextSampleIndex, ...
                 'WAVEFORM:PhysicalRuntimeClockMismatch','Event and physical owners must share one sample origin.');
+            assert(isempty(obj.ReferenceEvent),'WAVEFORM:ReferenceEventOwner','Attach exactly one chronological owner.');
+            obj.ReferenceEvent=runtime;
             for k=1:numel(obj.Transmitters)
                 node=obj.Transmitters(k);
                 runtime.addTransmitter(node.ID,node.RF.NumAntennas,precision);
@@ -197,6 +231,19 @@ classdef SharedWaveformPhysicalRuntime < handle
                 runtime.addReceiver(node.ID+":pre_rf",node.RF.NumAntennas);
                 runtime.addReceiver(node.ID+":post_rf",node.RF.NumAntennas);
             end
+            % Only attached chronological owners maintain full link model
+            % history. Standalone aggregate RF diagnostics retain their old
+            % channel-capture policy and never pretend to own this history.
+            if string(precision)=="double"
+                for link=obj.Links
+                    txID=obj.Transmitters(link.TX).ID;
+                    if any(string({obj.TXLinearReferences.ID})==txID)&&localSupportedReference(link.SignalDependency)
+                        binding=localChannelBinding(link,obj.Transmitters,obj.Receivers,obj.ConfigurationEpoch);
+                        model=sixgr.channel.AppliedChannelReferenceStream(binding,link.SignalDependency);
+                        obj.LinearChannels(end+1)=struct('ID',link.ID,'Model',model);
+                    end
+                end
+            end
         end
 
         function retargetTDDLink(obj,id,txID,rxID,cfg)
@@ -206,6 +253,18 @@ classdef SharedWaveformPhysicalRuntime < handle
             % Insufficient guard is a physical scheduling error, not a
             % reason to pad RX, discard a tail, clone or rewind the channel.
             obj.assertMutable(); k=obj.findID(obj.Links,id); link=obj.Links(k);
+            assert(isempty(obj.PendingReferenceCommit),'WAVEFORM:UncommittedReferenceInterval', ...
+                'Complete the original interval before changing its channel direction.');
+            componentHits=find(string({obj.CSIRSReferencePlanes.LinkID})==string(id));
+            for h=componentHits
+                p=obj.CSIRSReferencePlanes(h);
+                if ~isempty(p.Model)
+                    assert(p.Component.Birth.ComponentSupportStartSample>=obj.NextSampleIndex|| ...
+                        obj.NextSampleIndex>=p.RetireAfterSample, ...
+                        'WAVEFORM:CSIReferenceTailNotConsumed', ...
+                        'Consume the complete fixed-linear component RF/FIR tail before reversing its link.');
+                end
+            end
             tx=obj.findID(obj.Transmitters,txID); rx=obj.findID(obj.Receivers,rxID);
             if tx==link.TX && rx==link.RX
                 error('WAVEFORM:TDDRetargetMustReverseEndpoints','Retarget requires the opposite link direction.');
@@ -231,6 +290,13 @@ classdef SharedWaveformPhysicalRuntime < handle
                     'Differing channel fields: %s.'],strjoin(changed,','));
             end
             direction=string(obj.Transmitters(tx).RF.Chain.Direction);
+            pair=find(string({obj.ReferenceLinkEndpoints.LinkID})==string(id)& ...
+                string({obj.ReferenceLinkEndpoints.Direction})==direction);
+            if ~isempty(pair)
+                assert(isscalar(pair)&&obj.ReferenceLinkEndpoints(pair).TX==string(txID)&& ...
+                    obj.ReferenceLinkEndpoints(pair).RX==string(rxID), ...
+                    'WAVEFORM:TDDRetargetEndpointMismatch','The original directional physical endpoints cannot migrate.');
+            end
             if direction==string(state.Direction) || direction~=string(obj.Receivers(rx).RF.Chain.Direction) || ...
                     obj.Transmitters(tx).RF.NumAntennas~=state.NumRxAnt || ...
                     obj.Receivers(rx).RF.NumAntennas~=state.NumTxAnt
@@ -286,6 +352,22 @@ classdef SharedWaveformPhysicalRuntime < handle
                 obj.Links(k).TrailingIdleSamples=0;
                 obj.Links(k).TXRadiationInstallation=radiation;
                 obj.Links(k).SignalDependency=dependency;
+                if isempty(pair)
+                    obj.ReferenceLinkEndpoints(end+1)=struct('LinkID',string(id),'Direction',direction, ...
+                        'TX',string(txID),'RX',string(rxID));
+                end
+                j=find(string({obj.LinearChannels.ID})==string(id));
+                if ~isempty(j)
+                    if any(string({obj.TXLinearReferences.ID})==string(txID))
+                        binding=localChannelBinding(obj.Links(k),obj.Transmitters,obj.Receivers,obj.ConfigurationEpoch);
+                        obj.LinearChannels(j).Model=obj.LinearChannels(j).Model.retarget(binding,dependency);
+                    else
+                        assert(isempty(componentHits),'WAVEFORM:CSIReferenceReversePolicy', ...
+                            'A registered component requires continuously modeled reciprocal link history.');
+                        obj.LinearChannels(j)=[]; % No fabricated missing opposite-direction model history.
+                    end
+                end
+                for h=componentHits, obj.CSIRSReferencePlanes(h).Model=[]; end
             catch cause
                 obj.Faulted=true; rethrow(cause);
             end
@@ -311,6 +393,139 @@ classdef SharedWaveformPhysicalRuntime < handle
             if any(string({obj.ScoringPlanes.ID})==id), return; end
             runtime.addReceiver(id,obj.Receivers(rx).RF.NumAntennas);
             obj.ScoringPlanes(end+1)=struct('ID',id,'LinkID',string(linkID),'RX',rx);
+        end
+
+        function enabled=assertCSIRSPortReferenceSupport(obj,runtime,linkID,txID,prepared)
+            % Preflight unsupported requests BEFORE original enqueue. A missing
+            % opt-in leaves every existing (including AWGN) receiver unchanged.
+            obj.assertMutable();
+            enabled=any(string({obj.TXLinearReferences.ID})==string(txID));
+            if ~enabled, return; end
+            obj.assertReferenceEvent(runtime);
+            k=obj.findID(obj.Links,linkID);
+            pair=find(string({obj.ReferenceLinkEndpoints.LinkID})==string(linkID)& ...
+                string({obj.ReferenceLinkEndpoints.Direction})=="DL");
+            assert(isscalar(pair)&&obj.ReferenceLinkEndpoints(pair).TX==string(txID), ...
+                'WAVEFORM:CSIReferenceEndpoint','Require the original installed DL endpoint, not an inferred reversed alias.');
+            assert(any(string({obj.LinearChannels.ID})==string(linkID))&& ...
+                localSupportedReference(obj.Links(k).SignalDependency)&& ...
+                isa(prepared.TransmitSamples,'double')&& ...
+                isfield(prepared.Tx.CSIRSInfo,'Resources')&& ...
+                string(prepared.Tx.OFDMInfo.EngineUsed)=="canonical_nrOFDMModulate"&& ...
+                prepared.Tx.OFDMInfo.Windowing==0&&prepared.Tx.OFDMInfo.OFDMWindowingSamples==0&& ...
+                prepared.Tx.OFDMInfo.SampleRate==prepared.Tx.OFDMInfo.Nfft*double(prepared.Carrier.SubcarrierSpacing)*1000&& ...
+                isequal(prepared.RFExecutionDeferred,true)&&isequal(prepared.ChannelExecutionDeferred,true)&& ...
+                isequal(prepared.PowerContext.PAApplied,false)&& ...
+                (~prepared.PowerContext.PAEnabled||prepared.PowerContext.PAExecutionDeferred), ...
+                'WAVEFORM:UnsupportedCSIPortReference', ...
+                ['CSI component references require original attached CPU-double CDL/Inf history ' ...
+                 'and configured-resource-set preparation; no AWGN or late-history substitute.']);
+        end
+
+        function [planes,aggregatePlane,residualPlane]=registerCSIRSPortReferences( ...
+                obj,runtime,linkID,txID,rxID,componentID,prepared)
+            obj.assertMutable(); obj.assertReferenceEvent(runtime);
+            assert(obj.assertCSIRSPortReferenceSupport(runtime,linkID,txID,prepared), ...
+                'WAVEFORM:CSIPortReferenceDisabled','Explicitly enable the installed model before registration.');
+            tx=obj.findID(obj.Transmitters,txID); rx=obj.findID(obj.Receivers,rxID);
+            pair=find(string({obj.ReferenceLinkEndpoints.LinkID})==string(linkID)& ...
+                string({obj.ReferenceLinkEndpoints.Direction})=="DL");
+            assert(isscalar(pair)&&obj.ReferenceLinkEndpoints(pair).TX==string(txID)&& ...
+                obj.ReferenceLinkEndpoints(pair).RX==string(rxID), ...
+                'WAVEFORM:CSIReferenceEndpoint','A target plane must belong to the original installed directional pair.');
+            j=find(string({obj.TXLinearReferences.ID})==string(txID));
+            [installed,records,parent]=obj.TXLinearReferences(j).Binding.registerCSIRS(runtime,componentID,prepared);
+            obj.TXLinearReferences(j).Binding=installed;
+            parentHit=find(arrayfun(@(p)p.TX==tx&& ...
+                string(p.Parent.Receipt.ComponentID)==string(componentID),obj.CSIRSReferenceParents));
+            if isempty(parentHit)
+                obj.CSIRSReferenceParents(end+1)=struct('TX',tx,'Parent',parent);
+            else
+                assert(isscalar(parentHit)&&isequaln(obj.CSIRSReferenceParents(parentHit).Parent,parent), ...
+                    'WAVEFORM:CSIReferenceRegistrationChanged','Original parent registration changed.');
+            end
+            planes=struct('ResourceID',{},'ResourceSetID',{},'LogicalPortIndex0',{}, ...
+                'ReferencePortNumber',{},'PlaneID',{},'RegistrationSHA256',{},'ParentComponentID',{});
+            for record=records
+                id=string(linkID)+":"+string(rxID)+":"+record.ID+":fixed_linear_model";
+                hit=find(string({obj.CSIRSReferencePlanes.ID})==id);
+                if isempty(hit)
+                    runtime.addReceiver(id,obj.Receivers(rx).RF.NumAntennas);
+                    obj.CSIRSReferencePlanes(end+1)=struct('ID',id,'LinkID',string(linkID), ...
+                        'TX',tx,'RX',rx,'Component',record,'Model',[],'RetireAfterSample',Inf);
+                else
+                    assert(isscalar(hit)&&isequaln(obj.CSIRSReferencePlanes(hit).Component,record), ...
+                        'WAVEFORM:CSIReferenceRegistrationChanged','A plane cannot acquire a new parent or port.');
+                end
+                planes(end+1)=struct('ResourceID',record.ResourceID,'ResourceSetID',record.ResourceSetID, ...
+                    'LogicalPortIndex0',0,'ReferencePortNumber',3000,'PlaneID',id, ...
+                    'RegistrationSHA256',record.RegistrationSHA256,'ParentComponentID',string(componentID));
+            end
+            aggregatePlane=string(linkID)+":"+string(rxID)+":fixed_linear_aggregate";
+            residualPlane=string(linkID)+":"+string(rxID)+":nonlinear_model_residual";
+            if ~any(string({obj.CSIModelPlanes.ID})==aggregatePlane)
+                runtime.addReceiver(aggregatePlane,obj.Receivers(rx).RF.NumAntennas);
+                runtime.addReceiver(residualPlane,obj.Receivers(rx).RF.NumAntennas);
+                obj.CSIModelPlanes(end+1)=struct('ID',aggregatePlane,'ResidualID',residualPlane, ...
+                    'LinkID',string(linkID),'RX',rx);
+            end
+        end
+
+        function evidence=readCSIRSPortReferenceRegistrations(obj)
+            % Original factors and private RF/channel states are not exported.
+            evidence=struct('Parents',obj.CSIRSReferenceParents, ...
+                'Planes',rmfield(obj.CSIRSReferencePlanes,{'Model','RetireAfterSample'}));
+        end
+
+        function execution=commitReferenceInterval(obj,runtime,execution)
+            % Disabled/legacy/direct aggregate owners have no pending component
+            % transaction; return their exact execution structure unchanged.
+            if isempty(obj.PendingReferenceCommit), return; end
+            p=obj.PendingReferenceCommit;
+            try
+                assert(isa(runtime,'sixgr.phy.waveform.WaveformEventRuntime')&& ...
+                    runtime==obj.ReferenceEvent&&isequal(runtime.ProcessorState,obj), ...
+                    'WAVEFORM:CSIReferenceCommit','Only the original attached event owner may commit.');
+                authority=runtime.originalValidatedReferenceInterval();
+                assert(execution.StartSample==p.First&&execution.EndSampleExclusive==p.Stop&& ...
+                    obj.NextSampleIndex==p.Stop&&authority.First==p.First&&authority.Stop==p.Stop&& ...
+                    isfield(execution,'ExecutedContributors')&& ...
+                    isequaln(execution.ExecutedContributors,authority.Contributors), ...
+                    'WAVEFORM:CSIReferenceCommit','Commit the same successful original physical interval.');
+                actual=execution.ExecutedContributors;
+                assert(numel(actual)==numel(p.Contributors),'WAVEFORM:CSIReferenceCommit','Contributor population changed.');
+                for name=["CSIRSPortReferences","CSIModelReferences","TXLinearReferences"]
+                    assert(isfield(execution,name)&&isequaln(execution.(name),p.ReferenceEvidence.(name)), ...
+                        'WAVEFORM:CSIReferenceCommit', ...
+                        'Original reference population, resource identity and operator receipts cannot be replaced or dropped.');
+                end
+                for k=1:numel(p.Contributors)
+                    q=p.Contributors(k); hit=find(string({actual.TransmitterID})==q.ID);
+                    assert(isscalar(hit)&&actual(hit).CommittedThroughSample>=p.Stop&& ...
+                        isequaln(actual(hit).Receipt,q.Receipt),'WAVEFORM:CSIReferenceCommit', ...
+                        'Successful consumption must exactly equal the original prospective composer receipt.');
+                end
+                for k=1:numel(execution.CSIRSPortReferences)
+                    q=execution.CSIRSPortReferences(k);
+                    localCommittedOutput(authority.Outputs,q.PlaneID,q.OutputSHA256);
+                    execution.CSIRSPortReferences(k).SuccessfulContributorCommit=true;
+                end
+                for k=1:numel(execution.CSIModelReferences)
+                    q=execution.CSIModelReferences(k);
+                    localCommittedOutput(authority.Outputs,q.AggregatePlaneID,q.AggregateSHA256);
+                    localCommittedOutput(authority.Outputs,q.ResidualPlaneID,q.ResidualSHA256);
+                    execution.CSIModelReferences(k).SuccessfulContributorCommit=true;
+                end
+                execution.CSIReferenceCommit=struct('Source', ...
+                    "original_event_output_validation_and_exact_contributor_join_before_dispatch", ...
+                    'StartSample',p.First,'EndSampleExclusive',p.Stop, ...
+                    'Committed',true,'ReceiverEstimatorInput',false);
+                if ~isempty(obj.RFExecutionLedger), obj.RFExecutionLedger.append(execution); end
+                obj.TXLinearReferences=p.TX; obj.LinearChannels=p.Channels;
+                obj.CSIRSReferencePlanes=p.Planes; obj.PendingReferenceCommit=[];
+            catch cause
+                obj.Faulted=true; rethrow(cause);
+            end
         end
 
         function requestLinkChannelReference(obj,runtime,linkID,receiverID,first,stop)
@@ -355,6 +570,15 @@ classdef SharedWaveformPhysicalRuntime < handle
                 end
             end
             obj.RFExecutionLedger.installRadiationLibrary(library);
+            linearLibrary=struct([]);
+            for node=obj.TXLinearReferences
+                if isempty(linearLibrary)
+                    linearLibrary=node.Binding.capsule();
+                else
+                    linearLibrary(end+1)=node.Binding.capsule(); %#ok<AGROW>
+                end
+            end
+            obj.RFExecutionLedger.installTXLinearReferenceLibrary(linearLibrary);
         end
 
         function evidence=readRFExecutionLedger(obj)
@@ -364,7 +588,10 @@ classdef SharedWaveformPhysicalRuntime < handle
 
         function [outputs,execution,nextState]=process(obj,inputs,first,stop,unusedState) %#ok<INUSD>
             obj.assertMutable();
+            assert(isempty(obj.PendingReferenceCommit),'WAVEFORM:UncommittedReferenceInterval', ...
+                'Do not advance a model beyond an uncommitted physical interval.');
             obj.validateInterval(inputs,first,stop);
+            contributors=obj.validateReferenceContributors(inputs,first,stop);
             obj.Busy=true; obj.Started=true;
             unlock=onCleanup(@()obj.clearBusy()); %#ok<NASGU>
             try
@@ -378,11 +605,32 @@ classdef SharedWaveformPhysicalRuntime < handle
                     'SignalContributions',struct('LinkID',{},'TX',{},'RX',{}, ...
                         'NonzeroSampleCount',{},'SampleCount',{},'Source',{}), ...
                     'ConfigurationEpoch',obj.ConfigurationEpoch,'SampleRateHz',obj.SampleRateHz, ...
-                    'ChannelReferences',struct('LinkID',{},'TX',{},'RX',{},'Reference',{}));
+                    'ChannelReferences',struct('LinkID',{},'TX',{},'RX',{},'Reference',{}), ...
+                    'TXLinearReferences',struct('ID',{},'Receipt',{}));
                 txSamples=cell(numel(obj.Transmitters),1);
+                txChunks=cell(numel(obj.Transmitters),1);
+                txReferences=cell(numel(obj.Transmitters),1);
+                pendingReferences=obj.TXLinearReferences;
+                pendingChannels=obj.LinearChannels;
+                pendingPlanes=obj.CSIRSReferencePlanes;
+                if ~isempty(pendingPlanes)
+                    execution.CSIRSPortReferences=struct([]);
+                    execution.CSIModelReferences=struct([]);
+                end
                 for k=1:numel(obj.Transmitters)
                     node=obj.Transmitters(k); index=obj.findID(inputs,node.ID);
-                    actual=node.RF.apply(inputs(index).Chunk,obj.ConfigurationEpoch);
+                    referenceIndex=find(string({pendingReferences.ID})==node.ID);
+                    if isempty(referenceIndex)
+                        actual=node.RF.apply(inputs(index).Chunk,obj.ConfigurationEpoch);
+                    else
+                        % Exactly one ORIGINAL RF call. Capture arrays live
+                        % only in this iteration, never in Replay or the RX.
+                        [installed,actual,referenceReceipt,txReferences{k}]=pendingReferences(referenceIndex).Binding.apply( ...
+                            node.RF,node.ID,inputs(index).Chunk,obj.ConfigurationEpoch);
+                        pendingReferences(referenceIndex).Binding=installed;
+                        execution.TXLinearReferences(end+1)=struct('ID',node.ID,'Receipt',referenceReceipt);
+                        clear installed referenceReceipt
+                    end
                     % This owner accepts composed, already power-scaled
                     % physical-chain samples. Prepared waveform ingress
                     % validates the applied power contract before enqueue.
@@ -402,6 +650,7 @@ classdef SharedWaveformPhysicalRuntime < handle
                             inputs(index).Chunk,actual,node.RF,node.ID);
                     end
                     txSamples{k}=actual.Waveform;
+                    txChunks{k}=actual.Chunk;
                     outputs(end+1)=struct('ID',node.ID+":tx",'Chunk',actual.Chunk); %#ok<AGROW>
                     execution.TX(end+1)=struct('ID',node.ID,'Replay',actual.Replay);
                 end
@@ -410,15 +659,20 @@ classdef SharedWaveformPhysicalRuntime < handle
                     sums{k}=complex(zeros(stop-first,obj.Receivers(k).RF.NumAntennas,'like',txSamples{1}));
                 end
                 contributions=cell(numel(obj.Links),1);
+                modelContributions=cell(numel(obj.Links),1);
+                modelChannelReceipts=cell(numel(obj.Links),1);
                 for k=1:numel(obj.Links)
                     link=obj.Links(k); x=txSamples{link.TX};
+                    birthSnapshot=sixgr.channel.ChannelSignalDependency.beforeRetarget(link.State);
+                    modelIndex=find(string({pendingChannels.ID})==link.ID);
                     requests=obj.ChannelReferenceRequests;
                     hits=find(string({requests.LinkID})==link.ID & [requests.RX]==link.RX & ...
                         [requests.Start]<stop & [requests.End]>first);
                     channelScope=sixgr.runtime.ExecutionStageProfiler.scope("channel","apply_retained_channel_state");
                     [contribution,replay,state,reference]=sixgr.channel.ChannelFactory.applyRuntimeChannelState( ...
                         link.State,x,'OutputSampleAlignment','continuous_raw_samples', ...
-                        'InputSampleDomain','materialized_channel_ports','CaptureChannelReference',~isempty(hits));
+                        'InputSampleDomain','materialized_channel_ports', ...
+                        'CaptureChannelReference',~isempty(hits)||~isempty(modelIndex));
                     replay.ChannelSignalDependency=sixgr.channel.ChannelSignalDependency.bind( ...
                         sixgr.util.structGet(link,'SignalDependency',struct()), ...
                         link.State,state,replay,first,stop);
@@ -475,6 +729,89 @@ classdef SharedWaveformPhysicalRuntime < handle
                     obj.Links(k).State=state;
                     execution.Links(end+1)=struct('ID',link.ID,'TX',obj.Transmitters(link.TX).ID, ...
                         'RX',obj.Receivers(link.RX).ID,'Replay',replay,'LossReplay',lossReplay);
+                    if ~isempty(modelIndex)
+                        assert(~isempty(txReferences{link.TX}),'WAVEFORM:CSIReferenceTXHistory', ...
+                            'The current original transmitter must retain its aggregate model history.');
+                        [model,~,mapped,modelReceipt]=pendingChannels(modelIndex).Model.advance( ...
+                            txReferences{link.TX}.AggregateSamples,txChunks{link.TX},reference,execution.Links(end));
+                        pendingChannels(modelIndex).Model=model;
+                        modelContributions{k}=mapped; modelChannelReceipts{k}=modelReceipt;
+                    end
+                    % Reuse the FULL untrimmed original gain/filter operands,
+                    % never an observation crop or another channel execution.
+                    planeHits=find(string({pendingPlanes.LinkID})==link.ID);
+                    for h=planeHits
+                        p=pendingPlanes(h); active=p.TX==link.TX&&p.RX==link.RX;
+                        componentReceipt=struct(); channelReceipt=struct();
+                        samples=complex(zeros(stop-first,obj.Receivers(p.RX).RF.NumAntennas,'like',x));
+                        if active
+                            descriptor=txReferences{p.TX}.Components;
+                            t=find(string({descriptor.ID})==p.Component.ID);
+                            assert(isscalar(t),'WAVEFORM:CSIReferenceTXHistory','Original TX component state is missing.');
+                            assert(link.SignalDependency.MemorySamples<=flintmax-descriptor(t).RetireAfterSample, ...
+                                'WAVEFORM:CSIReferenceClock','Channel tail exceeds exact sample coordinates.');
+                            retire=descriptor(t).RetireAfterSample+link.SignalDependency.MemorySamples;
+                            p.RetireAfterSample=retire;
+                            if first<retire
+                                if isempty(p.Model)
+                                    assert(first<=p.Component.Birth.ComponentSupportStartSample, ...
+                                        'WAVEFORM:CSIReferenceMissingComponentHistory', ...
+                                        'Cannot reconstruct an already emitted component after a direction gap.');
+                                    birth=p.Component.Birth; birth.ModelHistoryStartSample=first;
+                                    binding=localChannelBinding(link,obj.Transmitters,obj.Receivers,obj.ConfigurationEpoch);
+                                    p.Model=sixgr.channel.AppliedChannelReferenceStream.fromComponentBirth( ...
+                                        binding,link.SignalDependency, ...
+                                        birthSnapshot,birth);
+                                end
+                                [component,~,componentReceipt]=txReferences{p.TX}.Component(p.Component.ID);
+                                [p.Model,~,samples,channelReceipt]=p.Model.advance( ...
+                                    component,txChunks{p.TX},reference,execution.Links(end));
+                            else
+                                p.Model=[]; % Proven finite RF + native FIR support has ended.
+                            end
+                        end
+                        pendingPlanes(h)=p;
+                        outputChunk=sixgr.phy.waveform.WaveformChunk(samples,first);
+                        outputs(end+1)=struct('ID',p.ID,'Chunk',outputChunk);
+                        parentIndex=find(arrayfun(@(r)r.TX==p.TX&& ...
+                            string(r.Parent.Receipt.ComponentID)==p.Component.ParentComponentID,obj.CSIRSReferenceParents));
+                        assert(isscalar(parentIndex),'WAVEFORM:CSIReferenceParent','Missing original parent registration.');
+                        q=localPortReceipt(p,first,stop,active,outputChunk, ...
+                            obj.CSIRSReferenceParents(parentIndex).Parent,obj.ConfigurationEpoch, ...
+                            obj.SampleRateHz,obj.Receivers(p.RX).ID,componentReceipt,channelReceipt);
+                        if isempty(execution.CSIRSPortReferences), execution.CSIRSPortReferences=q;
+                        else, execution.CSIRSPortReferences(end+1)=q; end
+                    end
+                end
+                for plane=obj.CSIModelPlanes
+                    k=obj.findID(obj.Links,plane.LinkID); link=obj.Links(k);
+                    active=link.RX==plane.RX;
+                    mapped=complex(zeros(stop-first,obj.Receivers(plane.RX).RF.NumAntennas,'like',txSamples{1}));
+                    residual=mapped; actualDesired=mapped; adapter=struct();
+                    if active
+                        assert(~isempty(modelContributions{k}),'WAVEFORM:CSIReferenceAggregateHistory', ...
+                            'The complete aggregate model must originate at the original installation.');
+                        mapped=modelContributions{k}; actualDesired=contributions{k};
+                        residual=actualDesired-mapped; adapter=modelChannelReceipts{k};
+                    end
+                    aChunk=sixgr.phy.waveform.WaveformChunk(mapped,first);
+                    rChunk=sixgr.phy.waveform.WaveformChunk(residual,first);
+                    outputs(end+1)=struct('ID',plane.ID,'Chunk',aChunk);
+                    outputs(end+1)=struct('ID',plane.ResidualID,'Chunk',rChunk);
+                    q=struct('ContractVersion',"sixgr.csirs.shared_linear_aggregate_reference/v1", ...
+                        'Source',"original_shared_owner_fixed_linear_model_and_actual_residual", ...
+                        'LinkID',plane.LinkID,'AggregatePlaneID',plane.ID,'ResidualPlaneID',plane.ResidualID, ...
+                        'StartSample',first,'EndSampleExclusive',stop,'Active',active, ...
+                        'AggregateSHA256',aChunk.SHA256,'ResidualSHA256',rChunk.SHA256, ...
+                        'ActualDesiredSHA256',sixgr.phy.waveform.WaveformHash.numeric(actualDesired), ...
+                        'AggregateEnergy',sum(abs(mapped(:)).^2),'ResidualEnergy',sum(abs(residual(:)).^2), ...
+                        'CrossEnergy',2*real(sum(conj(mapped(:)).*residual(:))), ...
+                        'ActualDesiredEnergy',sum(abs(actualDesired(:)).^2), ...
+                        'OriginalChannelAdapter',adapter,'SuccessfulContributorCommit',false, ...
+                        'ActualNonlinearPortAttribution',false,'StandardizedPowerAccuracyQualified',false, ...
+                        'ReceiverEstimatorInput',false);
+                    if isempty(execution.CSIModelReferences), execution.CSIModelReferences=q;
+                    else, execution.CSIModelReferences(end+1)=q; end
                 end
                 for plane=obj.ScoringPlanes
                     k=obj.findID(obj.Links,plane.LinkID); link=obj.Links(k);
@@ -554,17 +891,34 @@ classdef SharedWaveformPhysicalRuntime < handle
                     replay.AdditiveReceiverEVM=evmReplay;
                     replay.InjectedNoiseVariance=node.NoiseVariance;
                     replay.InjectedNoiseVarianceDomain='receiver_sample_waveform_pre_composite_front_end';
-                    if lower(strtrim(string(node.NoiseReplay.NoiseOperatingMode)))== ...
-                            "standalone_awgn_snr_argument"
+                    noiseMode=lower(strtrim(string(node.NoiseReplay.NoiseOperatingMode)));
+                    if any(noiseMode==["standalone_awgn_snr_argument","absolute_reference_esn0"])
                         replay.NoiseVarianceSource=node.NoiseReplay.NoiseVarianceSource;
-                    else
+                    elseif noiseMode=="receiver_noise_figure_thermal_noise"
                         replay.NoiseVarianceSource= ...
                             'receiver_thermal_noise_plus_nf_absolute_sqrt_mW';
+                    else
+                        error('WAVEFORM:SharedNoiseOperatingModeUnsupported','Unsupported installed noise mode %s.',noiseMode);
                     end
                     replay.NoiseStreamSeed=node.NoiseSeed;
                     replay.NoiseBandwidth_Hz=node.NoiseReplay.NoiseBandwidth_Hz;
                     replay.NoiseOperatingMode=node.NoiseReplay.NoiseOperatingMode;
                     replay.WaveformAmplitudeUnit=string(node.NoiseReplay.PowerContextAmplitudeUnit);
+                    replay.PowerContextAmplitudeUnit=node.NoiseReplay.PowerContextAmplitudeUnit;
+                    replay.PowerContextDirection=node.NoiseReplay.PowerContextDirection;
+                    replay.SampleRate_Hz=obj.SampleRateHz;
+                    if noiseMode=="absolute_reference_esn0"
+                        replay.AbsoluteReferenceNoiseInjectedSampleVariance_mW=node.NoiseVariance;
+                        replay.AbsoluteReferenceNoiseInjectionDomain='receiver_sample_waveform_pre_composite_front_end';
+                        for field=["AbsoluteReferenceNoise","RequestedReferenceEsN0_dB", ...
+                                "ReferenceNoisePSD_mWPerHz","ReferenceNoiseSampleVariance_mW", ...
+                                "ReferenceNoiseSampleRate_Hz","ReferenceNoiseContractSHA256", ...
+                                "ReferenceNoiseSource","ReferenceNoiseReferencePlane", ...
+                                "ThermalNoiseApplied","ControlledReferenceNoiseApplied"]
+                            replay.(field)=node.NoiseReplay.(field);
+                        end
+                        sixgr.link.resolveAbsoluteReferenceNoiseVariance(replay);
+                    end
                     replay.ThermalSampleNoiseBandwidth_Hz=node.NoiseReplay.ThermalSampleNoiseBandwidth_Hz;
                     replay.ThermalNoisePSD_mWPerHz=node.NoiseReplay.ThermalNoisePSD_mWPerHz;
                     replay.RequestedAWGNReferenceSNR_dB=double(sixgr.util.structGet( ...
@@ -582,6 +936,10 @@ classdef SharedWaveformPhysicalRuntime < handle
                         node.NoiseReplay,'SampleToGridNoiseVarianceGain',NaN));
                     replay.AppliedAWGNSNR_dB=NaN;
                     replay.AppliedAWGNSNRSource="not_applicable_thermal_noise";
+                    if noiseMode=="absolute_reference_esn0"
+                        replay.AppliedAWGNSNRSource="not_applicable_nominal_absolute_reference_not_measured_SINR";
+                        replay.AWGNReferenceEnergySource="not_applicable_absolute_nominal_reference_PSD";
+                    end
                     replay.AppliedAWGNSNRValueRole="applied_noise_reference_not_measured_receiver_sinr";
                     if lower(strtrim(string(node.NoiseReplay.NoiseOperatingMode)))== ...
                             "standalone_awgn_snr_argument"
@@ -627,8 +985,16 @@ classdef SharedWaveformPhysicalRuntime < handle
                     execution.RX(end+1)=struct('ID',node.ID,'Replay',replay);
                 end
                 obj.ChannelReferenceRequests=obj.ChannelReferenceRequests([obj.ChannelReferenceRequests.End]>stop);
-                if ~isempty(obj.RFExecutionLedger)
-                    obj.RFExecutionLedger.append(execution);
+                if isempty(obj.CSIRSReferenceParents)
+                    if ~isempty(obj.RFExecutionLedger), obj.RFExecutionLedger.append(execution); end
+                    obj.TXLinearReferences=pendingReferences; obj.LinearChannels=pendingChannels;
+                else
+                    expected=struct('CSIRSPortReferences',execution.CSIRSPortReferences, ...
+                        'CSIModelReferences',execution.CSIModelReferences, ...
+                        'TXLinearReferences',execution.TXLinearReferences);
+                    obj.PendingReferenceCommit=struct('First',first,'Stop',stop,'TX',pendingReferences, ...
+                        'Channels',pendingChannels,'Planes',pendingPlanes,'Contributors',contributors, ...
+                        'ReferenceEvidence',expected);
                 end
                 obj.NextSampleIndex=stop; nextState=obj;
             catch cause
@@ -637,6 +1003,45 @@ classdef SharedWaveformPhysicalRuntime < handle
         end
     end
     methods (Access=private)
+        function assertReferenceEvent(obj,runtime)
+            assert(isempty(obj.PendingReferenceCommit)&& ...
+                isa(runtime,'sixgr.phy.waveform.WaveformEventRuntime')&& ...
+                runtime==obj.ReferenceEvent&&isequal(runtime.ProcessorState,obj)&&runtime.SampleRateHz==obj.SampleRateHz&& ...
+                runtime.NextSampleIndex==obj.NextSampleIndex, ...
+                'WAVEFORM:CSIReferenceEventOwner','Require the original unfaulted event/physical clock owner.');
+        end
+
+        function contributors=validateReferenceContributors(obj,inputs,first,stop)
+            contributors=struct('ID',{},'Receipt',{});
+            if isempty(obj.CSIRSReferenceParents), return; end
+            for k=1:numel(inputs)
+                input=inputs(k);
+                assert(isfield(input,'ProspectiveContributors')&& ...
+                    isstruct(input.ProspectiveContributors)&&isscalar(input.ProspectiveContributors), ...
+                    'WAVEFORM:CSIReferenceContributors','Component reference processing requires the original composer receipt.');
+                q=input.ProspectiveContributors;
+                assert(all(isfield(q,{'Schema','CompleteContributorList','StartSample','EndSampleExclusive', ...
+                    'SampleRateHz','CompositeInputSHA256','Components'}))&& ...
+                    string(q.Schema)=="consumed_waveform_components/v1"&&isequal(q.CompleteContributorList,true)&& ...
+                    q.StartSample==first&&q.EndSampleExclusive==stop&&q.SampleRateHz==obj.SampleRateHz&& ...
+                    string(q.CompositeInputSHA256)==string(input.Chunk.SHA256), ...
+                    'WAVEFORM:CSIReferenceContributors','Bind the complete original composite input, not just a target.');
+                contributors(end+1)=struct('ID',string(input.ID),'Receipt',q);
+            end
+            for registration=obj.CSIRSReferenceParents
+                original=registration.Parent.Receipt;
+                lo=max(first,original.StartSample); hi=min(stop,original.EndSampleExclusive);
+                if lo>=hi, continue; end
+                t=find(string({contributors.ID})==string(original.TransmitterID));
+                list=contributors(t).Receipt.Components;
+                hit=find(string({list.ComponentID})==string(original.ComponentID));
+                assert(isscalar(hit)&&list(hit).StartSample==lo&&list(hit).EndSampleExclusive==hi&& ...
+                    string(list(hit).OriginalSampleSHA256)==string(original.OriginalSampleSHA256), ...
+                    'WAVEFORM:CSIReferenceOriginalComponentChanged', ...
+                    'A cancelled/replaced/missing component cannot reuse its original CSI reference factors.');
+            end
+        end
+
         function validateInterval(obj,inputs,first,stop)
             validateattributes(stop,{'numeric'},{'real','scalar','finite','integer','>',obj.NextSampleIndex});
             if ~isequal(first,obj.NextSampleIndex) || isempty(obj.Transmitters) || isempty(obj.Receivers) || ...
@@ -775,6 +1180,48 @@ classdef SharedWaveformPhysicalRuntime < handle
             end
         end
     end
+end
+
+function localCommittedOutput(outputs,id,sha)
+hit=find(string({outputs.ID})==string(id));
+assert(isscalar(hit)&&string(outputs(hit).SHA256)==string(sha), ...
+    'WAVEFORM:CSIReferenceCommit','Reference receipt must bind the validated original output chunk.');
+end
+function supported=localSupportedReference(d)
+supported=isstruct(d)&&isscalar(d)&&isfield(d,'Available')&&isequal(d.Available,true)&& ...
+    isfield(d,'NativeFilterAuthority')&&string(d.NativeFilterAuthority)== ...
+    "R2026a_Inf_fresh_both_direction_public_getPathFilters";
+end
+function binding=localChannelBinding(link,transmitters,receivers,epoch)
+power=sixgr.rf.PowerContext(transmitters(link.TX).RF.Configuration,transmitters(link.TX).RF.Chain.Direction);
+binding=struct('LinkID',string(link.ID),'TX',transmitters(link.TX).ID, ...
+    'RX',receivers(link.RX).ID,'ConfigurationEpoch',epoch, ...
+    'WaveformAmplitudeUnit',string(power.WaveformAmplitudeUnit));
+end
+function q=localPortReceipt(p,first,stop,active,chunk,parent,epoch,fs,rxID,rf,channel)
+q=struct('ContractVersion',"sixgr.csirs.shared_fixed_linear_port_reference/v1", ...
+    'Source',"original_shared_owner_fixed_linear_CSI_port_model", ...
+    'PlaneID',p.ID,'LinkID',p.LinkID,'TransmitterID',string(parent.Receipt.TransmitterID), ...
+    'ReceiverID',string(rxID),'ReceiveElementCount',size(chunk.Samples,2), ...
+    'ParentComponentID',p.Component.ParentComponentID, ...
+    'ResourceID',p.Component.ResourceID,'ResourceSetID',p.Component.ResourceSetID, ...
+    'LogicalPortIndex0',p.Component.LogicalPortIndex0,'ReferencePortNumber',p.Component.ReferencePortNumber, ...
+    'RegistrationSHA256',p.Component.RegistrationSHA256, ...
+    'OriginalEnqueueReceiptSHA256',string(parent.Receipt.ReceiptSHA256), ...
+    'TXInstallationSHA256',parent.TXInstallationSHA256, ...
+    'OriginalParentSampleSHA256',string(parent.Receipt.OriginalSampleSHA256), ...
+    'StartSample',first,'EndSampleExclusive',stop,'ConfigurationEpoch',epoch,'SampleRateHz',fs, ...
+    'WaveformAmplitudeUnit',string(parent.Evidence.WaveformAmplitudeUnit), ...
+    'OutputSHA256',string(chunk.SHA256),'HashSerialization',"WaveformHash.numeric", ...
+    'Active',active,'InputNonzeroEndSample',p.Component.InputNonzeroEndSample, ...
+    'RetireAfterSample',p.RetireAfterSample,'ModelSourceSupportEndAppliedAsTrim',false, ...
+    'OriginalRFAdapter',rf,'OriginalChannelAdapter',channel, ...
+    'OriginalOwnerOperandsBound',true,'SuccessfulContributorCommit',false, ...
+    'PAReferenceModel',"fixed_declared_first_order_PA", ...
+    'DACReferenceModel',"identity_converter_reference_residual_retained", ...
+    'CommonIQDCIncluded',false,'ActualNonlinearPortAttribution',false, ...
+    'StandardizedPowerAccuracyQualified',false,'HardwareQualified',false, ...
+    'ReceiverEstimatorInput',false,'AdditionalRFExecutions',0,'AdditionalChannelExecutions',0);
 end
 
 function [enabled,array,metadata,quadrature,reference]=localRadiationInstallation(cfg,direction)

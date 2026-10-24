@@ -139,9 +139,27 @@ classdef CSIReportConfiguration
             target=sixgr.phy.mimo.CSIReportConfiguration(request,obj.Epoch);
         end
 
+        function policy = reportingPolicy(obj)
+            % Configured quantities are distinct from transmitted fields:
+            % RI can be implicit for one port or explicitly zero-width.
+            % This inspection does not qualify a legacy alias for NR UCI.
+            quantities=split(lower(obj.ReportQuantity),"-");
+            policy=struct('ReportCQI',any(quantities=="cqi"), ...
+                'ReportPMI',any(quantities=="pmi" | quantities=="i1"), ...
+                'ReportRI',any(quantities=="ri"), ...
+                'ReportCRI',any(quantities=="cri"));
+        end
+
         function assertQualifiedWireLayout(obj)
             % Legacy advanced schema-size formulas are internal inspection
             % objects, not implementations of TS 38.212 CSI wire formats.
+            % These legacy quantity aliases are also inspection-only: they
+            % are not reportQuantity values in TS 38.214 5.2.1.4.2. A
+            % one-port NR report uses cri-ri-cqi with implicit RI one.
+            assert(~ismember(lower(obj.ReportQuantity),["cri-cqi","cqi"]), ...
+                'sixgr:mimo:UnqualifiedCSIWireLayout', ...
+                'CSI quantity %s is a legacy inspection alias, not a qualified NR reportQuantity.', ...
+                obj.ReportQuantity);
             if localTypeII(obj)
                 localTypeIIWidebandSchema(obj.SchemaRequest);
                 return;
@@ -437,11 +455,12 @@ function [p1f,p1w,p2f,p2w]=localTypeIWidebandSchema(request)
 % TS 38.212 Tables 6.3.1.1.2-7 (PUCCH) and 6.3.2.1.2-3/4 (PUSCH).
 ports=double(request.Ports); rank=double(request.Rank);
 ranks=localAllowedRanks(request,ports); q=lower(string(request.ReportQuantity));
+quantities=split(q,"-");
 assert(lower(string(request.FrequencyGranularity))=="wideband", ...
     'sixgr:mimo:UnsupportedCSIReportLayout','Type-I subband CSI requires its actual differential-CQI/PMI layout.');
 assert(any(q==["cri-ri-pmi-cqi","cri-ri-li-pmi-cqi","cri-ri-cqi","cri-ri-i1","cri-ri-i1-cqi","cri-cqi","cqi"]), ...
     'sixgr:mimo:UnsupportedCSIReportLayout','Unsupported Type-I report quantity %s; do not substitute a CQI payload.',q);
-assert(ports==1 || contains(q,'ri'), ...
+assert(ports==1 || any(quantities=="ri"), ...
     'sixgr:mimo:UnsupportedCSIReportLayout','Spatial Type-I reports require their configured RI field.');
 if ports>2
     assert(max(ranks)<=2 || (ports==4 && max(ranks)<=4), ...
@@ -449,10 +468,10 @@ if ports>2
         'Type-I ranks above two are implemented only for four CSI-RS ports.');
 end
 prefix=strings(1,0); prefixWidths=zeros(1,0);
-if contains(q,'cri'), prefix(end+1)="CRI"; prefixWidths(end+1)=localBits(request.NumCSIResources-1); end
-if ports>1 && contains(q,'ri'), prefix(end+1)="RI"; prefixWidths(end+1)=localBits(numel(localRIValues(request))-1); end
+if any(quantities=="cri"), prefix(end+1)="CRI"; prefixWidths(end+1)=localBits(request.NumCSIResources-1); end
+if ports>1 && any(quantities=="ri"), prefix(end+1)="RI"; prefixWidths(end+1)=localBits(numel(localRIValues(request))-1); end
 cqi=strings(1,0); cqiWidths=zeros(1,0);
-if contains(q,'cqi'), cqi="CQI_CW0"; cqiWidths=4; end
+if any(quantities=="cqi"), cqi="CQI_CW0"; cqiWidths=4; end
 [li,liWidths,pmi,pmiWidths]=localTypeIRankFields(request);
 if upper(string(localField(request,'ConfiguredUCIChannel', ...
         localField(request,'UCIChannel','PUCCH'))))=="PUSCH"

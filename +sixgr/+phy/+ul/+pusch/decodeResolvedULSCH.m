@@ -1,7 +1,12 @@
 function result=decodeResolvedULSCH(llr,resolved,pusch,tbs,rate,rv,layouts, ...
-        maxIterations,algorithm,priorLLR,priorLayouts)
+        maxIterations,algorithm,priorLLR,priorLayouts,policy)
 % Decode each known UL-SCH map independently; no decision for unknown maps.
 % Caller must bind mapping status and coding inputs to the actual capture.
+if nargin<12 || isempty(policy)
+    policy=sixgr.phy.phycode.resolveLDPCPolicy(struct(),algorithm);
+end
+assert(strcmpi(string(policy.algorithm),string(algorithm)), ...
+    'sixgr:pusch:LDPCPolicyConflict','Resolved algorithm and receiver policy must agree.');
 [layers,~]=sixgr.phy.ul.pusch.PUSCHLayerMapper.layerCounts(pusch.NumLayers);
 count=numel(layers);
 assert(iscell(llr) && numel(llr)==count && islogical(resolved) && numel(resolved)==count, ...
@@ -61,8 +66,9 @@ for cw=1:count
     [combined,combining]=sixgr.phy.harq.combineSoftLLR(recovered,priorLLR{cw}, ...
         'CurrentLayout',layout,'PriorLayout',priorLayouts{cw},'CodewordIndex',cw);
     started=tic;
-    [decoded,iterations,parity]=sixgr.phy.phycode.ldpcDecode(combined, ...
-        double(layout.BaseGraph),maxIterations,algorithm);
+    [decoded,iterations,parity,policyReceipt]=sixgr.phy.phycode.decodeLDPCConfigured(combined, ...
+        double(layout.BaseGraph),maxIterations,policy, ...
+        logical(sixgr.util.structGet(policy,"useMexBatchDecode",false)));
     [withCRC,cbErrors]=sixgr.phy.tb.desegmentLDPC(decoded,double(layout.BaseGraph), ...
         double(layout.TransportBlockLengthWithCRC));
     [bits,pass,err]=sixgr.phy.tb.checkCRC(withCRC,layout.TBCRCType);
@@ -75,10 +81,21 @@ for cw=1:count
     e.Reason=""; e.CodingLayout=layout; e.RateRecovery=recovery; e.HARQCombining=combining;
     e.CodeBlockCRCError=cbErrors; e.DecodeLatency_s=latency;
     e.ActualIterations=iterations; e.FinalParityChecks=parity;
+    e.LDPCPolicyReceipt=policyReceipt;
+    stage="initial_decode";
+    if logical(combining.Applied), stage="harq_combined_decode"; end
+    e.LDPCParityEvidence=sixgr.phy.phycode.summarizeLDPCParity({parity},stage);
     e.Source="received_ULSCH_LLR_rate_recovery_LDPC_and_TB_CRC";
     evidence{cw}=e;
 end
-result=struct('TransportBlocks',{blocks},'MappingResolved',resolved, ...
+parityCells=cell(1,count);
+for cw=1:count, parityCells{cw}=sixgr.util.structGet(evidence{cw},'FinalParityChecks',[]); end
+stage="initial_decode";
+if any(cellfun(@(e) logical(sixgr.util.structGet(e,'HARQCombining.Applied',false)),evidence))
+    stage="harq_combined_decode";
+end
+parityEvidence=sixgr.phy.phycode.summarizeLDPCParity(parityCells,stage);
+result=struct('LDPCParityEvidence',parityEvidence,'TransportBlocks',{blocks},'MappingResolved',resolved, ...
     'DecodeAttempted',attempted,'CRCAvailable',attempted, ...
     'CRCPass',crcPass,'CRCError',crcError,'CodewordEvidence',{evidence}, ...
     'AllTransportBlocksPassed',all(attempted & crcPass==1), ...

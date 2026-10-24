@@ -492,6 +492,7 @@ if ~isempty(opt.NoiseVar)
 end
 receiver.MaxIterations = double(maxIterations);
 receiver.Algorithm = char(string(algorithm));
+receiver.LDPCPolicy = sixgr.phy.phycode.resolveLDPCPolicy(cfg,algorithm);
 bundle.ReceiverConfig = receiver;
 bundle.ReceiverMaterializationSource = ...
     "same_transmission_calibration_bundle_exact_reuse";
@@ -973,6 +974,12 @@ rx.HARQCombinedLLRDomain = "prior_and_current_attempt_mother_code";
 rx.DecoderCRCInputDomain = "harq_combined_mother_code";
 rx.CurrentAttemptStandaloneCRCMeasured = ~rx.HARQSoftCombiningApplied;
 rx.RateRecoverInfoCell = recInfo;
+rx.LDPCParityEvidence=canonical.Decode.LDPCParityEvidence;
+if isfield(canonical.Decode,'Codewords')
+    rx.LDPCPolicyReceipts=cellfun(@(x) x.LDPCPolicyReceipt,canonical.Decode.Codewords,'UniformOutput',false);
+else
+    rx.LDPCPolicyReceipts={canonical.Decode.LDPCPolicyReceipt};
+end
 rx = sixgr.phy.rx.appendMeasuredPHYEvidence(rx, carrier, dmrsInd, ...
     dmrsAntInd, dmrsSym, dmrsInfo, llrCell, recLLR, recLLR, recInfo, ...
     activeIterations, parityChecks, cbCRCError, ...
@@ -3454,101 +3461,6 @@ for cw = 1:nCodewords
 end
 end
 
-function [decCbs, actIter, parity, useMexLDPC, decodeLatency_s] = localDecodeLDPCCodeBlocks(recLLRBatch, bgn, maxIter, alg, cfg)
-decodeProfileScope=sixgr.runtime.ExecutionStageProfiler.scope("decoding","legacy_PDSCH_LDPC_code_blocks"); %#ok<NASGU>
-C = size(recLLRBatch, 2);
-actIter = NaN(1, C);
-parity = NaN(1, C);
-decodeTic = tic;
-useMexLDPC = logical(sixgr.util.structGet(cfg, 'phy.ldpc.useMexBatchDecode', false)) ...
-    && (exist("sixgr_ldpc_decode_batch_kernel_mex","file") == 3 || exist("sixgr_ldpc_decode_batch_kernel","file") == 2);
-
-if useMexLDPC
-    useNormMinSum = uint8(strcmpi(char(alg), 'Normalized min-sum'));
-    try
-        if exist("sixgr_ldpc_decode_batch_kernel_mex","file") == 3
-            try
-                [decMat, decLen, actIterV, parityV] = sixgr_ldpc_decode_batch_kernel_mex(recLLRBatch, bgn, maxIter, useNormMinSum);
-            catch
-                [decMat, decLen] = sixgr_ldpc_decode_batch_kernel_mex(recLLRBatch, bgn, maxIter, useNormMinSum);
-                actIterV = NaN(C, 1);
-                parityV = NaN(C, 1);
-            end
-        else
-            try
-                [decMat, decLen, actIterV, parityV] = sixgr_ldpc_decode_batch_kernel(recLLRBatch, bgn, maxIter, useNormMinSum);
-            catch
-                [decMat, decLen] = sixgr_ldpc_decode_batch_kernel(recLLRBatch, bgn, maxIter, useNormMinSum);
-                actIterV = NaN(C, 1);
-                parityV = NaN(C, 1);
-            end
-        end
-        maxLen = max(1, min(size(decMat,1), round(max(decLen(:)))));
-        decCbs = int8(decMat(1:maxLen, :));
-        actIter = reshape(double(actIterV(:)), 1, []);
-        parity = reshape(double(parityV(:)), 1, []);
-    catch
-        useMexLDPC = false;
-    end
-end
-
-if ~useMexLDPC
-    nRow = size(recLLRBatch, 1);
-    decCbs = zeros(nRow, C, 'int8');
-    maxLen = 0;
-    usePar = (C > 1) && logical(sixgr.util.structGet(cfg, 'run.useParallel', false)) ...
-        && license('test','Distrib_Computing_Toolbox') && ~isempty(gcp('nocreate'));
-    if usePar
-        dCell = cell(C,1);
-        dLen = zeros(C,1);
-        itV = NaN(C,1);
-        pcV = NaN(C,1);
-        parfor c = 1:C
-            [d, it, pc] = sixgr.phy.phycode.ldpcDecode(recLLRBatch(:,c), bgn, maxIter, alg);
-            d = int8(d(:));
-            dCell{c} = d;
-            dLen(c) = min(numel(d), nRow);
-            it = it(:);
-            pc = pc(:);
-            if isempty(it), it = NaN; end
-            if isempty(pc), pc = NaN; end
-            itV(c) = double(it(1));
-            pcV(c) = double(pc(1));
-        end
-        for c = 1:C
-            actIter(c) = itV(c);
-            parity(c) = pcV(c);
-            Ld = dLen(c);
-            if Ld > 0
-                decCbs(1:Ld, c) = dCell{c}(1:Ld);
-                maxLen = max(maxLen, Ld);
-            end
-        end
-    else
-        for c = 1:C
-            [d, it, pc] = sixgr.phy.phycode.ldpcDecode(recLLRBatch(:,c), bgn, maxIter, alg);
-            it = it(:);
-            pc = pc(:);
-            if isempty(it), it = NaN; end
-            if isempty(pc), pc = NaN; end
-            actIter(c) = double(it(1));
-            parity(c) = double(pc(1));
-            d = int8(d(:));
-            Ld = min(numel(d), nRow);
-            if Ld > 0
-                decCbs(1:Ld, c) = d(1:Ld);
-                maxLen = max(maxLen, Ld);
-            end
-        end
-    end
-    if maxLen <= 0
-        decCbs = zeros(1, C, 'int8');
-    else
-        decCbs = decCbs(1:maxLen, :);
-    end
-end
-decodeLatency_s = toc(decodeTic);
-end
 
 function [priorLLR, priorLayout] = localSelectHARQSoftBuffer(softBuffers, softLayouts, codewordIndex)
 priorLLR = [];

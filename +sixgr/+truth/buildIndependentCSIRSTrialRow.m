@@ -192,6 +192,7 @@ for name = ["HestDimensions","CSIMeasurementID","CSIMeasurementDigest", ...
         "MeasurementRSRPPerResource_dBm","MeasurementResourceIDs", ...
         "MeasurementAntennaAggregation","PhysicalMeasurementWaveformStatus", ...
         "PhysicalMeasurementWaveformSource","PhysicalMeasurementStatus", ...
+        "PhysicalMeasurementReferencePlane", ...
         "PhysicalMeasurementStandard","MeasurementReceiverGainCorrectionSource"]
     row.(name) = string(sixgr.util.structGet(obs,name,""));
 end
@@ -212,6 +213,10 @@ end
 % The shared physical receiver owns these audit values. Never rebuild them
 % from the requested operating point or use them as measured CSI SINR.
 executed=sixgr.util.structGet(reception,"NoiseExecutionEvidence",struct());
+absoluteNoise=sixgr.link.absoluteReferenceNoisePublication(executed);
+for name=string(fieldnames(absoluteNoise)).'
+    row.(name)=absoluteNoise.(name);
+end
 for name=["AppliedAWGNSNR_dB","ReferenceAWGNGridNoiseVariance", ...
         "ReferenceAWGNSampleNoiseVariance","SignalEnergyPerOccupiedRE", ...
         "SampleToGridNoiseVarianceGain"]
@@ -244,6 +249,15 @@ row.CSIComputationStatus = "runtime_measured_csi_complete";
 row.CSIMeasurementID = string(sixgr.util.structGet(csi,"CSIMeasurementID",row.CSIMeasurementID));
 row.CSIMeasurementDigest = string(sixgr.util.structGet(csi,"CSIMeasurementDigest",row.CSIMeasurementDigest));
 row.CSIMeasurementProvenance = string(sixgr.util.structGet(csi,"CSIMeasurementProvenance",row.CSIMeasurementProvenance));
+row.RankSelectionEvidenceStatus="not_recorded";
+if isfield(csi,'RankSelectionEvidence')
+    decision=csi.RankSelectionEvidence;
+    sixgr.truth.validateCSIRSRankSelectionEvidence(decision,prepared,reception,csi);
+    row.RankSelectionEvidenceJSON=string(jsonencode(decision));
+    row.RankSelectionEvidenceSHA256=sixgr.util.sha256Hex(char(row.RankSelectionEvidenceJSON));
+    row.RankSelectionEvidenceAvailable=true;
+    row.RankSelectionEvidenceStatus="recorded_original_MaxSE_model_operands_not_accuracy_qualification";
+end
 row.PMIType = string(sixgr.util.structGet(csi,"PMIType",""));
 row.PMICodebookMode = string(sixgr.util.structGet(csi,"PMICodebookMode",""));
 row.SINR_dB = double(sixgr.util.structGet(csi,"SINR_dB",NaN));
@@ -252,8 +266,10 @@ row.SINRValueRole = string(sixgr.util.structGet(csi,"SINRValueRole",""));
 row.SINRValueStatus = string(sixgr.util.structGet(csi,"SINRValueStatus",""));
 row.SINRValueDefinition = string(sixgr.util.structGet(csi,"SINRValueDefinition",""));
 row.SINRMeasurementDomain = string(sixgr.util.structGet(csi,"SINRMeasurementDomain",""));
-row.CQIEffectiveSINR_dB = double(sixgr.util.structGet(csi,"WidebandSINR_dB",row.SINR_dB));
-row.CQIEffectiveSINRSource = row.SINRSource;
+% The model's CQI mapping statistic is not the measured receiver SINR.
+% Do not backfill one plane from the other when an engine lacks this field.
+row.CQIEffectiveSINR_dB = double(sixgr.util.structGet(csi,"CQIEffectiveSINR_dB",NaN));
+row.CQIEffectiveSINRSource = string(sixgr.util.structGet(csi,"CQIEffectiveSINRSource",""));
 
 row.NumConfiguredResources = double(sixgr.util.structGet(obs,"NumConfiguredResources",event.NumResources));
 row.ConfiguredResourceIDs = string(event.ResourceIDs);

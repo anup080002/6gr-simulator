@@ -167,6 +167,7 @@ if withRankTransitions
     state.TestRankTransitionLastSourceSlot=-Inf;
     state.TestRankTransitionTRSSlots=zeros(0,1);
     state.TestRankTransitionCSIRSSlots=zeros(0,1);
+    state.TestPeriodicCSIRefreshSnapshots=cell(0,1);
 end
 if withReferenceContinuation
     % This optional test uses the resolved YAML scheduler and all of its
@@ -661,6 +662,9 @@ stop=false; rearm=false;
 if ~state.TestRankTransitions, return; end
 prefix="TestContinuation"; harq=state.DLHarq;
 if direction=="UL", prefix="TestSRSContinuation"; harq=state.ULHarq; end
+if direction=="UL"
+    state.TestPeriodicCSIRefreshSnapshots{end+1,1}=PeriodicCSIRefreshAudit.capture(state);
+end
 if state.(prefix+"Rejected")
     state.TestRankTransitionTermination="actual_control_not_admitted"; stop=true; return;
 end

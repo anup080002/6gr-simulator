@@ -2902,7 +2902,7 @@ modeStr = repmat(string(mode), nPackets, 1);
 decoderIter = NaN(nPackets,1);
 
 maxIter = double(sixgr.util.structGet(cfg, "phy.ldpc.maxIterations", 12));
-alg = char(string(sixgr.util.structGet(cfg, "phy.ldpc.algorithm", "Normalized min-sum")));
+ldpcPolicy = sixgr.phy.phycode.resolveLDPCPolicy(cfg);
 
 for p = 1:nPackets
     [tx0, ~] = sixgr.phy.dl.PDSCH_Tx(cfg, ...
@@ -2951,7 +2951,7 @@ for p = 1:nPackets
         else
             rr = sixgr.util.structGet(rx, "RecLLR", []);
             llrAccum = localCombineRecLLR(llrAccum, rr);
-            [pass, be, itMean] = localDecodeCombinedDL(llrAccum, tb, trBlkSize, tcr, bgn, maxIter, alg);
+            [pass, be, itMean] = localDecodeCombinedDL(llrAccum, tb, trBlkSize, tcr, bgn, maxIter, ldpcPolicy);
             beLast = be;
             itLast = itMean;
         end
@@ -3039,7 +3039,7 @@ ccMin = min(c1, c2);
 acc = acc(1:rrMin,1:ccMin) + rr(1:rrMin,1:ccMin);
 end
 
-function [ok, be, iterMean] = localDecodeCombinedDL(recLLR, txBits, trBlkSize, tcr, bgn, maxIter, alg)
+function [ok, be, iterMean] = localDecodeCombinedDL(recLLR, txBits, trBlkSize, tcr, bgn, maxIter, ldpcPolicy)
 ok = false;
 be = numel(txBits);
 iterMean = NaN;
@@ -3052,7 +3052,12 @@ decCells = cell(C,1);
 itVec = NaN(C,1);
 maxLen = 0;
 for c = 1:C
-    [d, it, ~] = sixgr.phy.phycode.ldpcDecode(recLLR(:,c), bgn, maxIter, alg);
+    % This optional probe retains its existing CRC/TX-bit diagnostic rules.
+    % Forward the complete configured policy without claiming that the probe
+    % exports a complete decoder receipt or establishes received-feedback HARQ.
+    [d, it] = sixgr.phy.phycode.decodeLDPCConfigured( ...
+        recLLR(:,c), bgn, maxIter, ldpcPolicy, ...
+        logical(sixgr.util.structGet(ldpcPolicy, 'useMexBatchDecode', false)));
     d = int8(d(:));
     decCells{c} = d;
     maxLen = max(maxLen, numel(d));
@@ -9497,7 +9502,6 @@ if ~isempty(builtOK) && builtOK
 end
 
 need = ["sixgr_fft_papr_kernel_mex", ...
-    "sixgr_ldpc_decode_batch_kernel_mex", ...
     "sixgr_channel_est_ls_kernel_mex", ...
     "sixgr_awgn_complex_kernel_mex", ...
     "sixgr_freq_shift_kernel_mex", ...

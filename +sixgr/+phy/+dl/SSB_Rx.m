@@ -175,12 +175,14 @@ ssbSymbolColumns = symbolWithinSlot + (1:4);
 % Keep the acquired slot origin, CP sequence, sample rate and phase clock;
 % bounding the unused tail must not change any selected FFT input sample.
 demodSampleCount = 0;
+demodCyclicPrefixLengths = zeros(1,0);
 symbolsRemaining = ssbSymbolColumns(end);
 windowCarrier = ssbCarrier;
 windowSampling = ssbSampling;
 while symbolsRemaining > 0
     windowCP = double(windowSampling.CyclicPrefixLengthsPerSlot(:));
     symbolCount = min(symbolsRemaining, numel(windowCP));
+    demodCyclicPrefixLengths = [demodCyclicPrefixLengths windowCP(1:symbolCount).']; %#ok<AGROW>
     demodSampleCount = demodSampleCount + ...
         sum(windowCP(1:symbolCount) + double(windowSampling.Nfft));
     symbolsRemaining = symbolsRemaining - symbolCount;
@@ -200,7 +202,7 @@ end
 leftPadding = max(0, 1 - demodStartIdx);
 rxSync = [complex(zeros(leftPadding, size(rxF,2), 'like', rxF)); ...
     rxF(max(1,demodStartIdx):demodEndIdx, :)];
-rxGrid = sixgr.phy.waveform.ofdmDemodulate( ...
+[rxGrid,originalDemodulationInfo] = sixgr.phy.waveform.ofdmDemodulate( ...
     ssbCarrier, rxSync, ...
     "Nfft", ssbSampling.Nfft, ...
     "SampleRate", ssbSampling.SampleRateHz, ...
@@ -310,6 +312,17 @@ sync.SSBDemodulationSampleCount = double(size(rxSync,1));
 sync.SSBDemodulationStartSampleZeroBased = double(demodStartIdx-1);
 sync.SSBDemodulationSymbolCount = double(ssbSymbolColumns(end));
 sync.SSBDemodulationScope = 'acquired_slot_prefix_through_selected_ssb_only';
+% Original execution receipt, not a reconstructed second acquisition. Keep
+% the compact native operator and actual CP sequence, not duplicate samples.
+sync.OriginalDemodulation = struct();
+for name=["EngineUsed","CyclicPrefixFraction","FFTWindowPositionSource", ...
+        "OFDMWindowingSamples","WaveformSHA256","GridSHA256"]
+    sync.OriginalDemodulation.(name)=originalDemodulationInfo.(name);
+end
+sync.OriginalDemodulation.RuntimeMATLABRelease=string(version('-release'));
+sync.OriginalDemodulation.CyclicPrefixLengths=demodCyclicPrefixLengths;
+sync.OriginalDemodulation.SymbolLengths=demodCyclicPrefixLengths+double(ssbSampling.Nfft);
+sync.OriginalDemodulation.LeftPaddingSamples=double(leftPadding);
 sync.SSBCenterFrequencyOffsetHz = double(sixgr.util.structGet( ...
     finfo, "SSBCenterFrequencyOffsetHz", NaN));
 sync.SSBPlacementCorrectionAppliedHz = double(sixgr.util.structGet( ...

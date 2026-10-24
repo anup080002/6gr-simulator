@@ -15,8 +15,27 @@ classdef RFEndpointExecutionLedger < handle
         TXRadiationLibrary = struct('Installation',{},'Field',{})
         TXRadiationNativeBindings = struct('LinkID',{},'Receipt',{})
         TXRadiationRows table = table()
+        TXLinearReferenceLibrary = struct([])
+        TXLinearReferenceIntervals table = table()
+        TXLinearReferenceLibraryInstalled (1,1) logical = false
     end
     methods
+        function installTXLinearReferenceLibrary(obj,library)
+            assert(isempty(obj.Rows)&&obj.NextSampleIndex==obj.OriginSample&& ...
+                ~obj.TXLinearReferenceLibraryInstalled,'sixgr:truth:TXLinearReferenceInstallation', ...
+                'Freeze the model owner library once, before any committed interval.');
+            empty=sixgr.truth.txLinearReferenceInterval();
+            sixgr.truth.validateTXLinearReferenceIntervals(empty,library,obj.Rows);
+            for k=1:numel(library)
+                a=library(k); at=obj.Inventory.Role=="TX"&obj.Inventory.EndpointID==string(a.EndpointID);
+                assert(nnz(at)==1&&obj.Inventory.PhysicalPortCount(at)==a.NumAntennas&& ...
+                    obj.Inventory.Direction(at)==string(a.Direction)&&a.SampleRateHz==obj.SampleRateHz&& ...
+                    a.ConfigurationEpoch==obj.ConfigurationEpoch&&a.OriginSample==obj.OriginSample, ...
+                    'sixgr:truth:TXLinearReferenceInstallation','Bind the original registered TX endpoint and model-history origin.');
+            end
+            obj.TXLinearReferenceLibrary=library; obj.TXLinearReferenceIntervals=empty;
+            obj.TXLinearReferenceLibraryInstalled=true;
+        end
         function installRadiationLibrary(obj,library)
             assert(isempty(obj.Rows)&&obj.NextSampleIndex==obj.OriginSample&&isempty(obj.TXRadiationLibrary), ...
                 'sixgr:truth:ModeledRadiationInstallation','Freeze the field library before the first committed interval.');
@@ -68,6 +87,7 @@ classdef RFEndpointExecutionLedger < handle
             nextPower=sixgr.truth.rfChainPowerInterval();
             nextSpatial=sixgr.truth.rfTXSpatialPowerInterval();
             nextRadiation=sixgr.truth.modeledRadiationInterval();
+            nextLinear=sixgr.truth.txLinearReferenceInterval();
             native=obj.TXRadiationNativeBindings;
             links=sixgr.util.structGet(execution,'Links',struct('ID',{},'TX',{},'Replay',{}));
             for link=links
@@ -153,6 +173,18 @@ classdef RFEndpointExecutionLedger < handle
                     end
                 end
             end
+            references=sixgr.util.structGet(execution,'TXLinearReferences',struct('ID',{},'Receipt',{}));
+            assert(isstruct(references)&&all(isfield(references,{'ID','Receipt'})), ...
+                'sixgr:truth:TXLinearReferenceMissing','Separate original-owner model receipts are required.');
+            actual=string({references.ID});
+            expected=strings(numel(obj.TXLinearReferenceLibrary),1);
+            for k=1:numel(expected), expected(k)=string(obj.TXLinearReferenceLibrary(k).EndpointID); end
+            assert(numel(actual)==numel(expected)&&numel(unique(actual))==numel(actual)&&all(ismember(expected,actual)), ...
+                'sixgr:truth:TXLinearReferenceMissing','Every enabled original TX requires one separate model receipt; disabled TX cannot inject one.');
+            for k=1:numel(references)
+                base=next(next.Role=="TX"&next.EndpointID==actual(k),:);
+                nextLinear=[nextLinear;sixgr.truth.txLinearReferenceInterval(references(k).Receipt,base)]; %#ok<AGROW>
+            end
             % Commit only after every endpoint passed its metadata checks.
             combined=[obj.Rows;next];
             if isempty(obj.ChainPowerRows), combinedPower=nextPower;
@@ -160,6 +192,19 @@ classdef RFEndpointExecutionLedger < handle
             sixgr.truth.validateRFChainPowerIntervals(nextPower,next);
             sixgr.truth.validateTXSpatialPowerIntervals(nextSpatial,next,nextPower);
             sixgr.truth.validateModeledRadiationIntervals(nextRadiation,obj.TXRadiationLibrary,next,nextSpatial,native);
+            sixgr.truth.validateTXLinearReferenceIntervals(nextLinear,obj.TXLinearReferenceLibrary,next,nextPower);
+            if isempty(obj.TXLinearReferenceIntervals), combinedLinear=nextLinear;
+            else, combinedLinear=[obj.TXLinearReferenceIntervals;nextLinear]; end
+            % Check only the prior compact tuple, not every historic JSON
+            % receipt on every append. Full validation occurs on read/export.
+            if ~isempty(obj.TXLinearReferenceIntervals)
+                for k=1:height(nextLinear)
+                    prior=find(obj.TXLinearReferenceIntervals.EndpointID==nextLinear.EndpointID(k),1,'last');
+                    assert(~isempty(prior)&& ...
+                        obj.TXLinearReferenceIntervals.StaticOperatorSHA256(prior)==nextLinear.StaticOperatorSHA256(k), ...
+                        'sixgr:truth:TXLinearReferenceClosure','Installed static RF operators changed between intervals.');
+                end
+            end
             if isempty(obj.TXSpatialPowerRows), combinedSpatial=nextSpatial;
             else, combinedSpatial=[obj.TXSpatialPowerRows;nextSpatial]; end
             obj.Rows=combined; obj.ChainPowerRows=combinedPower;
@@ -167,6 +212,7 @@ classdef RFEndpointExecutionLedger < handle
             if isempty(obj.TXRadiationRows), obj.TXRadiationRows=nextRadiation;
             else, obj.TXRadiationRows=[obj.TXRadiationRows;nextRadiation]; end
             obj.TXRadiationNativeBindings=native;
+            obj.TXLinearReferenceIntervals=combinedLinear;
             obj.NextSampleIndex=stop;
         end
 
@@ -192,6 +238,12 @@ classdef RFEndpointExecutionLedger < handle
             evidence.TXRadiationIntervals=radiation;
             evidence.ModeledRadiationCompleteFromOrigin=sixgr.truth.validateModeledRadiationIntervals( ...
                 radiation,obj.TXRadiationLibrary,obj.Rows,obj.TXSpatialPowerRows,obj.TXRadiationNativeBindings);
+            linear=obj.TXLinearReferenceIntervals;
+            if isempty(linear), linear=sixgr.truth.txLinearReferenceInterval(); end
+            evidence.TXLinearReferenceLibrary=obj.TXLinearReferenceLibrary;
+            evidence.TXLinearReferenceIntervals=linear;
+            evidence.TXLinearReferenceCompleteFromOrigin=sixgr.truth.validateTXLinearReferenceIntervals( ...
+                linear,obj.TXLinearReferenceLibrary,obj.Rows,obj.ChainPowerRows);
         end
     end
     methods (Static)

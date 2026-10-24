@@ -1441,8 +1441,9 @@ def test_rsrp_chart_never_mixes_relative_grid_db_with_absolute_dbm() -> None:
     assert relative_result is None
 
     absolute = materializer._encode_csv(  # noqa: SLF001
-        ["Slot", "ServingRSRP_dBm", "RSRP_dBm"],
-        [[1, -103.0, -103.0], [2, -98.0, -98.0], [3, -91.0, -91.0]],
+        ["Slot", "ServingRSRP_dBm", "RSRP_dBm", "ServingRSRPSource", "RSRPSource"],
+        [[slot, value, value, "large_scale_pathloss_applied_per_reference_re_power", "large_scale_per_reference_re_power"]
+         for slot, value in [(1, -103.0), (2, -98.0), (3, -91.0)]],
     )
     absolute_path = "reports/csv/live_rsrp_serving_trace.csv"
     absolute_existing = {absolute_path: {"artifact_id": 72, "logical_path": absolute_path}}
@@ -1455,8 +1456,85 @@ def test_rsrp_chart_never_mixes_relative_grid_db_with_absolute_dbm() -> None:
     assert absolute_result is not None
     svg = absolute_result["img_bytes"].decode("utf-8")
     assert "RSRP / CSI-RSRP (dBm)" in svg
-    assert "relative digital" not in svg
+    assert "Modeled" in svg and "Calibrated serving" not in svg
     assert "CSI_RSRP_dB" not in absolute_result["csv_bytes"].decode("utf-8")
+
+
+def test_rsrp_chart_preserves_model_received_and_unknown_provenance() -> None:
+    import csv
+    columns = ["Slot", "UEID", "SweepPointIndex", "ConfiguredSNR_dB", "ServingRSRP_dBm",
+               "ServingRSRPSource", "ServingRSRPReferencePlane", "CSI_RSRP_dBm", "CSI_RSRPSource",
+               "CSI_RSRPReferencePlane", "RSRP_dBm", "RSRPSource"]
+    source = materializer._encode_csv(columns, [
+        [slot, 1, point, snr, model, "large_scale_pathloss_applied_per_reference_re_power",
+         "declared_link_budget_reference_RE", received,
+         "nrChannelEstimate_port3000_reference_RE_power_per_receive_branch",
+         "supplied_received_grid_columns", -70, ""]
+        for slot, point, snr, model, received in [(1, 1, 0, -90, -91), (2, 1, 0, -89, -92),
+                                                (3, 1, 0, -88, -87), (1, 2, 10, -86, -85)]])
+    path = "reports/csv/live_rsrp_serving_trace.csv"
+    existing = {path: {"artifact_id": 100, "logical_path": path}}
+    for chart in ("ServingRSRP / RSRP / CSI-RSRP trends", "RSRP/CSI-RSRP timeline"):
+        for entry in (materializer._specialized_chart_materialization,
+                      materializer._explicit_runtime_metric_chart_materialization):
+            result = entry(chart, existing, lambda _: source, 1)
+            assert result["source_row_count"] == 4
+            rows = list(csv.DictReader(io.StringIO(result["csv_bytes"].decode())))
+            assert len(rows) == 12
+            modeled = [r for r in rows if r["evidence_class"] == "modeled_large_scale_reference_RE_power"]
+            received = [r for r in rows if r["evidence_class"].startswith("received_source_labeled")]
+            unknown = [r for r in rows if r["evidence_class"].startswith("unqualified_")]
+            assert [float(r["metric_value"]) for r in modeled] == [-90, -89, -88, -86]
+            assert [float(r["metric_value"]) for r in received] == [-91, -92, -87, -85]
+            assert all(r["plotted"].lower() == "false" for r in unknown)
+            assert all(r["power_source"] and r["power_reference_plane"] for r in modeled + received)
+            assert len({r["series_name"] for r in modeled}) == 2
+            assert all(r["standardized_accuracy_qualified"].lower() == "false" for r in rows)
+            svg = result["img_bytes"].decode()
+            assert "Modeled" in svg and "Received" in svg
+            assert "Calibrated serving" not in svg
+
+
+def test_rsrp_without_source_or_matching_plane_cannot_use_numeric_fallback() -> None:
+    path = "reports/csv/live_rsrp_serving_trace.csv"
+    existing = {path: {"artifact_id": 100, "logical_path": path}}
+    # A data-receiver PowerReferencePlane is not automatically a CSI-RSRP plane.
+    source = materializer._encode_csv(["Slot", "ServingRSRP_dBm", "CSI_RSRP_dBm", "CSI_RSRPSource", "PowerReferencePlane"],
+        [[1, -90, -91, "nrChannelEstimate_port3000_reference_RE_power_per_receive_branch", "some_PDSCH_plane"]])
+    for chart in ("ServingRSRP / RSRP / CSI-RSRP trends", "RSRP/CSI-RSRP timeline"):
+        assert materializer._specialized_chart_materialization(chart, existing, lambda _: source, 1) is None
+        assert materializer._explicit_runtime_metric_chart_materialization(chart, existing, lambda _: source, 1) is None
+
+
+def test_rsrp_ue_card_and_explorer_keep_link_budget_model_separate() -> None:
+    from unittest.mock import patch
+    model = {"Slot": 1, "UEID": 1, "ServingRSRP_dBm": -93.25,
+             "ServingRSRPSource": "large_scale_pathloss_applied_per_reference_re_power"}
+    status, = dash.build_realtime_ue_status({}, {}, {"serving": [model]})
+    assert status["serving_rsrp_dbm"] is None
+    assert status["serving_rsrp_model_dbm"] == -93.25
+    assert status["serving_rsrp_source"] == model["ServingRSRPSource"]
+    assert status["serving_rsrp_reference_plane"] == ""
+    missing = dict(model, ServingRSRPSource="")
+    unknown, = dash.build_realtime_ue_status({}, {}, {"serving": [missing]})
+    assert unknown["serving_rsrp_dbm"] is None and unknown["serving_rsrp_model_dbm"] is None
+    assert unknown["serving_rsrp_published_dbm"] == -93.25
+    received = dict(model, ServingRSRPSource="nrChannelEstimate_port3000_reference_RE_power_per_receive_branch",
+                    ServingRSRPReferencePlane="supplied_received_grid_columns")
+    observed, = dash.build_realtime_ue_status({}, {}, {"serving": [received]})
+    assert observed["serving_rsrp_dbm"] == -93.25 and observed["serving_rsrp_model_dbm"] is None
+    assert observed["serving_rsrp_reference_plane"] == received["ServingRSRPReferencePlane"]
+    normalized = dict(received, ServingRSRPReferencePlane="normalized_complex_baseband")
+    assert not materializer.rsrp_value_provenance(normalized, "ServingRSRP_dBm")["received"]
+    with patch.object(dash, "load_first_available_csv_rows", side_effect=lambda artifacts, paths, **kw:
+                      [model] if paths == ["reports/csv/live_rsrp_serving_trace.csv"] else []):
+        explorer = dash.build_metric_explorer_payload([], {})
+    # Payload structure remains original; model value must never occupy received axis.
+    encoded = json.dumps(explorer)
+    assert '"modeled_serving_rsrp_dbm": -93.25' in encoded
+    assert '"rsrp_dBm": -93.25' not in encoded
+    source_text = (REPO_ROOT / "apps/lls_web_dashboard.py").read_text(encoding="utf-8")
+    assert "'Modeled serving RSRP' : 'Received serving RSRP'" in source_text
 
 
 def test_fixed_awgn_policy_disables_absolute_rsrp_and_static_port_charts() -> None:
@@ -1476,6 +1554,84 @@ def test_fixed_awgn_policy_disables_absolute_rsrp_and_static_port_charts() -> No
         fixed_awgn_policy,
         contract_name="port usage chart",
     )
+
+
+def test_absolute_reference_noise_keeps_power_chart_applicability_distinct_from_calibration() -> None:
+    import copy
+    config = {"simulation": {"noise_operating_mode": "absolute_reference_esn0",
+                            "absolute_reference_esn0": {"reference_policy": "nominal_full_bwp_unity_array"}},
+              "channel": {"pathloss_enabled": True},
+              "power_and_rf_frontend": {"bs_tx_power_dbm": 30, "ue_tx_power_dbm": 23}}
+
+    def policy(cfg):
+        return dash.extract_run_feature_policy({"config_json": json.dumps(cfg)})
+
+    actual = policy(config)
+    assert actual["absolute_power_reference_configured"] is True
+    assert actual["absolute_rx_power_calibrated"] is False
+    for chart in ("RSRP/CSI-RSRP timeline", "ServingRSRP / RSRP / CSI-RSRP trends"):
+        assert not materializer.contract_artifact_is_policy_filtered("reports/csv/rsrp.csv", actual, contract_name=chart)
+    for mutation in ("missing_budget", "unknown_mode", "wrong_policy", "normalized_units", "invalid_budget"):
+        bad = copy.deepcopy(config)
+        if mutation == "missing_budget":
+            del bad["power_and_rf_frontend"]["ue_tx_power_dbm"]
+        elif mutation == "unknown_mode":
+            bad["simulation"]["noise_operating_mode"] = "unknown_absolute_mode"
+        elif mutation == "wrong_policy":
+            bad["simulation"]["absolute_reference_esn0"]["reference_policy"] = "current_signal_power"
+        elif mutation == "normalized_units":
+            bad["PowerContext"] = {"WaveformAmplitudeUnit": "normalized_complex_baseband"}
+        else:
+            bad["power_and_rf_frontend"]["ue_tx_power_dbm"] = True
+        assert policy(bad)["absolute_power_reference_configured"] is False, mutation
+    # Applicability must not create measured power authority for a bare number.
+    assert not materializer.rsrp_value_provenance({"ServingRSRP_dBm": -90}, "ServingRSRP_dBm")["received"]
+
+
+def test_absolute_reference_noise_context_describes_frozen_reference_not_measured_sinr() -> None:
+    config = {"simulation": {"noise_operating_mode": "absolute_reference_esn0"}}
+    context = dash.extract_runtime_context({"config_json": json.dumps(config)}, [])
+    encoded = json.dumps(context)
+    assert "nominal reference fixes noise PSD per direction" in encoded
+    assert "configured reference Es/N0 is not measured SINR" in encoded
+    assert "Thermal noise and receiver noise figure are not added" in encoded
+    assert "after large-scale waveform gain/loss" not in encoded
+    assert "No noise-normalization" in dash._noise_operating_mode_description("unknown_mode")
+
+
+def test_noise_mode_ui_options_and_help_do_not_claim_execution_or_measured_target() -> None:
+    assert "absolute_reference_esn0" in dash.FIELD_OPTION_HINTS["simulation.noise_operating_mode"]
+    assert "receiver_noise_figure_thermal_noise" in dash.FIELD_OPTION_HINTS["simulation.noise_operating_mode"]
+    _, note = dash.classify_browser_field_support("simulation.noise_operating_mode")
+    assert "Selection alone is not execution evidence" in note
+    assert "absolute_reference_esn0" in note
+    _, note = dash.classify_browser_field_support("simulation.snr_db")
+    assert "configured target is not the measured result" in note
+
+
+def test_noise_mode_inference_preserves_resolved_and_runtime_authorities_separately() -> None:
+    schema = "sixgr.lls.config/v1"
+    configured = {"schemaVersion": schema, "simulation": {"noise_operating_mode": "absolute_reference_esn0"}}
+    inferred = dash.infer_runtime_truth_modes(configured, [])
+    assert inferred["noise_operating_mode"] == "absolute_reference_esn0"
+    assert inferred["noise_operating_mode_status"] == "configured_only"
+    assert inferred["noise_operating_mode_source"].startswith("submitted_configuration:")
+    resolved = {"lls6g": {"submittedScenarioConfig": configured,
+                          "resolvedConfig": {"run": {"noiseOperatingMode": "receiver_noise_figure_thermal_noise"}}}}
+    inferred = dash.infer_runtime_truth_modes(resolved, [])
+    assert inferred["noise_operating_mode"] == "receiver_noise_figure_thermal_noise"
+    assert inferred["noise_operating_mode_source"].startswith("resolved_configuration:")
+    actual = dash.infer_runtime_truth_modes(resolved, [{"NoiseOperatingMode": "absolute_reference_esn0"}])
+    assert actual["noise_operating_mode"] == "absolute_reference_esn0"
+    assert actual["noise_operating_mode_status"] == "recorded_runtime_mode"
+    assert actual["noise_operating_mode_source"] == "retained_runtime_operating_mode_row"
+    for token, status in (("unrecognized", "unrecognized_configured_mode"), ("", "unavailable")):
+        result = dash.infer_runtime_truth_modes({"schemaVersion": schema,
+            "simulation": {"noise_operating_mode": token}}, [])
+        assert result["noise_operating_mode"] == token and result["noise_operating_mode_status"] == status
+    default = dash.infer_runtime_truth_modes({"schemaVersion": schema}, [])
+    assert default["noise_operating_mode"] == "configured_EsN0_per_occupied_QAM_RE"
+    assert default["noise_operating_mode_source"] == "configuration_default_not_execution"
 
 
 def test_publication_axis_ticks_use_rounded_engineering_values() -> None:
@@ -1555,8 +1711,10 @@ def test_runtime_grid_spectrum_and_audit_charts_use_exact_sources() -> None:
         [[1, 0, 1, "PDSCH", "PDSCH", 1], [1, 1, 1, "SSB", "PBCH", 1], [2, 0, 1, "PUSCH", "PUSCH", 1]],
     )
     waveform_csv = materializer._encode_csv(  # noqa: SLF001
-        ["Panel", "Status", "truth_status", "SourceArtifact", "Direction", "SnapshotID", "XValue", "YValue", "Series", "SampleRate_Hz"],
-        [["spectrum", "available", "real_lls_evidence", "runtime_phy_arrays_same_trial", "DL", "snapshot-1", -8e6 + index * 1e6, -60 + index, "tx", 16e6] for index in range(16)],
+        ["Panel", "Status", "truth_status", "SourceArtifact", "Direction", "SnapshotID", "XValue", "YValue", "Series", "SampleRate_Hz",
+         "Frame", "Slot", "UEIndex", "RNTI", "TBId", "CurveConstruction"],
+        [["spectrum", "available", "real_lls_evidence", "runtime_phy_arrays_same_trial", "DL", "snapshot-1", -8e6 + index * 1e6, -60 + index, "tx", 16e6,
+          777, 1, 1, 4660, "declared_tb", "runtime_same_trial_phy_signal_snapshot"] for index in range(16)],
     )
     status_csv = materializer._encode_csv(  # noqa: SLF001
         ["required_flag", "status"],

@@ -773,6 +773,10 @@ signalDiagnostic = out.SignalDiagnostic;
 channelEstimateSnapshots = cell(numFrames,1);
 trialRuntimeEvidence = cell(numFrames,1);
 trialMeasuredPHYEvidence = cell(numFrames,1);
+trialCombinedLDPCDecodeAttempted = NaN(numFrames,1);
+trialCombinedLDPCParityAvailable = NaN(numFrames,1);
+trialCombinedLDPCParityEvidenceJSON = strings(numFrames,1);
+trialCombinedLDPCPolicyReceiptJSON = strings(numFrames,1);
 trialStatus = strings(numFrames,1);
 trialStatus(:) = "FAIL";
 trialCrash = false(numFrames,1);
@@ -2265,9 +2269,19 @@ for n = 1:numFrames
         receiverOutcome=sixgr.link.resolveULHARQReceiverOutcome(rx,[]);
         currentDecodeOK = receiverOutcome.CurrentDecodeOK;
         hasPriorHARQEvidence = localHARQPriorAvailable(previousCombinedLLR);
+        combinedLDPCDiagnostics=struct();
+        trialCombinedLDPCDecodeAttempted(n)=0;
         if hasPriorHARQEvidence && ~currentDecodeOK
-            [combinedDecodeOK, combinedDecodeIt, combinedRxBits] = ...
+            trialCombinedLDPCDecodeAttempted(n)=1;
+            [combinedDecodeOK, combinedDecodeIt, combinedRxBits, combinedLDPCDiagnostics] = ...
                 sixgr.phy.harq.decodeCombinedULSCH(currentCodingLayout,localEnsureLLRMatrix(combinedLLR),cfgFrame);
+            % Retain the actual separate combined invocation. Initial
+            % measured evidence above remains tied to its original decoder.
+            combinedParity=sixgr.link.deriveMeasuredPHYEvidence(struct( ...
+                'LDPCParityEvidence',combinedLDPCDiagnostics.LDPCParityEvidence));
+            trialCombinedLDPCParityAvailable(n)=combinedParity.MeasuredLDPCParityAvailable;
+            trialCombinedLDPCParityEvidenceJSON(n)=combinedParity.MeasuredLDPCParityEvidenceJSON;
+            trialCombinedLDPCPolicyReceiptJSON(n)=string(jsonencode(combinedLDPCDiagnostics.LDPCPolicyReceipt));
             receiverOutcome=sixgr.link.resolveULHARQReceiverOutcome(rx, ...
                 struct('CRCPass',combinedDecodeOK,'TransportBlock',combinedRxBits));
         else
@@ -2349,6 +2363,8 @@ for n = 1:numFrames
             "CurrentDecodeOK", logical(currentDecodeOK), ...
             "CombinedDecodeOK", logical(finalDecodeOK), ...
             "ReceiverOutcomeSource", receiverOutcome.Source, ...
+            "CombinedLDPCDecodeAttempted", logical(trialCombinedLDPCDecodeAttempted(n)), ...
+            "CombinedLDPCDiagnostics", combinedLDPCDiagnostics, ...
             "ReceiverHARQKey", receiverHARQKey, ...
             "ReferenceContentMatch", logical(contentMatch), ...
             "DecoderIterations", combinedDecodeIt, ...
@@ -3166,6 +3182,10 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         T.InterfererBeamIndexSetSummary = trialInterfererBeamIndexSetSummary(idx);
         T = localApplyRuntimeEvidenceColumns(T, trialRuntimeEvidence(idx));
         T = sixgr.link.appendMeasuredPHYEvidenceColumns(T, trialMeasuredPHYEvidence(idx));
+        T.HARQCombinedLDPCDecodeAttempted = trialCombinedLDPCDecodeAttempted(idx);
+        T.HARQCombinedLDPCParityAvailable = trialCombinedLDPCParityAvailable(idx);
+        T.HARQCombinedLDPCParityEvidenceJSON = trialCombinedLDPCParityEvidenceJSON(idx);
+        T.HARQCombinedLDPCPolicyReceiptJSON = trialCombinedLDPCPolicyReceiptJSON(idx);
         T = localDecorateTrialTruthFields(T, "UL", cfg);
         T.LinkEnergyEvidenceJSON=strings(height(T),1);
         T.LinkEnergyEvidenceSHA256=strings(height(T),1);
@@ -3227,6 +3247,18 @@ if noiseMode == "receiver_noise_figure_thermal_noise"
     end
     y = x;
     return;
+elseif noiseMode=="absolute_reference_esn0"
+    injected=sixgr.link.resolveAbsoluteReferenceNoiseVariance(replay);
+    [nVar,source]=localReceiverEffectiveNoiseVariance(injected,replay, ...
+        "absolute_nominal_reference_PSD_times_actual_sample_rate_sqrt_mW");
+    noiseInfo=localNoiseCalibrationInfo(x,referenceWaveform,nVar,source,txInfo);
+    noiseInfo.AbsoluteReferenceNoiseInjectedSampleVariance_mW=injected;
+    noiseInfo.AbsoluteReferenceNoiseInjectionDomain='receiver_sample_waveform_pre_composite_front_end';
+    n=sqrt(injected/2).*(randn(size(x),"like",real(x))+1i*randn(size(x),"like",real(x)));
+    y=x+cast(n,"like",x);
+    return;
+elseif noiseMode~="standalone_awgn_snr_argument"
+    error('sixgr:link:UnsupportedNoiseOperatingMode','Unsupported data noise mode %s.',noiseMode);
 end
 appliedSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
 if isempty(carrier)
@@ -3900,6 +3932,8 @@ row.ADCBits = double(sixgr.util.structGet(replay, "ADCBits", NaN));
 row.DACBits = double(sixgr.util.structGet(txRFReplay, "DACBits", NaN));
 row = sixgr.report.bindConverterEvidence(row,replay,txRFReplay);
 row.NoiseOperatingMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", ""));
+absoluteNoise=sixgr.link.absoluteReferenceNoisePublication(replay);
+for field=string(fieldnames(absoluteNoise)).', row.(field)=absoluteNoise.(field); end
 row.RFImpairmentChainId = localCompositeRFChainId(row.TxRFImpairmentChainId, row.RxRFImpairmentChainId);
 row.ReferenceTxPower_dBm = double(sixgr.util.structGet(replay, "ReferenceTxPower_dBm", NaN));
 row.ReferenceTxPowerSource = string(sixgr.util.structGet(replay, "ReferenceTxPowerSource", ""));
@@ -4352,6 +4386,8 @@ for name = string(fieldnames(channelEvidence)).'
 end
 row.RuntimeMaterializationStatus = "";
 row.RuntimeEvidenceSource = "";
+absoluteNoise=sixgr.link.absoluteReferenceNoisePublication();
+for field=string(fieldnames(absoluteNoise)).', row.(field)=absoluteNoise.(field); end
 end
 
 function id = localCompositeRFChainId(txId, rxId)
@@ -4756,7 +4792,7 @@ for fi = 1:numel(impairFields)
 end
 appliedSNR = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
 noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "receiver_noise_figure_thermal_noise"));
-if ~(isscalar(appliedSNR) && isfinite(appliedSNR)) && noiseMode ~= "receiver_noise_figure_thermal_noise"
+if ~(isscalar(appliedSNR) && isfinite(appliedSNR)) && noiseMode == "standalone_awgn_snr_argument"
     replay.AppliedAWGNSNR_dB = double(snr_dB);
 end
 replay.RawWaveform = y;

@@ -23,7 +23,9 @@ def grid_rows(count):
             OFDMSymbolIndex=(i // 16) % 14, RxPortIndex0Based=i // 224, TxPortIndex0Based=0,
             IValue=1, QValue=.1, Magnitude_dB=.0432137378, Phase_deg=5.710593,
             GridSHA256="fixture_not_physical", truth_status="real_lls_evidence",
-            SourceArtifact="runtime_phy_arrays_same_trial", Status="available")
+            SourceArtifact="runtime_phy_arrays_same_trial", Status="available",
+            CurveConstruction="runtime_same_trial_phy_signal_snapshot",
+            Frame=777, RNTI=4660, TBId="declared_fixture_tb")
         row.update({f"UnrelatedColumn{j}": "retained, quoted" for j in range(60)})
         yield row
 
@@ -95,7 +97,7 @@ def test_source_change_between_passes_rejected(tmp_path):
         calls.append(stream)
         return stream
     fetch.open_artifact_binary = opener
-    with pytest.raises(ValueError, match="changed during two-pass"):
+    with pytest.raises(ValueError, match="changed after full-row source audit"):
         m._runtime_phy_signal_diagnostic_chart("channel magnitude heatmap", ARTIFACTS, fetch, 8)
     assert len(calls) == 2 and all(s.closed for s in calls)
 

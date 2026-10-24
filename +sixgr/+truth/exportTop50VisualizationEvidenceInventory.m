@@ -22,6 +22,9 @@ inventory.MissingValidationColumns = strings(n, 1);
 inventory.FeatureState = strings(n, 1);
 inventory.PlotCanBeRegeneratedFromCSV = false(n, 1);
 inventory.AuditNotes = strings(n, 1);
+inventory.ReconstructionScope=repmat("registered_visual_contract",n,1);
+inventory.RadioClockStatus=repmat("not_evaluated_by_diagnostic_clock_contract",n,1);
+inventory.RadioClockSourceContractConsistent=false(n,1);
 % One complete bounded scan per inventory, not one full-grid table import
 % for every visual that refers to the same channel-estimate CSV.
 diagnostic=sixgr.truth.scanPHYSignalDiagnosticCSV(fullfile( ...
@@ -36,11 +39,23 @@ for i = 1:n
     inventory.ResolvedSourceArtifact(i) = sourcePath;
     inventory.SourceRowCount(i) = sourceRows;
     inventory.MissingValidationColumns(i) = missingColumns;
+    if sourcePath=="reports/csv/phy_signal_diagnostic_source.csv"
+        inventory.ReconstructionScope(i)="capture_local_samples_not_radio_clock_qualification";
+        states=unique(string({diagnostic.ClockContract.Groups.Status}));
+        if isempty(states), states="unavailable"; end
+        inventory.RadioClockStatus(i)=strjoin(states,"|");
+        inventory.RadioClockSourceContractConsistent(i)= ...
+            diagnostic.ClockContract.RadioClockSourceContractConsistent;
+    end
 
     if strlength(sourcePath) > 0 && validated
         inventory.AvailabilityStatus(i) = "validated_reconstructible";
         inventory.PlotCanBeRegeneratedFromCSV(i) = true;
         inventory.AuditNotes(i) = "Non-empty runtime source satisfies the registered panel/column contract.";
+        if sourcePath=="reports/csv/phy_signal_diagnostic_source.csv"
+            inventory.AuditNotes(i)="All persisted rows satisfy runtime provenance and the one-snapshot-per-direction trial contract. " + ...
+                "Capture-local reconstruction does not qualify retained SFN/absolute radio clocks; see separate clock status.";
+        end
     elseif strlength(sourcePath) > 0
         inventory.AvailabilityStatus(i) = "source_present_semantic_audit_pending";
         inventory.AuditNotes(i) = "A non-empty related source exists, but the full raw-field reconstruction contract is not yet proven.";
@@ -308,6 +323,22 @@ for i = 1:numel(candidates)
     missing = required(~ismember(lower(required), lower(present)));
     missingColumns = strjoin(missing, "|");
     validated = ~isempty(required) && isempty(missing);
+    if isDiagnostic
+        % Column presence alone cannot authenticate an actual execution.
+        % This consumer follows the current producer's explicit policy:
+        % at most one same-trial snapshot in each direction, with EVERY
+        % persisted row checked, including deferred full-grid coefficients.
+        validSource=diagnostic.TruthOK && diagnostic.ConstructionOK && ...
+            diagnostic.SourceOK && diagnostic.StatusOK && diagnostic.DirectionOK;
+        for direction=["DL","UL"]
+            d=diagnostic.(direction);
+            if d.RowCount>0
+                validSource=validSource && ~d.SnapshotMissing && ...
+                    numel(d.SnapshotIDs)==1 && d.TupleConsistent;
+            end
+        end
+        validated=validated&&validSource;
+    end
     return;
 end
 end

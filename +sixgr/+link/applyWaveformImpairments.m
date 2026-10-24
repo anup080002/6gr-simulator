@@ -345,6 +345,27 @@ if string(noiseMode)=="receiver_noise_figure_thermal_noise"
     % Retained legacy link-budget field, not an actual waveform measurement
     % and no longer an input to any thermal-noise variance calculation.
     replay.AppliedAWGNSNRValueRole="link_budget_prediction_not_measured_SINR_or_noise_control";
+elseif string(noiseMode)=="absolute_reference_esn0"
+    [variance,reference]=sixgr.link.resolveAbsoluteReferenceNoise(cfg,direction,double(sampleRateHz));
+    assert(string(powerContext.WaveformAmplitudeUnit)=="sqrt_mW", ...
+        'sixgr:link:AbsoluteReferenceNoise','Reference-noise injection requires absolute samples.');
+    replay.AbsoluteReferenceNoise=reference;
+    replay.RequestedReferenceEsN0_dB=reference.RequestedReferenceEsN0_dB;
+    replay.ReferenceNoisePSD_mWPerHz=reference.NoisePSD_mWPerHz;
+    replay.ReferenceNoiseSampleVariance_mW=variance;
+    replay.ReferenceNoiseSampleRate_Hz=reference.SampleRate_Hz;
+    replay.ReferenceNoiseContractSHA256=reference.ReferenceContractSHA256;
+    replay.ReferenceNoiseSource=reference.Source;
+    replay.ReferenceNoiseReferencePlane=reference.ReferencePoint;
+    replay.ThermalNoiseApplied=false;
+    replay.ControlledReferenceNoiseApplied=true;
+    replay.TargetNoiseVariance=variance;
+    replay.AppliedAWGNSNR_dB=NaN;
+    replay.AppliedAWGNSNRValueRole="not_applicable_nominal_absolute_reference_is_not_measured_SINR";
+    replay.ThermalSampleNoiseVariance_mW=NaN;
+    replay.ThermalSampleNoiseBandwidth_Hz=NaN;
+    replay.ThermalNoisePSD_mWPerHz=NaN;
+    replay.NoisePowerSource=char(reference.Source);
 end
 end
 
@@ -547,8 +568,11 @@ switch strtrim(lower(string(noiseMode)))
         targetNoiseVariance = NaN;
     case "standalone_awgn_snr_argument"
         source = "standalone_awgn_snr_argument";
+    case "absolute_reference_esn0"
+        source = "declared_nominal_absolute_reference_PSD_not_thermal_or_measured_SINR";
     otherwise
-        source = "unsupported_noise_operating_mode_no_configured_snr_awgn";
+        error('sixgr:link:UnsupportedNoiseOperatingMode', ...
+            'Unsupported noise mode %s; do not fall through to configured-SNR AWGN.',noiseMode);
 end
 end
 

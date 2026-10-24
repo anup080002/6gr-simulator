@@ -183,7 +183,6 @@ catch
     return;
 end
 
-parity = double(sixgr.util.structGet(rx, "ParityChecks", []));
 txCount = size(txCbs, 2);
 rxCount = size(decCbs, 2);
 cbCount = double(txCount);
@@ -213,9 +212,9 @@ for c = 1:txCount
             mismatch = any(txCol(infoMask) ~= rxCol(infoMask));
         end
     end
-    if numel(parity) >= c && isfinite(parity(c)) && parity(c) > 0
-        mismatch = true;
-    end
+    % A syndrome is not a code-block bit/CRC outcome. In particular, the
+    % legacy ParityChecks vector may contain only the first check per CB.
+    % Keep this fallback tied to the actual segmented and decoded bits.
     errMask(c) = mismatch;
 end
 

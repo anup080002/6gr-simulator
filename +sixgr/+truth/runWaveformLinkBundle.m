@@ -188,7 +188,8 @@ end
 
 if receiverNoiseMode
     localLogStage(ctx, "Starting strict waveform LLS bundle: slot_steps=" + string(numFrames) + ...
-        ", quality_mode=receiver_noise_figure_thermal_noise, operating_point_label_db=" + string(double(sixgr.util.structGet(opt, "LinkSNR_dB", 30))));
+        ", quality_mode=" + localResolveNoiseOperatingMode(cfgExec) + ...
+        ", operating_point_label_db=" + string(double(sixgr.util.structGet(opt, "LinkSNR_dB", 30))));
 else
     localLogStage(ctx, "Starting strict waveform LLS bundle: slot_steps=" + string(numFrames) + ...
         ", configured_snr_db=" + string(double(sixgr.util.structGet(opt, "LinkSNR_dB", 30))));
@@ -2756,7 +2757,14 @@ if strlength(strtrim(mode)) == 0
     mode = localResolveNoiseOperatingMode(cfg);
 end
 mode = lower(strtrim(mode));
-tf = mode == "receiver_noise_figure_thermal_noise";
+switch mode
+    case {"receiver_noise_figure_thermal_noise","absolute_reference_esn0"}
+        tf=true;
+    case "standalone_awgn_snr_argument"
+        tf=false;
+    otherwise
+        error('sixgr:truth:UnsupportedSharedNoisePowerReference','Unsupported receiver quality mode %s.',mode);
+end
 end
 
 function grid = localResolvePhysicalOperatingPointGrid(cfg, opt)
@@ -5617,7 +5625,16 @@ if isfinite(userMeta.RuntimeServingLOSProbability)
     cfgOut = sixgr.util.structSet(cfgOut, "channel.losProbability", userMeta.RuntimeServingLOSProbability);
 end
 cfgOut = sixgr.util.structSet(cfgOut, "channel.runtimeLOS", userMeta.RuntimeServingLOS);
-cfgOut = sixgr.util.structSet(cfgOut, "run.noiseOperatingMode", "receiver_noise_figure_thermal_noise");
+% Preserve existing contribution behavior; an absolute reference must keep
+% its original frozen N0 rather than acquire thermal or signal-relative noise.
+switch localResolveNoiseOperatingMode(cfgOut)
+    case {"receiver_noise_figure_thermal_noise","standalone_awgn_snr_argument"}
+        cfgOut=sixgr.util.structSet(cfgOut,"run.noiseOperatingMode","receiver_noise_figure_thermal_noise");
+    case "absolute_reference_esn0"
+        % Keep the original reference policy and capsule.
+    otherwise
+        error('sixgr:truth:UnsupportedSharedNoisePowerReference','Unsupported contribution noise policy.');
+end
 end
 
 function [txAnt, txMeta, rxAnt, rxMeta, numRx, runtimeNumTx] = localContributionRuntimeAntennaPair(cfg, direction, numTx)
@@ -9670,6 +9687,12 @@ for item=received
             'PhysicalMeasurementObservation',pre,'TransmitObservation',tx);
         [options.DesiredReferenceObservation,options.DesiredReferenceEvidence]= ...
             sixgr.truth.sharedLinkScoringObservation(item.Planes,p,context.DesiredReferencePlane);
+        options.ReceiveElementBinding=state.SharedWaveformStream.Physical.receiveElementLayout( ...
+            string(options.DesiredReferenceEvidence.ReceiverID));
+        options.OriginalSSBPowerObservationBinding=struct('Planes',{item.Planes}, ...
+            'DesiredReferencePlaneID',context.DesiredReferencePlane, ...
+            'ReceiveBranchBinding',state.SharedWaveformStream.Physical.receiveBranchLayout( ...
+                string(options.DesiredReferenceEvidence.ReceiverID)));
         output=sixgr.link.completeCellSearchBroadcast(p,post,prototype,options,tic);
         % Retain the actually completed broadcast observation even when no
         % cell is acquired. Do not put it into the data-grant preview table.
@@ -11435,6 +11458,17 @@ if noiseMode == "receiver_noise_figure_thermal_noise"
     end
     error('sixgr:truth:PDCCHNoiseVarianceUnavailable', ...
         'The receiver thermal-noise operating mode requires a resolved physical noise PSD and sample rate.');
+elseif noiseMode=="absolute_reference_esn0"
+    nVar=sixgr.link.resolveAbsoluteReferenceNoiseVariance(replay);
+    noiseInfo=localPDCCHNoiseCalibrationInfo(x,referenceWaveform,nVar, ...
+        "absolute_nominal_reference_PSD_times_actual_sample_rate_sqrt_mW",replay);
+    noiseInfo.AbsoluteReferenceNoiseInjectedSampleVariance_mW=nVar;
+    noiseInfo.AbsoluteReferenceNoiseInjectionDomain='receiver_sample_waveform_pre_composite_front_end';
+    n=sqrt(nVar/2).*(randn(size(x),"like",real(x))+1i*randn(size(x),"like",real(x)));
+    y=x+cast(n,"like",x);
+    return;
+elseif noiseMode~="standalone_awgn_snr_argument"
+    error('sixgr:truth:PDCCHNoiseVarianceUnavailable','Unsupported PDCCH noise mode %s.',noiseMode);
 end
 appliedSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
 nVar = localPDCCHResolveConfiguredSNRNoiseVariance(referenceWaveform, appliedSNR_dB, txInfo);
@@ -11952,6 +11986,10 @@ for k = 1:nTrials
         r.NoiseVarReason = string(sixgr.util.structGet(outSRS, "NoiseVarReason", ""));
         r.NoiseVarStrictFailure = logical(sixgr.util.structGet(outSRS, "NoiseVarStrictFailure", false));
         r.NoiseOperatingMode = string(sixgr.util.structGet(outSRS, "NoiseOperatingMode", ""));
+        absoluteNoise=sixgr.link.absoluteReferenceNoisePublication(outSRS);
+        for noiseField=string(fieldnames(absoluteNoise)).'
+            r.(noiseField)=absoluteNoise.(noiseField);
+        end
         r.NoisePowerSource = string(sixgr.util.structGet(outSRS, "NoisePowerSource", ""));
         r.ThermalNoisePower_dBm = double(sixgr.util.structGet(outSRS, "ThermalNoisePower_dBm", NaN));
         r.ServingRxPower_dBm = double(sixgr.util.structGet(outSRS, "ServingRxPower_dBm", NaN));
@@ -14220,6 +14258,8 @@ if noiseMode == "standalone_awgn_snr_argument"
     authority = "fixed_snr_sweep";
 elseif noiseMode == "receiver_noise_figure_thermal_noise"
     authority = "geometry_link_budget";
+elseif noiseMode == "absolute_reference_esn0"
+    authority = "absolute_reference_esn0";
 else
     error("sixgr:truth:UnknownOperatingModeAuthority", ...
         "run.noiseOperatingMode='%s' has no canonical LLS operating-mode authority.", ...

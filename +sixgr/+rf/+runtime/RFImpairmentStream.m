@@ -72,7 +72,10 @@ classdef RFImpairmentStream < handle
             obj.TXSignalDependency=obj.resolveTXSignalDependency();
         end
 
-        function out=apply(obj,chunk,expectedEpoch)
+        function [out,txOperator]=apply(obj,chunk,expectedEpoch)
+            % Optional second output is transient original TX operands.
+            % Never attach its sample-sized phase/rotation arrays to Replay
+            % or retain them as stream state/checkpoint data.
             rfProfileScope=sixgr.runtime.ExecutionStageProfiler.scope("RF", ...
                 string(obj.Chain.Direction)+"_"+string(obj.Chain.Endpoint)); %#ok<NASGU>
             if obj.Faulted, error('RF:FaultedStream','A failed RF stream cannot be retried.'); end
@@ -90,6 +93,8 @@ classdef RFImpairmentStream < handle
                     (obj.InputClass~="" && obj.InputClass~=string(class(x)))
                 error('RF:StreamInputMismatch','RF input must retain finite samples, precision and physical antenna layout.');
             end
+            captureTX=nargout>1;
+            if captureTX, obj.validateTXOperatorCapture(size(x,1)); end
             % RF is complex baseband even when an idle chunk contains only
             % zero real samples. Do not change ADC random-stream dimensions.
             x=complex(real(x),imag(x));
@@ -97,7 +102,7 @@ classdef RFImpairmentStream < handle
             unlock=onCleanup(@()obj.clearApplying()); %#ok<NASGU>
             try
                 obj.LastAGCTrace=struct();
-                out=sixgr.rf.applyRFImpairmentChain(x,obj.Configuration, ...
+                chainArguments={ ...
                     'RunId',obj.EvidenceRunId, ...
                     'TrialId',obj.EvidenceTrialId+"/"+string(obj.Chain.Endpoint)+"/"+ ...
                         string(obj.Chain.Direction)+"/samples_"+string(obj.NextSampleIndex)+"_"+ ...
@@ -106,12 +111,25 @@ classdef RFImpairmentStream < handle
                     'Direction',obj.Chain.Direction, ...
                     'MeasurementPoint',string(obj.Chain.Endpoint)+"_output", ...
                     'UseLegacyGlobalConfig',obj.Chain.UseLegacyGlobalConfig, ...
-                    'StrictMutationRequired',false,'Stream',obj);
+                    'StrictMutationRequired',false,'Stream',obj};
+                if captureTX
+                    [out,txOperator]=sixgr.rf.applyRFImpairmentChain(x,obj.Configuration,chainArguments{:});
+                else
+                    out=sixgr.rf.applyRFImpairmentChain(x,obj.Configuration,chainArguments{:});
+                end
                 if ~isequal(size(out.Waveform),size(x))||any(~isfinite(out.Waveform(:)))
                     error('RF:StreamOutputMismatch','RF output changed its physical sample clock or antenna dimensions.');
                 end
                 out.Chunk=sixgr.phy.waveform.WaveformChunk(out.Waveform,obj.NextSampleIndex);
                 out.ExecutionStage="actual_retained_rf_stream";
+                if captureTX
+                    txOperator.OriginalInputChunkSHA256=string(chunk.SHA256);
+                    txOperator.OriginalOutputChunkSHA256=string(out.Chunk.SHA256);
+                    txOperator.ChunkHashSerialization="WaveformChunk.SHA256";
+                    assert(txOperator.RFInputWaveformSHA256==string(out.Replay.RFInputWaveformSHA256) && ...
+                        txOperator.RFOutputWaveformSHA256==string(out.Replay.RFOutputWaveformSHA256), ...
+                        'RF:TXOperatorCaptureMismatch','Original capture must join this exact completed RF call.');
+                end
                 if obj.Chain.IncludeTx
                     dependency=obj.TXSignalDependency;
                     if isempty(fieldnames(dependency))
@@ -144,18 +162,21 @@ classdef RFImpairmentStream < handle
             end
         end
 
-        function y=applyCFO(obj,x,hz)
+        function [y,operator]=applyCFO(obj,x,hz)
             obj.assertApplying();
             n=obj.NextSampleIndex+(0:size(x,1)-1).';
-            y=x.*cast(exp(1j*2*pi*hz/obj.SampleRateHz*n),'like',x);
+            multiplier=cast(exp(1j*2*pi*hz/obj.SampleRateHz*n),'like',x);
+            y=x.*multiplier;
+            if nargout>1, operator=struct('FrequencyHz',hz,'Multiplier',multiplier); end
         end
 
-        function y=applyTiming(obj,x,delay)
+        function [y,operator]=applyTiming(obj,x,delay)
             obj.assertApplying();
             if isempty(obj.DelayState)
                 obj.DelayState=zeros(delay,size(x,2),'like',x);
             end
             [y,obj.DelayState]=filter([zeros(1,delay) 1],1,x,obj.DelayState,1);
+            if nargout>1, operator=struct('DelaySamples',delay); end
         end
 
         function y=applyAGC(obj,x)
@@ -179,13 +200,14 @@ classdef RFImpairmentStream < handle
             [result,obj.ADCState]=sixgr.rf.runtime.ADCModel.quantize(x,obj.ADCProfile,obj.ADCState);
         end
 
-        function result=applyDAC(obj,x)
+        function [result,operator]=applyDAC(obj,x)
             obj.assertApplying();
             result=sixgr.rf.runtime.DACModel.convert(x,obj.DACProfile, ...
                 obj.SampleRateHz,double(obj.DACProfile.Seed));
+            if nargout>1, operator=struct('Profile',obj.DACProfile); end
         end
 
-        function y=applyPA(obj,x)
+        function [y,operator]=applyPA(obj,x)
             obj.assertApplying();
             if lower(string(obj.PAProfile.Model))=="memory_polynomial"
                 x=x.*cast(10.^(-double(obj.PAProfile.InputBackoff_dB)/20),'like',x);
@@ -194,10 +216,42 @@ classdef RFImpairmentStream < handle
             else
                 [y,~]=sixgr.rf.runtime.PAProfile.apply(x,obj.PAProfile);
             end
+            if nargout>1, operator=struct('Profile',obj.PAProfile); end
         end
     end
     methods (Access=private)
         function clearApplying(obj), obj.Applying=false; end
+
+        function validateTXOperatorCapture(obj,count)
+            % Reject unsupported capture BEFORE any stage/RNG/state advances.
+            c=obj.Chain;
+            supported=c.IncludeTx && ~c.IncludeRx && string(c.Endpoint)=="tx" && ...
+                ~c.TxSampleClockOffset.Enabled;
+            if c.IncludeTx
+                supported=supported && (~c.TxTiming.Enabled || ...
+                    (isfinite(c.TxTiming.TimingOffset_samples)&&c.TxTiming.TimingOffset_samples>=0 && ...
+                    c.TxTiming.TimingOffset_samples==fix(c.TxTiming.TimingOffset_samples)));
+                if c.TxPhaseNoise.Enabled
+                    supported=supported && c.TxPhaseNoise.Model.Enable && ...
+                        string(c.TxPhaseNoise.Model.Backend)=="sixgr_rf_runtime_phase_noise_process";
+                end
+                if c.TxPA.Enabled
+                    supported=supported && any(lower(string(obj.PAProfile.Model))== ...
+                        ["rapp","saleh","memory_polynomial"]);
+                end
+                if c.TxDAC.Enabled
+                    supported=supported && obj.DACProfile.DitherRMS==0 && obj.DACProfile.ApertureJitter_s==0;
+                end
+            end
+            coordinates=[obj.OriginSample obj.NextSampleIndex obj.ConfigurationEpoch obj.NumAntennas];
+            supported=supported && all(isfinite(coordinates)&coordinates>=0 & ...
+                coordinates<=flintmax&coordinates==fix(coordinates)) && ...
+                count<=flintmax-obj.NextSampleIndex;
+            if ~supported
+                error('RF:TXOperatorCaptureUnsupported', ...
+                    'Capture requires supported retained TX stages and exact finite sample/epoch coordinates.');
+            end
+        end
 
         function d=resolveTXSignalDependency(obj)
             % This contract describes the installed, actually executed
@@ -213,7 +267,8 @@ classdef RFImpairmentStream < handle
             if c.TxPA.Enabled
                 model=lower(string(obj.PAProfile.Model));
                 if model=="memory_polynomial", memory=double(obj.PAProfile.MemoryDepth)-1; end
-                paSHA=string(sixgr.util.sha256Hex(uint8(unicode2native(jsonencode(obj.PAProfile),'UTF-8'))));
+                paSHA=string(sixgr.util.sha256Hex(uint8(unicode2native( ...
+                    jsonencode(sixgr.util.jsonSafeValue(obj.PAProfile)),'UTF-8'))));
             end
             if c.TxTiming.Enabled, delay=double(c.TxTiming.TimingOffset_samples); end
             if c.TxDAC.Enabled
@@ -229,6 +284,7 @@ classdef RFImpairmentStream < handle
                 'HistoryOriginSample',obj.OriginSample,'ZeroInputHistoryAtOrigin',true, ...
                 'ZeroPreserving',zeroPreserving,'AdditiveTXOutput',~zeroPreserving, ...
                 'PAModel',model,'PAProfileSHA256',paSHA,'DACConvention',convention, ...
+                'PAProfileHashSerialization',"jsonSafeValue_profile_field_order_UTF8/v1", ...
                 'IQDCOffset',0,'SignalMemorySource',"installed_PA_memory_and_retained_integer_delay", ...
                 'AdditionalRFExecutions',0,'DependencyScope',"signal_dependency_not_oscillator_state");
             if ~zeroPreserving, d.Status="unavailable_TX_quantizer_zero_input_not_zero"; end

@@ -8,6 +8,7 @@ ip.addParameter("ConfigPath", "", @(x)ischar(x) || isstring(x));
 ip.addParameter("Authority", struct(), @(x)builtin("isstruct", x) && isscalar(x));
 ip.addParameter("EnergyAuthority", struct(), @(x)builtin("isstruct", x) && isscalar(x));
 ip.addParameter("LDPCIterationAuthority", struct(), @(x)builtin("isstruct", x) && isscalar(x));
+ip.addParameter("LDPCPolicyAuthority", struct(), @(x)builtin("isstruct", x) && isscalar(x));
 ip.parse(cfg, varargin{:});
 opt = ip.Results;
 authoredDuplex = localCaptureDuplexAuthorship(cfg, string(opt.ConfigPath));
@@ -21,6 +22,7 @@ end
 cfg = localEnsureConfigInheritance(cfg, string(opt.SourceFiles(:)), string(opt.ConfigPath));
 cfg = localEnsureScenarioSchemaVersion(cfg);
 cfg = localNormalizeLDPCIterations(cfg,opt.LDPCIterationAuthority,opt.Authority);
+cfg = localNormalizeLDPCPolicy(cfg,opt.LDPCPolicyAuthority,opt.Authority);
 cfg = localExpandCanonicalControl(cfg, sixgr.util.mergeStruct(newBase, oldBase));
 outputBackend = lower(strtrim(string(sixgr.util.structGet( ...
     cfg,"output.backend","filesystem"))));
@@ -275,6 +277,7 @@ cfg = localApplyDeclaredRadioAliases(cfg, newBase);
 % override an explicit feature enable/disable decision from the YAML file.
 cfg = localExpandCanonicalControl(cfg, newBase);
 cfg = localFinalizeLDPCIterationOverrides(cfg);
+cfg = localFinalizeLDPCPolicyOverrides(cfg);
 % Canonical runtime_overrides are applied by the expansion above. Re-run
 % the fixed-sweep semantic projection afterwards so a child YAML that
 % overrides canonical_control.run.fixed_link_snr_grid_db cannot execute the
@@ -286,6 +289,70 @@ cfg = localEnsureOperatingPointMode(cfg);
 cfg = localEnforceDuplexIsolation(cfg, authoredDuplex);
 if isfield(cfg, "sixgrAliasAuthorityInternal")
     cfg = rmfield(cfg, "sixgrAliasAuthorityInternal");
+end
+end
+
+function cfg=localNormalizeLDPCPolicy(cfg,authority,leaf)
+if isempty(fieldnames(authority))
+    % A direct normalization call may carry stale flat mirrors. Preserve
+    % existing canonical precedence, but never discard an authored conflict.
+    flat=struct(); canonical=struct();
+    if isfield(cfg,'coding'), flat.coding=cfg.coding; end
+    if isfield(cfg,'canonical_control'), canonical.canonical_control=cfg.canonical_control; end
+    authority=sixgr.lls6g.config.mergeLDPCPolicyAuthority(struct(),flat);
+    authority=sixgr.lls6g.config.mergeLDPCPolicyAuthority(authority,canonical);
+    authority=sixgr.lls6g.config.mergeLDPCPolicyAuthority(authority,leaf);
+end
+authority=sixgr.lls6g.config.mergeLDPCPolicyAuthority(authority,struct());
+cfg=localInstallLDPCPolicy(cfg,authority);
+end
+
+function cfg=localFinalizeLDPCPolicyOverrides(cfg)
+% Preserve ordered last-entry semantics for the SAME override path. Two
+% contradictory aliases in the final override set remain an explicit error.
+overrides=sixgr.util.structGet(cfg,'canonical_control.runtime_overrides',[]);
+authored=struct();
+for k=1:numel(overrides)
+    if ~isstruct(overrides)||~isfield(overrides(k),'path')||~isfield(overrides(k),'value')
+        continue;
+    end
+    path=strtrim(string(overrides(k).path));
+    if strlength(path)>0, authored=sixgr.util.structSet(authored,path,overrides(k).value); end
+end
+authority=sixgr.lls6g.config.mergeLDPCPolicyAuthority(struct(),authored);
+cfg=localInstallLDPCPolicy(cfg,authority);
+end
+
+function cfg=localInstallLDPCPolicy(cfg,authority)
+names=["ldpc_algorithm","ldpc_scaling_factor","ldpc_min_sum_offset", ...
+    "ldpc_early_termination","ldpc_schedule_type"];
+runtime=["algorithm","scalingFactor","minSumOffset","termination","scheduleType"];
+for name=names
+    selected=struct();
+    if isfield(authority.Canonical,name)
+        selected=authority.Canonical.(name);
+    elseif isfield(authority.Flat,name)
+        selected=authority.Flat.(name);
+    end
+    if isempty(fieldnames(selected)), continue; end
+    cfg=sixgr.util.structSet(cfg,"coding."+name,selected.Value);
+    canonical="canonical_control.coding."+name;
+    [~,present]=localTryGetNestedValue(cfg,canonical);
+    if present, cfg=sixgr.util.structSet(cfg,canonical,selected.Value); end
+end
+% Default only a populated coding section. Legacy alias synchronization can
+% create a coding shell containing only [] compatibility fields; that shell
+% is not an authored decoder policy and must not materialize LDPC defaults.
+% The existing core YAML catalog owns these defaults (NMS, not the native
+% primitive's BP default); no scenario-specific override is introduced.
+if ~isfield(cfg,'coding') || all(structfun(@isempty,cfg.coding)), return; end
+catalog=sixgr.config.loadCoreCatalog();
+rules=catalog.parameters.phy.ldpc;
+for k=1:numel(names)
+    if isfield(cfg.coding,names(k))||~isfield(rules.(runtime(k)),'default'), continue; end
+    value=rules.(runtime(k)).default;
+    if names(k)=="ldpc_early_termination", value=strcmp(string(value),'early'); end
+    cfg.coding.(names(k))=value;
 end
 end
 
@@ -1071,6 +1138,11 @@ mappings = {
     "coding.control_code_type", "coding.control_code_type", "identity"
     "coding.base_graph", "coding.base_graph", "identity"
     "coding.max_decoder_iterations", "coding.max_decoder_iterations", "identity"
+    "coding.ldpc_algorithm", "coding.ldpc_algorithm", "identity"
+    "coding.ldpc_scaling_factor", "coding.ldpc_scaling_factor", "identity"
+    "coding.ldpc_min_sum_offset", "coding.ldpc_min_sum_offset", "identity"
+    "coding.ldpc_early_termination", "coding.ldpc_early_termination", "identity"
+    "coding.ldpc_schedule_type", "coding.ldpc_schedule_type", "identity"
     "modulation.dl_modulation_order", "modulation.dl_modulation_order", "identity"
     "modulation.ul_modulation_order", "modulation.ul_modulation_order", "identity"
     "modulation.dl_mcs_index", "modulation.dl_mcs_index", "identity"

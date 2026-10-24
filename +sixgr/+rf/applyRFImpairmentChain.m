@@ -1,10 +1,12 @@
-function out = applyRFImpairmentChain(x, cfg, varargin)
+function [out,txOperator] = applyRFImpairmentChain(x, cfg, varargin)
 %APPLYRFIMPAIRMENTCHAIN Apply one ordered RF impairment pipeline to samples.
 % Keep this file ASCII-only.
 %
 % Declared order:
 %   Tx: DAC -> IQ -> element analog RF -> PA -> phase noise -> CFO -> sample timing -> sample clock
 %   Rx: sample timing -> LO/CFO -> phase noise -> IQ -> element analog RF -> sample clock -> AGC -> ADC
+% Optional TX operator capture is transient and valid only inside the
+% retained TX stream. It is deliberately NOT attached to out or Replay.
 
 p = inputParser;
 p.addParameter("SampleRateHz", double(sixgr.util.structGet(cfg, "channel_rf.sampleRateHz", 30.72e6)));
@@ -39,12 +41,20 @@ if ~any(endpoint == ["tx","rx","txrx"])
 end
 
 stream=opt.Stream;
+captureTX=nargout>1;
+if captureTX && (isempty(stream)||opt.ResolveOnly)
+    error('RF:TXOperatorCaptureUnsupported', ...
+        'Original TX operators require an executing retained TX stream, not block/configuration replay.');
+end
 if isempty(stream)
     chain = localResolveChainConfig(cfg, fs, endpoint, string(opt.Direction), logical(opt.UseLegacyGlobalConfig), ...
         logical(opt.ApplyPA), logical(opt.ApplyADC));
 else
     stream.assertApplying();
     chain=stream.Chain;
+end
+if captureTX && (~chain.IncludeTx||chain.IncludeRx)
+    error('RF:TXOperatorCaptureUnsupported','Capture is limited to a retained TX-only endpoint.');
 end
 if opt.ResolveOnly
     out=struct('Config',chain,'ExecutionStage',"configured_not_executed");
@@ -64,15 +74,30 @@ beforeHash = localWaveformHash(y);
 stageRows = repmat(localStageRowTemplate(), 0, 1);
 stageOrder = strings(0, 1);
 converterEvidence=struct('DAC',[],'ADC',[]);
+operatorParameters=struct();
 if chain.IncludeTx
-    [y, stageRows, converterEvidence.DAC] = localApplyDACStage(y, chain.TxDAC, "tx_dac", "tx", stageRows, stream);
-    [y, stageRows] = localApplyIQStage(y, chain.TxIQ, "tx_iq", "tx", stageRows);
-    [y, stageRows] = localApplyElementRFStage(y, chain.TxElementRF, cfg, "tx_element_rf", "tx", stageRows,stream);
-    [y, stageRows] = localApplyPAStage(y, chain.TxPA, cfg, "tx_pa", "tx", stageRows,stream);
+    if captureTX
+        [y,stageRows,converterEvidence.DAC,operatorParameters.DAC]= ...
+            localApplyDACStage(y,chain.TxDAC,"tx_dac","tx",stageRows,stream);
+        [y,stageRows,operatorParameters.IQ]=localApplyIQStage(y,chain.TxIQ,"tx_iq","tx",stageRows);
+        [y,stageRows,operatorParameters.Element]=localApplyElementRFStage(y,chain.TxElementRF,cfg,"tx_element_rf","tx",stageRows,stream);
+        [y,stageRows,operatorParameters.PA]=localApplyPAStage(y,chain.TxPA,cfg,"tx_pa","tx",stageRows,stream);
+    else
+        [y, stageRows, converterEvidence.DAC] = localApplyDACStage(y, chain.TxDAC, "tx_dac", "tx", stageRows, stream);
+        [y, stageRows] = localApplyIQStage(y, chain.TxIQ, "tx_iq", "tx", stageRows);
+        [y, stageRows] = localApplyElementRFStage(y, chain.TxElementRF, cfg, "tx_element_rf", "tx", stageRows,stream);
+        [y, stageRows] = localApplyPAStage(y, chain.TxPA, cfg, "tx_pa", "tx", stageRows,stream);
+    end
     chainPower.PostPA=sixgr.rf.measurePhysicalChainPower(y,'post_tx_pa');
-    [y, stageRows] = localApplyPhaseNoiseStage(y, chain.TxPhaseNoise, "tx_phase_noise", "tx", stageRows);
-    [y, stageRows] = localApplyCFOStage(y, chain.TxCFO, "tx_cfo", "tx", stageRows,stream);
-    [y, stageRows] = localApplyTimingStage(y, chain.TxTiming, "tx_timing", "tx", stageRows,stream);
+    if captureTX
+        [y,stageRows,operatorParameters.PhaseNoise]=localApplyPhaseNoiseStage(y,chain.TxPhaseNoise,"tx_phase_noise","tx",stageRows);
+        [y,stageRows,operatorParameters.CFO]=localApplyCFOStage(y,chain.TxCFO,"tx_cfo","tx",stageRows,stream);
+        [y,stageRows,operatorParameters.Timing]=localApplyTimingStage(y,chain.TxTiming,"tx_timing","tx",stageRows,stream);
+    else
+        [y, stageRows] = localApplyPhaseNoiseStage(y, chain.TxPhaseNoise, "tx_phase_noise", "tx", stageRows);
+        [y, stageRows] = localApplyCFOStage(y, chain.TxCFO, "tx_cfo", "tx", stageRows,stream);
+        [y, stageRows] = localApplyTimingStage(y, chain.TxTiming, "tx_timing", "tx", stageRows,stream);
+    end
     [y, stageRows] = localApplySampleClockOffsetStage(y, chain.TxSampleClockOffset, "tx_sample_clock_offset", "tx", stageRows);
     stageOrder = [stageOrder; "tx_dac"; "tx_iq"; "tx_element_rf"; "tx_pa"; "tx_phase_noise"; "tx_cfo"; "tx_timing"; "tx_sample_clock_offset"]; %#ok<AGROW>
 end
@@ -88,7 +113,11 @@ if chain.IncludeRx
     stageOrder = [stageOrder; "rx_timing"; "rx_lo_cfo"; "rx_phase_noise"; "rx_iq"; "rx_element_rf"; "rx_sample_clock_offset"; "rx_agc"; "rx_adc"]; %#ok<AGROW>
 end
 if strlength(string(chain.CarrierPhase.StageName)) > 0
-    [y, stageRows] = localApplyCarrierPhaseStage(y, chain.CarrierPhase, stageRows);
+    if captureTX
+        [y,stageRows,operatorParameters.CarrierPhase]=localApplyCarrierPhaseStage(y,chain.CarrierPhase,stageRows);
+    else
+        [y, stageRows] = localApplyCarrierPhaseStage(y, chain.CarrierPhase, stageRows);
+    end
     stageOrder = [stageOrder; string(chain.CarrierPhase.StageName)]; %#ok<AGROW>
 end
 
@@ -205,6 +234,10 @@ out.Row = struct( ...
     "TruthStatus", "real_lls_evidence", ...
     "FailureReason", failure);
 out.Row = sixgr.report.bindConverterEvidence(out.Row,replay,replay);
+if captureTX
+    txOperator=localBuildTXOperatorCapture(operatorParameters,stageRows,stageOrder, ...
+        beforeHash,afterHash,stream,x);
+end
 end
 
 function chain = localResolveChainConfig(cfg, fs, endpoint, direction, useLegacy, applyPA, applyADC)
@@ -678,9 +711,9 @@ cfgSCO = struct( ...
     "ExecutionStatus", localTernary(logical(txCfg.Enabled || rxCfg.Enabled), "configured_pending_resampling", "disabled"));
 end
 
-function [y, rows] = localApplyIQStage(x, stageCfg, stageName, endpoint, rows)
+function [y, rows, operator] = localApplyIQStage(x, stageCfg, stageName, endpoint, rows)
 fn = @(z) localApplyIQModel(z, stageCfg.GainImbalance_dB, stageCfg.PhaseImbalance_deg);
-[y, row] = localApplyGenericStage(x, stageCfg.Enabled, stageName, endpoint, fn);
+[y,row,operator]=localApplyGenericStage(x,stageCfg.Enabled,stageName,endpoint,fn,nargout>2);
 row.Parameter1Name = "gain_imbalance_dB";
 row.Parameter1Value = double(stageCfg.GainImbalance_dB);
 row.Parameter2Name = "phase_imbalance_deg";
@@ -692,8 +725,9 @@ end
 rows(end + 1, 1) = row;
 end
 
-function [y, rows, evidence] = localApplyDACStage(x, stageCfg, stageName, endpoint, rows, stream)
+function [y, rows, evidence, operator] = localApplyDACStage(x, stageCfg, stageName, endpoint, rows, stream)
 evidence=[];
+operator=struct();
 if stageCfg.Enabled
     if isempty(stream)
         seed = 1;
@@ -704,7 +738,8 @@ if stageCfg.Enabled
             "ProfileID",stageCfg.ProfileID,"Version",stageCfg.Version), ...
             stageCfg.SampleRate_Hz, seed);
     else
-        result = stream.applyDAC(x);
+        if nargout>3, [result,operator]=stream.applyDAC(x);
+        else, result=stream.applyDAC(x); end
     end
     y = result.Output;
     [~, row] = localApplyGenericStage(x, true, stageName, endpoint, @(z)y);
@@ -726,10 +761,10 @@ row.Status = localTernary(stageCfg.Enabled && row.Applied, ...
 rows(end + 1, 1) = row;
 end
 
-function [y, rows] = localApplyPAStage(x, stageCfg, cfg, stageName, endpoint, rows,stream)
+function [y, rows, operator] = localApplyPAStage(x, stageCfg, cfg, stageName, endpoint, rows,stream)
 fn = @(z) localApplyPAWithConfig(z, cfg,stageCfg.Direction);
 if ~isempty(stream), fn=@(z)stream.applyPA(z); end
-[y, row] = localApplyGenericStage(x, stageCfg.Enabled, stageName, endpoint, fn);
+[y,row,operator]=localApplyGenericStage(x,stageCfg.Enabled,stageName,endpoint,fn,nargout>2);
 row.Parameter1Name = "backoff_dB";
 row.Parameter1Value = double(stageCfg.Backoff_dB);
 row.Parameter2Name = "model";
@@ -738,9 +773,9 @@ row.Status = localTernary(stageCfg.Enabled && row.Applied, "applied_pa_model", r
 rows(end + 1, 1) = row;
 end
 
-function [y, rows] = localApplyElementRFStage(x, stageCfg, cfg, stageName, endpoint, rows,stream)
+function [y, rows, operator] = localApplyElementRFStage(x, stageCfg, cfg, stageName, endpoint, rows,stream)
 fn = @(z) localApplyElementRFModel(z, stageCfg, cfg,~isempty(stream));
-[y, row] = localApplyGenericStage(x, stageCfg.Enabled, stageName, endpoint, fn);
+[y,row,operator]=localApplyGenericStage(x,stageCfg.Enabled,stageName,endpoint,fn,nargout>2);
 row.Parameter1Name = "element_gain_dB_rms";
 row.Parameter1Value = localRMSFinite(stageCfg.Gain_dB);
 row.Parameter2Name = "element_phase_deg_rms";
@@ -759,9 +794,9 @@ end
 rows(end + 1, 1) = row;
 end
 
-function [y, rows] = localApplyPhaseNoiseStage(x, stageCfg, stageName, endpoint, rows)
+function [y, rows, operator] = localApplyPhaseNoiseStage(x, stageCfg, stageName, endpoint, rows)
 fn = @(z) localApplyPhaseNoiseWithConfig(z, stageCfg);
-[y, row] = localApplyGenericStage(x, stageCfg.Enabled, stageName, endpoint, fn);
+[y,row,operator]=localApplyGenericStage(x,stageCfg.Enabled,stageName,endpoint,fn,nargout>2);
 row.Parameter1Name = "seed";
 row.Parameter1Value = double(stageCfg.Seed);
 row.Parameter2Name = "backend";
@@ -776,20 +811,20 @@ row.TruthClassification = string(stageCfg.TruthClassification);
 rows(end + 1, 1) = row;
 end
 
-function [y, rows] = localApplyCFOStage(x, stageCfg, stageName, endpoint, rows,stream)
+function [y, rows, operator] = localApplyCFOStage(x, stageCfg, stageName, endpoint, rows,stream)
 fn = @(z) localApplyCFO(z, stageCfg.CFO_Hz, stageCfg.SampleRate_Hz);
 if ~isempty(stream), fn=@(z)stream.applyCFO(z,stageCfg.CFO_Hz); end
-[y, row] = localApplyGenericStage(x, stageCfg.Enabled, stageName, endpoint, fn);
+[y,row,operator]=localApplyGenericStage(x,stageCfg.Enabled,stageName,endpoint,fn,nargout>2);
 row.Parameter1Name = "cfo_Hz";
 row.Parameter1Value = double(stageCfg.CFO_Hz);
 row.Status = localTernary(stageCfg.Enabled && row.Applied, "applied_cfo_rotation", row.Status);
 rows(end + 1, 1) = row;
 end
 
-function [y, rows] = localApplyTimingStage(x, stageCfg, stageName, endpoint, rows,stream)
+function [y, rows, operator] = localApplyTimingStage(x, stageCfg, stageName, endpoint, rows,stream)
 fn = @(z) sixgr.util.applyFractionalSampleDelay(z, stageCfg.TimingOffset_samples);
 if ~isempty(stream), fn=@(z)stream.applyTiming(z,stageCfg.TimingOffset_samples); end
-[y, row] = localApplyGenericStage(x, stageCfg.Enabled, stageName, endpoint, fn);
+[y,row,operator]=localApplyGenericStage(x,stageCfg.Enabled,stageName,endpoint,fn,nargout>2);
 row.Parameter1Name = "timing_offset_samples";
 row.Parameter1Value = double(stageCfg.TimingOffset_samples);
 row.Status = localTernary(stageCfg.Enabled && row.Applied, "applied_fractional_sample_delay", row.Status);
@@ -852,17 +887,19 @@ row.Status = localTernary(stageCfg.Enabled && row.Applied, "applied_complex_adc_
 rows(end + 1, 1) = row;
 end
 
-function [y, rows] = localApplyCarrierPhaseStage(x, stageCfg, rows)
+function [y, rows, operator] = localApplyCarrierPhaseStage(x, stageCfg, rows)
 endpoint = extractBefore(string(stageCfg.StageName), "_");
-fn = @(z) z .* exp(1j * double(stageCfg.PhaseOffset_deg) * pi / 180);
-[y, row] = localApplyGenericStage(x, stageCfg.Enabled, stageCfg.StageName, endpoint, fn);
+fn = @(z) localApplyCarrierPhase(z,stageCfg.PhaseOffset_deg);
+[y,row,operator]=localApplyGenericStage(x,stageCfg.Enabled,stageCfg.StageName,endpoint,fn,nargout>2);
 row.Parameter1Name = "carrier_phase_offset_deg";
 row.Parameter1Value = double(stageCfg.PhaseOffset_deg);
 row.Status = localTernary(stageCfg.Enabled && row.Applied, "applied_sample_domain_constant_rotation", row.Status);
 rows(end + 1, 1) = row;
 end
 
-function [y, row] = localApplyGenericStage(x, enabled, stageName, endpoint, fn)
+function [y, row, operator] = localApplyGenericStage(x, enabled, stageName, endpoint, fn, capture)
+if nargin<6, capture=false; end
+operator=struct();
 row = localStageRowTemplate();
 row.StageName = string(stageName);
 row.Endpoint = string(endpoint);
@@ -871,7 +908,8 @@ row.InputPower = localMeanPower(x);
 y = x;
 if logical(enabled)
     row.InputHash = string(localWaveformHash(x));
-    y = fn(x);
+    if capture, [y,operator]=fn(x);
+    else, y=fn(x); end
     row.Executed = true;
     row.OutputPower = localMeanPower(y);
     row.OutputHash = string(localWaveformHash(y));
@@ -915,6 +953,67 @@ row = struct( ...
     "ClippingStatus", "not_executed", "ClippingPopulation", "unavailable", ...
     "ClippingSource", "", "ClippingThresholdRule", "", ...
     "ErrorVariance", NaN);
+end
+
+function capture=localBuildTXOperatorCapture(parameters,rows,order,inputHash,outputHash,stream,x)
+% This is an original-operand receipt, not a model, endpoint registration or
+% unit calibration. Sample arrays live ONLY in this optional return value.
+keys={'DAC','IQ','Element','PA','PhaseNoise','CFO','Timing','SampleClockOffset','CarrierPhase'};
+names=["tx_dac","tx_iq","tx_element_rf","tx_pa","tx_phase_noise", ...
+    "tx_cfo","tx_timing","tx_sample_clock_offset","tx_carrier_phase"];
+expected=names(1:8);
+if stream.Chain.CarrierPhase.Enabled, expected=names; end
+assert(isequal(string(order(:)).',expected)&&numel(rows)==numel(expected), ...
+    'RF:TXOperatorCaptureUnsupported','Unknown TX stage ordering cannot be represented by this capture.');
+previous=string(inputHash);
+for k=1:numel(keys)
+    stage=struct('Enabled',false,'Executed',false, ...
+        'InputSHA256',"disabled_identity",'OutputSHA256',"disabled_identity", ...
+        'Parameters',struct());
+    if k<=numel(rows)
+        row=rows(k);
+        assert(string(row.StageName)==names(k)&&string(row.Endpoint)=="tx" && ...
+            row.Enabled==row.Executed,'RF:TXOperatorCaptureMismatch', ...
+            'Bind original executed stages, including enabled zero-input/no-change stages.');
+        stage.Enabled=row.Enabled; stage.Executed=row.Executed;
+        stage.InputSHA256=string(row.InputHash); stage.OutputSHA256=string(row.OutputHash);
+        if row.Enabled
+            assert(isfield(parameters,keys{k})&&isstruct(parameters.(keys{k})) && ...
+                isscalar(parameters.(keys{k}))&&~isempty(fieldnames(parameters.(keys{k}))) && ...
+                stage.InputSHA256==previous, 'RF:TXOperatorCaptureMismatch', ...
+                'Original operator operands and stage sample hashes must form one complete execution.');
+            stage.Parameters=parameters.(keys{k}); previous=stage.OutputSHA256;
+        else
+            assert(stage.InputSHA256=="disabled_identity" && stage.OutputSHA256=="disabled_identity", ...
+                'RF:TXOperatorCaptureMismatch','A disabled stage must retain its original disabled receipt.');
+        end
+    end
+    stages.(keys{k})=stage;
+end
+assert(previous==string(outputHash),'RF:TXOperatorCaptureMismatch', ...
+    'Original terminal stage hash must equal the actual RF output.');
+if stages.PhaseNoise.Enabled
+    trace=stages.PhaseNoise.Parameters.Trace;
+    assert(trace.Available && string(trace.Backend)=="sixgr_rf_runtime_phase_noise_process" && ...
+        string(trace.Scope)=="original_executed_phase_noise_multiplier" && ...
+        trace.StateEpoch==stream.ConfigurationEpoch && ...
+        trace.StartSample0==stream.NextSampleIndex-stream.OriginSample && ...
+        trace.EndSampleExclusive==stream.NextSampleIndex-stream.OriginSample+size(x,1), ...
+        'RF:TXOperatorCaptureMismatch','The captured oscillator must be the original stream interval.');
+end
+capture=struct('ContractVersion',"sixgr.rf.OriginalTXOperatorCapture/v1", ...
+    'Available',true,'Source',"same_execution_retained_TX_RF_stage_operands", ...
+    'Endpoint',"tx",'Direction',string(stream.Chain.Direction), ...
+    'ConfigurationEpoch',stream.ConfigurationEpoch,'SampleRateHz',stream.SampleRateHz, ...
+    'NumAntennas',stream.NumAntennas,'NumericClass',string(class(x)), ...
+    'OriginSample',stream.OriginSample,'StartSample',stream.NextSampleIndex, ...
+    'EndSampleExclusive',stream.NextSampleIndex+size(x,1), ...
+    'WaveformAmplitudeUnit',"",'WaveformAmplitudeUnitBound',false, ...
+    'RFInputWaveformSHA256',string(inputHash),'RFOutputWaveformSHA256',string(outputHash), ...
+    'RFHashSerialization',"sixgr.rf.waveformSHA256", ...
+    'StageOrder',string(order(:)).','Stages',stages, ...
+    'ReferenceModelApplied',false,'SharedRuntimeOwnerBound',false, ...
+    'AdditionalRFExecutions',0);
 end
 
 function replay = localBuildReplay(chain, rows, stageOrder, xRef, y)
@@ -1161,7 +1260,7 @@ pa = sixgr.rf.PAModel(cfg);
 y = pa.apply(x);
 end
 
-function y = localApplyElementRFModel(x, stageCfg, cfg,physicalSamples)
+function [y,operator] = localApplyElementRFModel(x, stageCfg, cfg,physicalSamples)
 if physicalSamples
     % The stream composer has already projected logical ports. Applying
     % that matrix again would corrupt physical antenna gains/coupling.
@@ -1171,6 +1270,10 @@ else
 end
 g = localElementComplexGain(stageCfg, size(M, 1));
 coupling = localElementMutualCouplingMatrix(stageCfg, size(M, 1));
+if nargout>1
+    operator=struct('Gain',g,'Coupling',coupling, ...
+        'PhysicalInputAlreadyMapped',logical(physicalSamples));
+end
 if size(x, 2) == size(M, 1)
     xElem = x .* cast(reshape(g, 1, []), "like", x);
     y = xElem * cast(coupling.', "like", x);
@@ -1182,13 +1285,27 @@ xElem = xElem * cast(coupling.', "like", x);
 y = xElem * cast(M, "like", x);
 end
 
-function y = localApplyPhaseNoiseWithConfig(x, stageCfg)
-y = stageCfg.Model.apply(x, stageCfg.Model.SampleRate_Hz);
+function [y,operator] = localApplyPhaseNoiseWithConfig(x, stageCfg)
+if nargout>1
+    [y,trace]=stageCfg.Model.apply(x,stageCfg.Model.SampleRate_Hz);
+    operator=struct('Trace',trace);
+else
+    y=stageCfg.Model.apply(x,stageCfg.Model.SampleRate_Hz);
+end
 end
 
-function y = localApplyIQModel(x, gainImb_dB, phaseImb_deg)
-[y,~] = sixgr.rf.runtime.IQImbalanceProfile.apply( ...
+function [y,operator] = localApplyIQModel(x, gainImb_dB, phaseImb_deg)
+[y,evidence] = sixgr.rf.runtime.IQImbalanceProfile.apply( ...
     x,gainImb_dB,phaseImb_deg,0);
+if nargout>1
+    operator=struct('Alpha',evidence.Alpha,'Beta',evidence.Beta,'DCOffset',evidence.DCOffset);
+end
+end
+
+function [y,operator]=localApplyCarrierPhase(x,phaseOffset_deg)
+multiplier=exp(1j*double(phaseOffset_deg)*pi/180);
+y=x.*multiplier;
+if nargout>1, operator=struct('Multiplier',multiplier); end
 end
 
 function y = localApplySampleClockOffset(x, ppm)

@@ -1,6 +1,8 @@
 """Declared report rows only: population-preserving publication, not PHY proof."""
 import csv
 import math
+import hashlib
+import json
 from pathlib import Path
 import sys
 from unittest.mock import patch
@@ -25,6 +27,25 @@ def row(value, population="", *, metadata='{"RandomSeed":7}'):
         result.update(PopulationID=population, PopulationJSON=metadata,
                       SupportConfigurationJSON='{"Layers":1}')
     return result
+
+
+def with_series(item, **population_updates):
+    """Declared current producer-shaped metadata; no physical qualification."""
+    population = json.loads(item.get("PopulationJSON", "{}"))
+    population.update(population_updates)
+    item["PopulationJSON"] = json.dumps(population, separators=(",", ":"))
+    support = item.get("SupportConfigurationJSON", '{"Layers":1}')
+    item["SupportConfigurationJSON"] = support
+    key = dict(Signal=item["Entity"], Adapter="TRS_independent_complex_pilot_score/v1",
+               ReferenceSource="declared_original_reference", ReferencePlane="declared_nominal_plane",
+               ReferenceRFImpairmentsIncluded=False, ComparedValues=48, PilotResourceCount=24,
+               PopulationJSON=item["PopulationJSON"], SupportConfigurationJSON=support)
+    item["PopulationID"] = hashlib.sha256(json.dumps(key, separators=(",", ":")).encode()).hexdigest()
+    key["PopulationJSON"] = json.dumps({name: value for name, value in population.items() if name not in {
+        "SweepPointIndex", "SweepAggregatePointIndex", "PointIndex", "ConfiguredSNR_dB", "SNR_dB"}}, separators=(",", ":"))
+    item["PopulationSeriesJSON"] = json.dumps(key, separators=(",", ":"))
+    item["PopulationSeriesID"] = hashlib.sha256(item["PopulationSeriesJSON"].encode()).hexdigest()
+    return item
 
 
 def source(tmp_path, rows):
@@ -137,9 +158,7 @@ def test_explicit_same_series_across_snr_keeps_incompatible_seed_cohorts_separat
         for seed, value in [(7, -10 + snr), (8, -20 + snr)]:
             item = row(value, f"{point_index * 10 + seed:064x}",
                        metadata=f'{{"RandomSeed":{seed},"ConfiguredSNR_dB":{snr}}}')
-            item.update(PopulationSeriesID=f"{seed:064x}", PopulationSeriesJSON=(
-                f'{{"ReferencePlane":"declared_nominal_plane","RandomSeed":{seed},'
-                '"ConfigHash":"original_config","SupportConfigurationJSON":"declared_support"}'))
+            with_series(item, ConfigHash="original_config")
             rows.append(item)
         path, progress = source(tmp_path / f"p{point_index}", rows)
         point = progress["points"][0]
@@ -188,8 +207,7 @@ def test_exact_zero_nmse_retained_across_cohorts_and_snr_without_finite_plot_flo
     for index, snr in enumerate([0, 10], 1):
         rows = [row(float("-inf"), f"{index:064x}"), row(-10, f"{index+10:064x}")]
         for cohort, item in enumerate(rows, 1):
-            item.update(PopulationSeriesID=f"{cohort:064x}",
-                        PopulationSeriesJSON=f'{{"declared_cohort":{cohort}}}')
+            with_series(item, RandomSeed=cohort)
         path, progress = source(tmp_path / f"p{index}", rows)
         progress["points"][0].update(index=index, configured_snr_db=snr)
         points.extend(progress["points"])
@@ -229,7 +247,7 @@ def test_zero_error_breaks_curve_without_replacing_original_csv_value(tmp_path):
     points = []
     for index, value in enumerate([-10, float("-inf"), -20], 1):
         item = row(value, f"{index:064x}")
-        item.update(PopulationSeriesID="a" * 64, PopulationSeriesJSON='{"scope":"declared"}')
+        with_series(item)
         _, progress = source(tmp_path / f"p{index}", [item])
         progress["points"][0].update(index=index, configured_snr_db=index)
         points.extend(progress["points"])
@@ -251,7 +269,7 @@ def test_joint_child_original_source_points_override_only_plot_axis_not_wrapper_
     rows = []
     for index, snr in enumerate(source_points, 1):
         item = row(-index, f"{index:064x}", metadata=f'{{"ConfiguredSNR_dB":{snr},"RandomSeed":7}}')
-        item.update(PopulationSeriesID="a" * 64, PopulationSeriesJSON='{"scope":"same_original_config_seed_support"}')
+        with_series(item)
         rows.append(item)
     path, progress = source(tmp_path, rows)
     progress["points"][0]["configured_snr_db"] = -30

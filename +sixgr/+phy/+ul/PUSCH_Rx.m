@@ -257,6 +257,7 @@ if isempty(alg)
     alg = sixgr.util.structGet(cfg, 'phy.ldpc.algorithm', 'Normalized min-sum');
 end
 alg = char(string(alg));
+ldpcPolicy=sixgr.phy.phycode.resolveLDPCPolicy(cfg,alg);
 expectedUCIPayload = opt.ExpectedUCIPayload;
 if isempty(expectedUCIPayload)
     expectedUCIPayload = sixgr.phy.ul.pusch.PUSCHUCIPayload();
@@ -789,7 +790,7 @@ else
         presenceNref{cw}=sixgr.util.structGet(supplied,'Nref',[]);
     end
     presenceCoding=struct('RV',rv,'MaxIterations',maxIter,'Algorithm',alg, ...
-        'Nref',{presenceNref},'PresenceDecisionAlgorithm',cfg.phy.pusch.csiPresenceDecisionAlgorithm);
+        'Nref',{presenceNref},'LDPCPolicy',ldpcPolicy,'PresenceDecisionAlgorithm',cfg.phy.pusch.csiPresenceDecisionAlgorithm);
     [cwLLRForULSCH, uciOnPUSCH] = sixgr.phy.ul.pusch.receiveConfiguredUCI( ...
         localUnwrapSingleCell(cwLLRCell), transport, targetCodeRate, trBlkSize, ...
         opt.UCIReceiveContext, initialIMCS, opt.UCIReportConfiguration, ...
@@ -812,7 +813,7 @@ if ~isempty(opt.UCIReceiveContext) && ~all(uciOnPUSCH.ULSCHMappingResolved)
     end
     dataReception=sixgr.phy.ul.pusch.decodeResolvedULSCH(cwLLRForULSCH, ...
         uciOnPUSCH.ULSCHMappingResolved,transport,trBlkSize,targetCodeRate,rv, ...
-        partialLayouts,maxIter,alg,opt.HARQSoftBufferLLR,opt.HARQSoftBufferLayout);
+        partialLayouts,maxIter,alg,opt.HARQSoftBufferLLR,opt.HARQSoftBufferLayout,ldpcPolicy);
     rx=struct('ReceiveTiming',receiveTiming,'TransportBlockSize',trBlkSize, ...
         'TransportBlock',dataReception.TransportBlocks{1}, ...
         'TransportBlocks',{dataReception.TransportBlocks}, ...
@@ -824,6 +825,7 @@ if ~isempty(opt.UCIReceiveContext) && ~all(uciOnPUSCH.ULSCHMappingResolved)
         'TransportBlockCRCPassPerCodeword',dataReception.CRCPass, ...
         'TransportBlockCRCErrorPerCodeword',dataReception.CRCError, ...
         'CodewordDecodeEvidence',{dataReception.CodewordEvidence}, ...
+        'LDPCParityEvidence',dataReception.LDPCParityEvidence, ...
         'FailureReason',"ulsch_resource_mapping_unresolved_after_csi_part1_rejection", ...
         'ULSCHMappingResolved',uciOnPUSCH.ULSCHMappingResolved, ...
         'ULSCHLLR',{cwLLRForULSCH},'CodewordLLR',{cwLLRCell}, ...
@@ -917,6 +919,7 @@ if ~isempty(opt.UCIReceiveContext) && ~all(uciOnPUSCH.ULSCHMappingResolved)
         'TransportBlockDecodeAttempted',dataReception.DecodeAttempted, ...
         'ReceiverStageEvidence',partialEvidence, ...
         'CodewordDecodeEvidence',{dataReception.CodewordEvidence}, ...
+        'LDPCParityEvidence',dataReception.LDPCParityEvidence, ...
         'ExecutionBackend',rx.ExecutionBackend);
     [rx,info]=localAnnotateResearchTransport(rx,info,researchTransport);
     rx=localRetainChannelEstimatorInputs(rx,Hest,rxGrid,carrier,pusch, ...
@@ -943,7 +946,7 @@ if nCodewords == 2
     % retained mother-code buffers and would silently discard their RV history.
     dataReception = sixgr.phy.ul.pusch.decodeResolvedULSCH(cwLLRForULSCH, ...
         true(1,nCodewords), transport, trBlkSize, targetCodeRate, rv, ...
-        codingLayouts, maxIter, alg, opt.HARQSoftBufferLLR, opt.HARQSoftBufferLayout);
+        codingLayouts, maxIter, alg, opt.HARQSoftBufferLLR, opt.HARQSoftBufferLayout,ldpcPolicy);
     clear decodeProfileScope
     decodeLatency_s = toc(decodeTic);
     tbBitsCell = reshape(dataReception.TransportBlocks, 1, []);
@@ -1008,87 +1011,16 @@ codewordLayerMapping.TotalULSCHDemapperLLRCount = double(numel(cwLLRForULSCH));
     "CurrentLayout", codingLayout, "PriorLayout", opt.HARQSoftBufferLayout);
 recLLRBatch = localEnsureLLRBatch(recLLR);
 
-% LDPC decode each code block
+% Exact native policy and complete final checks for every code block.
 decodeProfileScope=sixgr.runtime.ExecutionStageProfiler.scope("decoding","PUSCH_LDPC_code_blocks");
-C = size(recLLRBatch, 2);
-actIter = zeros(1, C);
-parity = zeros(1, C);
-decodeTic = tic;
-useMexLDPC = logical(sixgr.util.structGet(cfg, 'phy.ldpc.useMexBatchDecode', false)) ...
-    && (exist("sixgr_ldpc_decode_batch_kernel_mex","file") == 3 || exist("sixgr_ldpc_decode_batch_kernel","file") == 2);
-
-if useMexLDPC
-    useNormMinSum = uint8(strcmpi(char(alg), 'Normalized min-sum'));
-    try
-        if exist("sixgr_ldpc_decode_batch_kernel_mex","file") == 3
-            [decMat, decLen, actIterV, parityV] = sixgr_ldpc_decode_batch_kernel_mex(recLLRBatch, bgn, maxIter, useNormMinSum);
-        else
-            [decMat, decLen, actIterV, parityV] = sixgr_ldpc_decode_batch_kernel(recLLRBatch, bgn, maxIter, useNormMinSum);
-        end
-        maxLen = max(1, min(size(decMat,1), round(max(decLen(:)))));
-        decCbs = int8(decMat(1:maxLen, :));
-        actIter(:) = reshape(actIterV(:), 1, []);
-        parity(:) = reshape(parityV(:), 1, []);
-    catch
-        useMexLDPC = false;
-    end
-end
-
-if ~useMexLDPC
-    nRow = size(recLLRBatch, 1);
-    decCbs = zeros(nRow, C, 'int8');
-    maxLen = 0;
-    usePar = (C > 1) && logical(sixgr.util.structGet(cfg, 'run.useParallel', false)) ...
-        && license('test','Distrib_Computing_Toolbox') && ~isempty(gcp('nocreate'));
-    if usePar
-        dCell = cell(C,1);
-        dLen = zeros(C,1);
-        itV = zeros(C,1);
-        pcV = zeros(C,1);
-        parfor c = 1:C
-            [d, it, pc] = sixgr.phy.phycode.ldpcDecode(recLLRBatch(:,c), bgn, maxIter, alg);
-            d = int8(d(:));
-            dCell{c} = d;
-            dLen(c) = min(numel(d), nRow);
-            it = it(:);
-            pc = pc(:);
-            if isempty(it), it = 0; end
-            if isempty(pc), pc = 0; end
-            itV(c) = it(1);
-            pcV(c) = pc(1);
-        end
-        for c = 1:C
-            actIter(c) = itV(c);
-            parity(c) = pcV(c);
-            Ld = dLen(c);
-            if Ld > 0
-                decCbs(1:Ld, c) = dCell{c}(1:Ld);
-                maxLen = max(maxLen, Ld);
-            end
-        end
-    else
-        for c = 1:C
-            [d, it, pc] = sixgr.phy.phycode.ldpcDecode(recLLRBatch(:,c), bgn, maxIter, alg);
-            it = it(:);
-            pc = pc(:);
-            if isempty(it), it = 0; end
-            if isempty(pc), pc = 0; end
-            actIter(c) = it(1);
-            parity(c) = pc(1);
-            d = int8(d(:));
-            Ld = min(numel(d), nRow);
-            if Ld > 0
-                decCbs(1:Ld, c) = d(1:Ld);
-                maxLen = max(maxLen, Ld);
-            end
-        end
-    end
-    if maxLen <= 0
-        decCbs = zeros(1, C, 'int8');
-    else
-        decCbs = decCbs(1:maxLen, :);
-    end
-end
+decodeTic=tic;
+batchRequested=logical(sixgr.util.structGet(cfg,'phy.ldpc.useMexBatchDecode',false));
+[decCbs,actIter,parity,ldpcPolicyReceipt]=sixgr.phy.phycode.decodeLDPCConfigured( ...
+    recLLRBatch,bgn,maxIter,ldpcPolicy,batchRequested);
+useMexLDPC=logical(ldpcPolicyReceipt.MEXApplied);
+parityStage="initial_decode";
+if logical(sixgr.util.structGet(harqCombiningInfo,'Applied',false)), parityStage="harq_combined_decode"; end
+ldpcParityEvidence=sixgr.phy.phycode.summarizeLDPCParity({parity},parityStage);
 decodeLatency_s = toc(decodeTic);
 clear decodeProfileScope
 
@@ -1153,15 +1085,10 @@ rx.ReceiverPipelineLatency_ms = 1e3 .* toc(receiverPipelineTic);
 rx.ReceiverStageLatencySource = ...
     "matlab_tic_toc_production_pusch_receiver_stages";
 rx.UseMexLDPC = logical(useMexLDPC);
-if useMexLDPC
-    if exist("sixgr_ldpc_decode_batch_kernel_mex","file") == 3
-        rx.LDPCDecoderEngine = "sixgr_ldpc_decode_batch_kernel_mex";
-    else
-        rx.LDPCDecoderEngine = "sixgr_ldpc_decode_batch_kernel";
-    end
-else
-    rx.LDPCDecoderEngine = "sixgr.phy.phycode.ldpcDecode";
-end
+rx.BatchLDPCRequested=batchRequested;
+rx.LDPCDecoderEngine=ldpcPolicyReceipt.DecoderEngine;
+rx.LDPCPolicyReceipts={ldpcPolicyReceipt};
+rx.LDPCParityEvidence=ldpcParityEvidence;
 rx.MaxDecoderIterations = double(maxIter);
 rx.DecoderIterations = mean(double(actIter(:)), "omitnan");
 rx.NumCodeBlocks = double(ldpcSeg.NumCodeBlocks);
@@ -3570,6 +3497,9 @@ rx.DecodeLatency_s = double(decodeLatency_s);
 rx.MaxDecoderIterations = double(maxIter);
 rx.LDPCDecodingAlgorithm = char(string(alg));
 rx.CodewordDecodeEvidence = dataReception.CodewordEvidence;
+rx.LDPCParityEvidence=dataReception.LDPCParityEvidence;
+rx.LDPCPolicyReceipts=cellfun(@(e) sixgr.util.structGet(e,'LDPCPolicyReceipt',struct()), ...
+    dataReception.CodewordEvidence,'UniformOutput',false);
 rx.TransportBlockDecodeAttempted = dataReception.DecodeAttempted;
 rx.TransportBlockCRCAvailable = dataReception.CRCAvailable;
 rx.TransportBlockCRCPassPerCodeword = dataReception.CRCPass;

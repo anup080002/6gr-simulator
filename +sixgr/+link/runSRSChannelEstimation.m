@@ -307,6 +307,20 @@ try
     out.ConfiguredSNR_dB = double(sixgr.util.structGet(replay, "ConfiguredSNR_dB", snr_dB));
     out.AppliedAWGNSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
     out.NoiseOperatingMode = char(string(sixgr.util.structGet(replay, "NoiseOperatingMode", "")));
+    out.NoiseExecutionEvidence=struct();
+    for field=["AbsoluteReferenceNoise","SampleRate_Hz","PowerContextDirection", ...
+            "AbsoluteReferenceNoiseInjectedSampleVariance_mW","AbsoluteReferenceNoiseInjectionDomain", ...
+            "PowerContextAmplitudeUnit","WaveformAmplitudeUnit","NoiseOperatingMode", ...
+            "InjectedNoiseVariance","InjectedNoiseVarianceDomain", ...
+            "InjectedNoiseVariancePreCompositeFrontEnd","InjectedNoiseVariancePreCompositeFrontEndDomain", ...
+            "RequestedReferenceEsN0_dB","ReferenceNoisePSD_mWPerHz", ...
+            "ReferenceNoiseSampleVariance_mW","ReferenceNoiseSampleRate_Hz", ...
+            "ReferenceNoiseContractSHA256","ReferenceNoiseSource","ReferenceNoiseReferencePlane", ...
+            "ThermalNoiseApplied","ControlledReferenceNoiseApplied"]
+        if isfield(replay,field), out.NoiseExecutionEvidence.(field)=replay.(field); end
+    end
+    publication=sixgr.link.absoluteReferenceNoisePublication(out.NoiseExecutionEvidence);
+    for field=string(fieldnames(publication)).', out.(field)=publication.(field); end
     out.NoisePowerSource = char(string(sixgr.util.structGet(replay, "NoisePowerSource", "")));
     out.ThermalNoisePower_dBm = double(sixgr.util.structGet(replay, "ThermalNoisePower_dBm", NaN));
     out.ServingRxPower_dBm = double(sixgr.util.structGet(replay, "ServingRxPower_dBm", NaN));
@@ -1517,6 +1531,16 @@ if noiseMode == "receiver_noise_figure_thermal_noise"
     y = x;
     nVar = NaN;
     return;
+elseif noiseMode=="absolute_reference_esn0"
+    nVar=sixgr.link.resolveAbsoluteReferenceNoiseVariance(replay);
+    n=sqrt(nVar/2).*(randn(size(x),"like",real(x))+1i*randn(size(x),"like",real(x)));
+    y=x+cast(n,"like",x);
+    evidence.NoiseVarianceSource="absolute_nominal_reference_PSD_times_actual_sample_rate_sqrt_mW";
+    evidence.AbsoluteReferenceNoiseInjectedSampleVariance_mW=nVar;
+    evidence.AbsoluteReferenceNoiseInjectionDomain='receiver_sample_waveform_pre_composite_front_end';
+    return;
+elseif noiseMode~="standalone_awgn_snr_argument"
+    error('sixgr:link:UnsupportedNoiseOperatingMode','Unsupported SRS noise mode %s.',noiseMode);
 end
 appliedSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
 if isempty(carrier)

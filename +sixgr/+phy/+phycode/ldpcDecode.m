@@ -1,88 +1,10 @@
-function [decCB, actNumIter, finalParityChecks] = ldpcDecode(llr, bgn, maxNumIter, algorithm)
-%ldpcDecode LDPC decode rate-recovered soft bits (5G Toolbox wrapper).
-%
-%   [decCB, actNumIter, finalParityChecks] = sixgr.phy.phycode.ldpcDecode(llr, bgn)
-%   [decCB, actNumIter, finalParityChecks] = sixgr.phy.phycode.ldpcDecode(llr, bgn, maxNumIter)
-%   [decCB, actNumIter, finalParityChecks] = sixgr.phy.phycode.ldpcDecode(llr, bgn, maxNumIter, algorithm)
-%
-%   This is a thin wrapper around nrLDPCDecode (5G Toolbox).
-%
-%   Inputs:
-%     llr        : N-by-C soft bits (LLR). double/single recommended.
-%     bgn        : Base graph number (1 or 2).
-%     maxNumIter : Maximum decoder iterations (default 12).
-%     algorithm  : Optional string/char forwarded as:
-%                  nrLDPCDecode(...,'Algorithm',algorithm)
-%                  Example: "Normalized min-sum" (default in 5G Toolbox).
-%
-%   Outputs:
-%     decCB            : K-by-C decoded code blocks.
-%     actNumIter       : Actual number of iterations for each code block.
-%     finalParityChecks: Parity check results for each iteration.
-%
-%   See also nrLDPCDecode, sixgr.phy.phycode.rateRecoverLDPC
-
-    if nargin < 2
-        error('sixgr:phy:ldpcDecode:InvalidInput','llr and bgn are required.');
-    end
-    if nargin < 3 || isempty(maxNumIter)
-        maxNumIter = 12;
-    end
-    if nargin < 4
-        algorithm = '';
-    end
-
-    validateattributes(bgn, {'numeric'}, {'scalar','finite','integer'}, mfilename, 'bgn', 2);
-    if ~(bgn==1 || bgn==2)
-        error('sixgr:phy:ldpcDecode:InvalidBGN','bgn must be 1 or 2.');
-    end
-    validateattributes(maxNumIter, {'numeric'}, {'scalar','finite','integer','positive'}, mfilename, 'maxNumIter', 3);
-
-    if exist('nrLDPCDecode','file') ~= 2
-        error('sixgr:Missing5GToolbox', ...
-            'nrLDPCDecode not found. Install/enable 5G Toolbox.');
-    end
-    if ~(isnumeric(llr) || islogical(llr)) || isempty(llr)
-        error('sixgr:phy:ldpcDecode:InvalidLLR', ...
-            'llr must be a non-empty real numeric matrix of rate-recovered soft bits.');
-    end
-    if ~isreal(llr)
-        error('sixgr:phy:ldpcDecode:InvalidLLR', ...
-            'llr must be real-valued; complex soft bits indicate a domain mismatch before LDPC decode.');
-    end
-
-    % Normalize shape: allow vector input for single CB
-    if isvector(llr)
-        llr = llr(:);
-    end
-
-    % Normalize type
-    if ~isa(llr,'double') && ~isa(llr,'single')
-        llr = double(llr);
-    end
-    if any(isnan(double(llr(:))))
-        error('sixgr:phy:ldpcDecode:InvalidLLR', ...
-            'llr contains NaN values; Inf is reserved only for LDPC filler positions.');
-    end
-
-    if ~isempty(algorithm)
-        if isstring(algorithm), algorithm = char(algorithm); end
-        [decCB, actNumIter, finalParityChecks] = localNRLDPCDecode(llr, bgn, maxNumIter, ...
-            'Algorithm', algorithm);
-    else
-        [decCB, actNumIter, finalParityChecks] = localNRLDPCDecode(llr, bgn, maxNumIter);
-    end
-end
-
-function [decCB, actNumIter, finalParityChecks] = localNRLDPCDecode(llr, bgn, maxNumIter, varargin)
-try
-    [decCB, actNumIter, finalParityChecks] = nrLDPCDecode(llr, bgn, maxNumIter, ...
-        varargin{:}, 'EarlyTermination', true);
-catch ME
-    if contains(string(ME.message), "EarlyTermination") || contains(string(ME.identifier), "EarlyTermination")
-        [decCB, actNumIter, finalParityChecks] = nrLDPCDecode(llr, bgn, maxNumIter, varargin{:});
-    else
-        rethrow(ME);
-    end
-end
+function [decCB,actNumIter,finalParityChecks,receipt]=ldpcDecode(llr,bgn,maxNumIter,algorithm,varargin)
+%LDPCDECODE Exact native policy; complete final checks-by-code-block matrix.
+% Omitted algorithm preserves the native Belief Propagation default. Decoder
+% choice is implementation policy. TB acceptance remains the caller's CRC.
+if nargin<3 || isempty(maxNumIter), maxNumIter=12; end
+if nargin<4 || isempty(algorithm), algorithm='Belief propagation'; end
+[decCB,actNumIter,finalParityChecks,receipt]= ...
+    sixgr.phy.phycode.decodeLDPCExact(llr,bgn,maxNumIter, ...
+    'Algorithm',algorithm,varargin{:});
 end

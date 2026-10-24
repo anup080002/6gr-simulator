@@ -6,7 +6,7 @@ methods(Static)
         cellState=string(state.CellAcquisitionState(item.UE));
         assert(any(cellState==["acquired","not_required"]), ...
             'sixgr:truth:ServingSSBTrackingBeforeAcquisition','Periodic tracking requires acquired serving-cell state.');
-        [~,pre,~,~,post]=sixgr.truth.sharedObservationEvidence(item.Planes);
+        [~,pre,~,replay,post]=sixgr.truth.sharedObservationEvidence(item.Planes);
         h=c.SSBOccasionHorizon;
         fs=post.SampleRateHz;
         assert(c.TrackingOnly && post.StartSample==c.BroadcastStartSample && ...
@@ -17,9 +17,24 @@ methods(Static)
             'RecoveryScope','SSB_MIB','CandidateSSBIndex',h.SSBIndex, ...
             'PhysicalMeasurementObservation',pre);
         score=sixgr.truth.scoreSharedPBCHReception(r);
+        powerScore=sixgr.truth.scoreSharedSSBPower();
         if isfield(c,'DesiredReferencePlane')
             [reference,source]=sixgr.truth.sharedLinkScoringObservation(item.Planes,p,c.DesiredReferencePlane);
             score=sixgr.truth.scoreSharedPBCHReception(r,reference,source);
+            original=struct('Planes',{item.Planes},'DesiredReferencePlaneID',c.DesiredReferencePlane, ...
+                'ReceiveBranchBinding',state.SharedWaveformStream.Physical.receiveBranchLayout(string(source.ReceiverID)));
+            powerScore=sixgr.truth.scoreSharedSSBPower(r,reference,source,pre,replay, ...
+                state.SharedWaveformStream.Physical.receiveElementLayout(string(source.ReceiverID)),p.PowerContext,original);
+        end
+        for name=string(fieldnames(powerScore)).'
+            r.(name)=powerScore.(name);
+        end
+        if r.SSBReceiveElementBindingAvailable
+            r.SSBPhysicalMeasurementReferencePlane=r.SSBReceiveElementReferencePlane;
+            if ~logical(sixgr.util.structGet(r,'SSPowerReferenceNormalized',false))
+                r.SSSINRReferencePlane=r.SSBPhysicalMeasurementReferencePlane;
+                r.PowerReferencePlane=r.SSBPhysicalMeasurementReferencePlane;
+            end
         end
         if ~logical(sixgr.util.structGet(r,'SSPowerReferenceNormalized',false))
             r=sixgr.link.normalizeReceivedSSBPowerReference(r,p.Config);
@@ -59,7 +74,7 @@ methods(Static)
         row.MeasuredSSBIndex=double(r.SSBIndex);
         row.MeasuredNCellID=double(r.NCellID);
         row.ExpectedNCellID=double(carrier.NCellID);
-        row.PowerReferencePlane="actual_pre_rx_rf_antenna_connector";
+        row.PowerReferencePlane=string(r.SSBPhysicalMeasurementReferencePlane);
         if isfield(r,'PowerReferencePlane'), row.PowerReferencePlane=string(r.PowerReferencePlane); end
         row.SS_RSRP_dB_re_UnitOccupiedRE_Es=double(sixgr.util.structGet(r,'SS_RSRP_dB_re_UnitOccupiedRE_Es',NaN));
         row.SSBWindowRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es= ...

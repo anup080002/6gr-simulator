@@ -36,6 +36,7 @@ classdef PhaseNoiseModel < handle
         RuntimeProfile struct = struct()
         StateEpoch (1,1) double = 1
         UseCanonicalRuntime (1,1) logical = false
+        DisabledSampleIndex (1,1) double = 0
     end
 
     methods
@@ -73,6 +74,7 @@ classdef PhaseNoiseModel < handle
             obj.Backend = "disabled";
             obj.TruthClassification = "disabled";
             obj.ApproximationReason = "";
+            obj.DisabledSampleIndex = 0;
 
             if ~obj.Enable
                 obj.Obj = [];
@@ -119,10 +121,13 @@ classdef PhaseNoiseModel < handle
             end
         end
 
-        function y = apply(obj, x, sampleRateHz)
+        function [y,trace] = apply(obj, x, sampleRateHz)
             %APPLY Apply phase noise to baseband samples.
             %
             % x: [Nsamp x Nchan] complex
+            % Optional trace retains the SAME executed canonical multiplier,
+            % never y/x or a second oscillator draw. Its clock is local to
+            % this oscillator process, not an independently proved RF clock.
             arguments
                 obj
                 x
@@ -131,6 +136,15 @@ classdef PhaseNoiseModel < handle
 
             if ~obj.Enable
                 y = x;
+                first = obj.DisabledSampleIndex;
+                obj.DisabledSampleIndex = first + size(x,1);
+                if nargout > 1
+                    trace = struct('Available',true,'Phase_rad',zeros(size(x)), ...
+                        'Multiplier',ones(size(x),'like',x),'Backend',"disabled", ...
+                        'StateEpoch',obj.StateEpoch,'StartSample0',first, ...
+                        'EndSampleExclusive',obj.DisabledSampleIndex, ...
+                        'Scope',"disabled_identity_operator");
+                end
                 return;
             end
 
@@ -145,10 +159,20 @@ classdef PhaseNoiseModel < handle
                     obj.RuntimeProcess = sixgr.rf.runtime.PhaseNoiseProcess( ...
                         obj.RuntimeProfile,size(x,2),obj.StateEpoch);
                 end
-                [y,~] = obj.RuntimeProcess.apply(x,obj.StateEpoch);
+                [y,trace] = obj.RuntimeProcess.apply(x,obj.StateEpoch);
                 return;
             end
 
+            if nargout > 1
+                % Legacy backends do not expose an original persistent
+                % per-chain operator/clock contract. Do not infer one from
+                % their output or substitute an identity on zero input.
+                trace = struct('Available',false,'Phase_rad',[], ...
+                    'Multiplier',[],'Backend',obj.Backend, ...
+                    'StateEpoch',obj.StateEpoch,'StartSample0',NaN, ...
+                    'EndSampleExclusive',NaN, ...
+                    'Scope',"unavailable_legacy_backend_original_operator");
+            end
             if obj.UseCommObj && ~isempty(obj.Obj)
                 y = obj.Obj(x);
                 return;

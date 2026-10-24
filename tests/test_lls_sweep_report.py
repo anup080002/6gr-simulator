@@ -8,7 +8,8 @@ from unittest.mock import patch
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "apps"))
-from lls_sweep_report import observe_sweep, export_sweep, concatenate_csv, read_rows, io_path
+from lls_sweep_report import (observe_sweep, export_sweep, concatenate_csv, read_rows, io_path,
+                              export_overview, measured_sinr_bler_rows, _sch_observations)
 
 
 def put_csv(path, fields, rows):
@@ -17,6 +18,26 @@ def put_csv(path, fields, rows):
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
         writer.writerows(rows)
+
+
+def sch_row(direction="DL", **changes):
+    """Declared original-row contract fixture, not a physical execution."""
+    prefix = "DLSCH" if direction == "DL" else "ULSCH"
+    row = dict(Direction=direction, Status="PASS", FinalizedFlag=1, PartialRowFlag=0,
+               Crash=0, IsWarmupFrame=0, DecodeAttempted=1, DecodeUsable=1,
+               CRCApplicable=1, CRCPass=1, IsRetransmission=0, HARQIsRetransmission=0,
+               HARQRound=0, MCSIndex=0, MCSTable="qam64_table1", Modulation="QPSK",
+               Layers=1, TBSizeBits=128, PRBStart=0, PRBCount=12, SymbolStart=0,
+               NumSymbols=14, MeasuredTrialSINR_dB=-1.2,
+               ApproximationMode="none", ExecutionBackend="scheduler_shared_stream_receiver")
+    row[prefix + "DecodeAttempted"] = 1
+    row[prefix + "DecodeAvailable"] = 1
+    row.update(changes)
+    return row
+
+
+def put_rows(path, rows):
+    put_csv(path, list(dict.fromkeys(field for row in rows for field in row)), rows)
 
 
 def fixture(root):
@@ -203,25 +224,23 @@ def test_shared_bler_curves_use_observed_crc_and_separate_phy_populations(tmp_pa
         "scenario": {"runner_profile": "generic_sweep", "sweep": {"overrides": overrides}}}))
     put_csv(tmp_path / "reports/csv/sweep_summary.csv", ["Label", "Ok"],
             [dict(Label="low", Ok=1), dict(Label="high", Ok=1)])
-    put_csv(tmp_path / "sweeps/low/air_interface/csv/dl_pdsch_trials.csv",
-            ["CRCPass", "MeasuredTrialSINR_dB", "MCSIndex", "Modulation", "Layers"], [
-                dict(CRCPass=0, MeasuredTrialSINR_dB=-1.2, MCSIndex=0, Modulation="QPSK", Layers=1),
-                dict(CRCPass=1, MeasuredTrialSINR_dB=-1.1, MCSIndex=0, Modulation="QPSK", Layers=1)])
-    put_csv(tmp_path / "sweeps/high/air_interface/csv/dl_pdsch_trials.csv",
-            ["CRCPass", "MeasuredTrialSINR_dB", "MCSIndex", "Modulation", "Layers"], [
-                dict(CRCPass=1, MeasuredTrialSINR_dB=9.2, MCSIndex=10, Modulation="16QAM", Layers=2)])
+    put_rows(tmp_path / "sweeps/low/air_interface/csv/dl_pdsch_trials.csv", [
+        sch_row(CRCPass=0, Status="FAIL", MeasuredTrialSINR_dB=-1.2),
+        sch_row(MeasuredTrialSINR_dB=-1.1)])
+    put_rows(tmp_path / "sweeps/high/air_interface/csv/dl_pdsch_trials.csv", [
+        sch_row(MeasuredTrialSINR_dB=9.2, MCSIndex=10, Modulation="16QAM", Layers=2)])
     export_sweep(tmp_path)
     configured = read_rows(tmp_path / "reports/csv/sweep_bler_vs_configured_snr.csv")
     dl = [row for row in configured if row["Direction"] == "DL"]
     assert [float(row["AttemptBLER"]) for row in dl] == [0.5, 0.0]
-    assert all(0 <= float(row["AttemptBLER_CI_Low"]) <= float(row["AttemptBLER_CI_High"]) <= 1
-               for row in dl)
+    assert all(row["AttemptBLER_CI_Low"] == row["AttemptBLER_CI_High"] == "" for row in dl)
+    assert all(row["StatisticalIndependenceClaimed"] == "False" for row in dl)
     measured = read_rows(tmp_path / "reports/csv/sweep_bler_vs_measured_sinr.csv")
     assert len(measured) == 2
     assert {(row["MCSIndex"], row["Modulation"], row["Rank"], row["TrialCount"]) for row in measured} == {
         ("0.0", "QPSK", "1.0", "2"), ("10.0", "16QAM", "2.0", "1")}
     assert all(row["EvidenceClass"] ==
-               "cross_run_observed_crc_and_receiver_post_equalization_sinr" for row in measured)
+               "completed_SCH_attempt_CRC_fraction_no_independence_claim" for row in measured)
     assert (tmp_path / "reports/image/sweep_bler_vs_configured_snr.png").is_file()
     assert (tmp_path / "reports/image/sweep_bler_vs_measured_sinr.png").is_file()
 
@@ -233,3 +252,79 @@ def test_gui_keeps_sweep_in_lite_and_renders_status_table():
         html = dash.build_product_frontend_page("realtime", "test.yaml", user_profile={"username": "test", "role": "Administrator"}).decode()
     assert "SNR sweep progress" in html and "sweepProgressPanel(live.sweep_progress)" in html
     assert "sweep_comparison_manifest.csv" in html
+
+
+@pytest.mark.parametrize("direction", ["DL", "UL"])
+def test_sweep_completed_sch_authority_excludes_crash_proxy_and_partial(tmp_path, direction):
+    done, _ = fixture(tmp_path)
+    filename = "dl_pdsch_trials.csv" if direction == "DL" else "ul_pusch_trials.csv"
+    rows = [sch_row(direction, CRCPass=0, Status="FAIL", Slot=1),
+            sch_row(direction, Slot=2),
+            sch_row(direction, Slot=3, Crash=1, Status="CRASH"),
+            sch_row(direction, Slot=4, PartialRowFlag=1),
+            sch_row(direction, Slot=5, DecodeAttempted=0),
+            sch_row(direction, Slot=6, IsWarmupFrame=1),
+            sch_row(direction, Slot=7, ExecutionBackend="fast_proxy"),
+            sch_row(direction, Slot=8, CRCApplicable=0),
+            sch_row(direction, Slot=9, **{("DLSCH" if direction == "DL" else "ULSCH") + "DecodeAvailable": 0}),
+            dict(CRCPass=0, MeasuredTrialSINR_dB=-1.2)]
+    source = done / "air_interface/csv" / filename
+    put_rows(source, rows)
+    original = source.read_bytes()
+    progress = observe_sweep(tmp_path)
+    export_overview(tmp_path, progress, save_images=False)
+    audit = read_rows(tmp_path / "reports/csv/sweep_sch_outcome_audit.csv")
+    assert len(audit) == 10
+    assert [r["SourceRow"] for r in audit if r["CompletedReceiverOutcomeAvailable"] == "True"] == ["1", "2"]
+    assert all(r["ExclusionReason"] for r in audit[2:])
+    summary = next(r for r in read_rows(tmp_path / "reports/csv/sweep_link_comparison.csv")
+                   if r["Direction"] == direction and r["PointIndex"] == "1")
+    assert summary["TrialCount"] == "10" and summary["CRCObservedCount"] == "2"
+    assert summary["FailureCount"] == "1" and summary["AttemptBLER"] == "0.5"
+    assert summary["ExcludedRowCount"] == "8" and summary["FirstAttemptCount"] == "2"
+    assert summary["AttemptBLER_CI_Low"] == summary["AttemptBLER_CI_High"] == ""
+    import hashlib
+    assert {r["SourceSHA256"] for r in audit} == {hashlib.sha256(original).hexdigest()}
+    assert source.read_bytes() == original
+
+
+def test_sweep_no_cross_point_allocation_table_or_harq_history_pooling(tmp_path):
+    done, _ = fixture(tmp_path)
+    rows = [sch_row(Slot=1), sch_row(Slot=2, TBSizeBits=256),
+            sch_row(Slot=3, PRBStart=1), sch_row(Slot=4, MCSTable="qam256_table2"),
+            sch_row(Slot=5, ConfigHash="different"),
+            sch_row(Slot=6, IsRetransmission=1, HARQIsRetransmission=1, HARQRound=1),
+            sch_row(Slot=7, IsRetransmission=1, HARQIsRetransmission=1, HARQRound=1),
+            sch_row(Slot=8, IsRetransmission="", HARQIsRetransmission=""),
+            sch_row(Slot=9, IsRetransmission="", HARQIsRetransmission="")]
+    put_rows(done / "air_interface/csv/dl_pdsch_trials.csv", rows)
+    progress = observe_sweep(tmp_path)
+    second = dict(progress["points"][1], status="passed")
+    put_rows(Path(second["run_folder"]) / "air_interface/csv/dl_pdsch_trials.csv", [sch_row(Slot=1)])
+    progress["points"][1] = second
+    result = measured_sinr_bler_rows(progress)
+    assert len(result) == 10 and all(r["TrialCount"] == 1 for r in result)
+    assert len({r["PopulationID"] for r in result}) == 10
+    assert sum(r["AttemptClass"] == "retry" for r in result) == 2
+    assert sum(r["AttemptClass"] == "unknown" for r in result) == 2
+    assert all(not r["StatisticalIndependenceClaimed"] for r in result)
+    assert all(r["BLER_CI_Low"] == r["BLER_CI_High"] == "" for r in result)
+
+
+def test_sweep_duplicate_original_rows_are_audited_not_counted(tmp_path):
+    done, _ = fixture(tmp_path)
+    put_rows(done / "air_interface/csv/dl_pdsch_trials.csv", [sch_row(Slot=1), sch_row(Slot=1)])
+    observations = _sch_observations(observe_sweep(tmp_path))
+    assert len(observations) == 2
+    assert all(not r["CompletedReceiverOutcomeAvailable"] for r in observations)
+    assert all(r["ExclusionReason"] == "duplicate_original_row_identity_unresolved" for r in observations)
+    assert measured_sinr_bler_rows(observe_sweep(tmp_path)) == []
+
+
+@pytest.mark.parametrize("changes", [dict(CRCPass=2), dict(DecodeAttempted="arbitrary"),
+                                     dict(Direction="UL"), dict(IsRetransmission=1, HARQIsRetransmission=0)])
+def test_sweep_malformed_or_contradictory_authority_rejects(tmp_path, changes):
+    done, _ = fixture(tmp_path)
+    put_rows(done / "air_interface/csv/dl_pdsch_trials.csv", [sch_row(**changes)])
+    with pytest.raises(ValueError):
+        _sch_observations(observe_sweep(tmp_path))

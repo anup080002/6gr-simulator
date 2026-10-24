@@ -1,5 +1,56 @@
 # SixGR Foundation v2
 
+## 24 October 2026: restart handoff and six-point n40 sweep
+
+All saved source edits are consolidated in the existing `main` checkout; no
+second simulator or worktree is required. MATLAB was stopped for the requested
+laptop restart, preserving logs, results and the incomplete broadcast test.
+No simulation, automatic restart or `testAll` is scheduled.
+
+The selected YAML is
+[`lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep.yaml`](simulator/configs/scenarios/lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep.yaml).
+It requests **30, 20, 10, 0, -10, -20 dB in that order**, with 60 slots per
+independent point, no checkpoints, n40/2.350 GHz, 20 MHz, uniform 30 kHz TDD,
+64 TXRU/four-chain UE, received-feedback rank up to four, UMa and CDL-C/100 ns.
+The points are **nominal reference Es/N0**, not guaranteed measured SINR.
+Absolute power and UMa loss remain active; the declared reference fixes noise
+PSD separately for DL and UL without normalizing current received samples.
+This controlled-noise choice is research policy, not mandatory 3GPP
+normalization or hardware/thermal-noise qualification. Actual RSRP/SINR,
+decoding failures and rank decisions must remain original measurements.
+
+**Not yet cleared for the full campaign.** In v187, four completed focused
+tests passed on the preceding five-point source/configuration: noise publication,
+reference arithmetic/configuration, DL/UL native-OFDM noise injection at
+15/30 kHz, and runner authority. All 387 monitored source hashes were unchanged.
+`test20MHzUniformNumerologyBroadcast` was interrupted, not passed. The new
+six-point order was updated afterward and needs the affected MATLAB check.
+The direct DL/UL/SRS consumer test and CSI population-export regression remain
+unexecuted. The CSI exporter still needs its resource/receiver/plane pooling
+repair; absolute units alone must not be labelled calibrated. Broader existing
+gaps remain documented in the [HTML guide](docs/lls/lls_gap_status_20261023.html#sweep-reference-20261024).
+
+After restart, run only these affected checks first (not a full campaign):
+
+```powershell
+& 'C:\Program Files\MATLAB\R2026a\bin\matlab.exe' -wait -batch "setup6GRSimToolkit('Verbose',false); assert(testAbsoluteReferenceNoise()); assert(test20MHzUniformNumerologyBroadcast()); assert(testAbsoluteReferenceNoiseWaveform());"
+```
+
+The pending CSI reporting reproducer is `testCSIPhysicalMeasurementPopulationReporting`;
+it is expected to expose the current pooling defect and is not a readiness gate
+already passed. Repair and verify that producer and its plotted-CSV consumers
+before launching. The following is the **manual campaign command after those
+gates**, not a claim it has run or passed. Use a new run tag, reconnect E:, and
+execute from this repository root:
+
+```powershell
+& 'C:\Program Files\MATLAB\R2026a\bin\matlab.exe' -wait -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep.yaml','E:\SixGRResults','n40_20mhz_sixpoint_01'); disp(out); fprintf('RUN_FOLDER=%s\n',char(out.RunFolder)); assert(out.Ok,'Campaign acceptance failed; preserve original evidence.');"
+```
+
+Generated IQ/results/logs remain local under existing ignore rules; committing
+source does not upload those large evidence files to GitHub. Do not delete them
+to obtain a clean Git status. Previous failures and partial receipts are retained.
+
 ## 23 October 2026: consolidated core repairs and verification boundary
 
 All implementation work is in this main checkout. Production MATLAB code lives

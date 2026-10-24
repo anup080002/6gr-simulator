@@ -3409,7 +3409,11 @@ classdef ChannelFactory
                 normalizePathGains = false;
                 mode = "absolute_power_tracking_receiver_noise_figure";
                 source = "default_for_receiver_noise_figure_thermal_noise";
-            else
+            elseif noiseMode=="absolute_reference_esn0"
+                normalizePathGains=false;
+                mode="absolute_power_tracking_nominal_reference_noise";
+                source="default_for_absolute_reference_esn0";
+            elseif any(noiseMode==["","standalone_awgn_snr_argument"])
                 normalizePathGains = true;
                 mode = "normalized_path_gains_operating_point";
                 if strlength(noiseMode) == 0
@@ -3417,6 +3421,9 @@ classdef ChannelFactory
                 else
                     source = "default_for_" + noiseMode;
                 end
+            else
+                error('ChannelFactory:UnsupportedNoiseOperatingMode', ...
+                    'Unknown noise mode %s cannot select a channel-normalization default.',noiseMode);
             end
         end
 

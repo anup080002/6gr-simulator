@@ -37,7 +37,7 @@ for candidate={physicalObservation,transmitObservation}
             buffer.EndSampleExclusive~=observation.EndSampleExclusive || ...
             buffer.SampleRateHz~=observation.SampleRateHz
         error('sixgr:link:BroadcastMeasurementPlaneMismatch', ...
-            'TX and connector-power measurements need actual complete observations on the decode clock.');
+            'TX and receive-plane power measurements need actual complete observations on the decode clock.');
     end
 end
 if ~isempty(transmitObservation), runtimeTxWaveform=transmitObservation.readComplete(); end
@@ -83,6 +83,23 @@ if isfinite(candidateIndices(candidateOrdinal))
 end
 rec = sixgr.phy.broadcast.recoverSIB1FromWaveform( ...
     observation, receiverCfg, receiverArgs{:},'PhysicalMeasurementObservation',physicalObservation);
+powerScore=sixgr.truth.scoreSharedSSBPower(rec, ...
+    sixgr.util.structGet(options,'DesiredReferenceObservation',[]), ...
+    sixgr.util.structGet(options,'DesiredReferenceEvidence',struct()),physicalObservation, ...
+    sixgr.util.structGet(out,'RuntimeChannelReplay',struct()), ...
+    sixgr.util.structGet(options,'ReceiveElementBinding',struct()), ...
+    sixgr.util.structGet(prepared,'PowerContext',struct()), ...
+    sixgr.util.structGet(options,'OriginalSSBPowerObservationBinding',struct()));
+for name=string(fieldnames(powerScore)).'
+    rec.(name)=powerScore.(name);
+end
+if rec.SSBReceiveElementBindingAvailable
+    rec.SSBPhysicalMeasurementReferencePlane=rec.SSBReceiveElementReferencePlane;
+    if ~logical(sixgr.util.structGet(rec,'SSPowerReferenceNormalized',false))
+        rec.SSSINRReferencePlane=rec.SSBPhysicalMeasurementReferencePlane;
+        rec.PowerReferencePlane=rec.SSBPhysicalMeasurementReferencePlane;
+    end
+end
 paired=sixgr.phy.broadcast.pairPBCHReceivedSymbols(rec,tx);
 out.ControlEVMSamplesJSON="";
 if ~isempty(paired), out.ControlEVMSamplesJSON=string(jsonencode(paired)); end
@@ -122,10 +139,9 @@ if logical(options.UseRuntimeChannel)
         rec.ReferenceSignalTxMeasurementSource="actual_shared_post_tx_rf_composite_sss_epre";
     end
     rec.PathlossReferenceRS = "SSB-" + string(rec.ReferenceSignalId);
-    rec.PowerReferencePlane = ...
-        "generated_tx_sss_epre_to_ue_antenna_connector_sss_rsrp";
+    rec.PowerReferencePlane = "generated_tx_sss_epre_to_"+rec.SSBPhysicalMeasurementReferencePlane;
     if ~isempty(transmitObservation) && ~isempty(physicalObservation)
-        rec.PowerReferencePlane="actual_post_tx_rf_sss_epre_to_actual_pre_rx_rf_connector_sss_rsrp";
+        rec.PowerReferencePlane="actual_post_tx_rf_sss_epre_to_"+rec.SSBPhysicalMeasurementReferencePlane;
     end
     if logical(txSSBPower.Available) && ...
             isfinite(double(sixgr.util.structGet(rec, "SS_RSRP_dBm", NaN)))
@@ -260,6 +276,7 @@ powerEvidence=sixgr.link.ssbPowerReferenceEvidence(rec);
 for field=string(fieldnames(powerEvidence)).'
     out.(field)=powerEvidence.(field);
     out.PBCH.(field)=powerEvidence.(field);
+    out.SIB1.(field)=powerEvidence.(field);
 end
 for field=["SSBWindowRSSIPerReceiveAntenna_dBm","SSBWindowPowerMeasurementJSON"]
     out.(field)=string(sixgr.util.structGet(rec,field,""));

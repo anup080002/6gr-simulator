@@ -126,6 +126,13 @@ evidence.PendingObservationKinds=string({state.SharedWaveformStream.Pending.Kind
 evidence.PendingFeedback=state.PendingFeedbackTable(~state.PendingFeedbackTable.Processed,:);
 evidence.HARQRetryQualified=false;
 evidence.OutputRoot=string(outputRoot);
+evidence.PeriodicCSIRefreshAfterULQuality=struct('Observed',false,'Scope',"not_UL_continuation");
+if direction=="UL"
+    evidence.PeriodicCSIRefreshAfterULQuality=PeriodicCSIRefreshAudit.verify(state.TestPeriodicCSIRefreshSnapshots);
+    fprintf('PERIODIC_CSI_PHYSICAL_REFRESH observed=%d witnesses=%d UCI_delivery_qualified=0\n', ...
+        evidence.PeriodicCSIRefreshAfterULQuality.Observed, ...
+        height(evidence.PeriodicCSIRefreshAfterULQuality.Witnesses));
+end
 receivedCSI=state.SharedGNBCSIReportTable;
 receivedReferences=state.ReferenceSignalMeasurementTable;
 independentCSI=sixgr.util.structGet(state,'ControlTrials.CSIRS',table());

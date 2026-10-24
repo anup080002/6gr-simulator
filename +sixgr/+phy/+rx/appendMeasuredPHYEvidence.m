@@ -54,6 +54,15 @@ ldpc = localLDPCEvidence(decoderIterations, parityChecks, codeBlockCRCErrors, de
 rx = localAppendFields(rx, dmrs);
 rx = localAppendFields(rx, rate);
 rx = localAppendFields(rx, ldpc);
+% Use the same compact projection as the trial writer. This also recognizes
+% complete per-codeword evidence attached by the receiver before this call.
+% The compatibility vector alone never proves complete native check scope.
+projected = sixgr.link.deriveMeasuredPHYEvidence(rx);
+parityNames = string(fieldnames(projected));
+parityNames = parityNames(startsWith(parityNames, "MeasuredLDPCParity"));
+for index = 1:numel(parityNames)
+    rx.(parityNames(index)) = projected.(parityNames(index));
+end
 end
 
 function evidence = localDMRSEvidence(carrier, dmrsInd, dmrsAntInd, dmrsSym, dmrsInfo)
@@ -160,7 +169,6 @@ end
 
 function evidence = localLDPCEvidence(iterations, parityChecks, cbCrcErrors, decoderAlgorithm, useMexDecoder, transportBlockCRCError)
 iter = localFiniteVector(iterations);
-parity = localFiniteVector(parityChecks);
 cbCrc = localFiniteVector(cbCrcErrors);
 decodeErrors = localMeasuredDecodeErrors(iter, cbCrc, transportBlockCRCError);
 
@@ -178,7 +186,7 @@ evidence = struct( ...
     "MeasuredLDPCDecoderAlgorithm", string(decoderAlgorithm), ...
     "MeasuredLDPCDecoderEngine", localDecoderEngine(useMexDecoder), ...
     "MeasuredLDPCIterationVector", localFormatVector(iterations), ...
-    "MeasuredLDPCParityCheckVector", localFormatVector(parityChecks), ...
+    "MeasuredLDPCParityCheckVector", localFormatLegacyParity(parityChecks), ...
     "MeasuredCodeBlockDecodeErrorVector", localFormatDecodeVector(decodeErrors), ...
     "MeasuredCodeBlockCRCErrorVector", localFormatVector(cbCrcErrors));
 
@@ -186,9 +194,6 @@ if ~isempty(iter)
     evidence.MeasuredLDPCDecoderMeanIterations = mean(iter, "omitnan");
     evidence.MeasuredLDPCDecoderMinIterations = min(iter);
     evidence.MeasuredLDPCDecoderMaxIterations = max(iter);
-end
-if ~isempty(parity)
-    evidence.MeasuredLDPCParityCheckFailures = double(sum(parity ~= 0));
 end
 if ~isempty(decodeErrors)
     evidence.MeasuredCodeBlockDecodeCount = double(numel(decodeErrors));
@@ -366,6 +371,20 @@ if isempty(values)
     return;
 end
 txt = strjoin(string(values.'), "|");
+end
+
+function txt = localFormatLegacyParity(raw)
+% Preserve nonfinite entries too; filtering them would silently change the
+% reported compatibility token. Its partial/unknown scope is explicit.
+values = localNumericValues(raw);
+txt = "";
+if ~isempty(values)
+    tokens = string(values.');
+    tokens(isnan(values.')) = "NaN"; % string(NaN) is missing, not literal text.
+    tokens(values.'==Inf) = "Inf";
+    tokens(values.'==-Inf) = "-Inf";
+    txt = strjoin(tokens, "|");
+end
 end
 
 function txt = localFormatDecodeVector(raw)

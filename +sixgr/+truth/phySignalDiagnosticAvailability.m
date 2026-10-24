@@ -1,8 +1,20 @@
 function availability=phySignalDiagnosticAvailability(csvPath,imageDir)
 % Same persisted-artifact contract, scanning all rows in bounded chunks.
 availability=struct('Source',"not_available",'DL',"not_available", ...
-    'UL',"not_available",'Reason',"source_csv_missing");
+    'UL',"not_available",'Reason',"source_csv_missing", ...
+    'ReconstructionScope',"capture_local_samples_not_radio_clock_qualification", ...
+    'DLRadioClockStatus',"unavailable",'ULRadioClockStatus',"unavailable", ...
+    'DLRadioClockSourceContractConsistent',false,'ULRadioClockSourceContractConsistent',false);
 s=sixgr.truth.scanPHYSignalDiagnosticCSV(csvPath);
+for direction=["DL","UL"]
+    groups=s.ClockContract.Groups(string({s.ClockContract.Groups.Direction})==direction);
+    if ~isempty(groups)
+        statuses=unique(string({groups.Status}));
+        availability.(direction+"RadioClockStatus")=strjoin(statuses,"|");
+        availability.(direction+"RadioClockSourceContractConsistent")= ...
+            all([groups.RadioClockSourceContractConsistent]);
+    end
+end
 if s.RowCount==0, return; end
 required=["SnapshotID","Panel","Series","PointIndex","XValue","YValue", ...
     "Direction","CurveConstruction","truth_status","SourceArtifact","Status"];

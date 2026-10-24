@@ -27,6 +27,9 @@ req = { ...
 localRequire(cfg, req);
 cCore = sixgr.config.loadCoreCatalog();
 localValidateCatalogFields(cfg, sixgr.util.structGet(cCore, 'parameters', struct()), '');
+if isfield(cfg,'phy')&&isfield(cfg.phy,'ldpc')
+    cfg.phy.ldpc=sixgr.config.validateLDPCPolicy(cfg.phy.ldpc);
+end
 systemSINRModel = string(sixgr.util.structGet(cfg, 'system.sinrModel', ''));
 channelInterferenceModel = string(sixgr.util.structGet(cfg, 'channel.interferenceModel', ''));
 if strlength(systemSINRModel) > 0 && strlength(channelInterferenceModel) > 0 && ...

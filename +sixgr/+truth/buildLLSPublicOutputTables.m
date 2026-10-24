@@ -842,7 +842,10 @@ if ~isempty(T)
         "ObservationStartSample","ObservationEndSampleExclusive","ResultAvailableAtSample", ...
         "ObservationSampleRateHz","RunFolder","RunTag","ExecutionID","ConfigHash","ScenarioID", ...
         "RandomSeed","ChannelSeed","NoiseStreamSeed","SweepPointIndex","ConfiguredSNR_dB"]) | ...
-        startsWith(names,"ReferenceMeasuredSINR") | names=="PowerReferencePlane" | ...
+        startsWith(names,"ReferenceMeasuredSINR") | names=="ReferenceSINRMeasurementJSON" | ...
+        startsWith(names,"CSIRSEmittedPowerComparison") | ...
+        startsWith(names,"CSIRSEmittedSINRComparison") | ...
+        startsWith(names,"CSIRSLinearPortModelComparison") | names=="PowerReferencePlane" | ...
         names=="CRI" | names=="RI" | names=="CQI" | names=="PMI");
     for field=fields
         T.(field)=sourceT.(field);
@@ -1045,7 +1048,13 @@ if ~(istable(sourceT) && ~isempty(sourceT))
 end
 rows = repmat(struct("OutputId", "mcs_cqi_decision_trace_table", "RunId", iLogicalRunId(meta), "TrialId", NaN, ...
     "UEId", NaN, "CellId", NaN, "Slot", NaN, "SelectedMCS", NaN, "SelectedMCSSource", "", ...
-    "SelectedMCSReason", "", "CQIDerivedMCS", NaN, "CQI", NaN, "CQISource", "", "CQICalibrationProfile", "", ...
+    "SelectedMCSReason", "", "MCSTable", "", "CQITable", "", ...
+    "MCSValueStatus", "", "MCSIndexAuthority", "", "GrantOperatingPointSource", "", ...
+    "LinkAdaptationDecisionReason", "", ...
+    "Direction", "", "CQIProvenance", "", "SchedulerCQISource", "", ...
+    "SchedulerCQIRawCQI", NaN, "SchedulerAdjustedSINR_dB", NaN, "SchedulerSINRBackoff_dB", NaN, ...
+    "GrantContextId", "", "FrozenGrantContextId", "", "GrantSourceRow", NaN, "GrantSourceArtifactRef", "", ...
+    "CQIDerivedMCS", NaN, "CQI", NaN, "CQISource", "", "CQICalibrationProfile", "", ...
     "LinkAdaptationMode", "", "SchedulerGrantSource", "", "HARQInfluence", "", "OLLAState", "", ...
     "MCSConsistencyBound", NaN, "MCSConsistencyBoundSource", "", ...
     "SelectedSpectralEfficiency", NaN, "BoundSpectralEfficiency", NaN, "MCSConsistencyDetail", "", ...
@@ -1063,14 +1072,30 @@ for i = 1:height(sourceT)
     rows(i).CellId = iFirstNum(row, ["cell_id","CellId"], NaN);
     rows(i).Slot = iFirstNum(row, ["slot","Slot"], NaN);
     rows(i).SelectedMCS = selected;
-    rows(i).SelectedMCSSource = iFirstText(row, ["SelectedMCSSource","selected_mcs_source"], "runtime_scheduler_grant");
+    rows(i).SelectedMCSSource = iDecisionTextAlias(row, ...
+        ["SelectedMCSSource","selected_mcs_source","MCSSelectionSource","mcs_selection_source"]);
     rows(i).SelectedMCSReason = iFirstText(row, ["scheduler_reason","GrantReason"], "");
+    rows(i).MCSTable = iDecisionTextAlias(row,["MCSTable","mcs_table","MCS_Table"]);
+    rows(i).CQITable = iDecisionTextAlias(row,["CQITable","cqi_table"]);
+    rows(i).MCSValueStatus = iDecisionTextAlias(row,["MCSValueStatus","mcs_value_status"]);
+    rows(i).MCSIndexAuthority = iDecisionTextAlias(row,["MCSIndexAuthority","mcs_index_authority"]);
+    rows(i).GrantOperatingPointSource = iDecisionTextAlias(row,["GrantOperatingPointSource","grant_operating_point_source"]);
+    rows(i).LinkAdaptationDecisionReason = iDecisionTextAlias(row,["LinkAdaptationDecisionReason","link_adaptation_decision_reason"]);
+    rows(i).Direction=iDecisionTextAlias(row,["Direction","direction"]);
+    for name=["CQIProvenance","SchedulerCQISource","GrantContextId","FrozenGrantContextId"]
+        rows(i).(name)=iDecisionTextAlias(row,name);
+    end
+    for name=["SchedulerCQIRawCQI","SchedulerAdjustedSINR_dB","SchedulerSINRBackoff_dB","GrantSourceRow"]
+        rows(i).(name)=iFirstNum(row,name,NaN);
+    end
+    rows(i).GrantSourceArtifactRef=iDecisionTextAlias(row,["GrantSourceArtifactRef","source_artifact_ref"]);
     rows(i).CQIDerivedMCS = derived;
     rows(i).CQI = iFirstNum(row, ["cqi_input","wideband_cqi"], NaN);
-    rows(i).CQISource = iFirstText(row, ["CQISource","cqi_source"], "runtime_scheduler_observation");
-    rows(i).CQICalibrationProfile = iFirstText(row, ["CalibrationProfile","calibration_profile"], "heuristic");
+    rows(i).CQISource = iDecisionTextAlias(row,["CQISource","cqi_source"]);
+    rows(i).CQICalibrationProfile = iDecisionTextAlias(row, ...
+        ["CQICalibrationProfile","cqi_calibration_profile","CalibrationProfile","calibration_profile"]);
     rows(i).LinkAdaptationMode = iFirstText(row, ["LinkAdaptationMode","link_adaptation_domain"], "");
-    rows(i).SchedulerGrantSource = iFirstText(row, ["SchedulerGrantSource","source_artifact_ref"], "reports/csv/table_mcs_tbs_evolution.csv");
+    rows(i).SchedulerGrantSource = iDecisionTextAlias(row,["SchedulerGrantSource","scheduler_grant_source"]);
     rows(i).HARQInfluence = iFirstText(row, ["HARQInfluence","harq_state"], "");
     rows(i).OLLAState = iFirstText(row, ["OLLAState","olla_state"], "");
     rows(i).MCSConsistencyBound = bound;
@@ -1083,6 +1108,30 @@ for i = 1:height(sourceT)
     rows(i).RuntimeEvidenceStatus = "derived_from_runtime_scheduler_trace";
 end
 T = struct2table(rows);
+end
+
+function value=iDecisionTextAlias(row,names)
+% Preserve actual decision provenance. An artifact location is not a grant
+% source; a missing calibration profile is not evidence of a heuristic.
+value="";
+for name=names
+    if ~ismember(name,string(row.Properties.VariableNames)), continue; end
+    raw=row.(name);
+    % Generic retained CSV imports can infer an entirely blank text column
+    % as double NaN. Only this exact unavailable scalar is admissible; never
+    % stringify finite numbers or accept an array as provenance.
+    if isnumeric(raw)&&isreal(raw)&&isscalar(raw)&&isnan(raw), continue; end
+    assert(ischar(raw)||isstring(raw)||iscellstr(raw), ...
+        'sixgr:report:MCSCQIProvenanceType','%s must be scalar text.',name);
+    candidate=string(raw);
+    assert(isscalar(candidate),'sixgr:report:MCSCQIProvenanceShape', ...
+        '%s must contain exactly one text value per original decision.',name);
+    if ismissing(candidate)||strlength(strtrim(candidate))==0, continue; end
+    assert(strlength(value)==0||value==candidate, ...
+        'sixgr:report:MCSCQIProvenanceConflict', ...
+        'Conflicting original decision aliases for %s; do not choose one silently.',names(1));
+    value=candidate;
+end
 end
 
 function T = iMetricUnitRoleCatalog(metricT, meta)
@@ -1160,11 +1209,11 @@ end
 
 function tf = iUsesMeasuredFeedbackAdaptation(row)
 tokens = lower(strjoin([ ...
-    iFirstText(row, ["MCSValueStatus", "mcs_value_status"], ""), ...
-    iFirstText(row, ["MCSSelectionSource", "mcs_selection_source"], ""), ...
-    iFirstText(row, ["MCSIndexAuthority", "mcs_index_authority"], ""), ...
-    iFirstText(row, ["GrantOperatingPointSource", "grant_operating_point_source"], ""), ...
-    iFirstText(row, ["LinkAdaptationDecisionReason", "link_adaptation_decision_reason"], "")], " "));
+    iDecisionTextAlias(row, ["MCSValueStatus", "mcs_value_status"]), ...
+    iDecisionTextAlias(row, ["SelectedMCSSource","selected_mcs_source","MCSSelectionSource", "mcs_selection_source"]), ...
+    iDecisionTextAlias(row, ["MCSIndexAuthority", "mcs_index_authority"]), ...
+    iDecisionTextAlias(row, ["GrantOperatingPointSource", "grant_operating_point_source"]), ...
+    iDecisionTextAlias(row, ["LinkAdaptationDecisionReason", "link_adaptation_decision_reason"])], " "));
 tf = contains(tokens, "feedback_adapted") || ...
     contains(tokens, "measured_feedback_adapted") || ...
     contains(tokens, "runtime_link_adaptation_decision");
@@ -1179,10 +1228,19 @@ if ~isfinite(selected)
     detail = "missing_selected_mcs";
     return;
 end
-mcsTable = iFirstText(row, ["MCSTable", "mcs_table", "MCS_Table"], "qam64_table1");
+mcsTable = iDecisionTextAlias(row, ["MCSTable", "mcs_table", "MCS_Table"]);
+if strlength(mcsTable)==0
+    status="unavailable";
+    detail="missing_original_mcs_table_no_spectral_efficiency_assumed";
+    return;
+end
 selectedProfile = sixgr.link.resolveMCSProfile(char(mcsTable), selected);
 if logical(sixgr.util.structGet(selectedProfile, "Valid", false))
     selectedSE = double(selectedProfile.SpectralEfficiency);
+else
+    status="unavailable";
+    detail="unavailable_selected_mcs_profile_no_index_fallback";
+    return;
 end
 if ~isfinite(bound)
     status = "unavailable";
@@ -1205,12 +1263,9 @@ if isfinite(selectedSE) && ...
         status = "mismatch";
     end
     detail = "SelectedSE=" + string(selectedSE) + ";BoundSE=" + string(boundSE) + ";BoundSource=" + string(boundSource);
-elseif abs(selected - bound) < 0.5
-    status = "match";
-    detail = "fallback_mcs_index_match";
 else
-    status = "mismatch";
-    detail = "fallback_mcs_index_mismatch";
+    status = "unavailable";
+    detail = "unavailable_bound_mcs_profile_no_index_fallback";
 end
 end
 

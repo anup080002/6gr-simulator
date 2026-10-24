@@ -13,7 +13,16 @@ if strlength(mode) == 0
     mode = "receiver_noise_figure_thermal_noise";
 end
 
-configuredReplay = mode ~= "receiver_noise_figure_thermal_noise";
+switch mode
+    case "standalone_awgn_snr_argument"
+        configuredReplay=true;
+    case {"receiver_noise_figure_thermal_noise","absolute_reference_esn0"}
+        % A nominal reference selects N0, never the measured link quality.
+        configuredReplay=false;
+    otherwise
+        error('sixgr:truth:UnsupportedSharedNoisePowerReference', ...
+            'Unsupported coupled replay noise mode %s.',mode);
+end
 snr_dB = NaN;
 if configuredReplay
     requested = double(configuredSNR_dB);

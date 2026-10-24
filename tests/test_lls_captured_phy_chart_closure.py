@@ -18,6 +18,8 @@ def row(panel, **values):
                 Direction="DL", Slot=31, PointIndex=1, RxAntennaIndex=1,
                 XValue=0, IValue=1, QValue=0, Magnitude_dB=0, Phase_deg=0,
                 GridSHA256="executed_tensor_hash", Status="available",
+                Frame=777, UEIndex=1, RNTI=4660, TBId="declared_fixture_tb",
+                CurveConstruction="runtime_same_trial_phy_signal_snapshot",
                 truth_status="real_lls_evidence",
                 SourceArtifact="runtime_phy_arrays_same_trial", **values)
 
@@ -65,8 +67,7 @@ def test_pre_equalization_uses_only_its_own_plane_and_keeps_links_separate():
     pre = row("pre_equalization_re_cloud")
     rows = [dict(pre, IValue=-0.7, QValue=-0.8),
             dict(pre, SnapshotID="ul35", Direction="UL", Slot=35, IValue=0.2, QValue=0.3),
-            row("post_equalization_constellation"),
-            dict(pre, Status="unavailable", IValue=999)]
+            row("post_equalization_constellation")]
     result = chart("pre-equalization constellation", rows)
     assert result is not None
     actual = decoded(result)
@@ -77,6 +78,9 @@ def test_pre_equalization_uses_only_its_own_plane_and_keeps_links_separate():
     assert {r["rx_antenna_index"] for r in actual} == {"1"}
     assert "layer_index" not in actual[0]  # Antenna-domain samples are not demixed layers.
     assert b"visual_gate=" not in result["img_bytes"]
+    # A corrupt row must reject this source, not vanish during plane filtering.
+    with pytest.raises(ValueError, match="Status"):
+        chart("pre-equalization constellation", rows + [dict(pre, Status="unavailable", IValue=999)])
 
 
 @pytest.mark.parametrize("name", ["pre-equalization constellation", "channel impulse response",
@@ -86,7 +90,8 @@ def test_wrong_plane_or_proxy_never_supplies_required_chart(name):
     assert chart(name, [row("post_equalization_constellation")]) is None
     panels = ("pre_equalization_re_cloud", "true_channel_impulse_response",
               "true_channel_frequency_response")
-    assert chart(name, [dict(row(p), truth_status="fast_proxy") for p in panels]) is None
+    with pytest.raises(ValueError, match="truth_status"):
+        chart(name, [dict(row(p), truth_status="fast_proxy") for p in panels])
 
 
 def test_generic_zero_trend_guard_is_not_relaxed():

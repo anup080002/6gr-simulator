@@ -2293,6 +2293,17 @@ T.ue_id = localFirstAvailableColumnAsDouble(grants, ["UE", "UEID", "UEIndex", "R
 T.cell_id = localFirstAvailableColumnAsDouble(grants, ["CellID", "ServingCell", "BaseStationID"]);
 T.direction = repmat(string(direction), n, 1);
 T.cqi_input = localColumnAsReportedCQI(grants, "CQIUsed");
+% Keep the original scheduler observation provenance distinct from a new
+% receiver CQI or a calibration claim. These fields are supplied by the
+% grant owner; do not join later trial CSI merely by slot/UE.
+for name=["CQIProvenance","SchedulerCQISource","GrantContextId","FrozenGrantContextId"]
+    T.(name)=localOriginalMCSDecisionTextColumn(grants,name);
+end
+for name=["SchedulerCQIRawCQI","SchedulerAdjustedSINR_dB","SchedulerSINRBackoff_dB"]
+    T.(name)=localColumnAsDouble(grants,name);
+end
+T.GrantSourceRow=(1:n).';
+T.source_artifact_ref=repmat("packet_flow/csv/live_"+lower(string(direction))+"_scheduler_grants.csv",n,1);
 [cqiSampleCount, cqiDistinctCount, cqiSaturationFraction, cqiDynamicRangeStatus] = ...
     localCQIDynamicRangeDiagnostics(T.cqi_input);
 T.cqi_window_sample_count = repmat(cqiSampleCount, n, 1);
@@ -2315,13 +2326,14 @@ T.olla_base_required_sinr_dB = localFirstAvailableColumnAsDouble(grants, ["OLLAB
 T.olla_target_required_sinr_dB = localFirstAvailableColumnAsDouble(grants, ["OLLATargetRequiredSINR_dB"]);
 T.olla_threshold_source = localColumnAsText(grants, "OLLAThresholdSource");
 T.static_delta_mcs = localFirstAvailableColumnAsDouble(grants, ["StaticDeltaMCS"]);
-T.mcs_table = localColumnAsText(grants, "MCSTable");
-T.cqi_table = localColumnAsText(grants, "CQITable");
-T.mcs_selection_source = localColumnAsText(grants, "MCSSelectionSource");
-T.mcs_value_status = localColumnAsText(grants, "MCSValueStatus");
-T.mcs_index_authority = localColumnAsText(grants, "MCSIndexAuthority");
-T.grant_operating_point_source = localColumnAsText(grants, "GrantOperatingPointSource");
-T.link_adaptation_decision_reason = localColumnAsText(grants, "LinkAdaptationDecisionReason");
+[mcsTables,cqiTables]=localOriginalMCSTableColumns(grants);
+T.mcs_table = mcsTables;
+T.cqi_table = cqiTables;
+T.mcs_selection_source = localOriginalMCSDecisionTextColumn(grants, "MCSSelectionSource");
+T.mcs_value_status = localOriginalMCSDecisionTextColumn(grants, "MCSValueStatus");
+T.mcs_index_authority = localOriginalMCSDecisionTextColumn(grants, "MCSIndexAuthority");
+T.grant_operating_point_source = localOriginalMCSDecisionTextColumn(grants, "GrantOperatingPointSource");
+T.link_adaptation_decision_reason = localOriginalMCSDecisionTextColumn(grants, "LinkAdaptationDecisionReason");
 T.mod_order = NaN(n, 1);
 T.code_rate = localColumnAsDouble(grants, "TargetCodeRate");
 T.tbs_bits = localColumnAsDouble(grants, "TBSBits");
@@ -2340,18 +2352,53 @@ values = NaN(n, 1);
 if ~(istable(grants) && n > 0)
     return;
 end
+[mcsTables,cqiTables]=localOriginalMCSTableColumns(grants);
 for i = 1:n
     row = grants(i, :);
     cqiUsed = localNormalizeReportedCQIValue(localTableValue(row, "CQIUsed", NaN));
     if ~isfinite(cqiUsed)
         continue;
     end
-    mcsTable = string(localTableValue(row, "MCSTable", localTableValue(row, "MCS_Table", "qam64_table1")));
-    cqiTable = string(localTableValue(row, "CQITable", localTableValue(row, "CQI_Table", "table1")));
+    mcsTable=mcsTables(i); cqiTable=cqiTables(i);
+    if strlength(mcsTable)==0||strlength(cqiTable)==0, continue; end
     decision = sixgr.link.resolveMCSFromCQI(cqiUsed, char(mcsTable), char(cqiTable));
     if isstruct(decision) && isfield(decision, "Valid") && logical(decision.Valid)
         values(i) = double(decision.MCSIndex);
     end
+end
+end
+
+function [mcs,cqi]=localOriginalMCSTableColumns(T)
+% A report cannot borrow the scheduler API's default table policy when the
+% original grant did not retain its selected tables.
+mcs=strings(height(T),1); cqi=mcs;
+for k=1:height(T)
+    mcs(k)=localOriginalMCSDecisionText(T(k,:),["MCSTable","MCS_Table"]);
+    cqi(k)=localOriginalMCSDecisionText(T(k,:),["CQITable","CQI_Table"]);
+end
+end
+
+function values=localOriginalMCSDecisionTextColumn(T,name)
+% Validate at the original grant boundary, before any string(raw) coercion
+% could turn a malformed finite numeric source into plausible text.
+values=strings(height(T),1);
+for k=1:height(T), values(k)=localOriginalMCSDecisionText(T(k,:),name); end
+end
+
+function value=localOriginalMCSDecisionText(row,names)
+value="";
+for name=names
+    if ~ismember(name,string(row.Properties.VariableNames)), continue; end
+    raw=row.(name);
+    if isnumeric(raw)&&isreal(raw)&&isscalar(raw)&&isnan(raw), continue; end
+    assert(ischar(raw)||isstring(raw)||iscellstr(raw), ...
+        'sixgr:report:MCSCQIProvenanceType','%s must be scalar original table text.',name);
+    text=string(raw);
+    assert(isscalar(text),'sixgr:report:MCSCQIProvenanceShape','%s must be scalar text.',name);
+    if ismissing(text)||strlength(strtrim(text))==0, continue; end
+    assert(strlength(value)==0||value==text,'sixgr:report:MCSCQIProvenanceConflict', ...
+        'Conflicting original MCS/CQI table aliases.');
+    value=text;
 end
 end
 
@@ -4474,7 +4521,11 @@ detail = "MCSIndexCompare";
 if ~(isfinite(selectedMCS) && isfinite(allowedMCS))
     return;
 end
-mcsTable = string(localTableValue(row, "MCSTable", localTableValue(row, "MCS_Table", "qam64_table1")));
+mcsTable=localOriginalMCSDecisionText(row,["MCSTable","MCS_Table"]);
+if strlength(mcsTable)==0
+    detail="UnavailableMissingOriginalMCSTable";
+    return;
+end
 selectedProfile = sixgr.link.resolveMCSProfile(char(mcsTable), selectedMCS);
 allowedProfile = sixgr.link.resolveMCSProfile(char(mcsTable), allowedMCS);
 if logical(sixgr.util.structGet(selectedProfile, "Valid", false)) && ...
@@ -4484,8 +4535,9 @@ if logical(sixgr.util.structGet(selectedProfile, "Valid", false)) && ...
     tf = selectedSE > allowedSE + 1e-9;
     detail = "SelectedSE=" + string(selectedSE) + ";AllowedSE=" + string(allowedSE);
 else
-    tf = double(selectedMCS) > double(allowedMCS) + 1;
-    detail = "FallbackMCSIndexCompare";
+    % Reserved/unsupported indices carry no SE comparison authority. Their
+    % integer ordering is not a substitute for an identified table profile.
+    detail = "UnavailableOriginalMCSProfileSpectralEfficiency";
 end
 end
 
@@ -4496,8 +4548,11 @@ sourceArtifactRef = lower(string(sourceArtifactRef));
 hasGrantTimeCQI = localHasVar(row, "CQIUsed") && isfinite(localNumericTableValue(row, "CQIUsed", NaN));
 if hasGrantTimeCQI
     cqiUsed = localNumericTableValue(row, "CQIUsed", NaN);
-    mcsTable = string(localTableValue(row, "MCSTable", localTableValue(row, "MCS_Table", "qam64_table1")));
-    cqiTable = string(localTableValue(row, "CQITable", localTableValue(row, "CQI_Table", "table1")));
+    [mcsTable,cqiTable]=localOriginalMCSTableColumns(row);
+    if strlength(mcsTable)==0||strlength(cqiTable)==0
+        basis="unavailable_missing_original_MCS_or_CQI_table";
+        return;
+    end
     sanitizedCQI = sixgr.l2.mac.SchedulerBase.sanitizeCQI(cqiUsed, NaN);
     decision = sixgr.link.resolveMCSFromCQI(sanitizedCQI, char(mcsTable), char(cqiTable));
     if isstruct(decision) && isfield(decision, "Valid") && decision.Valid

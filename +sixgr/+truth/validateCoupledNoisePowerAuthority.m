@@ -17,6 +17,14 @@ switch mode
     case "receiver_noise_figure_thermal_noise"
         assert(~normalized,'sixgr:truth:MixedSharedNoisePowerReference', ...
             'Physical thermal noise requires absolute-power samples, not normalized fixed-SNR transmit samples.');
+    case "absolute_reference_esn0"
+        assert(~normalized && ~sixgr.rf.isFixedSNRLinkAuthority(cfg), ...
+            'sixgr:truth:MixedSharedNoisePowerReference', ...
+            'Nominal absolute-reference noise preserves absolute physical propagation, not normalized link authority.');
+        carrier=sixgr.phy.grid.makeCarrier(cfg);
+        info=nrOFDMInfo(carrier);
+        % Validate the frozen capsule; this call never evaluates pathloss.
+        sixgr.link.resolveAbsoluteReferenceNoise(cfg,"DL",double(info.SampleRate));
     otherwise
         error('sixgr:truth:UnsupportedSharedNoisePowerReference', ...
             'Unsupported coupled noise operating mode: %s.',mode);

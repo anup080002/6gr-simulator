@@ -1950,6 +1950,10 @@ def test_exact_phy_signal_diagnostic_materializes_only_observed_array_boundaries
         diagnostic_row(SnapshotID="snap_dl", Panel="true_channel_frequency_response", Series="executed_h_f_rx1_tx1", PointIndex=1, XValue=-15000.0, IValue=1.2, QValue=0.1, Magnitude_dB=1.611, Phase_deg=4.764, Direction="DL", UEIndex=1, CellID=42, SFN=0, Slot=3, GridSHA256="pathhash", truth_status="real_lls_evidence", SourceArtifact="runtime_phy_arrays_same_trial", Status="available"),
         diagnostic_row(SnapshotID="snap_dl", Panel="true_channel_frequency_response", Series="executed_h_f_rx1_tx1", PointIndex=2, XValue=15000.0, IValue=1.18, QValue=-0.1, Magnitude_dB=1.468, Phase_deg=-4.844, Direction="DL", UEIndex=1, CellID=42, SFN=0, Slot=3, GridSHA256="pathhash", truth_status="real_lls_evidence", SourceArtifact="runtime_phy_arrays_same_trial", Status="available"),
     ])
+    # The declared fixture must carry the same runtime identity/construction
+    # contract as a producer; omitted authority is not a legacy exemption.
+    header += ["Frame", "RNTI", "TBId", "CurveConstruction"]
+    rows = [r + [777, 4660, "declared_fixture_tb", "runtime_same_trial_phy_signal_snapshot"] for r in rows]
     payload = materializer._encode_csv(header, rows)  # noqa: SLF001
     existing = {
         "reports/csv/phy_signal_diagnostic_source.csv": {"artifact_id": 8801}

@@ -614,6 +614,12 @@ cfg.channel.nTxAnt = double(s.mimo.n_tx_ant);
 cfg.channel.nRxAnt = double(s.mimo.n_rx_ant);
 cfg.channel.snr_dB = localNumericScalarOrNaN(localGetNested(s, "simulation.snr_db", NaN));
 cfg = sixgr.util.structSet(cfg, "run.noiseOperatingMode", char(localResolveNoiseOperatingMode(s)));
+if string(cfg.run.noiseOperatingMode)=="absolute_reference_esn0"
+    % Copy original declared operands; neither received power nor an active
+    % scheduled grant can author this fixed nominal normalization reference.
+    cfg.run.absoluteReferenceNoisePolicy=localRequireNested(s, ...
+        "simulation.absolute_reference_esn0","simulation.absolute_reference_esn0");
+end
 cfg.channel.awgnReferenceREEnergy=localGetNested(s, ...
     "simulation.awgn_reference_re_energy",cfg.channel.awgnReferenceREEnergy);
 sixgr.link.resolveAWGNReferenceEnergy(cfg);
@@ -2466,6 +2472,25 @@ if isfield(s, "mac_phase08") && isstruct(s.mac_phase08)
 end
 
 cfg.phy.ldpc.maxIterations = double(s.coding.max_decoder_iterations);
+% One config policy feeds both directions and later HARQ decoding. Omitted
+% values retain core-catalog defaults; explicit values, including inactive
+% scaling/offset, are validated rather than coerced or silently ignored.
+policyPairs={"ldpc_algorithm","algorithm"; ...
+    "ldpc_scaling_factor","scalingFactor"; ...
+    "ldpc_min_sum_offset","minSumOffset"; ...
+    "ldpc_schedule_type","scheduleType"};
+for policyIndex=1:size(policyPairs,1)
+    source=policyPairs{policyIndex,1}; target=policyPairs{policyIndex,2};
+    if isfield(s.coding,source), cfg.phy.ldpc.(target)=s.coding.(source); end
+end
+if isfield(s.coding,'ldpc_early_termination')
+    early=s.coding.ldpc_early_termination;
+    assert(islogical(early)&&isscalar(early),'sixgr:lls6g:config:InvalidLDPCPolicy', ...
+        'coding.ldpc_early_termination must be a scalar logical.');
+    cfg.phy.ldpc.termination='max';
+    if early, cfg.phy.ldpc.termination='early'; end
+end
+cfg.phy.ldpc=sixgr.config.validateLDPCPolicy(cfg.phy.ldpc);
 cfg = sixgr.util.structSet(cfg, "phy.ldpc.useMexBatchDecode", ...
     ~localShouldDisableExactMexForStrictCoupledTruthWaveform(s, runnerProfile));
 cfoHz = localResolveRuntimeCFOHz(s);
@@ -2489,6 +2514,7 @@ cfg.rf.txSpatialPowerEnabled=logical(localGetNested(s, ...
     "power_and_rf_frontend.tx_spatial_power_enabled",false));
 cfg.rf.modeledRadiatedPower=sixgr.rf.resolveModeledRadiationPolicy(localGetNested(s, ...
     "power_and_rf_frontend.modeled_radiated_power",struct('enabled',false)));
+cfg.rf.txLinearReference=localResolveTXLinearReferencePolicy(s,catalog);
 if ~isempty(bsReference)
     cfg.rf.bsPowerReference=sixgr.rf.resolveBSRFReference(bsReference, ...
         cfg.antenna.bs.numTxRFChains,cfg.antenna.bs.numRxRFChains);
@@ -3140,6 +3166,12 @@ sixgr.phy.pucch.validateUEReportBindings(cfg);
 % Bootstrap rank alone does not exercise the DM-RS groups needed by later
 % received CSI. Validate the installed executable domain without changing it.
 sixgr.phy.grant.validatePDSCHDMRSRankDomain(cfg);
+if string(cfg.run.noiseOperatingMode)=="absolute_reference_esn0"
+    % Installed BWP/frequency/sample authority is final here. Evaluate the
+    % explicit reference pathloss once; runtime uses this immutable capsule.
+    [~,~,cfg.run.absoluteReferenceNoise]=sixgr.link.resolveAbsoluteReferenceNoise( ...
+        cfg,"DL",double(cfg.phy.waveform.sampleRate_Hz),'Freeze',true);
+end
 end
 
 function cfg = localApplyScenarioAuditExtensions(cfg, s)
@@ -3423,7 +3455,15 @@ assert(logical(sixgr.util.structGet(cfg,'mimo.strict', ...
      'the non-strict receiver does not retain the required frozen selection fields.']);
 % The validated scenario owns user/profile selection until its lls6g
 % aliases are populated. The physical gates already have runtime authority.
-[~,runnerAuthority]=sixgr.lls6g.config.resolveEffectiveRunnerProfile(s,cfg);
+runnerProfile=lower(strtrim(string(sixgr.util.structGet(s,'scenario.runner_profile',''))));
+if runnerProfile=="generic_sweep"
+    % Validate every configured child before accepting this nonexecuting
+    % template. This does not promote parent dispatch or claim a parent RF
+    % owner; each child builds/validates its own installed receiver later.
+    sixgr.lls6g.config.validateScenarioConfig(s,'Context','CSI selection-quality sweep template');
+    runnerProfile=lower(strtrim(string(sixgr.util.structGet(s,'scenario.sweep.base_profile',''))));
+end
+[~,runnerAuthority]=sixgr.lls6g.config.resolveEffectiveRunnerProfile(s,cfg,runnerProfile);
 assert(runnerAuthority.SharedWaveformOwner,id, ...
     ['kpi_spec.csi_selection_quality.enabled requires an effective waveform_bundle runner with ' ...
      'users.execution_model=slot_coupled_truth and enabled shared users; system_level_lls is eligible ' ...
@@ -5029,8 +5069,6 @@ end
 function cfg = localApplyAuxiliaryPHYKnobs(cfg, s)
 auxPairs = {
     "coding.ldpc_lifting_size_z_selection", "phy.ldpc.liftingSizeZSelection"
-    "coding.ldpc_schedule_type", "phy.ldpc.scheduleType"
-    "coding.ldpc_min_sum_offset", "phy.ldpc.minSumOffset"
     "coding.polar_reliability_sequence_source", "phy.polar.reliabilitySequenceSource"
     "coding.polar_rate_matching_type", "phy.polar.rateMatchingType"
     "mimo.sv_rank_threshold", "phy.mimo.svRankThreshold"
@@ -5168,6 +5206,31 @@ interferenceMode = lower(strtrim(string(sixgr.util.structGet(cfg, "run.interfere
 hasNonAwgnChannel = ~(channelModel == "" || channelModel == "AWGN") || strlength(fadingProfile) > 0;
 hasRFOrInterference = rfEnabled || interferenceEnabled || ~any(interferenceMode == ["", "none", "disabled", "off"]);
 tf = strictReferenceRequired && (hasNonAwgnChannel || hasRFOrInterference);
+end
+
+function policy=localResolveTXLinearReferencePolicy(s,catalog)
+% Only the YAML-owned reference model can opt in. This translation does not
+% establish RF execution, port attribution or standardized power accuracy.
+rule=catalog.sections.power_and_rf_frontend.parameters.tx_linear_reference;
+path="power_and_rf_frontend.tx_linear_reference";
+if localHasNestedPath(s,path)
+    declaration=s.power_and_rf_frontend.tx_linear_reference;
+else
+    % Older resolved structs may omit this optional block entirely. Use the
+    % same catalog default as authored YAML, not an independent runtime flag.
+    declaration=rule.default;
+end
+sixgr.lls6g.config.validateScenarioConfig(struct('power_and_rf_frontend', ...
+    struct('tx_linear_reference',declaration)), 'AllowPartial',true, ...
+    'Context','buildInternalConfig TX linear-reference declaration');
+required=["enabled","model","classification"];
+missing=required(~isfield(declaration,required));
+assert(isempty(missing),'sixgr:lls6g:config:TXLinearReferencePolicy', ...
+    '%s is missing resolved fields: %s. Resolve YAML inheritance before building.', ...
+    path,strjoin(missing,', '));
+policy=struct('Enabled',declaration.enabled,'Model',string(declaration.model), ...
+    'Classification',string(declaration.classification), ...
+    'RequirementClass',string(rule.requirement_class));
 end
 
 function tf = localHasNestedPath(s, path)

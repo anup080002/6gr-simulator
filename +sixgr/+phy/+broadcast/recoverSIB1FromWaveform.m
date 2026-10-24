@@ -32,6 +32,10 @@ if ~isempty(p.Results.PhysicalMeasurementObservation)
 end
 
 result = localEmptyResult();
+powerReceipt=sixgr.phy.refsig.buildSSBPowerMeasurementReceipt();
+for name=string(fieldnames(powerReceipt)).'
+    result.(name)=powerReceipt.(name);
+end
 frequencyEvidence=sixgr.phy.broadcast.measurePBCHResidualFrequency();
 for name=string(fieldnames(frequencyEvidence)).'
     result.(name)=frequencyEvidence.(name);
@@ -191,9 +195,10 @@ try
     result.PBCHiBarSSB = double(sixgr.util.structGet(pbch, "iBar_SSB", NaN));
     result.PBCHv = double(sixgr.util.structGet(pbch, "v", NaN));
     if isempty(physicalSamples)
+        result.SSBPhysicalMeasurementReferencePlane="received_post_RX_front_end_columns_RF_reference_unqualified";
         result = localMeasurePhysicalSSB(result, rxSSB, sync, pbch, cfg);
     else
-        % Decode remains on post-RF samples. Connector power is measured on
+        % Decode remains on post-RF samples. Received power is measured on
         % the retained pre-RF plane, with its own measured synchronization;
         % AGC/ADC/CFO are not inverted using a guessed scalar gain.
         [physicalSSB,physicalSync]=sixgr.phy.dl.SSB_Rx(physicalSamples,cfg, ...
@@ -203,7 +208,13 @@ try
                 physicalIdentity.ObservedSSBOccasionIndex ~= result.ObservedSSBOccasionIndex
             error('sixgr:phy:broadcast:MeasurementCellMismatch','Connector measurement detected a different cell from the decoded PBCH.');
         end
+        result.SSBPhysicalMeasurementReferencePlane="received_pre_RX_front_end_columns_RF_reference_unqualified";
         result=localMeasurePhysicalSSB(result,physicalSSB,physicalSync,pbch,cfg);
+        receipt=sixgr.phy.refsig.buildSSBPowerMeasurementReceipt( ...
+            p.Results.PhysicalMeasurementObservation,physicalSSB,physicalSync,result,cfg);
+        for name=string(fieldnames(receipt)).'
+            result.(name)=receipt.(name);
+        end
     end
     result.ChannelEstimateAvailable = logical(sixgr.util.structGet(pbch, "ChannelEstimateAvailable", false));
     result.ChannelEstimateSource = string(sixgr.util.structGet(pbch, "ChannelEstimateSource", ""));
@@ -586,6 +597,7 @@ result = struct( ...
     "PBCHiBarSSB", NaN, "PBCHv", NaN, ...
     "ChannelEstimateAvailable", false, "ChannelEstimateSource", "", ...
     "PBCHChannelScoringSnapshot", struct(), ...
+    "SSBPowerMeasurementSnapshot", struct(), ...
     "EqualizationAvailable", false, "EqualizerType", "", ...
     "ReceiverHestSINR_dB", NaN, "ReceiverHestSINRSource", "", ...
     "ReceiverHestSINRValueRole", "", "ReceiverHestSINRValueStatus", "", ...
@@ -645,6 +657,7 @@ amplitudeUnit = string(sixgr.util.structGet( ...
     powerContext, "WaveformAmplitudeUnit", ""));
 result.SSPhysicalMeasurementStatus = ...
     "unavailable_missing_sqrt_mw_power_context";
+result.PowerReferencePlane=result.SSBPhysicalMeasurementReferencePlane;
 normalized=sixgr.rf.isNormalizedFixedSNRPowerReference(cfg);
 normalizedUnit=strcmpi(strtrim(amplitudeUnit),"normalized_complex_baseband");
 if normalizedUnit && normalized
@@ -705,11 +718,16 @@ result.SSMeasurementSource = ...
 result.SSPhysicalMeasurementStatus = "unavailable_sss_measurement";
 
 % SS-SINR uses the same detected SS/PBCH block and the same physical UE
-% antenna-connector reference plane. Disturbance is estimated from SSS
+% recorded sample plane. A pre-RF capture is not by itself proof of a
+% standardized antenna connector/branch reference. Disturbance uses SSS
 % reference REs, not an unconfigured null-RE interference resource.
 try
     ssSinr = sixgr.phy.refsig.measureSSSINRFromSSBGrid( ...
         physicalGrid, ncellid, iBarSSB);
+    ssSinr.ReferencePlane=result.SSBPhysicalMeasurementReferencePlane;
+    % Exact original linear estimator operands for independent post-receiver
+    % scoring. No scorer/reference value is supplied to this estimator.
+    result.SSBPowerMeasurementSnapshot=ssSinr;
     result.SSSINRMeasurementMethod = string(ssSinr.MeasurementMethod);
     result.SSSINRReferencePlane = string(ssSinr.ReferencePlane);
     result.SSSINRNoiseInterferencePowerPerReceiveAntenna_W = ...

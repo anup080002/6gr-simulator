@@ -24,6 +24,7 @@ physical=physical+amplitude*complex(randn(stream,size(physical)),randn(stream,si
 post=post+amplitude*complex(randn(stream,size(post)),randn(stream,size(post)));
 inputHashes=[sixgr.phy.waveform.WaveformHash.runtimeArray(physical) ...
     sixgr.phy.waveform.WaveformHash.runtimeArray(post)];
+previousCSI=[]; rankGuardCount=0;
 for enabled=[false true]
     this=cfg; this.phy.rx.cfoCorrectionEnabled=enabled;
     this.phy.impairments.cfoEstimationMethod='cyclic_prefix';
@@ -85,6 +86,32 @@ for enabled=[false true]
     localCheckSupport(r,carrier,rx,preOFDM,size(preInput,1));
     [csi,~]=sixgr.phy.refsig.computeCSIRSFeedback(carrier,this,rx);
     row=sixgr.truth.buildIndependentCSIRSTrialRow(this,p,rx,csi,struct('UEIndex',1));
+    expectedMapping=sixgr.util.structGet(csi,'CQIEffectiveSINR_dB',NaN);
+    assert(isequaln(row.CQIEffectiveSINR_dB,expectedMapping));
+    poisoned=csi; poisoned.WidebandSINR_dB=999;
+    poisoned=rmfield(poisoned,intersect(fieldnames(poisoned), ...
+        {'CQIEffectiveSINR_dB','CQIEffectiveSINRSource'}));
+    absent=sixgr.truth.buildIndependentCSIRSTrialRow(this,p,rx,poisoned,struct('UEIndex',1));
+    assert(isnan(absent.CQIEffectiveSINR_dB) && strlength(absent.CQIEffectiveSINRSource)==0);
+    assert(isfield(csi,'RankSelectionEvidence') && row.RankSelectionEvidenceAvailable && ...
+        row.RankSelectionEvidenceSHA256==sixgr.util.sha256Hex(char(row.RankSelectionEvidenceJSON)));
+    rankGuardCount=rankGuardCount+localRankEvidenceGuards(p,rx,csi);
+    legacy=rmfield(csi,'RankSelectionEvidence');
+    legacyRow=sixgr.truth.buildIndependentCSIRSTrialRow(this,p,rx,legacy,struct('UEIndex',1));
+    assert(~legacyRow.RankSelectionEvidenceAvailable && legacyRow.RankSelectionEvidenceJSON=="" && ...
+        legacyRow.RankSelectionEvidenceSHA256=="" && legacyRow.RankSelectionEvidenceStatus=="not_recorded");
+    wrong=csi; wrong.RankSelectionEvidence=[];
+    localRejectRank(@()sixgr.truth.buildIndependentCSIRSTrialRow(this,p,rx,wrong,struct('UEIndex',1)));
+    rankGuardCount=rankGuardCount+1;
+    if ~isempty(previousCSI)
+        % The first real reception's COMPLETE result must not qualify this
+        % second original reception, even though its own IDs agree internally.
+        assert(previousCSI.CSIMeasurementDigest~=csi.CSIMeasurementDigest);
+        localRejectRank(@()sixgr.truth.buildIndependentCSIRSTrialRow( ...
+            this,p,rx,previousCSI,struct('UEIndex',1)));
+        rankGuardCount=rankGuardCount+1;
+    end
+    previousCSI=csi;
     assert(row.PhysicalMeasurementDemodulationReceiptJSON==token && ...
         row.PhysicalMeasurementDemodulationReceiptSHA256==rx.PhysicalMeasurementDemodulationReceiptSHA256);
     folder=tempname; mkdir(folder);
@@ -93,6 +120,8 @@ for enabled=[false true]
     loaded=sixgr.util.csvReadTable(path,'TextType','string');
     assert(loaded.PhysicalMeasurementDemodulationReceiptJSON==token && ...
         loaded.PhysicalMeasurementDemodulationReceiptSHA256==rx.PhysicalMeasurementDemodulationReceiptSHA256);
+    assert(loaded.RankSelectionEvidenceJSON==row.RankSelectionEvidenceJSON && ...
+        loaded.RankSelectionEvidenceSHA256==row.RankSelectionEvidenceSHA256);
     bad=rx; bad.PhysicalMeasurementDemodulationReceiptSHA256="changed";
     localReject(@()sixgr.truth.buildIndependentCSIRSTrialRow(this,p,bad,csi,struct()));
     bad=rx; changed=r; changed.Carrier.NCellID=changed.Carrier.NCellID+1;
@@ -107,7 +136,114 @@ end
 assert(isequal(inputHashes,[sixgr.phy.waveform.WaveformHash.runtimeArray(physical) ...
     sixgr.phy.waveform.WaveformHash.runtimeArray(post)]));
 ok=true;
+fprintf('CSI_MAXSE_ORIGINAL_ROW_GUARDS_PASS negatives=%d no_additional_receiver_or_selection=1\n',rankGuardCount);
 disp('CSIRS_PHYSICAL_DEMODULATION_RECEIPT_PASS: native component/operator retention; no shared isolation or RSRP accuracy claim.');
+end
+
+function count=localRankEvidenceGuards(p,rx,csi)
+% Copies of the already returned native operands only; no new waveform,
+% receiver, rank search or invented positive candidate population.
+original=csi.RankSelectionEvidence; count=0; prior=rng;
+sixgr.truth.validateCSIRSRankSelectionEvidence(original,p,rx,csi);
+for field=string(fieldnames(original)).'
+    bad=rmfield(original,field);
+    localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(bad,p,rx,csi)); count=count+1;
+end
+for field=["DecodedBLERAvailable","IndependentSelectionQualityVerified","StandardizedAccuracyQualified"]
+    for value={true,0,NaN,[false false]}
+        bad=original; bad.(field)=value{1};
+        localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(bad,p,rx,csi)); count=count+1;
+    end
+end
+for field=["MeasurementID","MeasurementDigest","ReportConfigID"]
+    bad=original; bad.(field)="other_original";
+    localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(bad,p,rx,csi)); count=count+1;
+end
+bad=original; bad.MeasurementSlot=bad.MeasurementSlot+1;
+localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(bad,p,rx,csi)); count=count+1;
+bad=original; bad.ReportConfigurationEpoch=bad.ReportConfigurationEpoch+1;
+localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(bad,p,rx,csi)); count=count+1;
+% Coherent aliases cannot replace the ORIGINAL immutable state/config.
+other=csi; other.CSIMeasurementID="coherent_other"; other.RankSelectionEvidence.MeasurementID=other.CSIMeasurementID;
+localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(other.RankSelectionEvidence,p,rx,other)); count=count+1;
+other=csi; other.CSIReportConfigID="coherent_other_config"; other.RankSelectionEvidence.ReportConfigID=other.CSIReportConfigID;
+localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(other.RankSelectionEvidence,p,rx,other)); count=count+1;
+other=rx; other.CSIRSChannelEstimate(1)=other.CSIRSChannelEstimate(1)+1;
+localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(original,p,other,csi)); count=count+1;
+other=rx; other.CSIRSNoiseVar=other.CSIRSNoiseVar+1;
+localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(original,p,other,csi)); count=count+1;
+state=rx.CSIMeasurementState;
+for includesNoise=[false true]
+    other=rx;
+    other.CSIMeasurementState=sixgr.phy.mimo.CSIMeasurementState( ...
+        MeasurementID=state.MeasurementID,UEID=state.UEID,ResourceType=state.ResourceType, ...
+        ResourceID=state.ResourceID,ResourceOrdinal=state.ResourceOrdinal,Slot=state.Slot, ...
+        MaxAgeSlots=state.MaxAgeSlots,ChannelEstimate=state.ChannelEstimate, ...
+        NoiseVariance=state.NoiseVariance,InterferenceCovariance=eye(size(state.ChannelEstimate,1))*123, ...
+        InterferenceCovarianceIncludesNoise=includesNoise,Provenance=state.Provenance);
+    localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(original,p,other,csi)); count=count+1;
+end
+other=rmfield(rx,'CSIMeasurementState');
+localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(original,p,other,csi)); count=count+1;
+other=p; other.ReceiverConfig.phy.csi.reportConfiguration.Epoch=other.ReceiverConfig.phy.csi.reportConfiguration.Epoch+1;
+localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(original,other,rx,csi)); count=count+1;
+for field=["ChannelSHA256","DisturbanceSHA256"]
+    bad=original; bad.(field)=repmat("f",1,64); bad.(field)=join(bad.(field),"");
+    localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(bad,p,rx,csi)); count=count+1;
+end
+for field=["NSizeBWP","NStartBWP","CodebookMode"]
+    bad=original; bad.Configuration.(field)=bad.Configuration.(field)+1;
+    localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(bad,p,rx,csi)); count=count+1;
+end
+bad=original; bad.Configuration.CQITable="table4";
+if any(strcmpi(original.Configuration.CQITable,{'table4','table4-r17'})), bad.Configuration.CQITable="table1"; end
+localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(bad,p,rx,csi)); count=count+1;
+bad=original; bad.Candidates={};
+localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(bad,p,rx,csi)); count=count+1;
+bad=original; bad.RankDomain=[bad.RankDomain bad.RankDomain(end)];
+localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(bad,p,rx,csi)); count=count+1;
+bad=original; bad.RankSearchCallCount=bad.RankSearchCallCount+1;
+localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(bad,p,rx,csi)); count=count+1;
+bad=original; bad.AdditionalRankSearches=1;
+localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(bad,p,rx,csi)); count=count+1;
+bad=original; bad.ObjectiveByRank(bad.SelectedRank)=bad.SelectedObjective+1;
+localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(bad,p,rx,csi)); count=count+1;
+bad=original; bad.SelectedObjective=bad.SelectedObjective+1;
+localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(bad,p,rx,csi)); count=count+1;
+for field=string(fieldnames(original.Candidates{1})).'
+    bad=original; bad.Candidates{1}=rmfield(bad.Candidates{1},field);
+    localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(bad,p,rx,csi)); count=count+1;
+end
+for field=["Rank","CodewordLayerCounts","Objective"]
+    bad=original; bad.Candidates{1}.(field)=bad.Candidates{1}.(field)+1;
+    bad.Candidates{1}.(field)(isnan(bad.Candidates{1}.(field)))=0;
+    localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(bad,p,rx,csi)); count=count+1;
+end
+bad=original; bad.Candidates{1}.WidebandCQI=16;
+localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(bad,p,rx,csi)); count=count+1;
+bad=original; bad.Candidates{1}.ModelEstimatedTransportBLER=-1;
+localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(bad,p,rx,csi)); count=count+1;
+bad=original; bad.Candidates{1}.CQITableSpectralEfficiency=42;
+localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(bad,p,rx,csi)); count=count+1;
+bad=original; bad.Candidates{1}.RankSearchPMI.i1=Inf;
+localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(bad,p,rx,csi)); count=count+1;
+bad=original; bad.Candidates{1}.RankSearchPrecoderSHA256="";
+localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(bad,p,rx,csi)); count=count+1;
+bad=original; bad.Candidates{1}.Status="PASS";
+localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(bad,p,rx,csi)); count=count+1;
+bad=original; bad.CopiedChannel=rx.CSIRSChannelEstimate;
+localRejectRank(@()sixgr.truth.validateCSIRSRankSelectionEvidence(bad,p,rx,csi)); count=count+1;
+assert(isequal(prior,rng) && isequaln(original,csi.RankSelectionEvidence), ...
+    'Pure evidence validation cannot mutate actual operands or RNG.');
+end
+
+function localRejectRank(fn)
+try, fn(); catch cause
+    assert(strcmp(cause.identifier,'sixgr:truth:CSIRankSelectionEvidenceMismatch'), ...
+        'Unexpected rank-evidence rejection: %s: %s',cause.identifier,cause.message);
+    return;
+end
+error('test:MissingCSIRankEvidenceRejection','Expected original decision binding rejection.');
 end
 
 function aligned=localApplyRecorded(input,timing,tracking,fs)

@@ -18,8 +18,14 @@ localWarnSchemaVersionMismatch(cfg, logical(opt.AllowPartial), ctx);
 localRejectUnknownTopLevel(cfg, schemaDef.AllowedTopLevel, ctx);
 switch kind
     case "scenario"
+        localValidateTXLinearReferencePolicy(cfg, catalog, logical(opt.AllowPartial), ctx);
+        localValidateAbsoluteReferenceNoisePolicy(cfg, catalog, logical(opt.AllowPartial), ctx);
         localValidateScenarioSections(cfg, schemaDef, catalog, logical(opt.AllowPartial), ctx);
+        % Validate explicit policy values even in partial/canonical documents.
+        % Optional [] is not an instruction to silently restore a decoder default.
+        sixgr.lls6g.config.mergeLDPCPolicyAuthority(struct(),cfg);
         if ~logical(opt.AllowPartial)
+            localValidateLDPCSchedule(cfg);
             if isfield(cfg,'kpi_spec') && isfield(cfg.kpi_spec,'csi_selection_quality')
                 selectionPolicy=sixgr.lls6g.config.resolveCSISelectionQualityPolicy(cfg.kpi_spec.csi_selection_quality);
                 if selectionPolicy.Enabled, localValidateCSISelectionQualityDependencies(cfg); end
@@ -59,6 +65,121 @@ switch kind
 end
 end
 
+function localValidateTXLinearReferencePolicy(cfg, catalog, allowPartial, ctx)
+% This is an optional mathematical reference, not a radiation/receiver gate.
+% Check authored values even when disabled or in a partial inherited file;
+% never treat explicit [] as a request to restore the disabled default.
+if ~isfield(cfg,'power_and_rf_frontend') || ...
+        ~(isstruct(cfg.power_and_rf_frontend)&&isscalar(cfg.power_and_rf_frontend)) || ...
+        ~isfield(cfg.power_and_rf_frontend,'tx_linear_reference')
+    return;
+end
+path="power_and_rf_frontend.tx_linear_reference";
+id='sixgr:lls6g:config:TXLinearReferencePolicy';
+p=cfg.power_and_rf_frontend.tx_linear_reference;
+assert(isstruct(p)&&isscalar(p),id,'%s in %s must be a scalar policy struct.',path,localCtx(ctx));
+rules=catalog.nested_sections.tx_linear_reference_policy.parameters;
+allowed=string(fieldnames(rules));
+unknown=setdiff(string(fieldnames(p)),allowed);
+assert(isempty(unknown),id,'%s in %s has unknown fields: %s.', ...
+    path,localCtx(ctx),strjoin(unknown,', '));
+if ~allowPartial
+    missing=setdiff(localRequiredNestedFields(rules),string(fieldnames(p)));
+    assert(isempty(missing),id,'%s in %s is missing resolved fields: %s.', ...
+        path,localCtx(ctx),strjoin(missing,', '));
+end
+if isfield(p,'enabled')
+    assert(islogical(p.enabled)&&isscalar(p.enabled),id, ...
+        '%s.enabled in %s must be a scalar boolean.',path,localCtx(ctx));
+end
+for name=["model","classification"]
+    if ~isfield(p,name), continue; end
+    value=p.(name);
+    values=string(rules.(name).allowed_values(:));
+    assert(((ischar(value)&&isrow(value))||(isstring(value)&&isscalar(value))) && ...
+        ~ismissing(string(value)) && any(string(value)==values),id, ...
+        '%s.%s in %s must exactly equal one of: %s.', ...
+        path,name,localCtx(ctx),strjoin(values,', '));
+end
+end
+
+function localValidateAbsoluteReferenceNoisePolicy(cfg,catalog,allowPartial,ctx)
+% Validate original declarations before generic optional-empty handling.
+% Partial inherited documents may supply only some operands; resolved mode
+% activation requires the complete explicit reference, never invented data.
+id='sixgr:lls6g:config:AbsoluteReferenceNoisePolicy';
+path="simulation.absolute_reference_esn0";
+mode=string(sixgr.util.structGet(cfg,'simulation.noise_operating_mode',''));
+present=isfield(cfg,'simulation')&&isstruct(cfg.simulation)&& ...
+    isscalar(cfg.simulation)&&isfield(cfg.simulation,'absolute_reference_esn0');
+if ~present
+    assert(allowPartial||~isequal(mode,"absolute_reference_esn0"),id, ...
+        '%s in %s is required for absolute_reference_esn0.',path,localCtx(ctx));
+    return;
+end
+p=cfg.simulation.absolute_reference_esn0;
+rules=catalog.nested_sections.absolute_reference_noise_policy.parameters;
+names=string(fieldnames(rules));
+assert(isstruct(p)&&isscalar(p)&&isempty(setdiff(string(fieldnames(p)),names)),id, ...
+    '%s in %s must be a scalar policy with only declared reference fields.',path,localCtx(ctx));
+if ~allowPartial
+    assert(isempty(setdiff(names,string(fieldnames(p)))),id, ...
+        '%s in %s requires all resolved reference operands.',path,localCtx(ctx));
+end
+for name=["reference_policy","reference_pathloss_scenario","classification"]
+    if ~isfield(p,name), continue; end
+    v=p.(name);
+    assert(((ischar(v)&&isrow(v))||(isstring(v)&&isscalar(v)))&& ...
+        ~ismissing(string(v))&&any(string(v)==string(rules.(name).allowed_values(:))),id, ...
+        '%s.%s in %s must be an exact supported scalar label.',path,name,localCtx(ctx));
+end
+for name=["reference_bs_position_m","reference_ue_position_m"]
+    if ~isfield(p,name), continue; end
+    v=p.(name);
+    assert(isa(v,'double')&&isreal(v)&&isvector(v)&&numel(v)==3&& ...
+        all(isfinite(v))&&v(3)>0,id, ...
+        '%s.%s in %s requires three finite metre coordinates with positive height.',path,name,localCtx(ctx));
+end
+if all(isfield(p,{'reference_bs_position_m','reference_ue_position_m'}))
+    distance=norm(reshape(p.reference_bs_position_m(1:2),1,2)- ...
+        reshape(p.reference_ue_position_m(1:2),1,2));
+    assert(isfinite(distance)&&distance>=10&&distance<=5000,id, ...
+        '%s in %s supports UMa reference d2D=10..5000 m only.',path,localCtx(ctx));
+end
+if isfield(p,'reference_bs_position_m')
+    assert(p.reference_bs_position_m(3)==25,id, ...
+        '%s in %s supports UMa reference hBS=25 m only.',path,localCtx(ctx));
+end
+if isfield(p,'reference_ue_position_m')
+    assert(p.reference_ue_position_m(3)>=1.5&&p.reference_ue_position_m(3)<=22.5,id, ...
+        '%s in %s supports UMa reference hUT=1.5..22.5 m only.',path,localCtx(ctx));
+end
+if isfield(p,'reference_los')
+    assert(islogical(p.reference_los)&&isscalar(p.reference_los),id, ...
+        '%s.reference_los in %s must be a scalar boolean.',path,localCtx(ctx));
+end
+for name=["nominal_dl_tx_power_dbm","nominal_ul_tx_power_dbm"]
+    if ~isfield(p,name), continue; end
+    v=p.(name);
+    assert(isa(v,'double')&&isreal(v)&&isscalar(v)&&isfinite(v),id, ...
+        '%s.%s in %s must be a finite real dBm scalar.',path,name,localCtx(ctx));
+end
+end
+
+function localValidateLDPCSchedule(cfg)
+% Values and same-document aliases were checked above. Only a complete
+% resolved algorithm/schedule pair can assert native schedule compatibility.
+policy=struct();
+for name=["algorithm","scheduleType"]
+    source="ldpc_algorithm";
+    if name=="scheduleType", source="ldpc_schedule_type"; end
+    if isfield(cfg,'coding')&&isfield(cfg.coding,source)
+        policy.(name)=cfg.coding.(source);
+    end
+end
+sixgr.config.validateLDPCPolicy(policy,"coding");
+end
+
 function localValidateCSISelectionQualityDependencies(cfg)
 % Reject known unsupported authored combinations before other planning work.
 % buildInternalConfig also validates the final installed request and every
@@ -74,7 +195,36 @@ assert(strcmpi(string(sixgr.util.structGet(cfg,'mimo.phase07_strict.codebook_typ
     'typei-singlepanel') && strcmpi(string(sixgr.util.structGet(cfg, ...
     'mimo.phase07_strict.csi_report.frequency_granularity','')),'wideband'),id, ...
     'kpi_spec.csi_selection_quality supports only wideband Type-I single-panel reports; Type-II/subband scoring is not implemented.');
-[~,runnerAuthority]=sixgr.lls6g.config.resolveEffectiveRunnerProfile(cfg);
+runnerProfile=lower(strtrim(string(sixgr.util.structGet(cfg,'scenario.runner_profile',''))));
+if runnerProfile=="generic_sweep"
+    % The parent is an orchestration container, never a physical owner.
+    % Validate its declared waveform template and each actual normalized
+    % child, using the same override authority/order as generic dispatch.
+    base=lower(strtrim(string(sixgr.util.structGet(cfg,'scenario.sweep.base_profile',''))));
+    assert(isscalar(base)&&base=="waveform_bundle",id, ...
+        'kpi_spec.csi_selection_quality requires a waveform_bundle base for a generic_sweep parent.');
+    overrides=sixgr.util.structGet(cfg,'scenario.sweep.overrides',struct([]));
+    assert(isstruct(overrides)&&~isempty(overrides),id, ...
+        'kpi_spec.csi_selection_quality requires explicit generic_sweep child configurations.');
+    sourceFiles=sixgr.util.structGet(cfg,'config_inheritance.provenance.source_files',strings(0,1));
+    configPath=sixgr.util.structGet(cfg,'config_inheritance.provenance.config_path',"");
+    for childIndex=1:numel(overrides)
+        override=sixgr.util.structGet(overrides(childIndex),'config',struct());
+        assert(isstruct(override)&&isscalar(override),id, ...
+            'kpi_spec.csi_selection_quality sweep child %d requires a scalar configuration.',childIndex);
+        child=sixgr.util.mergeStruct(cfg,override);
+        child=sixgr.lls6g.config.normalizeScenarioAliases(child, ...
+            'SourceFiles',sourceFiles,'ConfigPath',configPath,'Authority',override);
+        child.scenario.runner_profile=char(base);
+        % An explicitly disabled child audit remains disabled. Every enabled
+        % child still undergoes the original CSI and shared-owner guards.
+        sixgr.lls6g.config.validateScenarioConfig(child,'Context', ...
+            "CSI selection-quality sweep child "+childIndex);
+    end
+    [~,runnerAuthority]=sixgr.lls6g.config.resolveEffectiveRunnerProfile(cfg,[],base);
+else
+    [~,runnerAuthority]=sixgr.lls6g.config.resolveEffectiveRunnerProfile(cfg);
+end
 assert(runnerAuthority.SharedWaveformOwner,id, ...
     ['kpi_spec.csi_selection_quality.enabled requires an effective waveform_bundle runner with ' ...
      'users.execution_model=slot_coupled_truth and enabled shared users; system_level_lls is eligible ' ...
@@ -367,6 +517,18 @@ powerMode = lower(strtrim(string(localOptionalStructValue( ...
 noiseMode = lower(strtrim(string(localOptionalStructValue( ...
     cfg, "simulation.noise_operating_mode", ""))));
 fixedSNRAuthority = runMode == "FIXED_SNR_SWEEP" && configuredSNRAuthority;
+
+if noiseMode == "absolute_reference_esn0"
+    assert(runMode=="GEOMETRY_NETWORK"&&~configuredSNRAuthority&& ...
+        powerMode=="absolute_calibrated_sqrt_mw", ...
+        'sixgr:lls6g:config:AbsoluteReferenceNoiseAuthority', ...
+        ['absolute_reference_esn0 in %s requires GEOMETRY_NETWORK, absolute sqrt(mW) ' ...
+         'and configured_snr_is_link_authority=false; it is not a normalized fixed-SNR run.'],localCtx(ctx));
+    target=localOptionalStructValue(cfg,"simulation.snr_db",[]);
+    assert(isa(target,'double')&&isreal(target)&&isscalar(target)&&isfinite(target), ...
+        'sixgr:lls6g:config:AbsoluteReferenceNoisePolicy', ...
+        'simulation.snr_db in %s is the finite nominal reference Es/N0, not measured SINR.',localCtx(ctx));
+end
 
 if fixedSNRAuthority
     if noiseMode ~= "standalone_awgn_snr_argument"

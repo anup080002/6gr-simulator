@@ -55,7 +55,7 @@ classdef PhaseNoiseProcess < handle
                 error("RF:NonFiniteSamples", ...
                     "Phase-noise input must be finite and match the chain count.");
             end
-            n=size(x,1); chains=size(x,2);
+            n=size(x,1); chains=size(x,2); first=obj.SampleIndex;
             rho=double(obj.Profile.LOCorrelation);
             phase=zeros(n,chains);
             nextState=zeros(size(obj.ComponentState));
@@ -82,7 +82,8 @@ classdef PhaseNoiseProcess < handle
             obj.ComponentState=nextState;
             obj.Phase_rad=phase(end,:);
             obj.SampleIndex=obj.SampleIndex+n;
-            y=x.*cast(exp(1j.*phase),"like",x);
+            multiplier=cast(exp(1j.*phase),"like",x);
+            y=x.*multiplier;
             measuredCorrelation=NaN;
             if n>1 && chains==1
                 measuredCorrelation=1;
@@ -90,7 +91,14 @@ classdef PhaseNoiseProcess < handle
                 C=corrcoef(phase);
                 measuredCorrelation=mean(C(triu(true(chains),1)),"omitnan");
             end
-            trace=struct("Phase_rad",phase, ...
+            % Retain the exact cast operand used above, including when the
+            % input is zero. Arrays are returned transiently, never stored
+            % as additional oscillator state or regenerated for the receipt.
+            trace=struct("Available",true,"Phase_rad",phase, ...
+                "Multiplier",multiplier, ...
+                "Backend","sixgr_rf_runtime_phase_noise_process", ...
+                "StartSample0",first,"EndSampleExclusive",obj.SampleIndex, ...
+                "Scope","original_executed_phase_noise_multiplier", ...
                 "EndPhase_rad",obj.Phase_rad, ...
                 "SampleIndex",obj.SampleIndex, ...
                 "ExpectedCorrelation",rho, ...

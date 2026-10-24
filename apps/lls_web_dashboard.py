@@ -3000,12 +3000,12 @@ def classify_browser_field_support(path: str) -> tuple[str, str]:
     if normalized in {"simulation.noise_operating_mode", "simulation.operating_point_mode"}:
         return (
             "active",
-            "Actively used in the browser run. The truthful LLS browser scenario uses receiver-noise-figure thermal noise; configured snr_db is retained only as a resolved scenario operating-point label, not as measured SINR.",
+            "Selects the configured noise authority: receiver-noise-figure thermal noise, or absolute_reference_esn0 controlled nominal-reference Es/N0 with absolute power units. The latter freezes reference noise independently of received samples and requires its explicit reference configuration. Selection alone is not execution evidence; neither configured snr_db nor reference Es/N0 is measured SINR.",
         )
     if normalized in {"simulation.snr_db", "simulation.snr_sweep_offsets_db"}:
         return (
             "secondary",
-            "Retained in the payload for legacy study compatibility and chart grouping. In strict browser LLS receiver-noise mode, SNR sweep offsets are ignored and receiver evidence drives SINR/CQI.",
+            "In thermal receiver-noise mode this is operating-point metadata, not measured SINR. In absolute_reference_esn0 mode it sets the declared nominal-reference Es/N0 used for controlled noise. Receiver evidence still determines SINR/CQI; the configured target is not the measured result.",
         )
     if normalized == "scenario.bundle_anchor_cases":
         return (
@@ -7267,7 +7267,7 @@ FIELD_OPTION_HINTS: dict[str, list[str]] = {
     "mobility.trajectory_model": ["randomWaypoint", "straightLine", "zigzag", "trace", "linear"],
     "channels.doppler_source_mode": ["configured", "derive_from_ue_speed"],
     "channel_model.doppler_source_mode": ["configured", "derive_from_ue_speed"],
-    "simulation.noise_operating_mode": ["receiver_noise_figure_thermal_noise"],
+    "simulation.noise_operating_mode": ["receiver_noise_figure_thermal_noise", "absolute_reference_esn0"],
     "interference.inter_cell_execution_mode": ["full_per_link_channel_waveform_sum", "none"],
     "simulation.link_direction": ["DL", "UL", "BIDIR"],
     "traffic.flowdirection": ["DL", "UL", "BIDIR"],
@@ -13226,6 +13226,31 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         pathloss_enabled
         and noise_operating_mode == "receiver_noise_figure_thermal_noise"
     )
+    # Applicability, not calibration: new absolute-reference noise preserves
+    # physical power units but does not use thermal noise or measured SINR.
+    # Require the explicit endpoint budgets consumed by PowerContext, not
+    # only a mode token or the nominal noise-normalization budgets.
+    def configured_power_budget(*paths: str) -> bool:
+        for path in paths:
+            value = _config_get_nested(config, path, None)
+            if value is not None:
+                return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+        return False
+
+    dl_budget = configured_power_budget("power_and_rf_frontend.bs_tx_power_dbm",
+        "lls6g.resolvedConfig.power_and_rf_frontend.bs_tx_power_dbm", "powerAndRF.bsTxPower_dBm",
+        "scenario.bs.txPower_dBm")
+    ul_budget = configured_power_budget("power_and_rf_frontend.ue_tx_power_dbm",
+        "lls6g.resolvedConfig.power_and_rf_frontend.ue_tx_power_dbm", "powerAndRF.ueTxPower_dBm",
+        "phy.pusch.powerControl.pcmax_dBm", "power_control.ue_max_power_dBm")
+    absolute_policy = config_text("simulation.absolute_reference_esn0.reference_policy",
+        "lls6g.resolvedConfig.simulation.absolute_reference_esn0.reference_policy", default="")
+    declared_amplitude_unit = config_text("PowerContext.WaveformAmplitudeUnit",
+        "rf.PowerContext.WaveformAmplitudeUnit", "WaveformAmplitudeUnit", default="")
+    absolute_power_reference_configured = absolute_rx_power_calibrated or bool(
+        noise_operating_mode == "absolute_reference_esn0" and dl_budget and ul_budget
+        and absolute_policy == "nominal_full_bwp_unity_array"
+        and declared_amplitude_unit in {"", "sqrt_mW"})
     shadowing_enabled = config_bool(
         "canonical_control.channel.shadow_fading_enabled",
         "channels.shadow_fading_enabled",
@@ -13453,6 +13478,7 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "pathloss_enabled": pathloss_enabled,
         "noise_operating_mode": noise_operating_mode,
         "absolute_rx_power_calibrated": absolute_rx_power_calibrated,
+        "absolute_power_reference_configured": absolute_power_reference_configured,
         "shadowing_enabled": shadowing_enabled,
         "o2i_enabled": o2i_enabled,
         "interference_enabled": interference_enabled,
@@ -14211,7 +14237,6 @@ def infer_runtime_truth_modes(config: dict[str, Any], operating_mode: list[dict[
                 "waveform_phy_active": True,
                 "proxy_phy_active": False,
                 "fallback_used": False,
-                "noise_operating_mode": "configured_EsN0_per_occupied_QAM_RE",
                 "doppler_source_mode": (
                     "satcom_circular_orbit_geometry_and_configured_compensation"
                     if ntn_enabled
@@ -14235,6 +14260,28 @@ def infer_runtime_truth_modes(config: dict[str, Any], operating_mode: list[dict[
                 "trs_gating_active": False,
             }
         )
+    # Configuration labels are not executed-mode receipts. Prefer a resolved
+    # configuration if retained, otherwise preserve the submitted authority.
+    resolved_noise_config = _config_get_nested(config, "lls6g.resolvedConfig", None)
+    noise_config = resolved_noise_config if isinstance(resolved_noise_config, dict) and resolved_noise_config else browser_cfg
+    noise_config_source = "resolved_configuration" if noise_config is resolved_noise_config else "submitted_configuration"
+    noise_known = {"receiver_noise_figure_thermal_noise", "absolute_reference_esn0",
+                   "standalone_awgn_snr_argument", "configured_EsN0_per_occupied_QAM_RE"}
+    default_noise_mode = ("configured_EsN0_per_occupied_QAM_RE"
+        if str(browser_cfg.get("schemaVersion") or "").startswith("sixgr.lls.config/")
+        else truth_modes.get("noise_operating_mode", ""))
+    selected_noise_mode, selected_noise_source = default_noise_mode, "configuration_default_not_execution"
+    for path in ("run.noiseOperatingMode", "run.noise_operating_mode", "simulation.noise_operating_mode",
+                 "simulation.operating_point_mode", "validation.fixed_link_campaign.noise_operating_mode"):
+        candidate = _config_get_nested(noise_config, path, None)
+        if candidate is not None:
+            selected_noise_mode = candidate.strip() if isinstance(candidate, str) else ""
+            selected_noise_source = f"{noise_config_source}:{path}"
+            break
+    truth_modes["noise_operating_mode"] = selected_noise_mode
+    truth_modes["noise_operating_mode_source"] = selected_noise_source
+    truth_modes["noise_operating_mode_status"] = ("configured_only" if selected_noise_mode in noise_known else
+        "unrecognized_configured_mode" if selected_noise_mode else "unavailable")
     if isinstance(operating_mode, list):
         for row in operating_mode:
             if not isinstance(row, dict):
@@ -14245,6 +14292,9 @@ def infer_runtime_truth_modes(config: dict[str, Any], operating_mode: list[dict[
                 truth_modes["browser_execution_mode_label"] = BROWSER_EXECUTION_MODE_LABELS.get(mode_token, mode_token)
             if row.get("NoiseOperatingMode"):
                 truth_modes["noise_operating_mode"] = str(row.get("NoiseOperatingMode") or "")
+                truth_modes["noise_operating_mode_source"] = "retained_runtime_operating_mode_row"
+                truth_modes["noise_operating_mode_status"] = ("recorded_runtime_mode" if
+                    truth_modes["noise_operating_mode"] in noise_known else "unrecognized_recorded_mode")
             if row.get("DopplerSourceMode"):
                 truth_modes["doppler_source_mode"] = str(row.get("DopplerSourceMode") or "")
             if row.get("InterferenceMode"):
@@ -14439,6 +14489,19 @@ def build_raw_trial_lifecycle_context(artifacts: list[dict[str, Any]]) -> dict[s
         summary["byte_size"] = byte_size
         context[direction] = summary
     return context
+
+
+def _noise_operating_mode_description(noise_mode: str) -> str:
+    if noise_mode == "receiver_noise_figure_thermal_noise":
+        return "This mode derives receive noise from thermal noise plus receiver noise figure."
+    if noise_mode == "absolute_reference_esn0":
+        return ("The configured nominal reference fixes noise PSD per direction independently of current received "
+                "samples, fading, beams, rank and scheduled power. Absolute sqrt(mW) samples are retained; "
+                "the configured reference Es/N0 is not measured SINR. Thermal noise and receiver noise figure "
+                "are not added by this controlled-noise mode; this is not hardware calibration.")
+    if noise_mode in {"standalone_awgn_snr_argument", "configured_EsN0_per_occupied_QAM_RE"}:
+        return "Configured occupied-RE reference Es/N0 defines AWGN; it is not receiver-measured SINR."
+    return "No noise-normalization or absolute-power claim is inferred for this unrecognized mode."
 
 
 def extract_runtime_context(run_row: dict[str, Any], artifacts: list[dict[str, Any]]) -> dict[str, Any]:
@@ -14795,11 +14858,10 @@ def extract_runtime_context(run_row: dict[str, Any], artifacts: list[dict[str, A
         noise_mode = str(truth_modes["noise_operating_mode"])
         notes.append(
             f"Noise operating mode: {noise_mode}. "
-            + (
-                "The active waveform path derives receive noise from thermal noise plus receiver noise figure."
-                if noise_mode == "receiver_noise_figure_thermal_noise"
-                else "The active waveform path still derives AWGN from configured snr_db after large-scale waveform gain/loss is applied."
-            )
+            + _noise_operating_mode_description(noise_mode)
+            + f" Mode source: {truth_modes.get('noise_operating_mode_source', 'unavailable')}; "
+            + f"status: {truth_modes.get('noise_operating_mode_status', 'unavailable')}. "
+            + "A configuration-only label is not evidence of executed noise or power calibration."
         )
     if truth_modes.get("control_integration_mode"):
         control_mode = str(truth_modes["control_integration_mode"])
@@ -16553,9 +16615,12 @@ def build_realtime_ue_status(
         )
         pbch_dmrs_sinr_db = coerce_numeric(first_present_value(ssb, ["MeasuredTrialSINR_dB", "ReceiverHestSINR_dB"], None))
         phr_db = coerce_numeric(first_present_value(ul, ["PUSCHPowerHeadroom_dB", "PowerHeadroom_dB", "PHR_dB"], None))
-        serving_rsrp_dbm = coerce_numeric(first_present_value(serving, ["ServingRSRP_dBm", "RSRP_dBm"], None))
-        if serving_rsrp_dbm is None:
-            serving_rsrp_dbm = coerce_numeric(first_present_value(dl, ["ServingRSRP_dBm"], None))
+        serving_power = contract_materializer.rsrp_value_provenance(serving, "ServingRSRP_dBm")
+        if serving_power["value_dbm"] is None:
+            serving_power = contract_materializer.rsrp_value_provenance(serving, "RSRP_dBm")
+        if serving_power["value_dbm"] is None:
+            serving_power = contract_materializer.rsrp_value_provenance(dl, "ServingRSRP_dBm")
+        serving_rsrp_dbm = serving_power["value_dbm"] if serving_power["received"] else None
         paths = pathloss_by_ue.get(ue_id, [])
         pathloss_status = "available" if any(path.get("pathloss_db") is not None for path in paths) else (
             "disabled_fixed_snr" if paths and all(path.get("status") == "disabled_fixed_snr" for path in paths)
@@ -16591,6 +16656,11 @@ def build_realtime_ue_status(
                 "dl_throughput_mbps": coerce_numeric(perf.get("dl_throughput_mbps")),
                 "ul_throughput_mbps": coerce_numeric(perf.get("ul_throughput_mbps")),
                 "serving_rsrp_dbm": serving_rsrp_dbm,
+                "serving_rsrp_model_dbm": serving_power["value_dbm"] if serving_power["modeled"] else None,
+                "serving_rsrp_published_dbm": serving_power["value_dbm"],
+                "serving_rsrp_source": serving_power["source"],
+                "serving_rsrp_reference_plane": serving_power["reference_plane"],
+                "serving_rsrp_evidence_class": serving_power["classification"],
                 "ss_rsrp_dbm": ss_rsrp_dbm,
                 "ss_rsrp_normalized_db": ss_normalized_rsrp_db,
                 "ss_power_reference_plane": str(ssb.get("PowerReferencePlane") or ""),
@@ -16648,7 +16718,9 @@ def build_realtime_ue_status(
                     if csi.get(prefix + "SynchronizationSource")
                 ],
                 "ue_phr_db": phr_db,
-                "serving_rsrp_missing_reason": "No absolute power plane" if normalized_plane else "Serving-RS power not published",
+                "serving_rsrp_missing_reason": ("Published value lacks received-source/plane authority"
+                    if serving_power["value_dbm"] is not None else
+                    "No absolute power plane" if normalized_plane else "Serving-RS power not published"),
                 "phr_missing_reason": "No PUSCH measurement" if not ul else "PHR not published",
                 "ul_missing_reason": ("" if all(coerce_numeric(perf.get(key)) is not None for key in
                     ("ul_throughput_mbps", "ul_bler", "ul_mean_measured_sinr_dB")) else
@@ -17827,7 +17899,9 @@ def build_metric_explorer_payload(artifacts: list[dict[str, Any]], summary: dict
         receiver_hest_sinr = coerce_numeric(row.get("ReceiverHestWidebandSINR_dB", row.get("ReceiverHestSINR_dB")))
         system_sinr = coerce_numeric(row.get("SystemLevelWidebandSINR_dB", row.get("SystemLevelSINR_dB")))
         cqi = coerce_numeric(row.get("WidebandCQI"))
-        rsrp = coerce_numeric(row.get("ServingRSRP_dBm", row.get("RSRP_dBm")))
+        rsrp_evidence = contract_materializer.rsrp_value_provenance(row, "ServingRSRP_dBm")
+        if rsrp_evidence["value_dbm"] is None:
+            rsrp_evidence = contract_materializer.rsrp_value_provenance(row, "RSRP_dBm")
         if configured_snr is not None:
             record["configured_snr_dB"] = float(configured_snr)
         if measured_sinr is not None:
@@ -17839,8 +17913,15 @@ def build_metric_explorer_payload(artifacts: list[dict[str, Any]], summary: dict
             record["system_level_sinr_dB"] = float(system_sinr)
         if cqi is not None:
             record["cqi"] = float(cqi)
-        if rsrp is not None:
-            record["rsrp_dBm"] = float(rsrp)
+        if rsrp_evidence["value_dbm"] is not None:
+            record["serving_rsrp_source"] = rsrp_evidence["source"]
+            record["serving_rsrp_reference_plane"] = rsrp_evidence["reference_plane"]
+            record["serving_rsrp_evidence_class"] = rsrp_evidence["classification"]
+            record["serving_rsrp_published_dbm"] = rsrp_evidence["value_dbm"]
+            if rsrp_evidence["received"]:
+                record["rsrp_dBm"] = rsrp_evidence["value_dbm"]
+            elif rsrp_evidence["modeled"]:
+                record["modeled_serving_rsrp_dbm"] = rsrp_evidence["value_dbm"]
 
     for row in dl_rows:
         record = ensure_record(row.get("Slot"), row.get("UEID"))
@@ -18087,10 +18168,17 @@ def build_metric_explorer_payload(artifacts: list[dict[str, Any]], summary: dict
         },
         {
             "id": "rsrp_dBm",
-            "label": "Serving RSRP (dBm)",
+            "label": "Received-source serving RSRP (dBm)",
             "unit": "dBm",
             "source_table": "reports/csv/live_rsrp_serving_trace.csv",
             "fidelity_level": "abstraction_level",
+        },
+        {
+            "id": "modeled_serving_rsrp_dbm",
+            "label": "Modeled serving reference-RE power (dBm; not received RSRP)",
+            "unit": "dBm",
+            "source_table": "reports/csv/live_rsrp_serving_trace.csv",
+            "fidelity_level": "modeled_link_budget",
         },
         {
             "id": "dl_goodput_mbps",
@@ -21517,7 +21605,7 @@ window.addEventListener('DOMContentLoaded', function () {
       const ssDelta = ue.ss_sinr_delta_db === null || ue.ss_sinr_delta_db === undefined ? '' : ` · SS measurement delta ${realtimeValue(ue.ss_sinr_delta_db,' dB')}`;
       const ssChannelGain = ue.ss_channel_gain_db === null || ue.ss_channel_gain_db === undefined ? '' : ` · measured RS channel gain ${realtimeValue(ue.ss_channel_gain_db,' dB')}`;
       ssRelative += `${ssOperatingPoint}${ssDelta}${ssChannelGain}. The SS delta includes the instantaneous fading, precoder, and receive-branch realization; it is not labelled as array gain.`;
-      return `<article class="ue-status-card ${esc(ue.health || '')}"><div class="toolbar" style="justify-content:space-between;margin-bottom:7px"><h4>UE ${esc(ue.ue_id)}</h4><span class="badge ${badgeClass}">${esc(String(ue.health || 'unavailable').replaceAll('_',' '))}</span></div><div class="ue-status-metrics"><span>Cell <strong>${esc(realtimeValue(ue.serving_cell, '', 0))}</strong></span><span>DL eligible <strong>${esc(admissionFlag(ue.dl_scheduling_eligible))}</strong></span><span>UL eligible <strong>${esc(admissionFlag(ue.ul_scheduling_eligible))}</strong></span><span>Serving RSRP <strong>${esc(realtimeMeasuredValue(ue.serving_rsrp_dbm, ' dBm', 2, ue.serving_rsrp_missing_reason))}</strong></span><span>UE PHR <strong>${esc(realtimeMeasuredValue(ue.ue_phr_db, ' dB', 2, ue.phr_missing_reason))}</strong></span><span>SS-RSRP <strong>${esc(realtimePowerValue(ue.ss_rsrp_dbm, ue.ss_rsrp_normalized_db))}</strong></span><span>SS-SINR <strong>${esc(realtimeValue(ue.ss_sinr_db, ' dB'))}</strong></span><span>CSI-RSRP <strong>${esc(realtimePowerValue(ue.csi_rsrp_dbm, ue.csi_rsrp_normalized_db))}</strong></span><span>CSI-SINR <strong>${esc(realtimeValue(ue.csi_sinr_db, ' dB'))}</strong></span><span>DL SINR <strong>${esc(realtimeMeasuredValue(ue.dl_sinr_db, ' dB', 2, ue.dl_missing_reason))}</strong></span><span>UL SINR <strong>${esc(realtimeMeasuredValue(ue.ul_sinr_db, ' dB', 2, ue.ul_missing_reason))}</strong></span><span>DL BLER <strong>${esc(realtimeMeasuredValue(ue.dl_bler, '', 3, ue.dl_missing_reason))}</strong></span><span>UL BLER <strong>${esc(realtimeMeasuredValue(ue.ul_bler, '', 3, ue.ul_missing_reason))}</strong></span><span>DL rate <strong>${esc(realtimeMeasuredValue(ue.dl_throughput_mbps, ' Mbps', 2, ue.dl_missing_reason))}</strong></span><span>UL rate <strong>${esc(realtimeMeasuredValue(ue.ul_throughput_mbps, ' Mbps', 2, ue.ul_missing_reason))}</strong></span></div><div class="small" style="margin-top:8px">Access: ${esc(ue.access_state)} · PDCCH: ${esc(ue.pdcch_state)} · SRS/CSI/TRS: ${esc(ue.srs_state)}/${esc(ue.csi_state)}/${esc(ue.trs_state)}</div>${admissionDetails}<div class="mini-note">CSI: ${esc(String(ue.csi_measurement_status || 'not published').replaceAll('_',' '))}${esc(csiRelative)} · PBCH-DMRS SINR ${esc(realtimeValue(ue.pbch_dmrs_sinr_db,' dB'))}${esc(ssRelative)}</div><details style="margin-top:8px"><summary>Cell-link loss evidence (${(ue.pathloss_paths || []).length}) · ${esc(String(ue.pathloss_status || 'unavailable').replaceAll('_',' '))}</summary><div class="table-wrap"><table><thead><tr><th>Candidate order</th><th>Cell</th><th>Pathloss</th><th>RSRP</th><th>Beam</th><th>Status</th></tr></thead><tbody>${pathRows || '<tr><td colspan="6">No cell-link loss rows were published.</td></tr>'}</tbody></table></div><p class="mini-note">Cell candidates are not MIMO ranks or individual CDL propagation rays. Disabled fixed-SNR path loss is not a measured zero-dB loss.</p></details><div class="mini-note">Last slots PDCCH ${esc(realtimeValue(ue.last_pdcch_slot,'',0))} · PUCCH ${esc(realtimeValue(ue.last_pucch_slot,'',0))} · SRS ${esc(realtimeValue(ue.last_srs_slot,'',0))} · TRS ${esc(realtimeValue(ue.last_trs_slot,'',0))}</div></article>`;
+return `<article class="ue-status-card ${esc(ue.health || '')}"><div class="toolbar" style="justify-content:space-between;margin-bottom:7px"><h4>UE ${esc(ue.ue_id)}</h4><span class="badge ${badgeClass}">${esc(String(ue.health || 'unavailable').replaceAll('_',' '))}</span></div><div class="ue-status-metrics"><span>Cell <strong>${esc(realtimeValue(ue.serving_cell, '', 0))}</strong></span><span>DL eligible <strong>${esc(admissionFlag(ue.dl_scheduling_eligible))}</strong></span><span>UL eligible <strong>${esc(admissionFlag(ue.ul_scheduling_eligible))}</strong></span><span title="${esc((ue.serving_rsrp_source || 'Source unavailable') + ' | ' + (ue.serving_rsrp_reference_plane || 'Plane not published'))}">${ue.serving_rsrp_model_dbm != null ? 'Modeled serving RSRP' : 'Received serving RSRP'} <strong>${esc(realtimeMeasuredValue(ue.serving_rsrp_model_dbm != null ? ue.serving_rsrp_model_dbm : ue.serving_rsrp_dbm, ' dBm', 2, ue.serving_rsrp_missing_reason))}</strong></span><span>UE PHR <strong>${esc(realtimeMeasuredValue(ue.ue_phr_db, ' dB', 2, ue.phr_missing_reason))}</strong></span><span>SS-RSRP <strong>${esc(realtimePowerValue(ue.ss_rsrp_dbm, ue.ss_rsrp_normalized_db))}</strong></span><span>SS-SINR <strong>${esc(realtimeValue(ue.ss_sinr_db, ' dB'))}</strong></span><span>CSI-RSRP <strong>${esc(realtimePowerValue(ue.csi_rsrp_dbm, ue.csi_rsrp_normalized_db))}</strong></span><span>CSI-SINR <strong>${esc(realtimeValue(ue.csi_sinr_db, ' dB'))}</strong></span><span>DL SINR <strong>${esc(realtimeMeasuredValue(ue.dl_sinr_db, ' dB', 2, ue.dl_missing_reason))}</strong></span><span>UL SINR <strong>${esc(realtimeMeasuredValue(ue.ul_sinr_db, ' dB', 2, ue.ul_missing_reason))}</strong></span><span>DL BLER <strong>${esc(realtimeMeasuredValue(ue.dl_bler, '', 3, ue.dl_missing_reason))}</strong></span><span>UL BLER <strong>${esc(realtimeMeasuredValue(ue.ul_bler, '', 3, ue.ul_missing_reason))}</strong></span><span>DL rate <strong>${esc(realtimeMeasuredValue(ue.dl_throughput_mbps, ' Mbps', 2, ue.dl_missing_reason))}</strong></span><span>UL rate <strong>${esc(realtimeMeasuredValue(ue.ul_throughput_mbps, ' Mbps', 2, ue.ul_missing_reason))}</strong></span></div><div class="small" style="margin-top:8px">Access: ${esc(ue.access_state)} · PDCCH: ${esc(ue.pdcch_state)} · SRS/CSI/TRS: ${esc(ue.srs_state)}/${esc(ue.csi_state)}/${esc(ue.trs_state)}</div>${admissionDetails}<div class="mini-note">CSI: ${esc(String(ue.csi_measurement_status || 'not published').replaceAll('_',' '))}${esc(csiRelative)} · PBCH-DMRS SINR ${esc(realtimeValue(ue.pbch_dmrs_sinr_db,' dB'))}${esc(ssRelative)}</div><details style="margin-top:8px"><summary>Cell-link loss evidence (${(ue.pathloss_paths || []).length}) · ${esc(String(ue.pathloss_status || 'unavailable').replaceAll('_',' '))}</summary><div class="table-wrap"><table><thead><tr><th>Candidate order</th><th>Cell</th><th>Pathloss</th><th>RSRP</th><th>Beam</th><th>Status</th></tr></thead><tbody>${pathRows || '<tr><td colspan="6">No cell-link loss rows were published.</td></tr>'}</tbody></table></div><p class="mini-note">Cell candidates are not MIMO ranks or individual CDL propagation rays. Disabled fixed-SNR path loss is not a measured zero-dB loss.</p></details><div class="mini-note">Last slots PDCCH ${esc(realtimeValue(ue.last_pdcch_slot,'',0))} · PUCCH ${esc(realtimeValue(ue.last_pucch_slot,'',0))} · SRS ${esc(realtimeValue(ue.last_srs_slot,'',0))} · TRS ${esc(realtimeValue(ue.last_trs_slot,'',0))}</div></article>`;
     }).join('');
     return realtimeULPlanningPanel() + `<section class="panel"><h3>UE Status</h3><p class="subtle">Control eligibility and measured performance remain source-labeled; abstraction-level summaries are not presented as waveform truth.</p><div class="ue-status-grid">${cards}</div></section>`;
   }
