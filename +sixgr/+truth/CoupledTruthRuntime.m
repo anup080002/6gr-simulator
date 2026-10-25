@@ -6671,6 +6671,12 @@ methods(Static, Access=private)
                 if ~hasRetx
                     ueState.Active=false;
                     ueState.SchedulingEligible=false;
+                    acceptedReason="accepted_srs_"+string(accepted.Status);
+                    if strlength(ueState.SchedulingBlockReason)>0
+                        ueState.SchedulingBlockReason=ueState.SchedulingBlockReason+";"+acceptedReason;
+                    else
+                        ueState.SchedulingBlockReason=acceptedReason;
+                    end
                 end
                 ueState.CausalFeedbackUsable=false;
                 ueState.CausalFeedbackStatus=char("accepted_srs_"+string(accepted.Status));
@@ -9777,7 +9783,24 @@ methods(Static, Access=private)
         if logical(sixgr.util.structGet(feedback, "Valid", false))
             return;
         end
+        original=feedback;
         feedback = sixgr.truth.CoupledTruthRuntime.bootstrapFeedbackFromConfig(state, direction, ueIdx);
+        if direction=="UL" && ~isempty(fieldnames(sixgr.util.structGet( ...
+                original,'AcceptedSRSSpatialDecision',struct())))
+            % Valid qualifies data-channel quality, not the independently
+            % received SRS spatial tuple. A missing calibrated PUSCH CQI
+            % must not erase that tuple while selecting bootstrap quality.
+            % Preserve original values (including their clocks); admission
+            % below still validates identity, installation, age and delivery.
+            % Do not copy CQI/MCS, quality clocks or set Valid=true here.
+            for name=["AcceptedSRSSpatialDecision","RI","PMI", ...
+                    "SpatialDecisionSourceSlot","SpatialDecisionDeliveredSlot", ...
+                    "SpatialSignatureToken","SpatialSignatureSHA256", ...
+                    "SpatialSignatureSource","SpatialSignatureSourceSlot", ...
+                    "SpatialSignatureMeasurementDirection","SpatialSignatureReciprocityMode"]
+                if isfield(original,name), feedback.(name)=original.(name); end
+            end
+        end
     end
 
     function feedback = bootstrapFeedbackFromConfig(state, direction, ueIdx)

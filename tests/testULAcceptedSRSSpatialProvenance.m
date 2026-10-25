@@ -97,6 +97,7 @@ state=sixgr.truth.CoupledTruthRuntime.applySRSTrial(state,1,declaredSRS(2,state.
 C=state.LatestULFeedback(1).AcceptedSRSSpatialDecision;
 assert(C.RI==2 && C.ProducerSlot==sourceB+1 && string(C.MeasurementId)~=string(A.MeasurementId));
 configurationGuards(cfg,A);
+spatialOnlyN40();
 fprintf('UL_ACCEPTED_SRS_SPATIAL_PROVENANCE_PASS PF_RR=2 raw_B_accepted_A=1 physical_qualification=0\n');
 ok=true;
 end
@@ -158,4 +159,62 @@ try, f(); catch e
     assert(string(e.identifier)==id,'Expected %s, got %s: %s',id,e.identifier,e.message); return;
 end
 error('sixgr:test:ExpectedFailure','Expected %s.',id);
+end
+
+function spatialOnlyN40()
+% Actual producer/reducer APIs with authored slot-only receiver operands.
+% Mirrors n40 SRS45 RI4/TPMI4 with no calibrated PUSCH quality; no RF claim.
+s=sixgr.lls6g.config.loadScenarioConfig( ...
+    'simulator/configs/scenarios/lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep.yaml');
+cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
+multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',701,'ExecutionModel','slot_coupled_truth');
+state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,tempname,multi,struct(),20);
+state=sixgr.truth.CoupledTruthRuntime.advanceFrame(state,cfg,multi,46,20);
+state=sixgr.truth.CoupledTruthRuntime.startSlot(state,cfg,'DL',1,1,46,cfg.run.totalSlots,20);
+state.CurrentServingIdx(:)=1;
+state.LastTrafficFrameApplied=46; state.ULQueueBits(:)=8000;
+% Declared access/tracking boundary, not completed access evidence.
+state.ControlGating.PBCHRequired=false; state.ControlGating.PRACHRequired=false;
+state.ControlGating.TRSRequired=false; state.ControlGating.SRSRequired=true;
+state.ControlGating.SRSMaxAgeSlots=5;
+row=declaredSRS(4,45); row.TPMIEstimate=4;
+row.WidebandCQI=NaN;
+row.PredictedPUSCHMinimumLayerSINR_dB=NaN;
+row.PredictedPUSCHPostEqSINRValueStatus="unavailable_power_plane_calibrated_pusch_prediction";
+row.PredictedPUSCHPostEqSINRSource="rejected_unanchored_srs_spatial_prediction";
+row.PredictedPUSCHPostEqSINRAnchor_dB=NaN;
+row.SRSBandwidthFraction=48/51;
+row.SRSBandwidthCoverageStatus="within_configured_carrier_edge_tolerance";
+originalRow=row;
+state=sixgr.truth.CoupledTruthRuntime.applySRSTrial(state,1,row);
+stored=state.LatestULFeedback(1); A=stored.AcceptedSRSSpatialDecision;
+assert(~stored.Valid && isnan(stored.CQI) && isnan(stored.MCSIndex) && ...
+    A.RI==4 && A.PMI==4 && isequaln(originalRow,row), ...
+    'Unavailable calibrated quality must still retain the independently observed spatial tuple.');
+plan=sixgr.truth.CoupledTruthRuntime.futureULPlanningView(state,50);
+[~,ue]=sixgr.truth.CoupledTruthRuntime.buildSchedulerUEStateRuntime(plan,cfg,1,'UL',1);
+assert(ue.Active && ue.AcceptedSRSCausalUsable && ue.RI==4 && ue.TPMI==4 && ...
+    isequaln(ue.AcceptedSRSSpatialDecision,A) && ~ue.FeedbackValid && ...
+    ue.SpatialDecisionSourceSlot==stored.SpatialDecisionSourceSlot && ...
+    ue.SpatialDecisionDeliveredSlot==stored.SpatialDecisionDeliveredSlot && ...
+    string(ue.MCSIndexAuthority)=="bootstrap_cqi_conservative_lab_default", ...
+    'Quality bootstrap must preserve original accepted spatial identity/clocks, not claim measured CQI.');
+assert(isequaln(plan.LatestULFeedback(1),stored),'Consumer must not rewrite the received record.');
+missing=plan; missing.LatestULFeedback(1).AcceptedSRSSpatialDecision=struct();
+[~,blocked]=sixgr.truth.CoupledTruthRuntime.buildSchedulerUEStateRuntime(missing,cfg,1,'UL',1);
+assert(~blocked.Active && strlength(blocked.SchedulingBlockReason)>0 && ...
+    contains(blocked.SchedulingBlockReason,'accepted_srs_spatial_identity_unavailable'));
+expired=plan; expired.ControlGating.SRSMaxAgeSlots=4;
+[~,blocked]=sixgr.truth.CoupledTruthRuntime.buildSchedulerUEStateRuntime(expired,cfg,1,'UL',1);
+assert(~blocked.Active && ~blocked.AcceptedSRSCausalUsable && strlength(blocked.SchedulingBlockReason)>0);
+future=plan; future.LatestULFeedback(1).AcceptedSRSSpatialDecision.AvailableSlot=47;
+[~,blocked]=sixgr.truth.CoupledTruthRuntime.buildSchedulerUEStateRuntime(future,cfg,1,'UL',1);
+assert(~blocked.Active && ~blocked.AcceptedSRSCausalUsable && strlength(blocked.SchedulingBlockReason)>0);
+wrong=plan; wrong.LatestULFeedback(1).AcceptedSRSSpatialDecision.RNTI=A.RNTI+1;
+throws(@()sixgr.truth.CoupledTruthRuntime.buildSchedulerUEStateRuntime(wrong,cfg,1,'UL',1), ...
+    'sixgr:truth:AcceptedSRSSpatialIdentityMismatch');
+invalid=plan; invalid.LatestULFeedback(1).AcceptedSRSSpatialDecision.Valid=false;
+[~,blocked]=sixgr.truth.CoupledTruthRuntime.buildSchedulerUEStateRuntime(invalid,cfg,1,'UL',1);
+assert(~blocked.Active && ~blocked.AcceptedSRSCausalUsable && strlength(blocked.SchedulingBlockReason)>0);
+fprintf('N40_SPATIAL_ONLY_SRS_HANDOFF_PASS declared_receiver_boundary=1 measured_quality_unavailable=1 rank=4 tpmi=4\n');
 end

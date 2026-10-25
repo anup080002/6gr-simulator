@@ -75,13 +75,17 @@ scope=struct('ScenarioAccepted',false,'StatisticallyQualified',false, ...
     'ControlBoundary',"independent_PDCCH_decode_and_coded_PUSCH_state", ...
     'PhysicalSRSOccasions',1,'SourceScenario',string(source.ConfigPath));
 save(fullfile(folder,'configuration.mat'),'cfg','ul','scope','command');
-bound=0; receivedCount=0;
+bound=0; receivedCount=0; schedulingRow=table(); spatialHandoffVerified=false;
 for slot=1:firstSlot+1
     state.CurrentSlot=slot;
+    if ~isempty(schedulingRow) && ~spatialHandoffVerified
+        state=verifySpatialOnlyHandoff(state,cfg,ul,schedulingRow,slot,folder);
+        spatialHandoffVerified=true;
+    end
     state=stream.advanceSlot(state,sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,slot),@consume);
     fprintf('SHARED_SRS_POWER_SLOT=%d/%d\n',slot,firstSlot+1);
 end
-assert(bound==1 && receivedCount==1 && ~stream.hasPending('SRS',1));
+assert(bound==1 && receivedCount==1 && ~stream.hasPending('SRS',1) && spatialHandoffVerified);
 ledger=stream.Physical.readRFExecutionLedger();
 assert(ledger.CompleteFromSampleZero && ledger.ChainPowerCompleteFromOrigin);
 save(fullfile(folder,'rf_execution.mat'),'ledger','scope');
@@ -226,6 +230,25 @@ fprintf('SHARED_SRS_POWER_PASS evidence=%s\n',folder); ok=true;
             clear recheck;
             [row,originalFields]=receiverPublicationRow(ul,out,scope);
             writeReceiverPublication(folder,ul,row,originalFields);
+            schedulingRow=row;
+            for field=["SRSConfigurationContextID","SRSConfigurationEpoch","SRSConfigurationContextVersion", ...
+                    "SRSNumPorts","SRSResourceID","SRSResourceIDsJSON", ...
+                    "CQIValueStatus","CQISource","SRSBandwidthCoverageStatus","SRSBandwidthFraction", ...
+                    "PredictedPUSCHMinimumLayerSINR_dB","PredictedPUSCHPostEqSINRValueStatus", ...
+                    "PredictedPUSCHPostEqSINRSource"]
+                assert(isfield(out,field),'test:MissingOriginalSRSField','Missing original %s.',field);
+                schedulingRow.(field)=out.(field);
+            end
+            schedulingRow.WidebandCQI=out.CQI;
+            schedulingRow.CQIDerivedMCS=out.MCSIndex;
+            schedulingRow.Slot=firstSlot; schedulingRow.UEIndex=item.UE;
+            schedulingRow.ServingCell=c.ServingCell;
+            schedulingRow.ObservationStartSample=observation.StartSample;
+            schedulingRow.ObservationEndSampleExclusive=observation.EndSampleExclusive;
+            schedulingRow.ObservationSampleRateHz=observation.SampleRateHz;
+            schedulingRow.MeasurementClockEpoch=stream.Physical.ConfigurationEpoch;
+            schedulingRow.ObservationCompletionTime_s=observation.EndSampleExclusive/observation.SampleRateHz;
+            schedulingRow.ObservationCoverageSource="complete_contiguous_received_sample_buffer";
             assertPilotEVMPublication(folder,out,firstSlot,item.UE);
             assert(size(capture.Rx.Hest,3)==64 && size(capture.Rx.Hest,4)==4 && ...
                 out.ChannelNMSEScoring.Available && ...
@@ -517,4 +540,42 @@ assert(p.Metadata.PowerEvidence.Adjustment_dB==1 && p.Metadata.PowerEvidence.Bou
 assert(actual.out.Ok && actual.out.ChannelNMSEScoring.Available);
 fprintf('SHARED_SRS_POWER_RF_INPUT_CLOSURE expected=%0.15g measured=%0.15g relative_error=%g\n', ...
     expected,measured,abs(expected-measured)/expected);
+end
+
+function state=verifySpatialOnlyHandoff(state,cfg,ul,row,slot,folder)
+% Declared connected/TAG and finite traffic inputs. Only SRS is received;
+% candidate planning here is not received DCI or executed PUSCH evidence.
+state.ControlGating.PBCHRequired=false; state.ControlGating.PRACHRequired=false;
+state.ControlGating.TRSRequired=false;
+state.ConnectedULTimingByUE={ul.SharedULTimingContext};
+% Earlier power-only codec fixture declares15kHz; scheduling now declares
+% this component's installed30kHz initial UL BWP, not a newly decoded SIB1.
+state.UECommonCellConfigurationByUE{1}.InitialULBWP.SubcarrierSpacing_kHz= ...
+    ul.SharedULTimingContext.ReceivedRARTiming.FirstULSCSkHz;
+state.ULQueueBits(:)=8192;
+state=sixgr.truth.CoupledTruthRuntime.startSlot(state,cfg,'DL',1,1,slot,cfg.run.totalSlots,0);
+row.ObservationDeliverySlot=slot;
+row.ObservationDeliveryTime_s=(slot-1)*state.SlotDuration_s;
+row.ObservationDeliverySource="canonical_slot_start_after_complete_received_window";
+row=sixgr.truth.bindDeliveredReferenceClock(state,row);
+assert(isnan(row.WidebandCQI)&&isnan(row.CQIDerivedMCS), ...
+    'test:ExpectedUncalibratedSRSQuality','This absolute-power regression must exercise original unavailable CQI.');
+state=sixgr.truth.CoupledTruthRuntime.applySRSTrial(state,1,row);
+original=state.LatestULFeedback(1); A=original.AcceptedSRSSpatialDecision;
+assert(~original.Valid && ~isempty(fieldnames(A)) && A.RI==row.RIEstimate && A.PMI==row.TPMIEstimate && ...
+    A.ObservationStartSample==row.ObservationStartSample && A.ResultAvailableAtSample==row.ResultAvailableAtSample);
+[state,grants,planning]=sixgr.truth.planFutureULGrants(state,cfg,{cfg},repmat(struct(),0,1),1,cfg.run.totalSlots);
+assert(planning.ScheduleAttempted && ~isempty(grants), ...
+    'test:SpatialOnlySRSNotScheduled','Original spatial-only SRS must reach normal planning: %s',string(planning.Status));
+for k=1:numel(grants)
+    assert(isequaln(grants(k).AcceptedSRSSpatialDecision,A) && ...
+        grants(k).PHYGrant.PrecodingState.TPMI==A.PMI && grants(k).PHYGrant.CodingLayout.NumLayers==A.RI, ...
+        'test:SpatialOnlySRSIdentityLost','Normal planner must freeze the actual measured RI/TPMI/capsule.');
+end
+assert(isequaln(state.LatestULFeedback(1),original) && isnan(original.CQI) && isnan(original.MCSIndex), ...
+    'Measured quality must remain unavailable after conservative scheduler bootstrap.');
+sixgr.util.matSave(fullfile(folder,'spatial_only_scheduler_handoff.mat'), ...
+    struct('OriginalSRSRow',row,'OriginalFeedback',original,'Planning',planning,'Grants',grants, ...
+    'Scope',"actual_20MHz_SRS_to_normal_planner_declared_access_TAG_no_received_DCI_or_PUSCH"));
+fprintf('SHARED_20MHZ_SPATIAL_ONLY_SRS_SCHEDULER_PASS rank=%d tpmi=%d measured_CQI_available=0 grants=%d\n',A.RI,A.PMI,numel(grants));
 end
