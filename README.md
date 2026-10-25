@@ -1,8 +1,127 @@
 # SixGR Foundation v2
 
-## 25 October 2026: consolidated main branch and requested scenario run
+## 26 October 2026: n40 integration gate and repaired feedback handoffs
 
-### Current execution and verification handoff
+The recovered code, integration gate and latest repairs are consolidated in
+this checkout on `main`. The current waveform attempt started with runtime
+revision **`d40031e0`**. Documentation-only commits after that revision do not
+change the gate's sealed executable/configuration inputs.
+
+### Latest verification snapshot — full acceptance remains pending
+
+The latest launched attempt is
+`n40_integration_65slots_20261026_022232`, under
+`E:\SixGRResults\lls\lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep`.
+It executes two independent **[20, 0] dB nominal reference-Es/N0** points,
+**65 slots (32.5 ms) each**, using n40/2.350 GHz, 20 MHz/51 PRBs, 30 kHz TDD,
+64 gNB TXRU, four UE chains and CDL-C/100 ns. Measured receiver SINR remains
+separate from the configured reference-Es/N0 label.
+
+The last one-time status inspection on **26 October 2026** found:
+
+- The 20 dB child had completed **52 slots** and was processing slot **53**.
+- The connected **slot-50 PUSCH passed CRC with four layers and MCS 1**.
+  Seven published connected DL trials also passed CRC.
+- The inspected log contained no software exception, and the eight inspected
+  primary PHY trial tables had no crash-marked rows. Non-detections remain
+  original radio outcomes; they are not fabricated successes.
+- Checkpoint60 had **not yet been created**, and the 0 dB child had not started.
+
+This is a retained progress snapshot, not live status or a final gate pass.
+Both completed children, native checkpoint60 continuations through65 and
+final-report acceptance remain unverified in this README. MATLAB executes
+the gate's checks automatically; this file does not update with the run.
+Use the [run list](http://127.0.0.1:62906/runs) or the
+[20 dB child's live view](http://127.0.0.1:62906/realtime?run_id=9769067634)
+for current local status. The parent and active child are two dashboard rows
+for one sequential sweep, not two concurrent waveform simulations.
+
+### Repairs and focused evidence
+
+- Original SRS noise/EVM evidence reaches the collector and exporter;
+  recovery retains the original execution identity. Consumer instrumentation
+  records actual operands rather than inferring execution from configuration.
+- CSI completion binds its original prepared UE/cell before publishing
+  installation authority. The fresh run retained the corrected slot16 binding.
+- UL quality bootstrap preserves independently received SRS rank/precoder
+  authority, identity and clocks when calibrated CQI/MCS is unavailable.
+  Missing or unusable spatial authority has an explicit rejection reason.
+  Unavailable measured quality stays unavailable, and measured CQI zero
+  remains an outage rather than permission to bootstrap a new transmission.
+- The integration gate rejects redirected output roots, seals runtime and
+  configuration inputs, and checks actual PHY/feedback/report ownership.
+
+All **eight latest affected checks passed**:
+`testULAcceptedSRSSpatialProvenance`, `test20MHzSharedSRSPowerBinding`,
+`testReceivedSRSToScheduledPUSCH`, `testFutureULPlanningCausality`,
+`testPUSCHCausalSRSFrozenGrant`, `testSchedulerGrantConsistency`,
+`testULSpatialQualityFeedbackIsolation` and `testSRSOutOfRangeFeedback`.
+The actual 20 MHz/64-RX SRS test exercised unavailable CQI with measured
+RI/TPMI reaching normal grant planning. A separate shared-waveform test
+completed received SRS → scheduled/received DCI → PUSCH with CRC success.
+Those bounded realizations are separate evidence, not a combined full n40 pass.
+
+Local receipts are
+`E:\SixGRResults\logs\n40_srs_spatial_handoff_20261026_final.json` and its
+original `_01.json`/`_02.json` batches. The first batch's fixture-initialization
+failure remains preserved; the corrected rerun passed. Earlier repair checks
+remain in `codex_failure_repairs_20261025_final.json`,
+`n40_integration_gate_focused_20261025_final.json` and
+`n40_csirs_binding_repair_20261026_01.json` in the same directory.
+Verification used the requested affected-test scope; **`testAll` was not run**.
+
+The stopped `002200` attempt exposed the SRS quality/spatial handoff defect
+after actual reception at45. Its original evidence is preserved. Historical
+100 MHz success did not cover this branch: that run supplied calibrated SRS
+CQI, whereas this n40 policy correctly withheld an unanchored quality prediction.
+See the [remaining-issues ledger](docs/lls/lls_gap_status_20261023.html) for
+the original failures and broader implementation/qualification limits.
+These repairs do not establish full NR MAC/RRC interoperability, statistical
+qualification, or a guarantee against every future integration failure.
+
+### Run the complete integration gate from this repository root
+
+The command below is for a **new attempt after the existing MATLAB simulation
+has finished or been explicitly stopped**. Do not launch a duplicate run.
+Keep the evidence drive connected and use a fresh tag; the gate rejects reuse.
+
+```powershell
+$runTag = 'n40_integration_65slots_' + (Get-Date -Format 'yyyyMMdd_HHmmss')
+$runYaml = 'simulator/configs/scenarios/lls_tdd_n40_20mhz_64txru_4rx_cdlc100_integration_gate.yaml'
+$outputRoot = 'E:\SixGRResults'
+$env:SIXGR_RESULTS_ROOT = $outputRoot
+if (-not (Test-Path -LiteralPath 'E:\')) { throw 'Reconnect E: before running.' }
+New-Item -ItemType Directory -Force -Path "$outputRoot\logs" | Out-Null
+& 'C:\Program Files\MATLAB\R2026a\bin\matlab.exe' -wait -logfile "$outputRoot\logs\$runTag.log" -batch "run_n40_integration_gate('$runYaml','$outputRoot','$runTag');"
+```
+
+The [gate overlay](simulator/configs/scenarios/lls_tdd_n40_20mhz_64txru_4rx_cdlc100_integration_gate.yaml)
+inherits the original scientific sweep and changes only checkpoint controls:
+first60, every5, keep3. It therefore retains genuine native checkpoints60 and65.
+After both full children, the driver restores each original checkpoint60 and
+actually executes61–65, compares retained state/outcome projections, preserves
+the resumed diagnostics, and restores the untouched baseline report bytes.
+Final acceptance also checks child/parent publication and report hashes.
+
+Inspect `E:\SixGRResults\integration_gates\<runTag>\integration_gate.json`,
+`baseline_acceptance.json`, the per-child continuation receipts and final
+acceptance details. `Phase=running_full_sweep` with `Ok=false` means acceptance
+is pending; an empty error list alone is not a pass. A saved checkpoint is
+also not proof that continuation or final reporting succeeded.
+
+Git tracks source, configuration, tests and documentation. Large IQ, logs,
+checkpoints and results remain local under the existing ignore rules.
+Cleaning the Git worktree does **not** mean deleting run evidence or historical
+recovery stashes. Never reconstruct a checkpoint from a CSV row, rewrite old
+measurements to match a repair, or relabel approximate output as PHY truth.
+
+## Historical 25 October 2026: consolidated main branch and requested scenario run
+
+The following dated handoff predates the integration gate and repairs above.
+Its process states, older launch command and pending-test statements are
+historical; use the current section and original receipts for the newer scope.
+
+### Execution and verification handoff at that time
 
 **Next configuration:** two independent `[20,0]` dB reference-Es/N0 points,
 **65 slots (32.5 ms) per point**, with a runtime checkpoint after completed
