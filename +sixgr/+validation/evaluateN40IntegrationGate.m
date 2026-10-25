@@ -31,6 +31,7 @@ else
         attempt("coverage_"+replace(path,'/','_'),'coverage',fullfile(root,path),@()nonempty(path));
     end
     attempt('access_complete','coverage',fullfile(root,'control','csv','rrc_setup_complete.csv'),@accessComplete);
+    attempt('original_csi_binding','causality',fullfile(root,'air_interface','csv','csi_rs_trials.csv'),@originalCSIBinding);
     attempt('received_csi','causality',fullfile(root,'control','csv','received_csi_reports.csv'),@receivedCSI);
     attempt('completed_csi_application','causality',fullfile(root,'air_interface','csv','dl_pdsch_trials.csv'),@csiApplication);
     attempt('accepted_srs_application','causality',fullfile(root,'packet_flow','csv','live_ul_scheduler_grants.csv'),@srsApplication);
@@ -250,6 +251,48 @@ out.FinalAccepted=out.Ok && options.RequireContinuation;
         require(all(string(T.RunId)==string(field(identity,'RunID',""))),'Identity','Access belongs to another run.');
         require(any(num(T.Decoded)==1),'RadioCoverage','No received RRC setup completion; access coverage incomplete.');
         detail="Received bounded RRC setup completion (not ASN.1 interoperability qualification).";
+    end
+    function detail=originalCSIBinding()
+        T=readCSV(fullfile(root,'air_interface','csv','csi_rs_trials.csv'));
+        need(T,["Slot","UEIndex","ServingCell","CellID","ReceiverID", ...
+            "ObservationSampleRateHz","MeasurementClockEpoch","CSIObservationPopulationBindingJSON", ...
+            "PhysicalMeasurementPlaneBindingJSON","PhysicalMeasurementPlaneBindingSHA256", ...
+            "ReceiverWindowID","ObservationStartSample","ObservationEndSampleExclusive", ...
+            "DLMeasurementAuthorityRequired","DLMeasurementAuthorityEligible", ...
+            "DLMeasurementAuthorityStatus","DLMeasurementInstallationSHA256"]);
+        require(~isempty(T),'MissingCoverage','No original CSI receiver observations.');
+        for j=1:height(T)
+            status=string(T.DLMeasurementAuthorityStatus(j));
+            require(status~="missing_original_DL_measurement_configuration_binding", ...
+                'Identity','Original CSI configuration/cell binding was absent at authority stamping.');
+            planeToken=string(T.PhysicalMeasurementPlaneBindingJSON(j));
+            require(jsonHash(planeToken)==string(T.PhysicalMeasurementPlaneBindingSHA256(j)), ...
+                'Identity','Original CSI receiver-plane seal differs.');
+            p=jsondecode(planeToken);
+            require(string(p.ContractVersion)=="sixgr.csirs.original_measurement_plane/v1"&& ...
+                string(p.ReceiverID)==string(T.ReceiverID(j))&&string(p.ReceiverWindowID)==string(T.ReceiverWindowID(j))&& ...
+                p.ObservationStartSample==num(T.ObservationStartSample(j))&& ...
+                p.ObservationEndSampleExclusive==num(T.ObservationEndSampleExclusive(j))&& ...
+                p.SampleRateHz==num(T.ObservationSampleRateHz(j)), ...
+                'Identity','CSI receiver identity/window differs from its original sealed plane receipt.');
+            b=jsondecode(string(T.CSIObservationPopulationBindingJSON(j)));
+            require(num(T.ServingCell(j))==num(T.CellID(j))&&num(T.ServingCell(j))==b.ServingCell&& ...
+                num(T.Slot(j))==b.SourceSlot&&num(T.ObservationSampleRateHz(j))==b.SampleRateHz&& ...
+                num(T.MeasurementClockEpoch(j))==b.PhysicalConfigurationEpoch&&textPresent(T.ReceiverID(j)), ...
+                'Identity','Original CSI row disagrees with queued/completed physical cell or clock binding.');
+            required=num(T.DLMeasurementAuthorityRequired(j)); eligible=num(T.DLMeasurementAuthorityEligible(j));
+            require(ismember(required,[0 1])&&ismember(eligible,[0 1]),'Identity','Missing original CSI authority flags.');
+            if required==1
+                if eligible==1
+                    require(status=="post_installation_original_received_measurement"&& ...
+                        isSHA(T.DLMeasurementInstallationSHA256(j)),'Identity','Eligible CSI lacks its original installation authority.');
+                else
+                    require(ismember(status,string(c.csi_diagnostic_authority_statuses)), ...
+                        'Identity','Ineligible CSI has inconsistent original installation authority.');
+                end
+            end
+        end
+        detail="Original CSI cell/clock binding and installation authority status are consistent; diagnostic observations remain ineligible.";
     end
     function detail=receivedCSI()
         T=readCSV(fullfile(root,'control','csv','received_csi_reports.csv'));

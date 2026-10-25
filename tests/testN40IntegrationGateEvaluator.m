@@ -36,6 +36,7 @@ T.ExecutionID="gate_execution"; T.CRCPass=NaN;
 sixgr.util.csvWriteTable(path,T,'PreserveSchema',true);
 out=sixgr.validation.evaluateN40IntegrationGate(root,'RequireContinuation',false);
 assert(~pass(out,'primary_pdsch'),'Missing applicable CRC must not become a measured failure or pass.');
+testOriginalCSIBinding(root);
 testParentPublication();
 fprintf('N40_INTEGRATION_GATE_EVALUATOR_PASS incomplete_test_fixture=%s\n',root);
 ok=true;
@@ -110,4 +111,49 @@ end
 function message=checkDetail(out,id)
 selected=out.Checks(out.Checks.CheckID==id,:);
 message="Fixture "+out.RunFolder+"; "+strjoin(selected.Status+": "+selected.Detail,'; ');
+end
+
+function testOriginalCSIBinding(root)
+% Explicit parser/contract fixture only; it does not qualify integration.
+b=struct('SourceSlot',6,'ServingCell',1,'SampleRateHz',30720000,'PhysicalConfigurationEpoch',1);
+T=table(6,1,1,1,"ue_1_rx",30720000,1,string(jsonencode(b)),true,false, ...
+    "awaiting_received_DL_acquisition_and_configuration","", ...
+    'VariableNames',{'Slot','UEIndex','ServingCell','CellID','ReceiverID', ...
+    'ObservationSampleRateHz','MeasurementClockEpoch','CSIObservationPopulationBindingJSON', ...
+    'DLMeasurementAuthorityRequired','DLMeasurementAuthorityEligible', ...
+    'DLMeasurementAuthorityStatus','DLMeasurementInstallationSHA256'});
+plane=struct('ContractVersion',"sixgr.csirs.original_measurement_plane/v1", ...
+    'ReceiverID',"ue_1_rx",'ReceiverWindowID',"fixture_window", ...
+    'ObservationStartSample',100,'ObservationEndSampleExclusive',200,'SampleRateHz',30720000);
+T.PhysicalMeasurementPlaneBindingJSON=string(jsonencode(plane));
+T.PhysicalMeasurementPlaneBindingSHA256=string(sixgr.util.sha256Hex(uint8(unicode2native(char(T.PhysicalMeasurementPlaneBindingJSON),'UTF-8'))));
+T.ReceiverWindowID="fixture_window"; T.ObservationStartSample=100; T.ObservationEndSampleExclusive=200;
+path=fullfile(root,'air_interface','csv','csi_rs_trials.csv');
+sixgr.util.csvWriteTable(path,T,'PreserveSchema',true);
+out=sixgr.validation.evaluateN40IntegrationGate(root,'RequireContinuation',false);
+assert(pass(out,'original_csi_binding')&&~out.Ok,'%s',checkDetail(out,'original_csi_binding'));
+T.DLMeasurementInstallationSHA256=string(repmat('c',1,64));
+T.DLMeasurementAuthorityStatus="diagnostic_observation_started_before_configuration_installation";
+sixgr.util.csvWriteTable(path,T,'PreserveSchema',true);
+out=sixgr.validation.evaluateN40IntegrationGate(root,'RequireContinuation',false);
+assert(pass(out,'original_csi_binding'),'Installation presence must not force early observation eligibility.');
+T.DLMeasurementAuthorityStatus="DL_measurement_not_yet_available";
+sixgr.util.csvWriteTable(path,T,'PreserveSchema',true);
+out=sixgr.validation.evaluateN40IntegrationGate(root,'RequireContinuation',false);
+assert(pass(out,'original_csi_binding'),'A pending receiver result remains a legitimate diagnostic.');
+T.DLMeasurementAuthorityStatus="missing_original_DL_measurement_configuration_binding";
+sixgr.util.csvWriteTable(path,T,'PreserveSchema',true);
+before=sixgr.util.sha256File(path);
+out=sixgr.validation.evaluateN40IntegrationGate(root,'RequireContinuation',false);
+assert(~pass(out,'original_csi_binding')&&sixgr.util.sha256File(path)==before, ...
+    'Later populated ServingCell must not conceal missing original binding.');
+T.DLMeasurementAuthorityStatus="post_installation_original_received_measurement";
+T.DLMeasurementAuthorityEligible=true;
+sixgr.util.csvWriteTable(path,T,'PreserveSchema',true);
+out=sixgr.validation.evaluateN40IntegrationGate(root,'RequireContinuation',false);
+assert(pass(out,'original_csi_binding'),'%s',checkDetail(out,'original_csi_binding'));
+T.ServingCell=2;
+sixgr.util.csvWriteTable(path,T,'PreserveSchema',true);
+out=sixgr.validation.evaluateN40IntegrationGate(root,'RequireContinuation',false);
+assert(~pass(out,'original_csi_binding'),'Current-cell substitution must not overwrite original physical identity.');
 end

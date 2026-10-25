@@ -19,6 +19,7 @@ assert(string(sixgr.util.structGet(prepared,"ExecutionStage","")) == ...
     "csirs_waveform_prepared_not_received", ...
     'sixgr:truth:InvalidSharedCSIRSPreparation', ...
     'Receive only the retained independent CSI-RS preparation.');
+identity=localReceiverIdentity(prepared,context,item.UE);
 
 [post,pre,transmitted,replay,receiverObservation] = ...
     sixgr.truth.sharedObservationEvidence(item.Planes,prepared);
@@ -45,6 +46,16 @@ context.UEIndex = double(item.UE);
 trialStruct = sixgr.truth.buildIndependentCSIRSTrialRow( ...
     prepared.ReceiverConfig,prepared,reception,csi,context);
 row = struct2table(trialStruct,"AsArray",true);
+assert(isnumeric(row.UEIndex)&&isequal(row.UEIndex,identity.UEIndex)&& ...
+    isnumeric(row.CellID)&&isequal(row.CellID,identity.ServingCell), ...
+    'sixgr:truth:CSICompletionReceiverIdentity', ...
+    'The completed row must retain the original prepared receiver and cell.');
+if ismember('ServingCell',row.Properties.VariableNames)
+    assert(isnumeric(row.ServingCell)&&isequal(row.ServingCell,identity.ServingCell), ...
+        'sixgr:truth:CSICompletionReceiverIdentity','Never overwrite a conflicting original serving cell.');
+else
+    row.ServingCell=identity.ServingCell;
+end
 for name=string(fieldnames(measurementPlane)).'
     row.(name)=measurementPlane.(name);
 end
@@ -142,6 +153,24 @@ end
 row=sixgr.report.retainControlEVMPairs(storageRoot,row,paired);
 row=sixgr.truth.DLMeasurementInstallation.stamp(state,row,prepared.ReceiverConfig,item.UE,"CSI-RS");
 state = sixgr.truth.CoupledTruthRuntime.applyCSIRSTrial(state,item.UE,row);
+end
+
+function identity=localReceiverIdentity(prepared,context,ue)
+cfg=prepared.ReceiverConfig;
+originalUE=sixgr.util.structGet(cfg,'lls6g.userContext.UEIndex',NaN);
+originalCell=sixgr.util.structGet(cfg,'lls6g.userContext.RuntimeServingCell',NaN);
+queuedUE=sixgr.util.structGet(context,'UEIndex',NaN);
+queuedCell=sixgr.util.structGet(context,'ServingCell',NaN);
+for value={ue,originalUE,originalCell,queuedUE,queuedCell}
+    v=value{1};
+    assert(isnumeric(v)&&isreal(v)&&isscalar(v)&&isfinite(v)&&v>=1&&v==fix(v), ...
+        'sixgr:truth:CSICompletionReceiverIdentity', ...
+        'Require original positive-integer prepared and queued receiver identities.');
+end
+assert(originalUE==ue&&queuedUE==ue&&queuedCell==originalCell, ...
+    'sixgr:truth:CSICompletionReceiverIdentity', ...
+    'Prepared receiver identity must match its queued completion, not a later serving selection.');
+identity=struct('UEIndex',double(originalUE),'ServingCell',double(originalCell));
 end
 
 function row=localProjectedAttenuation(row,p,reception,tx,plane,item)

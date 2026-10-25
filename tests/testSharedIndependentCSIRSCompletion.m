@@ -1,7 +1,8 @@
-function ok = testSharedIndependentCSIRSCompletion(timingGuard,receiverDelay)
+function ok = testSharedIndependentCSIRSCompletion(timingGuard,receiverDelay,installedArm)
 %TESTSHAREDINDEPENDENTCSIRSCOMPLETION Receive CSI-RS without PDSCH/DCI.
 if nargin<1, timingGuard=0; end
 if nargin<2, receiverDelay=0; end
+if nargin<3, installedArm=false; end
 pointSNR=-10;
 if receiverDelay>0, pointSNR=30; end
 
@@ -415,7 +416,81 @@ assert(~isempty(state.ObservedREAllocationTable) && ...
 fprintf(["SHARED_INDEPENDENT_CSIRS_COMPLETION_PASS CQI=%g RI=%g PMI=%g " + ...
     "SINR=%g available_sample=%g\n"],trial.CQI,trial.RI,trial.PMI, ...
     trial.SINR_dB,trial.ResultAvailableAtSample);
+if installedArm
+    assert(timingGuard==0&&receiverDelay==0,'Use the bounded zero-tail installation arm.');
+    localInstalledCompletion(state,cfgUE,trial,pointSNR);
+end
 ok=true;
+end
+
+function localInstalledCompletion(state,cfg,early,snr)
+% Actual second CSI-RS reception after a DECLARED acquired/SIB1-codec
+% boundary. This does not claim an on-air acquisition or decoded dedicated RRC.
+owner=state.SharedWaveformStream;
+state.ControlGating.PBCHRequired=true;
+before=sixgr.truth.DLMeasurementInstallation.stamp(state,early,cfg,1,"CSI-RS");
+assert(~before.DLMeasurementAuthorityEligible);
+state.CurrentSlot=2;
+cfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,2,1);
+tree=sixgr.rrc.asn1.buildBCCHDLSCHMessage(cfg);
+decoded=sixgr.rrc.asn1.decodeSIB1UPER(sixgr.rrc.asn1.encodeSIB1UPER(tree));
+installed=sixgr.mac.ra.installDecodedSIB1RACHConfig(struct(),decoded);
+common=installed.UECommonCellConfiguration;
+common.ServingCell=1; common.AvailableSlot=2;
+common.ConfigurationEpoch=cfg.initial_access.configuration_epoch;
+common.ReceivedDLTimingReference=struct('Source',"received_SSB_timing_and_decoded_BCH", ...
+    'SampleRateHz',owner.SampleRateHz,'ObservationStartSample',0, ...
+    'AvailableAtSample',owner.Events.NextSampleIndex,'NCellID',cfg.phy.carrier.NCellID, ...
+    'SSBIndex',0,'ReceivedSFN',0,'ReceivedHalfFrame',0,'DLPhaseOffsetSamples',0);
+state.UECommonCellConfigurationByUE={common};
+state.CellAcquisitionState(:)="acquired"; state.LastSuccessfulPBCHSlotByUE(:)=2;
+state=sixgr.truth.DLMeasurementInstallation.install(state,1,cfg);
+receipt=state.PreconfiguredDLMeasurementInstallationByUE{1};
+early=sixgr.truth.DLMeasurementInstallation.stamp(state,early,cfg,1,"CSI-RS");
+assert(~early.DLMeasurementAuthorityEligible&&early.DLMeasurementAuthorityStatus== ...
+    "diagnostic_observation_started_before_configuration_installation");
+[state,queued]=sixgr.truth.queueSharedPeriodicCSIRS(state,cfg,1,2,1,1,1,snr);
+assert(queued);
+[state,completed]=owner.advanceSlot(state,cfg,@localInstalledReceive);
+assert(numel(completed)==1);
+row=state.TestInstalledCSIRSRow;
+assert(row.ServingCell==1&&row.UEIndex==1&&row.DLMeasurementAuthorityEligible&& ...
+    row.DLMeasurementAuthorityStatus=="post_installation_original_received_measurement"&& ...
+    row.DLMeasurementInstallationSHA256==receipt.SHA256&&~receipt.DecodedDedicatedRRC);
+measurements=state.ReferenceSignalMeasurementTable;
+assert(any(measurements.Valid & measurements.ProducerSlot==2 & ...
+    string(measurements.SignalType)=="CSI-RS" & measurements.TargetId==1), ...
+    'Actual post-installation CSI-RS must reach the measurement consumer.');
+changed=state; changed.CurrentServingIdx(:)=2;
+diagnostic=sixgr.truth.DLMeasurementInstallation.stamp(changed,row,cfg,1,"CSI-RS");
+assert(diagnostic.ServingCell==1&&~diagnostic.DLMeasurementAuthorityEligible, ...
+    'A changed live serving cell must not retag the original receiver identity.');
+fprintf('SHARED_INSTALLED_CSIRS_COMPLETION_PASS actual_CSIRS_RX=1 declared_acquisition_boundary=1\n');
+end
+
+function state=localInstalledReceive(state,items)
+for item=reshape(items,1,[])
+    assert(item.Kind=="CSIRS");
+    for fault=["missing_cell","wrong_cell","missing_ue","wrong_ue","queue_cell","queue_ue"]
+        bad=item;
+        switch fault
+            case "missing_cell"
+                bad.Context.Prepared.ReceiverConfig.lls6g.userContext=rmfield( ...
+                    bad.Context.Prepared.ReceiverConfig.lls6g.userContext,'RuntimeServingCell');
+            case "wrong_cell", bad.Context.Prepared.ReceiverConfig.lls6g.userContext.RuntimeServingCell=2;
+            case "missing_ue"
+                bad.Context.Prepared.ReceiverConfig.lls6g.userContext=rmfield( ...
+                    bad.Context.Prepared.ReceiverConfig.lls6g.userContext,'UEIndex');
+            case "wrong_ue", bad.Context.Prepared.ReceiverConfig.lls6g.userContext.UEIndex=2;
+            case "queue_cell", bad.Context.ServingCell=2;
+            case "queue_ue", bad.Context.UEIndex=2;
+        end
+        localReject(@()sixgr.truth.completeSharedCSIRSReception(state,bad), ...
+            'sixgr:truth:CSICompletionReceiverIdentity');
+    end
+    [state,row]=sixgr.truth.completeSharedCSIRSReception(state,item);
+    state.TestInstalledCSIRSRow=row;
+end
 end
 
 function state=localReceive(state,items)

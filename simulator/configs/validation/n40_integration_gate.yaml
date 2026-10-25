@@ -31,3 +31,12 @@ parent_required_plots:
   - reports/image/sweep_link_comparison.png
   - reports/image/sweep_bler_vs_configured_snr.png
   - reports/image/sweep_bler_vs_measured_sinr.png
+
+# Valid non-eligible measurements remain diagnostics; installation presence alone is not eligibility.
+csi_diagnostic_authority_statuses:
+  - awaiting_received_DL_acquisition_and_configuration
+  - DL_measurement_installation_identity_or_configuration_changed
+  - DL_measurement_installation_not_yet_available
+  - diagnostic_observation_started_before_configuration_installation
+  - DL_measurement_not_yet_available
+  - DL_measurement_configuration_or_owner_mismatch
