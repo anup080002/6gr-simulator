@@ -1,0 +1,33 @@
+contract: sixgr.n40.integration_gate/v1
+# Implementation acceptance, not a 3GPP conformance or BLER qualification.
+completed_slots: 65
+checkpoint_slot: 60
+sweep_labels: [reference_esn0_20_db, reference_esn0_0_db]
+sweep_snr_db: [20, 0]
+manifest_true_fields: [RunCompleted, ResultOk, RuntimeTruthContractOk, ScenarioObjectiveOk, PublicationQualified]
+manifest_zero_fields: [RequiredFailureCount, RequiredRuntimeEvidenceMissingCount, StrictTruthFailureCount, StrictProxyGuardFailureCount]
+primary_tables:
+  - {id: pbch, path: air_interface/csv/pbch_trials.csv}
+  - {id: prach, path: air_interface/csv/prach_trials.csv}
+  - {id: pdcch, path: air_interface/csv/pdcch_trials.csv}
+  - {id: pdsch, path: air_interface/csv/dl_pdsch_trials.csv}
+  - {id: pusch, path: air_interface/csv/ul_pusch_trials.csv}
+  - {id: srs, path: control/csv/srs_trials.csv}
+  - {id: csirs, path: air_interface/csv/csi_rs_trials.csv}
+  - {id: trs, path: air_interface/csv/trs_trials.csv}
+required_nonempty_tables:
+  - control/csv/rrc_setup_complete.csv
+  - control/csv/received_csi_reports.csv
+  - control/csv/gnb_harq_feedback_observations.csv
+  - packet_flow/csv/live_dl_scheduler_grants.csv
+  - packet_flow/csv/live_ul_scheduler_grants.csv
+  - harq/csv/harq_transmitter_lifecycle.csv
+  - reports/csv/pdcch_grant_binding_evidence.csv
+  - beamforming/csv/precoder_evidence.csv
+  - waveform/csv/final_tx_iq_capture_manifest.csv
+
+parent_index_roles: [scenario_identity, resolved_configuration, scenario_summary, dl_waveform_trials, ul_waveform_trials]
+parent_required_plots:
+  - reports/image/sweep_link_comparison.png
+  - reports/image/sweep_bler_vs_configured_snr.png
+  - reports/image/sweep_bler_vs_measured_sinr.png
