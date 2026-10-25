@@ -14,8 +14,21 @@ if ~observation.isComplete()
         "Broadcast reception is incomplete: received through %.0f, required through %.0f.", ...
         observation.ReceivedThroughSample, observation.EndSampleExclusive);
 end
+window=sixgr.util.structGet(options,'AcquisitionWindowContract',[]);
+requiredSamples=prepared.NumSamples;
+if ~isempty(window)
+    assert(string(sixgr.util.structGet(prepared,'Content',""))=="SSB_MIB", ...
+        'sixgr:link:BroadcastAcquisitionScope','Independent acquisition windows are SSB/MIB-only, never cropped composite SI.');
+    sixgr.phy.frame.SSBAcquisitionWindow.validate(window,prepared.ReceiverConfig, ...
+        prepared.SampleRateHz,double(prepared.BroadcastStartSample),double(prepared.NumSamples));
+    assert(observation.StartSample==window.StartSample && ...
+        isequal(double(options.CandidateSSBIndices(:).'),window.CandidateIndices), ...
+        'sixgr:link:BroadcastAcquisitionScope', ...
+        'Decode every original receiver-domain candidate; do not replace it with the TX active bitmap.');
+    requiredSamples=window.EndSampleExclusive-window.StartSample;
+end
 if observation.SampleRateHz ~= prepared.SampleRateHz || ...
-        observation.EndSampleExclusive - observation.StartSample ~= prepared.NumSamples
+        observation.EndSampleExclusive - observation.StartSample ~= requiredSamples
     error("sixgr:link:BroadcastObservationLayoutMismatch", ...
         "The complete received capture must match the prepared broadcast sample rate and extent.");
 end
@@ -79,6 +92,9 @@ out.ObservationSampleRateHz = observation.SampleRateHz;
 out.ObservationCompletionTime_s = observation.EndSampleExclusive / observation.SampleRateHz;
 out.ObservationCoverageSource = "complete_contiguous_received_sample_buffer";
 out=sixgr.util.mergeStruct(out,sixgr.link.receivedWaveformEvidence(observation));
+if ~isempty(window)
+    out.AcquisitionWindowContract=window;
+end
 gainComp=sixgr.util.structGet(out,'RuntimeChannelReplay.ReceiverGainCompensation',struct());
 out.ReceiverGainCompensation=gainComp;
 observationOut = out;

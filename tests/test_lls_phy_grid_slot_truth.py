@@ -222,6 +222,46 @@ def test_tdd_pattern_derives_from_common_pattern_and_nan_is_not_a_ue() -> None:
     assert dash.phy_grid_ue_value({"UEIndex": 4.0}) == "4"
 
 
+@pytest.mark.parametrize("first_trace_slot", [1, 41])
+def test_late_first_csi_observation_keeps_zero_based_allocation_clock(
+    monkeypatch: pytest.MonkeyPatch, first_trace_slot: int,
+) -> None:
+    """No slot-zero observation exists: CSI at absolute5 belongs to radio6."""
+    trace = [_trace_row(first_trace_slot + k, token) for k, token in enumerate("DDDSUD")]
+    def allocation(slot: int, channel: str, direction: str, scope: str) -> dict:
+        return {
+            "absolute_slot": slot, "direction": direction, "channel": channel,
+            "component": channel, "symbol_index": 12 if direction == "UL" else 3,
+            "subcarrier_start": 0, "subcarrier_count": 1, "re_count": 1,
+            "coordinate_precision": "exact_sparse_re_span", "evidence_scope": scope,
+            "allocation_id": channel + str(slot), "ue_id": 1,
+        }
+    ul_slot = first_trace_slot + 3
+    csi_slot = first_trace_slot + 4
+    planned = [allocation(ul_slot, "PUCCH", "UL", "planned_config")]
+    observed = [allocation(csi_slot, "CSI_RS", "DL", "runtime_observed")]
+    run = {"run_id": 919, "config_json": json.dumps({"resolved_runtime_view": {"active_grid_num_rbs": 51}}),
+           "updated_utc": str(first_trace_slot), "status_text": "stopped", "status_json": "{}"}
+    monkeypatch.setattr(dash, "fetch_run", lambda _: run)
+    monkeypatch.setattr(dash, "fetch_artifacts", lambda _: [])
+    monkeypatch.setattr(dash, "merge_db_and_filesystem_artifacts", lambda *_: [])
+    def rows(_artifacts, path, **_kwargs):
+        selected = trace if path == "reports/csv/slot_trace.csv" else (
+            planned if path == "components/frame_grid/csv/planned_re_allocation.csv" else (
+                observed if path == "components/frame_grid/csv/observed_re_allocation.csv" else []))
+        return selected, {"selected_logical_path": path, "selection_status": "selected"}
+    monkeypatch.setattr(dash, "select_canonical_csv_rows", rows)
+    dash.PHY_GRID_PAYLOAD_CACHE.clear()
+    grid = dash.build_phy_grid_payload(919, slot_limit=6)["grid"]
+    csi = next(e for e in grid["events"] if e["channel"] == "CSI-RS")
+    pucch = next(e for e in grid["events"] if e["channel"] == "PUCCH")
+    assert csi["source_slot"] == csi_slot and csi["slot"] == csi_slot + 1
+    assert pucch["source_slot"] == ul_slot and pucch["slot"] == ul_slot + 1
+    assert csi["display_slot_offset"] == pucch["display_slot_offset"] == 1
+    direction = {s["slot"]: s["tdd"] for s in grid["slots"]}
+    assert direction[csi["slot"]] == "D" and direction[pucch["slot"]] == "U"
+
+
 def test_exact_planned_re_rows_render_without_inventing_coordinates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

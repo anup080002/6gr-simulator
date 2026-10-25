@@ -46,6 +46,8 @@ p.addParameter("StopAfterStage", "complete_attempt", @(x)(ischar(x) || isstring(
 p.addParameter("Continuation", struct(), @(x)isstruct(x) && isscalar(x));
 p.addParameter("GNBIdentityAssignment", struct(), @(x)isstruct(x) && isscalar(x));
 p.addParameter("GNBResponsePlan", struct(), @(x)isstruct(x) && isscalar(x));
+p.addParameter("Msg1TransmissionOwner", [], @(x)isempty(x) || isa(x,'sixgr.truth.CoupledWaveformStream'));
+p.addParameter("Msg1TransmissionCompletion", struct(), @(x)isstruct(x) && isscalar(x));
 p.addParameter("StageAction", "execute", @(x)(ischar(x) || isstring(x)) && isscalar(string(x)));
 p.addParameter("RARObservationSlot", NaN, @(x)isnumeric(x) && isscalar(x));
 p.addParameter("ContentionObservationSlot", NaN, @(x)isnumeric(x) && isscalar(x));
@@ -60,10 +62,12 @@ expireRAR = strcmpi(string(opt.StageAction), "expire_rar_window");
 receiveContention = strcmpi(string(opt.StageAction), "receive_contention_observation");
 startContention = strcmpi(string(opt.StageAction), "start_contention_timer");
 expireContention = strcmpi(string(opt.StageAction), "expire_contention_timer");
+completeMsg1TX = strcmpi(string(opt.StageAction), "complete_msg1_transmission");
+msg1TXOwner=opt.Msg1TransmissionOwner; msg1TXItem=opt.Msg1TransmissionCompletion;
 contentionSlot=opt.ContentionObservationSlot;
 rarObservationSlot=opt.RARObservationSlot; eventTicks=opt.EventTicks;
 if ~prepareOnly && ~receiveRAR && ~expireRAR && ~receiveContention && ...
-        ~startContention && ~expireContention && ~strcmpi(string(opt.StageAction), "execute")
+        ~startContention && ~expireContention && ~completeMsg1TX && ~strcmpi(string(opt.StageAction), "execute")
     error("sixgr:phy:ra:InvalidRAStageAction", "Unsupported RA stage action.");
 end
 continuation = struct();
@@ -75,7 +79,7 @@ elseif isempty(stopStage)
     error("sixgr:phy:ra:InvalidRAStageBoundary", ...
         "StopAfterStage must name Msg1, Msg2, Msg3, Msg4, RRCSetupComplete, or complete_attempt.");
 end
-if (stopStage < 5 || prepareOnly || isfinite(opt.ReceiveThroughTime_s)) && nargout < 2
+if (stopStage < 5 || prepareOnly || completeMsg1TX || isfinite(opt.ReceiveThroughTime_s)) && nargout < 2
     error("sixgr:phy:ra:MissingRAContinuationOutput", ...
         "A stopped RA attempt requires the second output to retain its receiver-owned continuation.");
 end
@@ -105,7 +109,8 @@ if ~isempty(fieldnames(opt.Continuation))
     end
     dynamicOptions = ["Continuation", "StopAfterStage", "StageAction", "InitialDLChannelState", ...
         "InitialULChannelState", "RuntimeStageWaveforms", "RuntimeSlot", "ReceiveThroughTime_s", ...
-        "RARObservationSlot", "ContentionObservationSlot", "EventTicks", "GNBIdentityAssignment", "GNBResponsePlan"];
+        "RARObservationSlot", "ContentionObservationSlot", "EventTicks", "GNBIdentityAssignment", "GNBResponsePlan", ...
+        "Msg1TransmissionOwner", "Msg1TransmissionCompletion"];
     for name = setdiff(string(p.Parameters), [string(p.UsingDefaults), dynamicOptions])
         if ~isequaln(opt.(name), saved.Options.(name))
             error("sixgr:phy:ra:RAContinuationOptionChanged", ...
@@ -314,6 +319,26 @@ result.RuntimeExecutionState = "executing";
 result.NextRuntimeStage = "";
 result.NextRuntimeStageSlot = NaN;
 result.PreparedTransmission = struct();
+
+% A UE's completed emission is independent of a gNB detector decision.
+% Validate outside the decoder exception handler: malformed source receipts
+% are integrity errors, not failed radio receptions or synthetic DTX.
+if completeMsg1TX
+    assert(exist('saved','var')==1 && nextStage==1 && reusePreparedStage==1 && ...
+        string(runtime.Mode)=="shared_physical_waveform_stream" && ...
+        isa(rarReceiver,'sixgr.phy.ra.RARReceiveWindow') && rarReceiver.Status=="waiting", ...
+        'sixgr:phy:ra:Msg1TransmissionNotPrepared', ...
+        'Complete only an original shared prepared Msg1; do not recreate its RAR window.');
+    proof=sixgr.truth.validateMsg1TransmissionCompletion(msg1TXOwner,msg1TXItem,saved);
+    result.Msg1TransmissionCompletion=proof;
+    result.Msg1TransmissionCompleted=true;
+    result.Msg1ReceiverExecuted=false;
+    events=[events;localEvent(raCfg,"MSG1_PRACH_TX","WAIT_RAR", ...
+        "actual_Msg1_active_support_transmitted_no_gNB_reception", ...
+        "ra-ResponseWindow",raCfg.RAResponseWindowSlots,raCfg.RARNTI,raCfg.PreambleIndex,"")];
+    [result,continuation]=captureContinuation(2);
+    return;
+end
 
 try
     if startContention || expireContention || receiveContention
@@ -1015,8 +1040,10 @@ end
             pending.Msg1Tx = msg1Tx;
             % Publish only the stage that actually completed. Do not wait
             % for RRC completion to expose the independently detected set.
-            pending.ArtifactTables.msg1_prach_detection=struct2table(localMsg1Row(result,raCfg,det),'AsArray',true);
-            pending.ArtifactTables.msg1_detected_candidates=localDetectedPRACHRows(result,raCfg);
+            if ~isempty(fieldnames(det))
+                pending.ArtifactTables.msg1_prach_detection=struct2table(localMsg1Row(result,raCfg,det),'AsArray',true);
+                pending.ArtifactTables.msg1_detected_candidates=localDetectedPRACHRows(result,raCfg);
+            end
         else
             % Generated buffers are not received/transmitted observations.
             pending.Events = sixgr.mac.ra.RAEventLog([]);
@@ -1362,15 +1389,9 @@ if isempty(sib1Recovery) || ~(isstruct(sib1Recovery) && ~isempty(fieldnames(sib1
     return;
 end
 [cfg, evidenceT] = sixgr.mac.ra.installDecodedSIB1RACHConfig(cfg, sib1Recovery);
-if logical(sixgr.util.structGet(sib1Recovery,"MIBDecoded",false)) && ...
-        logical(sixgr.util.structGet(sib1Recovery,"BCHCrcPass",false))
-    cfg.UECommonMIBConfiguration = struct( ...
-        "Source","decoded_mib_bch_transport_block", ...
-        "DMRSTypeAPosition",sib1Recovery.MIBDMRSTypeAPosition, ...
-        "CORESET0Present",sib1Recovery.CORESET0Present, ...
-        "CORESET0NumRB",sib1Recovery.CORESET0NumRB, ...
-        "CORESET0RBStart",sib1Recovery.CORESET0RBStart);
-end
+% The installer carries either original combined BCH/SI evidence or the
+% immutable previously delivered MIB used by a later SI-only receiver.
+% Never require SI-only output to claim a new BCH reception.
 if istable(evidenceT) && ~isempty(evidenceT)
     evidenceT.RunPhase = repmat("sib1_to_ra_config_install", height(evidenceT), 1);
 end

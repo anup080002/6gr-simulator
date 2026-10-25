@@ -196,7 +196,8 @@ try
         rxArgs = {"NoiseVariance",noiseVariance, ...
             "NoiseVarianceDomain","sample", ...
             "ChannelProfile",channelMeta.Profile, ...
-            "DetectionThreshold",detectionThreshold};
+            "DetectionThreshold",detectionThreshold, ...
+            "ReceiverConfig",cfgRuntime};
         interferenceCovariance = sixgr.util.structGet(replay,"InterferenceCovariance",[]);
         if ~isempty(interferenceCovariance)
             rxArgs = [rxArgs {"InterferenceCovariance",interferenceCovariance, ...
@@ -253,7 +254,14 @@ trial.MeasuredInputInterferencePower=measuredInterferencePower;
 trial.MeasuredInputDisturbancePower=measuredDisturbancePower;
 [estimatedCFO,cfoInfo]=sixgr.phy.rx.estimateCFOFromCyclicPrefix( ...
     diagnosticWaveform,tx.OFDMInfo,double(tx.OFDMInfo.SampleRate));
-trial.EstimatedCFO_Hz=double(estimatedCFO); trial.CFOEstimatorInfo=cfoInfo;
+if isfield(rx,'ReceiveFrequency') && ~isempty(fieldnames(rx.ReceiveFrequency))
+    % This post-hoc raw-input diagnostic is not the operator consumed by RX.
+    % Preserve the actual receiver estimate already copied by stageEvidence.
+    trial.InputDiagnosticCFO_Hz=double(estimatedCFO);
+    trial.InputDiagnosticCFOEstimatorInfo=cfoInfo;
+else
+    trial.EstimatedCFO_Hz=double(estimatedCFO); trial.CFOEstimatorInfo=cfoInfo;
+end
 
 serialized = tx.Serialization;
 reference = [serialized.Sequence1.Bits;serialized.Sequence2.Bits];

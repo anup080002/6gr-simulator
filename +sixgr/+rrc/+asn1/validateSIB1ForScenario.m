@@ -35,6 +35,16 @@ for direction = ["downlink", "uplink"]
     if direction == "downlink", bwpName = "initialDownlinkBWP";
     else, bwpName = "initialUplinkBWP"; end
     bwp = serving.(direction + "ConfigCommon").(bwpName);
+    if isfield(serving,'tdd_UL_DL_ConfigurationCommon')
+        % This codec is explicitly bounded FR1. Validate each received BWP,
+        % not a scenario/carrier-SCS substitute; preserve the original IE.
+        tdd=sixgr.rrc.asn1.resolveTDDCommonRuntime( ...
+            serving.tdd_UL_DL_ConfigurationCommon, ...
+            str2double(erase(string(bwp.genericParameters.subcarrierSpacing),"kHz")), ...
+            sixgr.util.structGet(bwp.genericParameters,'cyclicPrefix',"normal"),"FR1");
+        assert(tdd.Present,'sixgr:rrc:asn1:InvalidTDDCommonIE', ...
+            'A present TDD common field cannot contain an absent IE marker.');
+    end
     riv = double(bwp.genericParameters.locationAndBandwidth);
     [startRB, sizeRB] = sixgr.bwop.RIVFDRA.decode(275, riv);
     if sixgr.bwop.RIVFDRA.encode(275, startRB, sizeRB) ~= riv

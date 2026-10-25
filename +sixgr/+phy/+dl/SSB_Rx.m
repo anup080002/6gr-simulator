@@ -206,13 +206,23 @@ end
 leftPadding = max(0, 1 - demodStartIdx);
 rxSync = [complex(zeros(leftPadding, size(rxF,2), 'like', rxF)); ...
     rxF(max(1,demodStartIdx):demodEndIdx, :)];
+% TS 38.211 5.4: continuous translation of an off-centre SSB changes
+% the carrier reference of the per-symbol phase compensation. Use the
+% placement translation actually executed by freqOffsetCorrect, not the
+% estimated oscillator CFO (which is a separate correction).
+placementCorrectionHz = double(finfo.SSBPlacementCorrectionAppliedHz);
+if ~isscalar(placementCorrectionHz) || ~isfinite(placementCorrectionHz)
+    error('sixgr:phy:dl:SSB_Rx:InvalidPlacementPhaseReference', ...
+        'The executed SSB placement translation must be a finite scalar.');
+end
+demodulationCarrierFrequencyHz = ...
+    double(timing.CarrierFrequencyHz) - placementCorrectionHz;
 [rxGrid,originalDemodulationInfo] = sixgr.phy.waveform.ofdmDemodulate( ...
     ssbCarrier, rxSync, ...
     "Nfft", ssbSampling.Nfft, ...
     "SampleRate", ssbSampling.SampleRateHz, ...
-    "CarrierFrequency", double(timing.CarrierFrequencyHz));
-% SSB_Tx uses this configured carrier frequency for the TS 38.211 5.4
-% per-symbol phase rotation. Reverse it at the actual acquired slot; an
+    "CarrierFrequency", demodulationCarrierFrequencyHz);
+% Reverse the translated per-symbol rotation at the acquired slot. An
 % estimator must not absorb an omitted deterministic receiver operation.
 
 % Normalize dimensionality: force 3-D grid (Nsc-by-Nsym-by-Nr)
@@ -310,8 +320,8 @@ sync.SSBTiming = timing;
 sync.SelectedCandidateStartSymbol = candidateStartSymbol;
 sync.SelectedCandidateAbsoluteStartSymbol = absoluteCandidateStartSymbol;
 sync.DemodulationSlot = double(nSlot);
-sync.SymbolPhaseCompensationCarrierFrequencyHz = double(timing.CarrierFrequencyHz);
-sync.SymbolPhaseCompensationSource = 'configured_carrier_nr_ofdm_demodulation';
+sync.SymbolPhaseCompensationCarrierFrequencyHz = demodulationCarrierFrequencyHz;
+sync.SymbolPhaseCompensationSource = 'configured_carrier_minus_executed_ssb_placement_translation_nr_ofdm_demodulation';
 sync.SSBSymbolColumnsOneBased = double(ssbSymbolColumns);
 sync.SSBDemodulationSampleCount = double(size(rxSync,1));
 sync.SSBDemodulationStartSampleZeroBased = double(demodStartIdx-1);

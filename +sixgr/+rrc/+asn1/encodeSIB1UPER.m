@@ -122,6 +122,9 @@ end
 if isfield(serv,'n_TimingAdvanceOffset')
     semantic.n_timing_advance_offset=char(string(serv.n_TimingAdvanceOffset));
 end
+if isfield(serv,'tdd_UL_DL_ConfigurationCommon')
+    semantic.tdd_ul_dl_config_common=serv.tdd_UL_DL_ConfigurationCommon;
+end
 end
 
 function value = localSCSValue(name)

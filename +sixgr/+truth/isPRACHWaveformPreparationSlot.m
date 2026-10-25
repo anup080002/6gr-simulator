@@ -1,5 +1,5 @@
 function tf = isPRACHWaveformPreparationSlot(cfg, slotIdx)
-%ISPRACHWAVEFORMPREPARATIONSLOT True at the canonical PRACH buffer origin.
+%ISPRACHWAVEFORMPREPARATIONSLOT One planning slot BEFORE the PRACH buffer.
 %
 % A shared causal waveform stream must enqueue the complete PRACH buffer
 % before its received-clock/common-UL-offset-adjusted transmit origin.  That
@@ -8,35 +8,62 @@ function tf = isPRACHWaveformPreparationSlot(cfg, slotIdx)
 % slot.  This only prepares a future contribution; it does not move any IQ
 % sample or change the reported PRACH occasion.  The predicate is distinct from
 % isActivePRACHOccasion, which identifies the slot containing transmitted
-% PRACH energy and remains the reporting/RA-RNTI authority.
+% PRACH energy. Native PRACH/reference RA-RNTI coordinates are unchanged.
+% This one-slot lead is bounded simulator planning policy, not an NR delay.
+% Per-UE timing and the committed-transmission guard still apply at enqueue.
 
 validateattributes(slotIdx,{'numeric'}, ...
     {'real','scalar','finite','integer','positive'});
 timing=sixgr.util.structGet(cfg,'phy.prach.timing',struct());
 occasions=sixgr.util.structGet(timing,'Occasions',table());
-required=["PRACHSlot","AbsoluteSlot"];
+required=["PRACHSlot","AbsoluteSlot","PRACHWaveformStartTicks","PRACHActiveStartTicks"];
 if ~istable(occasions) || isempty(occasions) || ...
         ~all(ismember(required,string(occasions.Properties.VariableNames)))
     error('sixgr:truth:MissingPRACHWaveformTimingAuthority', ...
         'Shared PRACH preparation requires the canonical resolved occasion table.');
 end
 period=double(sixgr.util.structGet(timing,'PeriodCarrierSlots',NaN));
-subframesPerPRACHSlot=double(sixgr.util.structGet( ...
-    timing,'SubframesPerPRACHSlot',NaN));
-% The resolver has already mapped each PRACH-clock occasion, including
-% fractional short-preamble origins, onto the carrier sample/slot clock.
-% Recomputing PRACHSlot*duration can yield a fractional carrier-slot value
-% even though the received waveform has an exact containing AbsoluteSlot.
+scs=sixgr.util.structGet(timing,'CarrierSubcarrierSpacingKHz',NaN);
+cp=sixgr.util.structGet(cfg,'phy.carrier.CyclicPrefix',"normal");
+spec=sixgr.phy.frame.AbsoluteTime.resolveNumerology(struct('SCSKHz',scs,'CyclicPrefix',cp));
+% AbsoluteSlot locates actual CP/useful energy, NOT the beginning of the
+% complete native waveform buffer. A long preamble can have initial zeros;
+% planning from occupied AbsoluteSlot-1 can already be too late after TA.
 prachSlots=double(occasions.PRACHSlot(:));
-starts=double(occasions.AbsoluteSlot(:));
+activeSlots=double(occasions.AbsoluteSlot(:));
+origins=occasions.PRACHWaveformStartTicks;
+active=occasions.PRACHActiveStartTicks;
 if ~(isscalar(period) && isfinite(period) && period>=1 && period==fix(period) && ...
-        isscalar(subframesPerPRACHSlot) && isfinite(subframesPerPRACHSlot) && ...
-        subframesPerPRACHSlot>0 && all(isfinite(prachSlots)) && ...
+        mod(period,spec.SlotsPerFrame)==0 && period<=flintmax && ...
+        all(isfinite(prachSlots)) && ...
         all(prachSlots>=0) && all(prachSlots==fix(prachSlots)) && ...
-        all(isfinite(starts)) && all(starts>=0) && ...
-        all(starts<period) && all(starts==fix(starts)))
+        all(isfinite(activeSlots)) && all(activeSlots>=0) && all(activeSlots==fix(activeSlots)) && ...
+        isa(origins,'int64') && iscolumn(origins) && isa(active,'int64') && iscolumn(active) && ...
+        all(origins>=0 & active>=origins) && all(double(active)<=flintmax))
     error('sixgr:truth:InvalidPRACHWaveformTimingAuthority', ...
-        'Canonical PRACH occasions must have valid resolved carrier slots.');
+        'Canonical PRACH occasions require exact original waveform/active Tc clocks and a complete carrier-frame period.');
+end
+frames=period/spec.SlotsPerFrame;
+if frames>floor(flintmax/double(sixgr.phy.frame.AbsoluteTime.TicksPerFrame))
+    error('sixgr:truth:InvalidPRACHWaveformTimingAuthority','PRACH period exceeds exact Tc arithmetic.');
+end
+periodTicks=int64(frames)*sixgr.phy.frame.AbsoluteTime.TicksPerFrame;
+if any(origins>=periodTicks)
+    error('sixgr:truth:InvalidPRACHWaveformTimingAuthority','Original waveform origins must belong to the retained native period.');
+end
+starts=zeros(height(occasions),1);
+for k=1:height(occasions)
+    t=sixgr.phy.frame.AbsoluteTime(origins(k));
+    [~,frame,slot]=t.floorToSlot(spec);
+    starts(k)=double(frame)*spec.SlotsPerFrame+double(slot);
+    % Reject contradictory native metadata without substituting occupied
+    % coordinates for the original waveform-container clock.
+    a=sixgr.phy.frame.AbsoluteTime(active(k));
+    [~,activeFrame,activeSlot]=a.floorToSlot(spec);
+    if activeSlots(k)~=double(activeFrame)*spec.SlotsPerFrame+double(activeSlot)
+        error('sixgr:truth:InvalidPRACHWaveformTimingAuthority', ...
+            'Native active support and occupied carrier slot disagree.');
+    end
 end
 % One full carrier-slot planning horizon covers the bounded received-clock
 % phase/common N_TA offset without rewriting an already committed interval.

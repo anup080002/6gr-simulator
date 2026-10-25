@@ -6,12 +6,9 @@ if nargin ~= 3
         'PRACH delay conversion requires its actual sample rate and the first scheduled UL SCS.');
 end
 step = sixgr.phy.ra.resolveRARTimingAdvance(0,firstULSCSkHz,sampleRateHz);
-rawOffset = double(sixgr.util.structGet(det, "TimingOffsetSamples", NaN));
-if ~(isscalar(rawOffset) && isfinite(rawOffset))
-    rawOffset = NaN;
-end
-propOffset = double(sixgr.util.structGet(det, "PropagationTimingOffsetSamples", NaN));
-if ~(isscalar(propOffset) && isreal(propOffset) && isfinite(propOffset) && propOffset>=0)
+rawOffset = localMeasuredSample(sixgr.util.structGet(det, "TimingOffsetSamples", NaN));
+propOffset = localMeasuredSample(sixgr.util.structGet(det, "PropagationTimingOffsetSamples", NaN));
+if ~(isfinite(propOffset) && propOffset>=0)
     ta = struct();
     ta.RawTimingOffsetSamples = double(rawOffset);
     ta.TimingOffsetSamples = NaN;
@@ -41,4 +38,14 @@ ta.StepSamples = timing.StepSamples;
 ta.QuantizationResidualSamples = propOffset-timing.Samples;
 ta.Valid = true;
 ta.Source = "msg1_prach_measured_delay_nearest_rar_ta_step_ts_38_213_4_2";
+end
+
+function value=localMeasuredSample(original)
+% Validate the receiver operand BEFORE conversion. Text such as '0' is
+% not a measured 48-sample delay, and logical flags are not delay samples.
+value=NaN;
+if isnumeric(original) && ~islogical(original) && isreal(original) && ...
+        isscalar(original) && isfinite(original)
+    value=double(original);
+end
 end

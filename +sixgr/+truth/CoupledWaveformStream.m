@@ -58,6 +58,8 @@ classdef CoupledWaveformStream < handle
         CellBroadcastSchedulingActive = false
         UnselectedPUCCHRegistrations = cell(0,1)
         UnselectedPUCCHProducers = cell(0,1)
+        Msg1TXRegistrations = cell(0,1)
+        Msg1TXCompletions = cell(0,1)
     end
     methods (Static)
         function [state,obj]=initialize(state,cfg,userCfg)
@@ -174,7 +176,7 @@ classdef CoupledWaveformStream < handle
         function tf=hasPending(obj,kind,ue)
             tf=any(string({obj.Pending.Kind})==string(kind) & [obj.Pending.UE]==ue);
         end
-        function queueRA(obj,ue,prepared,context,transmitOnly)
+        function [id,enqueueReceipt]=queueRA(obj,ue,prepared,context,transmitOnly)
             if nargin<5, transmitOnly=false; end
             link=obj.linkForUE(ue,string(prepared.Direction));
             cfg=link.DLConfig;
@@ -195,7 +197,7 @@ classdef CoupledWaveformStream < handle
             if size(samples,2)~=node.NumAntennas || size(samples,1)~=prepared.SampleCount
                 error('sixgr:truth:SharedRAAntennaLayout','Prepared RA must match its registered physical radio and complete sample extent.');
             end
-            if obj.hasPending("RA",ue)
+            if obj.hasPending("RA",ue) || obj.hasPending("Msg1TX",ue)
                 error('sixgr:truth:DuplicatePendingRAStage','One UE cannot queue a second stage before the prior received stage completes.');
             end
             obj.Serial=obj.Serial+1; id="ra_observation_"+obj.Serial;
@@ -217,7 +219,11 @@ classdef CoupledWaveformStream < handle
                 end
                 obj.CommonRAReservations=obj.CommonRAReservations.reserve(reservations);
             end
-            obj.Events.enqueue(tx,id,sixgr.phy.waveform.WaveformChunk(samples,first));
+            if nargout>1
+                enqueueReceipt=obj.Events.enqueue(tx,id,sixgr.phy.waveform.WaveformChunk(samples,first));
+            else
+                obj.Events.enqueue(tx,id,sixgr.phy.waveform.WaveformChunk(samples,first));
+            end
             if prepared.Direction=="UL"
                 active=find(any(samples~=0,2),1,'first');
                 if ~isempty(active)
@@ -242,6 +248,61 @@ classdef CoupledWaveformStream < handle
             context.Prepared=prepared;
             obj.Pending(end+1)=struct('ID',id,'Kind',"RA",'UE',ue,'Context',context, ...
                 'Planes',struct('ReceiverID',{},'Observation',{},'Segments',{}));
+        end
+        function id=queueMsg1Transmission(obj,ue,prepared,checkpoint)
+            % Explicit TX-only API. Main access remains on queueRA until the
+            % independent cell detector/response chain is activated together.
+            err='sixgr:truth:Msg1TransmissionContract';
+            assert(isstruct(checkpoint) && isscalar(checkpoint) && ...
+                all(isfield(checkpoint,{'RAConfig','Result','NextStage','ResumePhase','Runtime','RARReceiver'})) && ...
+                checkpoint.NextStage==1 && checkpoint.ResumePhase=="prepared" && ...
+                string(checkpoint.Runtime.Mode)=="shared_physical_waveform_stream" && ...
+                isa(checkpoint.RARReceiver,'sixgr.phy.ra.RARReceiveWindow') && ...
+                isequaln(prepared,checkpoint.Result.PreparedTransmission) && ...
+                prepared.StageName=="Msg1" && prepared.Direction=="UL", ...
+                err,'Retain one original shared Msg1 preparation and its frozen UE RAR window.');
+            ra=checkpoint.RAConfig; link=obj.linkForUE(ue,"UL");
+            assert(ra.UEId==ue && ra.ServingCell==link.Cell && ...
+                isa(ra.PRACHActiveEndTicksExclusive,'int64') && isscalar(ra.PRACHActiveEndTicksExclusive), ...
+                err,'The original attempt and physical UE/cell must agree.');
+            tc=double(sixgr.phy.frame.AbsoluteTime.TicksPerSecond)/obj.SampleRateHz;
+            assert(tc==fix(tc) && rem(ra.PRACHActiveEndTicksExclusive,int64(tc))==0, ...
+                err,'The actual emitted CP/useful end must lie exactly on the shared sample clock.');
+            stop=double(ra.PRACHActiveEndTicksExclusive/int64(tc));
+            first=sixgr.phy.ra.preparedStageTransmitStartSample(prepared);
+            key=string(ra.RunId)+"/ue="+ue+"/attempt="+ra.AttemptId;
+            assert(~any(cellfun(@(r)r.Key==key,obj.Msg1TXRegistrations)), ...
+                'sixgr:truth:DuplicateMsg1Transmission','An original attempt can enqueue Msg1 only once.');
+            native=sixgr.rach.prachSampleTiming(checkpoint.Msg1Tx.Carrier,checkpoint.Msg1Tx.PRACH);
+            assert(stop>first && stop<=first+prepared.SampleCount && first>=obj.Events.NextSampleIndex, ...
+                err,'Do not use padding, receiver completion, or a committed-past interval as the TX boundary.');
+            assert(native.SampleRateHz==obj.SampleRateHz && ...
+                int64(stop-first)*int64(tc)==native.ActiveEndTicksExclusive-native.WaveformStartTicks && ...
+                ~any(prepared.PhysicalWaveform(stop-first+1:end,:)~=0,'all'), ...
+                err,'Retain exact native CP/useful support; only original zero padding may follow its end.');
+            [id,enqueueReceipt]=obj.queueRA(ue,prepared,struct(),true);
+            tx="ue_"+ue;
+            context=struct('Prepared',prepared,'RAConfig',ra,'ComponentID',id, ...
+                'CheckpointSHA256',sixgr.phy.waveform.WaveformHash.bytes(getByteStreamFromArray(checkpoint)), ...
+                'TransmitterPlane',tx+":tx",'ServingCell',link.Cell, ...
+                'ActiveEndSample',stop,'PhysicalConfigurationEpoch',obj.Physical.ConfigurationEpoch, ...
+                'EnqueueReceipt',enqueueReceipt);
+            registration=struct('ID',id,'UE',ue,'Key',key, ...
+                'ContextSHA256',sixgr.phy.waveform.WaveformHash.bytes(getByteStreamFromArray(context)));
+            obj.Events.observe(tx+":tx",id,first,stop);
+            obj.Msg1TXRegistrations{end+1,1}=registration;
+            obj.Pending(end+1)=struct('ID',id,'Kind',"Msg1TX",'UE',ue,'Context',context, ...
+                'Planes',struct('ReceiverID',{},'Observation',{},'Segments',{}));
+        end
+        function registration=originalMsg1TransmissionContract(obj,id)
+            found=find(cellfun(@(r)r.ID==string(id),obj.Msg1TXRegistrations));
+            assert(isscalar(found),'sixgr:truth:Msg1TransmissionContract','Require an original registered Msg1 component.');
+            registration=obj.Msg1TXRegistrations{found};
+        end
+        function validateCompletedMsg1Transmission(obj,receipt)
+            found=find(cellfun(@(r)r.ComponentID==receipt.ComponentID,obj.Msg1TXCompletions));
+            assert(isscalar(found) && isequaln(receipt,obj.Msg1TXCompletions{found}), ...
+                'sixgr:truth:Msg1TransmissionNotCompleted','Require the physical owner''s original committed TX completion.');
         end
         function armRARWindow(obj,ue,ra)
             % Arm from the UE's transmitted occasion/broadcast information,
@@ -1234,6 +1295,10 @@ classdef CoupledWaveformStream < handle
             context.CellOwnedBroadcast=true;
             context.CellBroadcastConfigurationSHA256=cellOwner.ConfigSHA256;
             context.ComponentID="SSB_gnb_"+link.Cell+"_"+p.BroadcastStartSample;
+            if ~context.TrackingOnly
+                context.AcquisitionWindowContract=sixgr.phy.frame.SSBAcquisitionWindow.create( ...
+                    p.ReceiverConfig,obj.SampleRateHz,double(p.BroadcastStartSample),double(p.NumSamples));
+            end
             context=sixgr.truth.compactBroadcastReceiveContext(context);
             digest=sixgr.phy.waveform.WaveformHash.bytes(getByteStreamFromArray(context));
             prior=find([obj.CellSSBObservers.Cell]==link.Cell & [obj.CellSSBObservers.UE]==ue & ...
@@ -1248,6 +1313,10 @@ classdef CoupledWaveformStream < handle
             end
             obj.Serial=obj.Serial+1; id="observation_"+obj.Serial;
             first=p.BroadcastStartSample; stop=first+p.NumSamples;
+            archiveStop=stop;
+            if ~context.TrackingOnly
+                stop=context.AcquisitionWindowContract.EndSampleExclusive;
+            end
             tx="gnb_"+link.Cell; rx="ue_"+ue+"_rx";
             planes=[tx+":tx",rx+":pre_rf",rx+":post_rf"];
             for plane=planes, obj.Events.observe(plane,id,first,stop); end
@@ -1257,6 +1326,18 @@ classdef CoupledWaveformStream < handle
                 'Planes',struct('ReceiverID',{},'Observation',{},'Segments',{}));
             obj.CellSSBObservers(end+1)=struct('Cell',link.Cell,'UE',ue,'Slot',slot0, ...
                 'ID',id,'ContextSHA256',digest);
+            if ~context.TrackingOnly && stop<archiveStop
+                % Archive completion is not another PHY acquisition. Both
+                % observers consume the same original physical execution;
+                % neither truncates Prepared nor replays the channel/RF.
+                obj.Serial=obj.Serial+1; archiveID="observation_"+obj.Serial;
+                archive=context; archive.AcquisitionObservationID=id;
+                for plane=[planes,context.DesiredReferencePlane]
+                    obj.Events.observe(plane,archiveID,first,archiveStop);
+                end
+                obj.Pending(end+1)=struct('ID',archiveID,'Kind',"SSBArchive",'UE',ue, ...
+                    'Context',archive,'Planes',struct('ReceiverID',{},'Observation',{},'Segments',{}));
+            end
             if context.TrackingOnly
                 horizons=sixgr.phy.frame.ssbObservationHorizons(context.Config,obj.SampleRateHz);
                 assert(all(horizons.ObservationEndSampleExclusive<=p.NumSamples), ...
@@ -1508,7 +1589,7 @@ classdef CoupledWaveformStream < handle
             % Also migrate legacy checkpoints in memory, never rewrite their
             % immutable state files. Equality guards preserve frozen IQ.
             for k=1:numel(obj.Pending)
-                if any(obj.Pending(k).Kind==["PBCH","SSBOccasion"])
+                if any(obj.Pending(k).Kind==["PBCH","SSBOccasion","SSBArchive"])
                     obj.Pending(k).Context=sixgr.truth.compactBroadcastReceiveContext(obj.Pending(k).Context);
                 end
             end
@@ -1799,6 +1880,12 @@ classdef CoupledWaveformStream < handle
                         p=obj.Pending(k);
                         if p.Kind=="ContinuousTxIQ"
                             continue;
+                        end
+                        if p.Kind=="Msg1TX"
+                            proof=sixgr.truth.validateMsg1TransmissionCompletion(obj,p);
+                            assert(~any(cellfun(@(r)r.ComponentID==p.ID,obj.Msg1TXCompletions)), ...
+                                'sixgr:truth:DuplicateMsg1Transmission','Commit original Msg1 active support only once.');
+                            obj.Msg1TXCompletions{end+1,1}=proof;
                         end
                         if p.Kind=="CellSSBTX"
                             found=find(string({obj.CellSSBRegistrations.ComponentID})==p.Context.ComponentID);
@@ -2112,7 +2199,7 @@ end
 end
 
 function count=localExpectedSharedPlaneCount(pending)
-if any(string(pending.Kind)==["ContinuousTxIQ","CellSIB1TX","CellSSBTX"])
+if any(string(pending.Kind)==["ContinuousTxIQ","CellSIB1TX","CellSSBTX","Msg1TX"])
     count=1;
 elseif any(string(pending.Kind)==["PUSCHReceiveOnly","SIB1"])
     count=2; % Actual pre/post RF only: no invented UE transmitter plane.
@@ -2155,6 +2242,17 @@ else
         'ReceiverConfig',sixgr.util.structGet(item.Context,'Prepared.ReceiverConfig',struct()), ...
         'TrackingOnly',sixgr.util.structGet(item.Context,'TrackingOnly',false), ...
         'AcquisitionMIBBinding',sixgr.util.structGet(item.Context,'AcquisitionMIBBinding',[]));
+    if isfield(item.Context,'AcquisitionWindowContract')
+        contract=item.Context.AcquisitionWindowContract;
+        p=item.Context.Prepared;
+        sixgr.phy.frame.SSBAcquisitionWindow.validate(contract,p.ReceiverConfig, ...
+            p.SampleRateHz,double(p.BroadcastStartSample),double(p.NumSamples));
+        assert(observation.StartSample==contract.StartSample && ...
+            observation.EndSampleExclusive==contract.EndSampleExclusive, ...
+            'sixgr:truth:BroadcastCompletedCaptureMismatch', ...
+            'Initial MIB authority belongs to its original complete receiver search window.');
+        receiverContext.AcquisitionWindowContract=contract;
+    end
     % Authenticate the original armed acquisition generation as well as IQ.
     % Comparing two caller-supplied copies at completion is not sufficient:
     % both could have been replaced after reacquisition. Hash the complete

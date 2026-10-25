@@ -85,8 +85,26 @@ else
     args=[args {'NoiseVarianceMode','received_dmrs_estimate', ...
         'TimingSearchWindowSamples',[0 size(raw,1)-(stop-first)]}];
 end
+% Format 0 has already selected a complete interval using received timing;
+% other formats retain the raw origin for their own DM-RS alignment below.
+inputOrigin=observation.StartSample;
+if ~isempty(timing) && isfinite(timing.AppliedTimingCorrectionSamples)
+    inputOrigin=inputOrigin+timing.AppliedTimingCorrectionSamples;
+end
+args=[args {'ReceiverConfig',cfg,'ReceiverInputStartSample',inputOrigin}];
 rx=sixgr.phy.pucch.PUCCHReceiver.receive(raw,carrier,assignment,context,args{:});
 if ~isempty(timing), rx.ReceiveTiming=timing; end
+rx.ReceiveFrequency.ObservationStartSample=observation.StartSample;
+rx.ReceiveFrequency.ObservationEndSampleExclusive=observation.EndSampleExclusive;
+rx.ReceiveFrequency.ObservationSampleSHA256=observation.sampleHash();
+rx.ReceiveFrequency.ObservationSampleHashAlgorithm="sixgr.phy.waveform.WaveformHash.runtimeArray";
+rx.ReceiveFrequency.AppliedTimingCorrectionSamples=rx.ReceiveTiming.AppliedTimingCorrectionSamples;
+if ~isfinite(rx.ReceiveTiming.AppliedTimingCorrectionSamples)
+    rx.ReceiveFrequency.CFOCorrectionClockSource="original_received_zero_energy_interval_not_timing_measurement";
+    if isfield(rx,'CFOCorrectionClockSource')
+        rx.CFOCorrectionClockSource=rx.ReceiveFrequency.CFOCorrectionClockSource;
+    end
+end
 rx.DetectionThresholdSource=thresholdSource;
 rx.ReceiverObservationStartSample=observation.StartSample;
 rx.ReceiverObservationEndSampleExclusive=observation.EndSampleExclusive;

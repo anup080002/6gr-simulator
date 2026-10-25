@@ -148,6 +148,10 @@ if ~isempty(fieldnames(pucchCommon))
     servingCommon.uplinkConfigCommon.initialUplinkBWP.pucch_ConfigCommon = ...
         localCanonicalPUCCHConfigCommon(pucchCommon);
 end
+[tddPresent,tddIE]=localTDDCommon(cfg,servingCommon);
+if tddPresent
+    servingCommon.tdd_UL_DL_ConfigurationCommon=tddIE;
+end
 
 sib1 = struct();
 sib1.cellSelectionInfo = struct("q_RxLevMin", -70, "q_QualMin", -20);
@@ -180,6 +184,91 @@ msg.message = struct("c1", struct("systemInformationBlockType1", sib1));
 sixgr.rrc.asn1.validateSIB1ForScenario(msg, cfg);
 end
 
+function [present,ie]=localTDDCommon(cfg,serving)
+% Only the TX builder may project installed common policy into an IE.
+% Explicit raw IE/absence is used by the decoder and must not be replaced.
+primary=sixgr.util.structGet(cfg,'rrc.sib1',struct());
+secondary=sixgr.util.structGet(cfg,'initial_access.sib1',struct());
+name='tdd_ul_dl_config_common';
+hasPrimary=isfield(primary,name); hasSecondary=isfield(secondary,name);
+if hasPrimary && hasSecondary
+    assert(sixgr.rrc.asn1.compareSIB1Trees(primary.(name),secondary.(name)), ...
+        'sixgr:rrc:asn1:ConflictingTDDCommonAuthority','Authored TDD IE aliases disagree.');
+end
+ie=[]; present=false; explicit=hasPrimary || hasSecondary;
+if hasPrimary, ie=primary.(name); elseif hasSecondary, ie=secondary.(name); end
+if explicit && ((isnumeric(ie) && isreal(ie) && isequal(size(ie),[0 0])) || ...
+        (isstruct(ie) && isscalar(ie) && isempty(fieldnames(ie))))
+    return;
+end
+node=sixgr.util.structGet(cfg,'phy.duplex.tddCommon',struct());
+hasTX=strcmpi(string(sixgr.util.structGet(cfg,'phy.duplex.mode',"")),"TDD") && ...
+    isstruct(node) && isscalar(node) && ~isempty(fieldnames(node));
+if ~explicit && ~hasTX, return; end
+for direction=["downlink","uplink"]
+    if direction=="downlink", bwp='initialDownlinkBWP'; else, bwp='initialUplinkBWP'; end
+    generic=serving.(direction+"ConfigCommon").(bwp).genericParameters;
+    scs=str2double(erase(string(generic.subcarrierSpacing),"kHz"));
+    cp=string(sixgr.util.structGet(generic,'cyclicPrefix',"normal"));
+    if hasTX
+        reference=localTDDAlias(node,["ReferenceSubcarrierSpacingKHz", ...
+            "referenceSubcarrierSpacingKHz","reference_scs_khz"],[]);
+        p1=localTDDAlias(node,["Pattern1","pattern1"],struct());
+        p2=localTDDAlias(node,["Pattern2","pattern2"],struct());
+        tx=sixgr.phy.frame.TDDCommonConfig.resolve( ...
+            'ReferenceSubcarrierSpacingKHz',reference,'ActiveSubcarrierSpacingKHz',scs, ...
+            'CyclicPrefix',cp,'Pattern1',p1,'Pattern2',p2);
+        if ~explicit && ~present
+            ie=struct('referenceSubcarrierSpacing',"kHz"+string(tx.ReferenceSubcarrierSpacingKHz), ...
+                'pattern1',localTDDPatternIE(tx.Pattern1));
+            if ~isempty(fieldnames(tx.Pattern2)), ie.pattern2=localTDDPatternIE(tx.Pattern2); end
+        end
+    end
+    received=sixgr.rrc.asn1.resolveTDDCommonRuntime(ie,scs,cp,"FR1");
+    assert(received.Present,'sixgr:rrc:asn1:InvalidTDDCommonIE', ...
+        'A present authored TDD IE must be nonempty.');
+    if hasTX
+        map=received.SlotFormatState;
+        assert(tx.PatternDurationMilliseconds==map.PatternDurationMilliseconds && ...
+            isequal(tx.CommonDirection,map.CommonDirection), ...
+            'sixgr:rrc:asn1:TDDCommonTransmitMismatch', ...
+            'Broadcast TDD common IE disagrees with the installed TX common direction map.');
+    end
+    present=true;
+end
+end
+
+function value=localTDDAlias(node,names,otherwiseValue)
+value=otherwiseValue; found=false;
+for name=names
+    if isfield(node,name)
+        if found
+            assert(isequaln(value,node.(name)), ...
+                'sixgr:rrc:asn1:ConflictingTDDCommonAuthority','TDD common aliases disagree.');
+        end
+        value=node.(name); found=true;
+    end
+end
+end
+
+function out=localTDDPatternIE(p)
+periods=[0.5 0.625 1 1.25 2 2.5 5 10];
+tokens=["ms0p5","ms0p625","ms1","ms1p25","ms2","ms2p5","ms5","ms10"];
+index=find(periods==p.PeriodicityMilliseconds,1);
+out=struct('dl_UL_TransmissionPeriodicity',"ms10", ...
+    'nrofDownlinkSlots',p.NumDownlinkSlots,'nrofDownlinkSymbols',p.NumDownlinkSymbols, ...
+    'nrofUplinkSlots',p.NumUplinkSlots,'nrofUplinkSymbols',p.NumUplinkSymbols);
+if isempty(index)
+    assert(ismember(p.PeriodicityMilliseconds,[3 4]), ...
+        'sixgr:rrc:asn1:InvalidTDDEnum','Installed TDD period cannot be represented by this IE.');
+    % A numeric TX policy has no original base enum. Encode a canonical
+    % base plus the effective extension; explicit raw IEs never use this.
+    out.dl_UL_TransmissionPeriodicity_v1530="ms"+string(p.PeriodicityMilliseconds);
+else
+    out.dl_UL_TransmissionPeriodicity=tokens(index);
+end
+end
+
 function value = localCanonicalPUCCHConfigCommon(spec)
 if ~(isstruct(spec) && isscalar(spec))
     error("sixgr:rrc:asn1:UnsupportedSIB1IE", ...
@@ -207,8 +296,9 @@ end
 function bitmap = localCanonicalSIB1SSBPositions(cfg)
 % The bounded Release-18 codec represents inOneGroup as one octet.  Runtime
 % Case-A/B/C burst planning may legitimately use the four-bit short bitmap;
-% canonicalize that semantic value before hashing the transmit tree so the
-% independently decoded ASN.1 tree is compared in the same representation.
+% TS 38.331 V18.8.0, ServingCellConfigCommonSIB/inOneGroup: for Lmax=4,
+% only the four LEFTMOST bits are valid. Preserve SSB index order rather
+% than the integer value of the short bitmap when extending to an octet.
 bitmap = string(sixgr.util.structGet( ...
     cfg, "initial_access.ssb.positions_in_burst", "10000000"));
 bitmap = erase(strtrim(bitmap), [" ", "_"]);
@@ -218,7 +308,7 @@ if ~isscalar(bitmap) || strlength(bitmap) == 0 || ...
         "SIB1 ssb-PositionsInBurst must be a nonempty binary bitmap.");
 end
 if strlength(bitmap) == 4
-    bitmap = pad(bitmap, 8, "left", "0");
+    bitmap = pad(bitmap, 8, "right", "0");
 elseif strlength(bitmap) ~= 8
     error("sixgr:rrc:asn1:UnsupportedSSBPositionsInBurst", ...
         "The bounded FR1 SIB1 profile accepts a 4-bit short or 8-bit medium bitmap.");

@@ -17,13 +17,89 @@ from typing import Any
 from pycrate_asn1dir import RRCNR
 if __package__:
     from . import sib1_common_control
+    from . import sib1_tdd_common
 else:
     import sib1_common_control
+    import sib1_tdd_common
 
 
 CODEC = RRCNR.NR_RRC_Definitions.BCCH_DL_SCH_Message
 VERSION = importlib.metadata.version("pycrate")
 PROFILE = "3gpp_ts38331_v18_bounded_fr1_sib1"
+
+
+# TS 38.101-1 V18.8.0 Table 5.2-1; same explicit registry as
+# +sixgr/+pdsch/PDSCH1024QAMApplicability.m:bandCatalog. Unknown bands,
+# SDL, SUL and FR2 cannot acquire an inferred paired PRACH table here.
+_FR1_PAIRED_BANDS = frozenset({
+    1, 2, 3, 5, 7, 8, 12, 13, 14, 18, 20, 24, 25, 26, 28, 30, 31,
+    65, 66, 70, 71, 72, 74, 85, 91, 92, 93, 94, 100, 105, 106, 109,
+})
+_FR1_UNPAIRED_BANDS = frozenset({
+    34, 38, 39, 40, 41, 46, 47, 48, 50, 51, 53, 54,
+    77, 78, 79, 90, 96, 101, 102, 104,
+})
+
+
+def _received_msg1_scs(rach: dict[str, Any], band: Any) -> float:
+    """Return received short-SCS or the exact implied FR1 long-preamble SCS.
+
+    TS 38.331 V18.8.0 RACH-ConfigCommon Cond L139 requires the short
+    preamble IE in FR1. Absence is not a generic 1.25-kHz default.
+    TS 38.211 V18.8.0 Tables 6.3.3.2-2/-3 select the long format;
+    Table 6.3.3.1-1 gives 1.25 kHz for 0/1/2 and 5 kHz for 3.
+    The original wire IE remains absent on re-encoding an l839 root.
+    """
+    if "msg1-SubcarrierSpacing" in rach:
+        value = rach["msg1-SubcarrierSpacing"]
+        if type(value) is not str or value not in {"kHz15", "kHz30", "kHz60", "kHz120"}:
+            raise ValueError("unsupported received msg1-SubcarrierSpacing")
+        return float(value[3:])
+    if rach["prach-RootSequenceIndex"][0] != "l839":
+        raise ValueError("absent msg1-SubcarrierSpacing requires an FR1 l839 root")
+    if type(band) is not int or band not in _FR1_PAIRED_BANDS | _FR1_UNPAIRED_BANDS:
+        raise ValueError("absent msg1-SubcarrierSpacing requires a supported FR1 paired/unpaired band")
+    index = rach["rach-ConfigGeneric"]["prach-ConfigurationIndex"]
+    if type(index) is not int or not 0 <= index <= 255:
+        raise ValueError("base prach-ConfigurationIndex must be an original integer in [0,255]")
+    # These are the complete contiguous LONG-format populations of the
+    # pinned tables, not PRACH scheduling periods or carrier numerologies.
+    format3_first, long_last = (60, 86) if band in _FR1_PAIRED_BANDS else (40, 66)
+    if index > long_last:
+        raise ValueError("absent msg1-SubcarrierSpacing conflicts with the band's short-preamble index")
+    return 5.0 if index >= format3_first else 1.25
+
+
+def _ssb_prach_choice(
+    choice: Any, count: Any, *, semantic_text: bool
+) -> tuple[str, str | int]:
+    """Preserve the RACH-ConfigCommon CHOICE's distinct ASN.1 value types.
+
+    TS 38.331 V18.8.0 RACH-ConfigCommon uses ENUMERATED for N <= 2,
+    INTEGER for N >= 4. The MATLAB semantic bridge represents the latter
+    as canonical decimal text; an actual decoded ASN.1 value must be int.
+    This is wire-domain validation, not SSB/RO association validation.
+    """
+    enum_max = {"oneEighth": 64, "oneFourth": 64, "oneHalf": 64,
+                "one": 64, "two": 32}
+    integer_max = {"four": 16, "eight": 8, "sixteen": 4}
+    if type(choice) is not str or choice not in (*enum_max, *integer_max):
+        raise ValueError("unsupported ssb-perRACH choice")
+    if choice in enum_max:
+        allowed = {f"n{n}" for n in range(4, enum_max[choice] + 1, 4)}
+        if type(count) is not str or count not in allowed:
+            raise ValueError(f"{choice} CB-preambles-per-SSB requires an ASN.1 enum token")
+        return choice, count
+    maximum = integer_max[choice]
+    if semantic_text and type(count) is str:
+        # Do not accept signs, whitespace, leading zeros, floats or enum
+        # tokens by coercion. MATLAB emits string(n) for this integer arm.
+        if count not in {str(n) for n in range(1, maximum + 1)}:
+            raise ValueError(f"{choice} CB-preambles-per-SSB must be in [1,{maximum}]")
+        count = int(count)
+    if type(count) is not int or not 1 <= count <= maximum:
+        raise ValueError(f"{choice} CB-preambles-per-SSB requires an integer in [1,{maximum}]")
+    return choice, count
 
 
 def bounded_object(semantic: dict[str, Any]) -> dict[str, Any]:
@@ -63,9 +139,10 @@ def bounded_object(semantic: dict[str, Any]) -> dict[str, Any]:
             "powerRampingStep": str(semantic["power_ramping_step"]),
             "ra-ResponseWindow": str(semantic["ra_response_window"]),
         },
-        "ssb-perRACH-OccasionAndCB-PreamblesPerSSB": (
-            str(semantic["ssb_per_rach_choice"]),
-            str(semantic["cb_preambles_per_ssb"]),
+        "ssb-perRACH-OccasionAndCB-PreamblesPerSSB": _ssb_prach_choice(
+            semantic["ssb_per_rach_choice"],
+            semantic["cb_preambles_per_ssb"],
+            semantic_text=True,
         ),
         "ra-ContentionResolutionTimer": str(
             semantic["contention_resolution_timer"]
@@ -229,6 +306,9 @@ def bounded_object(semantic: dict[str, Any]) -> dict[str, Any]:
         )
     }
     serving = message["message"][1][1]["servingCellConfigCommon"]
+    if "tdd_ul_dl_config_common" in semantic:
+        serving["tdd-UL-DL-ConfigurationCommon"] = sib1_tdd_common.to_asn1(
+            semantic["tdd_ul_dl_config_common"])
     if "n_timing_advance_offset" in semantic:
         offset = semantic["n_timing_advance_offset"]
         if offset not in ("n0", "n25600", "n39936"):
@@ -293,6 +373,10 @@ def semantic_from_object(value: dict[str, Any]) -> dict[str, Any]:
     if rach[0] != "setup":
         raise ValueError("rach-ConfigCommon is not setup")
     rach = rach[1]
+    ssb_prach = rach["ssb-perRACH-OccasionAndCB-PreamblesPerSSB"]
+    if type(ssb_prach) is not tuple or len(ssb_prach) != 2:
+        raise ValueError("malformed ssb-perRACH ASN.1 choice")
+    ssb_choice, cb_count = _ssb_prach_choice(*ssb_prach, semantic_text=False)
     generic = rach["rach-ConfigGeneric"]
     root_choice, root_index = rach["prach-RootSequenceIndex"]
     si = sib["si-SchedulingInfo"]
@@ -330,21 +414,15 @@ def semantic_from_object(value: dict[str, Any]) -> dict[str, Any]:
         "preamble_trans_max": generic["preambleTransMax"],
         "power_ramping_step": generic["powerRampingStep"],
         "ra_response_window": generic["ra-ResponseWindow"],
-        "ssb_per_rach_choice": rach[
-            "ssb-perRACH-OccasionAndCB-PreamblesPerSSB"
-        ][0],
-        "cb_preambles_per_ssb": rach[
-            "ssb-perRACH-OccasionAndCB-PreamblesPerSSB"
-        ][1],
+        "ssb_per_rach_choice": ssb_choice,
+        "cb_preambles_per_ssb": cb_count,
         "contention_resolution_timer": rach[
             "ra-ContentionResolutionTimer"
         ],
         "root_sequence_choice": root_choice,
         "root_sequence_index": int(root_index),
-        "msg1_subcarrier_spacing_khz": (
-            float(str(rach["msg1-SubcarrierSpacing"]).replace("kHz", ""))
-            if "msg1-SubcarrierSpacing" in rach
-            else (5.0 if generic["prach-ConfigurationIndex"] in range(48, 64) else 1.25)
+        "msg1_subcarrier_spacing_khz": _received_msg1_scs(
+            rach, dl["frequencyInfoDL"]["frequencyBandList"][0]["freqBandIndicatorNR"]
         ),
         "restricted_set_config": rach["restrictedSetConfig"],
         "num_preambles": int(rach.get("totalNumberOfRA-Preambles", 64)),
@@ -377,6 +455,9 @@ def semantic_from_object(value: dict[str, Any]) -> dict[str, Any]:
         semantic[f"initial_{direction}_bwp_cyclic_prefix"] = generic_bwp.get("cyclicPrefix", "normal")
     if "n-TimingAdvanceOffset" in serving:
         semantic["n_timing_advance_offset"] = serving["n-TimingAdvanceOffset"]
+    if "tdd-UL-DL-ConfigurationCommon" in serving:
+        semantic["tdd_ul_dl_config_common"] = sib1_tdd_common.from_asn1(
+            serving["tdd-UL-DL-ConfigurationCommon"])
     if "pdcch-ConfigCommon" in dl["initialDownlinkBWP"]:
         kind, common_control = dl["initialDownlinkBWP"]["pdcch-ConfigCommon"]
         if kind != "setup":

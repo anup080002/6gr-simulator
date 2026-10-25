@@ -1626,37 +1626,28 @@ function T=localPBCHStageOutcomeRows(cat,metric,ctx)
 % Combined SIB1 Status/Crash cannot supply or erase an earlier decision.
 source=ctx.Tables.PBCH; n=height(source); key=string(metric.key);
 artifact="air_interface/csv/pbch_trials.csv";
-[detectionAttempted,detectionKnown]=localPBCHFlag(source,"DetectionAttempted");
-[pss,pssKnown]=localPBCHDetector(source,"PSS");
-[sss,sssKnown]=localPBCHDetector(source,"SSS");
-terminalDetection=detectionKnown & detectionAttempted & pssKnown & (~pss | sssKnown);
-eligible=terminalDetection; success=pss & sss;
+p=sixgr.report.pbchStagePopulations(source);
+eligible=p.DetectionEligible; success=p.Detected;
 entity="SSB_receiver_detection";
+scopedEntities=["SSB_transmitted_detector","SSB_quiet_detector"];
 denominator="completed original PSS decision, and original SSS decision when PSS detected";
 numerator="original PSSDetected and SSSDetected";
 if key=="cell_id_detection_success"
-    [recovered,recoveredKnown]=localPBCHFlag(source,"NCellIDRecovered");
-    eligible=terminalDetection & recoveredKnown & (~recovered | (pss & sss));
-    success=pss & sss & recovered;
+    eligible=p.CellEligible; success=p.Detected & p.CellRecovered;
     entity="receiver_cell_id_recovery";
+    scopedEntities=["transmitted_cell_id_recovery","quiet_cell_id_recovery"];
     numerator="original PSSDetected, SSSDetected and NCellIDRecovered; not transmitted-PCI correctness";
 elseif key=="pbch_decode_success"
-    [attempted,attemptKnown]=localPBCHFlag(source,"DecodeAttempted");
-    [crc,crcKnown]=localPBCHFlag(source,"BCHCRCValid");
-    bits=localPBCHNumber(source,"BCHTransportBlockNumBits");
-    hashes=localPBCHText(source,"BCHTransportBlockHash");
-    hasHash=~cellfun('isempty',regexp(cellstr(hashes),'^[0-9a-fA-F]{64}$','once'));
     % These original outputs are assigned on return from PBCH_Recovery,
     % before subsequent SSS power/SI operations. The initialized false CRC
     % alone is not evidence that the decoder ever completed.
-    eligible=attemptKnown & attempted & crcKnown & ...
-        isfinite(bits) & bits>0 & bits==fix(bits) & hasHash;
-    success=crc; entity="PBCH_completed_decoder";
+    eligible=p.DecodeEligible;
+    success=p.CRCValid; entity="PBCH_completed_decoder";
+    scopedEntities=["PBCH_transmitted_completed_block","PBCH_quiet_completed_decoder"];
     denominator="original DecodeAttempted plus returned BCH transport-block count/hash and binary BCHCRCValid";
     numerator="raw BCHCRCValid, independent of candidate identity and later SI";
 end
-eligible=eligible(:); success=eligible & success(:);
-num=sum(success); den=sum(eligible);
+baseEligible=eligible(:); baseSuccess=success(:); baseEntity=entity;
 accepted=sixgr.truth.pbchAcquisitionAccepted(source);
 identityKnown=true(n,1);
 for field=["BCHCRCValid","MIBDecoded","CandidateIdentityConsistent","SSBIdentityVerified"]
@@ -1670,15 +1661,36 @@ fields=["Frame","SFN","Slot","UEIndex","UEID","ServingCell","SSBIndex", ...
     "PSSDetectionSource","SSSDetectionSource","DecodeAttempted","BCHCRCValid", ...
     "BCHTransportBlockNumBits","BCHTransportBlockHash","MIBDecoded", ...
     "CandidateIdentityConsistent","SSBIdentityVerified","PBCHStrictReceiverEvidenceOk", ...
+    "RequestedSSBOccasionIndex","SSBRequestedCandidateTransmitted", ...
+    "BCHTransmittedBlockPopulationEligible","SSBReceiverSearchScope", ...
+    "SSBReceiverSearchCandidateCount","SSBReceiverSearchIndices0Based","SSBReceiverSearchComplete", ...
+    "SSBAcquisitionWindowSHA256","SSBAcquisitionWindowContractJSON", ...
     string(fieldnames(sixgr.phy.sync.ssbDetectionEvidence())).'];
 path=fullfile(ctx.RunFolder,char(artifact)); digest="";
 if isfile(path), digest=string(sixgr.util.sha256File(path)); end
+T=localEmptyMetricTable();
+for populationIndex=1:3
+    eligible=baseEligible; entity=baseEntity; scope="all_original_receiver_attempts_TX_membership_not_required";
+    if populationIndex==2
+        entity=scopedEntities(1); scope="original_declared_transmitted_candidates";
+        eligible=eligible & p.Transmitted;
+        if key=="pbch_decode_success", eligible=eligible & p.TransmittedDecodeEligible; end
+    elseif populationIndex==3
+        entity=scopedEntities(2); scope="original_declared_quiet_candidates_not_transmitted_blocks";
+        eligible=eligible & p.Quiet;
+        if key=="pbch_decode_success", eligible=eligible & p.QuietDecodeEligible; end
+    end
+    % Historical rows without this classification keep their receiver-stage
+    % diagnostic, but do not acquire a transmitted/quiet population.
+    if populationIndex>1 && ~any(p.PopulationKnown), continue; end
+    success=eligible & baseSuccess; num=sum(success); den=sum(eligible);
 population=struct('ContractVersion',"sixgr.report.original_PBCH_stage_population/v1", ...
     'MetricKey',key,'Entity',entity,'SourceArtifact',artifact,'SourceSHA256',digest, ...
     'SourceRowCount',n,'IncludedSourceRows',find(eligible).', ...
     'SuccessSourceRows',find(success).','ExcludedSourceRows',find(~eligible).', ...
     'OriginalOperandsJSON',localSCHProjection(source,fields), ...
     'NumeratorDefinition',numerator,'DenominatorDefinition',denominator, ...
+    'PopulationScope',scope,'UnknownTransmissionMembershipSourceRows',find(~p.PopulationKnown).', ...
     'SourceScope',"descriptive_original_receiver_attempts_not_independent_trials", ...
     'StatisticallyQualified',false,'StandardizedAccuracyQualified',false);
 token=string(jsonencode(sixgr.util.jsonSafeValue(population)));
@@ -1686,7 +1698,7 @@ populationID=string(sixgr.util.sha256Hex(char(token)));
 note="Original receiver-stage outcomes only; combined Status is unchanged and unused. " + ...
     "Missing/malformed/uncompleted operands are excluded, not counted as missed detection or CRC failure. " + ...
     "No independent-trial confidence interval, transmitted-PCI correctness, or conformance claim. " + ...
-    "Numerator: "+numerator+". Denominator: "+denominator+".";
+    "Population: "+scope+". Numerator: "+numerator+". Denominator: "+denominator+".";
 stats=["rate","count","attempt_count","excluded_row_count"];
 values=[NaN,double(num),double(den),double(n-den)];
 availability="not_available";
@@ -1698,7 +1710,6 @@ if key=="pbch_decode_success"
     stats(end+1)="accepted_mib_evaluable_attempt_count";
     values(end+1)=sum(eligible & identityKnown);
 end
-T=localEmptyMetricTable();
 for j=1:numel(stats)
     unit="count"; if stats(j)=="rate", unit="fraction"; end
     rowAvailability=availability;
@@ -1710,19 +1721,6 @@ for j=1:numel(stats)
     T=[T;row]; %#ok<AGROW>
 end
 end
-
-function [detected,known]=localPBCHDetector(T,stage)
-[detected,decisionKnown]=localPBCHFlag(T,stage+"Detected");
-[available,availableKnown]=localPBCHFlag(T,stage+"DetectionDecisionAvailable");
-[valid,validKnown]=localPBCHFlag(T,stage+"DetectionMetricValid");
-metric=localPBCHNumber(T,stage+"NormalizedMetric");
-threshold=localPBCHNumber(T,stage+"DetectionThreshold");
-hypotheses=localPBCHNumber(T,stage+"DetectionHypothesisCount");
-known=decisionKnown & availableKnown & available & validKnown & valid & ...
-    isfinite(metric) & metric>=0 & metric<=1+64*eps & ...
-    isfinite(threshold) & threshold>=0 & ...
-    isfinite(hypotheses) & hypotheses>=1 & hypotheses==fix(hypotheses) & ...
-    detected==(metric>threshold);
 end
 
 function [value,known]=localPBCHFlag(T,field)
@@ -1738,17 +1736,6 @@ if ~((isnumeric(raw)||islogical(raw)) && isreal(raw) && isequal(size(raw),[heigh
     return; % Never turn text/ASCII, vectors or unknowns into observed values.
 end
 value=double(raw);
-end
-
-function value=localPBCHText(T,field)
-value=strings(height(T),1);
-if ~ismember(field,string(T.Properties.VariableNames)), return; end
-raw=T.(field);
-if isstring(raw) && isequal(size(raw),[height(T),1])
-    value=raw; value(ismissing(value))="";
-elseif iscellstr(raw) && isequal(size(raw),[height(T),1])
-    value=string(raw);
-end
 end
 
 function T = localPassRateRows(cat, metric, trialT, entity)
@@ -4123,24 +4110,18 @@ end
 pbchPass = localPassRateScalar(ctx.Tables.PBCH);
 prachPass = localPassRateScalar(ctx.Tables.PRACH);
 beamHit = localProbeMetricScalar(ctx.Tables.BeamManagement, "beam_index_hit_rate");
-if ~isfinite(prachPass)
-    T = localUnavailableMetricRows(cat, metric, "initial_access", "success_rate", "air_interface/csv/prach_trials.csv", ...
-        "Initial-access success requires observed PRACH trials, but none were emitted by this run.");
-    return;
-end
-rates = [pbchPass, prachPass, beamHit];
-rates = rates(isfinite(rates));
-if isempty(rates)
-    return;
-end
-successRate = min(rates);
-note = "Access success probability is exported conservatively as the minimum of the actual PBCH, PRACH, and beam-pair success rates available in this LLS run.";
-T = [T; ... %#ok<AGROW>
-    localMetricTableRow(cat, metric, "initial_access", "success_rate", "available", successRate, "", "fraction", "air_interface/csv/pbch_trials.csv", note); ...
-    localMetricTableRow(cat, metric, "initial_access", "pbch_success_rate", "available", pbchPass, "", "fraction", "air_interface/csv/pbch_trials.csv", note); ...
-    localMetricTableRow(cat, metric, "initial_access", "prach_success_rate", "available", prachPass, "", "fraction", "air_interface/csv/prach_trials.csv", note)];
-if isfinite(beamHit)
-    T = [T; localMetricTableRow(cat, metric, "initial_access", "beam_pair_success_rate", "available", beamHit, "", "fraction", "beamforming/csv/probe_beam_management.csv", note)]; %#ok<AGROW>
+note = "No coherent per-attempt joint access lifecycle is joined by this reducer. " + ...
+    "Marginal procedure-status/beam outcomes are diagnostics, not a joint access probability or independent trials.";
+T = localUnavailableMetricRows(cat,metric,"initial_access","success_rate", ...
+    "air_interface/csv/prach_trials.csv",note);
+rates=[pbchPass,prachPass,beamHit];
+names=["pbch_procedure_status_pass_fraction","prach_procedure_status_pass_fraction","beam_pair_probe_hit_fraction"];
+sources=["air_interface/csv/pbch_trials.csv","air_interface/csv/prach_trials.csv","beamforming/csv/probe_beam_management.csv"];
+diagnosticMetric=metric; diagnosticMetric.key="unjoined_access_stage_diagnostic";
+for k=1:numel(rates)
+    if ~isfinite(rates(k)), continue; end
+    T=[T;localMetricTableRow(cat,diagnosticMetric,"unjoined_access_stage_diagnostic",names(k), ...
+        "available",rates(k),"","fraction",sources(k),note)]; %#ok<AGROW>
 end
 end
 

@@ -11,6 +11,10 @@ classdef PUCCHReceiver
                 @(x) isscalar(string(x)) && any(string(x)==["provided","received_dmrs_estimate","noncoherent_correlation"]));
             addParameter(p,"ChannelProfile","AWGN",@(x) ischar(x)||isstring(x));
             addParameter(p,"TimingSearchWindowSamples",[],@(x)isempty(x)||(isnumeric(x)&&numel(x)==2));
+            addParameter(p,"ReceiverConfig",struct(),@(x)isstruct(x)&&isscalar(x));
+            addParameter(p,"ReceiverInputStartSample",NaN, ...
+                @(x)isnumeric(x)&&isreal(x)&&isscalar(x)&& ...
+                (isnan(x)||(isfinite(x)&&x>=0&&x==fix(x))));
             addParameter(p,"DetectionThreshold",0.2,@(x) isnumeric(x)&&isscalar(x));
             addParameter(p,"InterferenceCovariance",[], ...
                 @(x) isempty(x)||isnumeric(x));
@@ -70,10 +74,12 @@ classdef PUCCHReceiver
             [indices,~] = nrPUCCHIndices(carrier,pucch);
             dmrs = sixgr.phy.pucch.PUCCHDMRS.generate( ...
                 carrier,assignment.Resource);
+            originalInputHash="";
             timing=struct('TimingOffsetSamples',NaN,'AppliedTimingCorrectionSamples',0, ...
                 'TimingSource',"caller_aligned_observation_not_measured", ...
                 'OracleTimingUsed',false,'ReceiverZeroPaddingUsed',false);
             if ~isempty(opt.TimingSearchWindowSamples)
+                originalInputHash=sixgr.phy.waveform.WaveformHash.numeric(waveform);
                 window=opt.TimingSearchWindowSamples;
                 validateattributes(window,{'numeric'},{'real','finite','nonnegative','integer','numel',2});
                 if isempty(dmrs.Indices)
@@ -83,6 +89,28 @@ classdef PUCCHReceiver
                     [waveform,timing]=sixgr.phy.sync.alignULReferenceObservation( ...
                         carrier,waveform,dmrs.Indices,dmrs.Symbols,window);
                 end
+            end
+            % Timing owns the FFT interval. Acquire frequency only from that
+            % actual interval and the independently configured PUCCH symbols.
+            % No injected CFO, DL estimate, or transmitted pilot is consumed.
+            alignedOrigin=double(opt.ReceiverInputStartSample);
+            if isfinite(alignedOrigin)
+                alignedOrigin=alignedOrigin+double(timing.AppliedTimingCorrectionSamples);
+            end
+            symbols0=double(pucch.SymbolAllocation(1))+(0:double(pucch.SymbolAllocation(2))-1);
+            [waveform,frequency]=sixgr.phy.rx.applyControlFrequencyCorrection( ...
+                waveform,carrier,opt.ReceiverConfig,symbols0);
+            if strlength(originalInputHash)==0, originalInputHash=frequency.AlignedInputSHA256; end
+            frequency.OriginalReceiverInputSampleSHA256=originalInputHash;
+            frequency.AlignedInputSampleSHA256=frequency.AlignedInputSHA256;
+            frequency.CorrectedSampleSHA256=frequency.CorrectedInputSHA256;
+            frequency.SampleHashAlgorithm="sixgr.phy.waveform.WaveformHash.numeric";
+            frequency.ReceiverInputStartSample=double(opt.ReceiverInputStartSample);
+            frequency.AlignedStartSample=alignedOrigin;
+            frequency.CFOCorrectionAbsoluteSampleOrigin=alignedOrigin;
+            frequency.CFOCorrectionClockSource="aligned_input_local_sample_zero_absolute_origin_unavailable";
+            if isfinite(alignedOrigin)
+                frequency.CFOCorrectionClockSource="original_received_capture_plus_applied_timing_extraction";
             end
             ofdmTic = tic;
             [grid,ofdmInfo] = sixgr.phy.waveform.ofdmDemodulate( ...
@@ -244,6 +272,7 @@ classdef PUCCHReceiver
                 constellation,evmApplicable,evmModulation);
             rx = struct( ...
                 "ReceiveTiming",timing, ...
+                "ReceiveFrequency",frequency, ...
                 "ReceiverUsable",~decision.DTX, ...
                 "DetectionAttempted",true,"DTX",decision.DTX, ...
                 "DetectionOutcome",decision.DetectionOutcome, ...

@@ -38,10 +38,32 @@ for suffix = ["_tdd", ""]
 end
 anchor = raStrictAnchorConfig();
 anchorPlan = sixgr.phy.frame.CommonDLResourcePlan(anchor);
+assert(anchorPlan.SIB1Slot0==41 && anchorPlan.SIB1PeriodSlots==40);
 assert(anchorPlan.SIB1Slot0>=anchorPlan.BroadcastPeriodSlots, ...
     'This fixture must exercise a Type-0 occasion beyond the first SSB period.');
+anchorPlan.validateSIB1References();
+% The old ordinal selects a genuine same-RE collision, not an invalid
+% Type-0 monitoring candidate. Keep its production rejection as evidence.
+oldAnchor=anchor;
+oldAnchor.initial_access.type0.monitoring_occasion_ordinal=3;
+oldPlan=sixgr.phy.frame.CommonDLResourcePlan(oldAnchor);
+assert(oldPlan.SIB1Slot0==40);
+localReject(@()oldPlan.validateSIB1SSB(),'sixgr:phy:frame:SIB1SSBCollision');
+localReject(@()sixgr.mac.ra.RAConfig(oldAnchor),'sixgr:phy:frame:SIB1SSBCollision');
+occasions=anchorPlan.sib1TransmissionOccasions(0,122);
+assert(isequal(occasions.AbsoluteSlot,[41;81;121]) && ...
+    all(occasions.FirstConfiguredAbsoluteSlot==41) && ...
+    all(occasions.PeriodSlots==40));
 anchorRA = sixgr.mac.ra.RAConfig(anchor);
-assert(~anchorPlan.checkPDSCH(anchorRA.Msg4PDSCH,anchorPlan.SIB1Slot0));
+for slot0=occasions.AbsoluteSlot.'
+    % Exercise the same explicit-occasion resolver used by the SI producer,
+    % including its symbol-level duplex check; these are not RX outcomes.
+    [~,~,~,resolved,actual]=sixgr.phy.broadcast.resolveSIB1ControlOccasion( ...
+        anchorPlan.Carrier,anchor,'AbsoluteSlot',slot0);
+    assert(actual==slot0 && resolved.SelectedMonitoringOccasion.AbsoluteSlot==slot0);
+    [free,conflict]=anchorPlan.checkPDSCH(anchorRA.Msg4PDSCH,slot0);
+    assert(~free && any(conflict.ConflictingOwners=="SIB1_PDSCH_and_Type0_PDCCH"));
+end
 ok = true;
 fprintf('PASS testCommonDLResourceScheduling: configured SI/TRS ownership, both duplex profiles, RNG preservation.\n');
 end

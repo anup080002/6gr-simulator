@@ -85,6 +85,21 @@ for link=directions
     tracking=struct('TRSProcessed',true,'CFOEstimateAvailable',true,'EstimatedCFO_Hz',cfo, ...
         'TrackingMeasurementDirection',link,'TrackingConsumerDirection',link, ...
         'TrackingDirectionCompatible',true,'TrackingEstimateSource','declared_receiver_tracking_fixture');
+    % Actual receiver entry points must reject untagged/contradictory prior
+    % state, even when its numeric CFO happens to equal this injected case.
+    untagged=rmfield(tracking,{'TrackingMeasurementDirection','TrackingConsumerDirection'});
+    localAssertThrows(@()receive(wave,cfg,args{:},'ReceiverTrackingState',untagged), ...
+        'sixgr:phy:rx:MissingTrackingAuthority');
+    conflicting=tracking;
+    opposite="UL"; if link=="UL", opposite="DL"; end
+    conflicting.RuntimeTRSMeasurementDirection=opposite;
+    localAssertThrows(@()receive(wave,cfg,args{:},'ReceiverTrackingState',conflicting), ...
+        'sixgr:phy:rx:ConflictingTrackingAuthority');
+    enabled=cfg; enabled.phy.rx.cfoCorrectionEnabled=true;
+    rxTracked=receive(wave,enabled,args{:},'ReceiverTrackingState',tracking);
+    assert(rxTracked.Ok && ~rxTracked.CRCError && rxTracked.CFOCorrectionApplied && ...
+        rxTracked.CFOCorrectionApplied_Hz==cfo, ...
+        '%s must preserve explicitly declared same-receiver tracking correction.',link);
     rx=receive(wave,cfg,args{:},'ReceiverTrackingState',tracking);
     assert(~rx.CFOCorrectionApplied, ...
         '%s applied supplied CFO tracking despite disabled receiver correction.',link);
@@ -97,6 +112,16 @@ end
 fprintf('DATA_RX_SYNC_AUTHORITY_PASS physical_decodes=%d disabled_policy_checks=%d\n', ...
     checked,2*numel(directions));
 ok=true;
+end
+
+function localAssertThrows(f,id)
+try
+    f();
+catch err
+    assert(strcmp(err.identifier,id),'Expected %s, got %s.',id,err.identifier);
+    return;
+end
+error('test:ExpectedFailure','Expected %s.',id);
 end
 
 function cfg=localConfig()

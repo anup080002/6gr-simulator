@@ -1425,43 +1425,10 @@ classdef (Abstract) SchedulerBase < handle
                     cfgForFreeze=sixgr.truth.resolveSRSCurrentInstallation(cfgForFreeze,installation);
                 end
             end
-            activeDLTCI = struct();
-            if upper(string(grantOut.Direction)) == "DL"
-                activeDLTCI = sixgr.phy.grant.resolveDLQCLTCIBinding(cfgForFreeze);
-            end
-            priorPHYGrant = sixgr.util.structGet(grantOut, "PHYGrant", struct());
-            isRetransmission = logical(sixgr.util.structGet(grantOut, ...
-                "IsRetransmission", sixgr.util.structGet(grantOut, ...
-                "HARQ.IsRetransmission", false)));
-            currentSharedMU = logical(sixgr.util.structGet(grantOut, ...
-                "MUMIMOEnabled", false)) && ...
-                double(sixgr.util.structGet(grantOut, "MUMIMOGroupSize", 0)) >= 2;
-            if upper(string(grantOut.Direction)) == "DL" && ...
-                    isRetransmission && ~currentSharedMU && ...
-                    isstruct(priorPHYGrant) && ~isempty(fieldnames(priorPHYGrant)) && ...
-                    logical(sixgr.util.structGet(priorPHYGrant, "IsFrozen", false))
-                % The scheduler refreezes current-slot control/timing, but
-                % an orthogonal HARQ replay retains the first transmission's
-                % immutable spatial architecture. Project that frozen grant
-                % into a replay-only config before removing the recursive
-                % PHYGrant field. This is the same authority boundary used
-                % by CoupledTruthRuntime at execution time.
-                sixgr.phy.grant.assertPHYGrantDimensions( ...
-                    priorPHYGrant, "scheduler_harq_replay_refreeze");
-                cfgForFreeze = sixgr.phy.grant.applyPHYGrantToConfig( ...
-                    cfgForFreeze, priorPHYGrant);
-                if logical(sixgr.util.structGet(activeDLTCI, "Available", false))
-                    % Preserve the current received-beam/TCI authority while
-                    % replaying the first transmission's frozen spatial
-                    % matrix.  The spatial architecture and current TCI
-                    % indication are independent parts of the new occasion.
-                    cfgForFreeze = sixgr.util.structSet(cfgForFreeze, ...
-                        "phy.pdsch.qclTCI", activeDLTCI.QCL);
-                    cfgForFreeze = sixgr.util.structSet(cfgForFreeze, ...
-                        "phy.pdsch.activeTCIStateID", ...
-                        double(activeDLTCI.ActiveTCIStateID));
-                end
-            end
+            % The retained HARQ context owns TB/coding invariants, not the
+            % previous transmission's spatial operator. Freeze the current
+            % admitted spatial decision and QCL/TCI together. Projecting an
+            % old PHYGrant here mixed its A beam with current B control.
             grantSeed = grantOut;
             if isfield(grantSeed, "PHYGrant")
                 grantSeed = rmfield(grantSeed, "PHYGrant");

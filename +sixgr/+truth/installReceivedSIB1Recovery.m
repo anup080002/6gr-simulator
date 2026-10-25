@@ -49,6 +49,11 @@ if ~isempty(priorMIBBinding)
     recovery.OriginalServingCell=priorMIBBinding.ServingCell;
     recovery.ReceivedMIBGenerationID=priorMIBBinding.GenerationID;
     recovery.ReceivedMIBDeliverySHA256=priorMIBBinding.DeliverySHA256;
+    % Retain the actual earlier BCH owner, rather than adding false new-BCH
+    % flags to the SI-only result. RA common-control projection consumes it.
+    recovery.ReceivedMIBBinding=priorMIBBinding;
+    recovery.ReceivedSIB1AvailableAtSample=sixgr.phy.frame.slotStartSample( ...
+        sixgr.phy.grid.makeCarrier(state.CfgMobility),slotIdx-1,priorMIBBinding.SampleRateHz);
 end
 if ~isfield(state, "DecodedSIB1RecoveryByUE") || ...
         ~iscell(state.DecodedSIB1RecoveryByUE)
@@ -65,7 +70,11 @@ state.DecodedSIB1RecoverySlotByUE(ueIdx) = double(slotIdx);
 % Install only the received tree at the actual delivery boundary. Retain
 % cell/epoch identity separately from the broadcast IEs; they are receiver
 % context, not additional information claimed to have been in SIB1.
-installed = sixgr.mac.ra.installDecodedSIB1RACHConfig(struct(),recovery);
+installCfg=struct();
+if ~isempty(priorMIBBinding)
+    installCfg=sixgr.truth.CoupledTruthRuntime.measurementConfigurationForUE(state,ueIdx);
+end
+installed = sixgr.mac.ra.installDecodedSIB1RACHConfig(installCfg,recovery);
 common = installed.UECommonCellConfiguration;
 common.ServingCell = state.CurrentServingIdx(ueIdx);
 common.AvailableSlot = double(slotIdx);

@@ -54,6 +54,18 @@ for k=1:numel(segments)
 end
 assert(isfinite(hz),'sixgr:truth:MissingPDCCHRXFrequencyExecution','No executed RX oscillator evidence.');
 wave=wave.*exp(2i*pi*hz/prepared.SampleRateHz*(first+(0:count-1).'));
+% The post-decode reference must use the exact measured RX derotation,
+% including its local aligned-capture origin. The executed oscillator above
+% remains separate physical scoring metadata, never a receiver estimate.
+frequency=sixgr.util.structGet(rx,'ReceiveFrequency',struct());
+assert(~isempty(fieldnames(frequency)) && ...
+    isequaln(frequency,info.ReceiveFrequency) && frequency.SampleRateHz==prepared.SampleRateHz && ...
+    frequency.CorrectionSampleCount==count && frequency.CFOCorrectionSampleOrigin==0 && ...
+    frequency.CorrectionSign==-1, ...
+    'sixgr:truth:InvalidPDCCHFrequencyOperator','Retain the original executed RX frequency operator.');
+if frequency.CFOCorrectionApplied
+    wave=wave.*exp(-2i*pi*frequency.CFOCorrectionApplied_Hz/prepared.SampleRateHz*(0:count-1).');
+end
 grid=sixgr.phy.waveform.ofdmDemodulate(prepared.Tx.Carrier,wave);
 assert(isequal(size(grid),size(rx.RxGrid)), ...
     'sixgr:truth:PDCCHReferenceGridMismatch','Score the exact received grid extent and RX branches.');
@@ -81,4 +93,6 @@ metrics.ChannelNMSEComparedComplexValues=numel(ideal);
 metrics.ChannelNMSEPilotResourceCount=numel(idx);
 metrics.PDCCHScoringRecordedRXDelay_samples=clock.RecordedReceiverTimingOffset_samples;
 metrics.PDCCHScoringExecutedRXCFO_Hz=hz;
+metrics.PDCCHScoringMeasuredCorrectionApplied=frequency.CFOCorrectionApplied;
+metrics.PDCCHScoringMeasuredCorrection_Hz=frequency.CFOCorrectionApplied_Hz;
 end

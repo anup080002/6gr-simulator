@@ -9030,6 +9030,32 @@ T.SSBBurstSweepObservedIndices0Based = repmat( ...
     string(localNumericVectorToken(observedIndices)), n, 1);
 T.SSBBurstSweepCoverageComplete = repmat(logical(coverageComplete), n, 1);
 T.SSBBurstSweepScope = repmat("configured_active_ss_burst_set", n, 1);
+if isfield(receivedBurst,'AcquisitionWindowContract')
+    % Receiver search and transmitter emission are different populations.
+    % A quiet legal candidate has a real search outcome but is not another
+    % transmitted beam. Observed identities require receiver detection.
+    contract=receivedBurst.AcquisitionWindowContract;
+    active=localResolveActiveSSBurstSetIndices(cfg,struct());
+    T.SSBBurstSweepExpectedCandidateCount(:)=numel(active);
+    T.SSBBurstSweepCoverageComplete(:)=all(ismember(active,observedIndices));
+    T.SSBBurstSweepScope(:)="configured_TX_active_beams_with_complete_receiver_domain_search";
+    T.SSBReceiverSearchCandidateCount=repmat(numel(indices),n,1);
+    T.SSBReceiverSearchIndices0Based=repmat(string(jsonencode(indices)),n,1);
+    T.SSBReceiverSearchComplete=repmat(true,n,1);
+    T.SSBReceiverSearchScope=repmat(contract.Scope,n,1);
+    T.SSBAcquisitionWindowContractJSON=repmat(string(jsonencode(contract)),n,1);
+    T.SSBAcquisitionWindowSHA256=repmat(string(contract.SHA256),n,1);
+    T.SSBRequestedCandidateTransmitted=ismember(double(T.RequestedSSBOccasionIndex),active);
+    quiet=~T.SSBRequestedCandidateTransmitted;
+    T.MissedDetection(quiet)=false;
+    T.FalseAlarm(quiet)=sixgr.truth.pbchAcquisitionAccepted(T(quiet,:));
+    T.TrackingFailureProbability(quiet)=NaN;
+    T.DetectionOutcome(quiet)="quiet_candidate_no_accepted_PBCH";
+    T.DetectionOutcome(quiet & T.FalseAlarm)="quiet_candidate_false_PBCH_acceptance";
+    T.BCHDecodeAttempted=T.DecodeAttempted;
+    T.BCHTransmittedBlockPopulationEligible=T.SSBRequestedCandidateTransmitted & ...
+        T.DecodeAttempted & isfinite(T.CRCPass);
+end
 T.SelectedBeamFlag = false(n, 1);
 T.SelectedSSBIndex = nan(n, 1);
 T.SelectedBeamIndex = nan(n, 1);
@@ -9512,6 +9538,12 @@ for k = 1:nTrials
         r.TrackingFailureProbability = double(~pbchAcquired);
         r.DetectionAttempted = logical(sixgr.util.structGet(out, "DetectionAttempted", false));
         r.DecodeAttempted = logical(sixgr.util.structGet(out, "DecodeAttempted", false));
+        if ~r.DecodeAttempted
+            r.CRCPass=NaN;
+            r.BCHCrcPass=NaN;
+            r.CRCApplicable=false;
+            r.CRCOutcome="not_evaluated_no_BCH_decode";
+        end
         if pbchAcquired
             % Keep the receiver's measured correlation metric copied above.
             % CRC/acquisition success is a decision, not a unit correlation.
@@ -9728,6 +9760,10 @@ for item=received
         state=localCompleteSharedDataPlan(state,item);
         continue;
     end
+    if item.Kind=="Msg1TX"
+        state=sixgr.truth.completeSharedMsg1Transmission(state,item);
+        continue;
+    end
     if any(item.Kind==["RA","RAR","RARExpiry","Contention","ContentionStart","ContentionExpiry"])
         state=localCompleteSharedRAObservation(state,item);
         continue;
@@ -9761,6 +9797,38 @@ for item=received
         state=sixgr.truth.SIB1ResultDelivery.complete(state,item);
         continue;
     end
+    if item.Kind=="SSBArchive"
+        % The full configured archive remains original evidence; it is not
+        % another acquisition, beam selection, reference-filter or MIB event.
+        [~,~,tx,~,post]=sixgr.truth.sharedObservationEvidence(item.Planes);
+        p=context.Prepared;
+        assert(post.StartSample==p.BroadcastStartSample && ...
+            post.EndSampleExclusive==p.BroadcastStartSample+p.NumSamples, ...
+            'sixgr:truth:SSBArchiveExtent','Preserve the entire original configured broadcast archive.');
+        preview=sixgr.link.buildBroadcastWaveformPreview(tx,post,context.SNR, ...
+            context.Frame,context.Slot,item.UE,context.ServingCell);
+        preview=localAppendCompatTable(sixgr.util.structGet( ...
+            state,'SharedBroadcastWaveformPreviewTable',table()),preview);
+        state.SharedBroadcastWaveformPreviewTable=preview(max(1,height(preview)-4095):end,:);
+        root=string(sixgr.util.structGet(context.Config,'run.rootRunFolder',''));
+        assert(strlength(strtrim(root))>0,'sixgr:truth:SSBArchiveRootRequired', ...
+            'Completed full broadcast evidence needs the original run output root.');
+        receipt=struct('ObservationID',string(item.ID), ...
+            'AcquisitionObservationID',context.AcquisitionObservationID, ...
+            'AcquisitionWindowContract',context.AcquisitionWindowContract, ...
+            'StartSample',post.StartSample,'EndSampleExclusive',post.EndSampleExclusive, ...
+            'SampleRateHz',post.SampleRateHz,'CompletedAtSample',state.SharedWaveformStream.Events.NextSampleIndex, ...
+            'ReceiverExecuted',false,'Planes',{{}});
+        for plane=item.Planes
+            archive=plane.Observation.archiveCompleted(root);
+            receipt.Planes{end+1}=struct('ReceiverID',string(plane.ReceiverID),'Archive',archive);
+        end
+        receipts=sixgr.util.structGet(state,'SharedSSBArchiveReceipts',{});
+        assert(~any(cellfun(@(r)r.ObservationID==receipt.ObservationID,receipts)), ...
+            'sixgr:truth:DuplicateSSBArchive','A full capture is archived exactly once.');
+        receipts{end+1,1}=receipt; state.SharedSSBArchiveReceipts=receipts;
+        continue;
+    end
     p=context.Prepared;
     [~,pre,tx,replay,post]=sixgr.truth.sharedObservationEvidence(item.Planes);
     ch=state.SharedWaveformStream.channelState(item.UE,"DL");
@@ -9779,6 +9847,10 @@ for item=received
             'CandidateSSBIndices',localResolveActiveSSBurstSetIndices(context.Config,struct()), ...
             'SSBIndex',[],'WriteArtifacts',false,'RunFolder','','RunId','shared_runtime', ...
             'PhysicalMeasurementObservation',pre,'TransmitObservation',tx);
+        if isfield(context,'AcquisitionWindowContract')
+            options.AcquisitionWindowContract=context.AcquisitionWindowContract;
+            options.CandidateSSBIndices=context.AcquisitionWindowContract.CandidateIndices;
+        end
         [options.DesiredReferenceObservation,options.DesiredReferenceEvidence]= ...
             sixgr.truth.sharedLinkScoringObservation(item.Planes,p,context.DesiredReferencePlane);
         options.ReceiveElementBinding=state.SharedWaveformStream.Physical.receiveElementLayout( ...

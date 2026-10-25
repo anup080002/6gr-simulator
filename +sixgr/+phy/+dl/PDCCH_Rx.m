@@ -267,6 +267,8 @@ if size(rxWave, 1) > expectedSamples
 end
 
 % ---------------------- OFDM demod ----------------------
+[rxWave,receiveFrequency]=sixgr.phy.rx.applyControlFrequencyCorrection( ...
+    rxWave,carrier,cfg,extent.MonitoredSymbols0Based);
 rxGrid = sixgr.phy.waveform.ofdmDemodulate(carrier, rxWave);
 
 if size(rxGrid,2)<=extent.LastMonitoredSymbol0Based
@@ -284,6 +286,12 @@ if ~isempty(opt.NoiseOnlyWaveform)
     if size(noiseWave, 1) > expectedSamples
         noiseWave = noiseWave(1:expectedSamples, :);
     end
+    if receiveFrequency.CFOCorrectionApplied
+        % Use the executed received-signal operator; never re-estimate from
+        % a noise-only scoring population or give it a second phase origin.
+        noiseWave=noiseWave.*cast(exp(-2i*pi*receiveFrequency.CFOCorrectionApplied_Hz/ ...
+            receiveFrequency.SampleRateHz*(0:size(noiseWave,1)-1).'),'like',noiseWave);
+    end
     noiseGrid = sixgr.phy.waveform.ofdmDemodulate(carrier, noiseWave);
     if size(noiseGrid,2)<size(rxGrid,2)
         error('sixgr:phy:pdcch:IncompleteNoiseObservation', ...
@@ -298,6 +306,12 @@ if isempty(noiseVarUsed)
 end
 
 rx = struct();
+rx.ReceiveFrequency=receiveFrequency;
+for frequencyField=string(fieldnames(receiveFrequency)).'
+    value=receiveFrequency.(frequencyField);
+    if ~isstruct(value) && frequencyField~="Status", rx.(frequencyField)=value; end
+end
+rx.FrequencyCorrectionStatus=receiveFrequency.Status;
 rx.DCIBits = int8([]);
 rx.ExpectedDCIBits = expectedDCIBits;
 rx.DCIBitsCompared = 0;
@@ -541,6 +555,7 @@ if rx.AmbiguousValidHypotheses
 end
 
 info = struct();
+info.ReceiveFrequency=receiveFrequency;
 info.ReceiveExtent = extent;
 info.DemodulatedReceiveSamples = size(rxWave,1);
 info.DemodulatedSymbols = size(rxGrid,2);

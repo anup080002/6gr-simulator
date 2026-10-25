@@ -24,6 +24,8 @@ evidence=struct( ...
 % checks at the caller, but has no DM-RS equalizer prerequisite.
 evidence.ReceiverEstimationStagesReady=~estimated || ...
     (evidence.ChannelEstimateAvailable && evidence.EqualizationAvailable);
+frequency=sixgr.link.controlFrequencyEvidence(rx);
+for name=string(fieldnames(frequency)).', evidence.(name)=frequency.(name); end
 if isfield(rx,'EVMApplicable') && isfield(rx,'EVMPercent')
     evidence.ReceiverEVMApplicable=logical(rx.EVMApplicable);
     evidence.ReceiverEVMPercent=double(rx.EVMPercent);

@@ -583,7 +583,8 @@ def test_ssb_sync_preview_separates_injection_estimate_correction_and_residual()
     assert labels["InjectedCFO_Hz"] == "Configured / injected CFO (Hz)"
     assert labels["EstimatedCFO_PreCorrection_Hz"] == "Estimated CFO (Hz)"
     assert labels["CFOEstimateAvailability"] == "CFO estimate availability"
-    assert labels["SIB1CFOCorrectionApplied_Hz"] == "Applied CFO correction (Hz)"
+    assert labels["CFOCorrectionApplied_Hz"] == "Applied CFO correction (Hz)"
+    assert labels["SIB1CFOCorrectionApplied_Hz"] == "SIB1 applied CFO correction (Hz)"
     assert labels["ResidualCFO_PostCorrection_Hz"] == "Oscillator-only residual CFO (Hz)"
     assert labels["ResidualCFOMeasurementStatus"] == "Oscillator-only residual status"
     assert labels["PBCHResidualCommonFrequency_Hz"] == "PBCH post-correction common frequency (Hz)"
@@ -594,6 +595,177 @@ def test_ssb_sync_preview_separates_injection_estimate_correction_and_residual()
     assert view[labels["PBCHResidualCommonFrequency_Hz"]] == -24.5
     assert view[labels["PBCHResidualFrequencyIndependentCapture"]] == 0
     assert labels["AppliedTimingCorrection_samples"] == "Applied timing correction (samples)"
+
+
+def test_dl_sync_renderer_retains_actual_corrections_and_distinct_residuals() -> None:
+    pbch = dashboard.summarize_control_trial_preview_rows("pbch_trials", [dict(
+        Slot=1, UEID=1, SSBIndex=0, InjectedCFO_Hz=400,
+        EstimatedCFO_PreCorrection_Hz=414.607588654777,
+        CFOCorrectionApplied=1, CFOCorrectionApplied_Hz=414.607588654777,
+        CFOCorrectionSource="received_PSS_CP_estimate_capture_local_sample_clock",
+        CFOCorrectionSampleOrigin=0,
+        SIB1CFOCorrectionApplied_Hz=123, SIB1CFOCorrectionSource="different_SI_stage",
+        ResidualCFO_PostCorrection_Hz="NaN",
+        ResidualCFOMeasurementStatus="unavailable_oscillator_only_residual_not_identifiable",
+        PBCHResidualCommonFrequency_Hz=9878.28369293019,
+        PBCHResidualFrequencyAvailable=1, PBCHResidualFrequencyStatus="OK",
+        PBCHResidualFrequencySource="received_PBCH_DMRS_after_PSS_CP_frequency_correction",
+        PBCHResidualFrequencyRole="common_frequency_includes_channel_phase_evolution_not_oscillator_only",
+        PBCHResidualFrequencyIndependentCapture=0,
+        EstimatedTimingOffset_PreCorrection_samples=2217,
+        AppliedTimingCorrection_samples=2217, InjectedTimingOffset_samples=1,
+        ResidualTimingError_PostCorrection_samples="NaN")])
+    trs = dashboard.summarize_control_trial_preview_rows("trs_trials", [dict(
+        Slot=7, UEIndex=1, EstimatedCFO_Hz=419.575771483581,
+        CFOCorrectionApplied=1, CFOCorrectionApplied_Hz=419.575771483581,
+        CFOCorrectionSource="received_TRS_window_absolute_clock", CFOCorrectionSampleOrigin=92160,
+        ResidualCFO_EstimatedPostCorrection_Hz=-21.2931666848223,
+        ResidualCFOEstimateAvailable=1, ResidualCFOEstimateSource="TRS_phase_slope_after_correction",
+        ResidualCFOEstimateRole="received_common_frequency_not_separated_oscillator",
+        ResidualCFOReusesAcquisitionObservation=1, ResidualFrequencyUsesDifferentObservable=1,
+        ResidualFrequencyStatus="measured_received_common_frequency_after_correction",
+        TRSTimingEstimate_samples=9, AppliedTimingCorrection_samples=9,
+        TimingError_samples=0, TimingScoringReferenceSource="original_TRS_correlation_reference",
+        ResidualTimingError_PostCorrection_samples="NaN")])
+    pdsch = dashboard.summarize_data_trial_preview_rows("dl_trials", [dict(
+        Slot=41, UEIndex=1, CFOCorrectionApplied_Hz=400, CFOCorrectionApplied=1,
+        ResidualCFO_PostCorrection_Hz=-5, ResidualCFO_EstimatedPostCorrection_Hz=-7,
+        ResidualCFOEstimateAvailable=1, ResidualCFOEstimateSource="DMRS_phase_rate",
+        ResidualCFOEstimateRole="common_frequency", ResidualCFOReusesAcquisitionObservation=1)])
+    rows = _evaluate_dl_sync_projection(dict(pbch_trials=pbch, trs_trials=trs), dict(dl_trials=pdsch))
+    ssb, tracking, data = rows
+    assert ssb["Applied CFO correction (Hz)"] == 414.607588654777
+    assert ssb["Correction source"] == "received_PSS_CP_estimate_capture_local_sample_clock"
+    assert ssb["CFO correction sample origin"] == 0
+    assert ssb["Timing estimate (samples)"] == 2217
+    assert ssb["Post-correction measured frequency (Hz)"] == 9878.28369293019
+    assert ssb["Independent residual capture"] == 0
+    assert "Oscillator-only residual CFO (Hz)" not in ssb
+    assert ssb["Oscillator-only residual status"].startswith("unavailable_")
+    assert "Residual timing error (samples)" not in ssb
+    assert tracking["Applied CFO correction (Hz)"] == 419.575771483581
+    assert tracking["Post-correction measured frequency (Hz)"] == -21.2931666848223
+    assert tracking["CFO correction sample origin"] == 92160
+    assert tracking["Timing estimate (samples)"] == tracking["Applied timing correction (samples)"] == 9
+    assert tracking["Timing estimation error vs scoring reference (samples)"] == 0
+    assert "Residual timing error (samples)" not in tracking
+    assert tracking["Reuses acquisition observation"] == 1
+    assert data["Applied CFO correction (Hz)"] == 400
+    assert data["Simulation-reference residual CFO (Hz)"] == -5
+    assert data["Post-correction measured frequency (Hz)"] == -7
+    source = Path(dashboard.__file__).read_text(encoding="utf-8")
+    panel = source.split("{id:'ssb_sync_timing', title:", 1)[1].split("rows:recent", 1)[0]
+    for label in ("Detected SSB position before correction (samples)",
+                  "Oscillator-only residual status", "PBCH post-correction common frequency (Hz)",
+                  "CFO correction sample origin"):
+        assert label in panel
+    assert "'Timing estimate before correction (samples)'" not in panel
+    assert "'Residual CFO (Hz)'" not in panel
+    combined_panel = source.split("{id:'dl_sync', title:", 1)[1].split("rows:dlSynchronizationRows", 1)[0]
+    assert "dlSynchronizationRows.flatMap(row => Object.keys(row))" in combined_panel
+
+
+def test_dl_sync_does_not_infer_applied_correction_from_estimate_or_sib1() -> None:
+    pbch = dashboard.summarize_control_trial_preview_rows("pbch_trials", [dict(
+        EstimatedCFO_PreCorrection_Hz=400, SIB1CFOCorrectionApplied_Hz=350,
+        CFOCorrectionApplied_Hz="NaN", PBCHResidualFrequencyAvailable=0)])
+    row = _evaluate_dl_sync_projection(dict(pbch_trials=pbch, trs_trials=[]), dict(dl_trials=[]))[0]
+    assert row["Estimated CFO (Hz)"] == 400
+    assert "Applied CFO correction (Hz)" not in row
+    assert "Post-correction measured frequency (Hz)" not in row
+    assert row["Post-correction estimate available"] == 0
+
+
+def _evaluate_dl_sync_projection(control, data):
+    return _evaluate_sync_projection(control, data)["dl"]
+
+
+def _evaluate_sync_projection(control, data):
+    node = shutil.which("node")
+    if node is None:
+        import playwright
+        node = str(Path(playwright.__file__).parent / "driver" /
+                   ("node.exe" if sys.platform == "win32" else "node"))
+    source = Path(dashboard.__file__).read_text(encoding="utf-8")
+    block = source.split("    const receiverFrequencyFields =", 1)[1].split("    const tableSpecs =", 1)[0]
+    script = ("const recent = v => v || []; const controlPreviews=" + json.dumps(control) +
+              "; const dataPreviews=" + json.dumps(data) +
+              "; const msg1Rows=[]; const receiverFrequencyFields =" + block +
+              "console.log(JSON.stringify({dl:dlSynchronizationRows,ul:ulSynchronizationRows}));")
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True,
+                            encoding="utf-8", check=True, timeout=15)
+    return json.loads(result.stdout)
+
+
+def test_four_channel_sync_original_frequency_fields_and_rendered_rows() -> None:
+    # Declared CSV metadata, not native receiver or campaign qualification.
+    source = dict(Slot=17, UEID=2, EstimatedCFO_Hz=-125.25,
+                  EstimatedCommonFrequency_Hz=-125.25,
+                  CFOEstimateAvailable=1, CFOEstimateAvailability="legacy_status_separate",
+                  CFOEstimateSource="declared_original_receiver", CFOCorrectionEnabled=1,
+                  CFOCorrectionApplied=1, CFOCorrectionApplied_Hz=-125.25,
+                  CFOCorrectionSource="declared_original_operator", CFOCorrectionSampleOrigin=0,
+                  CFOCorrectionAbsoluteSampleOrigin=1234,
+                  CFOCorrectionClockSource="original_capture_plus_timing",
+                  FrequencyEstimateDomain="received_common_frequency_not_oscillator_only",
+                  FrequencyCorrectionStatus="available",
+                  ResidualCFOEstimatorConsistency_Hz=0,
+                  ResidualCFOEstimateAvailable=1, ResidualCFOReusesAcquisitionObservation=1,
+                  ResidualCFOEstimateRole="same_observation_estimator_consistency_not_independent_residual",
+                  ReceiverFrequencyEvidenceSHA256="a" * 64,
+                  ResidualCFO_PostCorrection_Hz="NaN", ResidualCFO_EstimatedPostCorrection_Hz="NaN")
+    before = dict(source)
+    control = {key: dashboard.summarize_control_trial_preview_rows(key, [source])
+               for key in ("pdcch_trials", "pucch_trials")}
+    data = {key: dashboard.summarize_data_trial_preview_rows(key, [source])
+            for key in ("dl_trials", "ul_trials")}
+    projected = _evaluate_sync_projection(control, data)
+    assert {row["Stage"] for row in projected["dl"]} == {"PDCCH receiver", "PDSCH receiver"}
+    assert {row["Stage"] for row in projected["ul"]} == {"PUCCH receiver", "PUSCH receiver"}
+    for row in projected["dl"] + projected["ul"]:
+        assert row["Receiver frequency estimate (Hz)"] == -125.25
+        assert row["Receiver estimate available (boolean)"] == 1
+        assert row["Applied CFO correction (Hz)"] == -125.25
+        assert row["Correction source"] == "declared_original_operator"
+        assert row["CFO correction sample origin"] == 0
+        assert row["CFO correction absolute sample origin"] == 1234
+        assert row["Same-observation estimator consistency (Hz)"] == 0
+        assert row["Residual evidence role"] == source["ResidualCFOEstimateRole"]
+        assert row["Reuses acquisition observation"] == 1
+        assert row["Receiver frequency evidence SHA256"] == "a" * 64
+        assert "Post-correction measured frequency (Hz)" not in row
+        assert "Simulation-reference residual CFO (Hz)" not in row
+    assert source == before
+    script = Path(dashboard.__file__).read_text(encoding="utf-8")
+    ul_panel = script.split("{id:'ul_sync', title:", 1)[1].split("rows:ulSynchronizationRows", 1)[0]
+    assert "ulSynchronizationRows.flatMap(row => Object.keys(row))" in ul_panel
+
+
+def test_four_channel_sync_disabled_unavailable_and_legacy_not_invented() -> None:
+    for key, summarize in [("pdcch_trials", dashboard.summarize_control_trial_preview_rows),
+                           ("pucch_trials", dashboard.summarize_control_trial_preview_rows),
+                           ("dl_trials", dashboard.summarize_data_trial_preview_rows),
+                           ("ul_trials", dashboard.summarize_data_trial_preview_rows)]:
+        rows = summarize(key, [dict(Slot=1, CFOCorrectionEnabled=0,
+                                   CFOCorrectionApplied=0, CFOEstimateAvailable=0,
+                                   CFOCorrectionApplied_Hz="NaN", EstimatedCFO_Hz="NaN",
+                                   FrequencyCorrectionStatus="disabled_by_receiver_configuration"),
+                               dict(Slot=2, EstimatedCFO_Hz=400,
+                                    CFOEstimateAvailability="legacy_only")])
+        assert rows[0]["CFO correction applied"] == 0
+        assert rows[0]["Receiver frequency estimate available"] == 0
+        assert rows[1]["CFO correction applied"] == "N/A"
+        assert rows[1]["CFO estimate availability"] == "legacy_only"
+        assert rows[1]["Receiver frequency estimate available"] == "N/A"
+        assert all("Applied CFO correction (Hz)" not in row for row in rows)
+        assert all("Same-observation estimator consistency (Hz)" not in row for row in rows)
+        control = {key: rows} if key in ("pdcch_trials", "pucch_trials") else {}
+        data = {key: rows} if not control else {}
+        projected = _evaluate_sync_projection(control, data)
+        actual = projected["dl"] + projected["ul"]
+        assert len(actual) == 2
+        assert all("Applied CFO correction (Hz)" not in row for row in actual)
+        assert actual[1]["Receiver frequency estimate (Hz)"] == 400
 
 
 def test_waveform_quality_previews_expose_evm_nmse_and_receiver_plane() -> None:
@@ -713,7 +885,8 @@ def test_srs_arrival_scoring_never_replaces_receiver_or_injected_timing(tmp_path
     result = subprocess.run([node, "-"], input=script, capture_output=True,
                             text=True, check=True, timeout=15)
     title = "SRS receiver timing versus independent earliest-path scoring"
-    section = result.stdout.split(title, 1)[1].split("</article>", 1)[0]
+    # Navigation repeats titles; select the actual measurement article.
+    section = result.stdout.split('id="measurement-srs_arrival_timing"', 1)[1].split("</article>", 1)[0]
     for value in ("<td>1231</td>", "<td>-13</td>", "<td>15</td>", "<td>0</td>"):
         assert value in section
     assert "not an injected delay or measured post-correction residual" in section
@@ -851,6 +1024,50 @@ def test_ssb_sweep_preview_preserves_all_four_received_candidates() -> None:
     assert rows[-1]["Delivery slot (1-based)"] == 15
     assert rows[-1]["SS-RSRP (dB re unit Es)"] == -16
     assert dashboard.summarize_procedure_preview_rows("ssb_sweep", []) == []
+
+
+def test_ssb_sweep_absolute_power_and_coordinates_reach_rendered_columns() -> None:
+    import re
+
+    powers = [-97.3532702609121, -97.6448024184975, -107.023014713919, -109.628958765184]
+    raw = [dict(SSBIndex=i, SS_RSRP_dBm=power,
+                SS_RSRP_dB_re_UnitOccupiedRE_Es="NaN",
+                SelectedBeamFlag=int(i == 0), SelectedSSBIndex=0,
+                SelectionMetric="SS_RSRP_dBm",
+                PowerReferencePlane="internal_physical_receive_element_before_RX_front_end",
+                SSMeasurementSource="received_sss_power",
+                SSPhysicalMeasurementStatus="available_rsrp_and_sinr",
+                SSBCandidateCarrierSlot0Based=i // 2,
+                SSBCandidateSymbolWithinSlot0Based=4 + 4 * (i % 2),
+                SSBCandidateNativeSlot0Based=i // 2,
+                SSBCandidateNativeSymbolWithinSlot0Based=4 + 4 * (i % 2),
+                SSBCandidateNativeSCS_kHz=30)
+           for i, power in enumerate(powers)]
+    rows = dashboard.summarize_procedure_preview_rows("ssb_sweep", raw)
+    source = Path(dashboard.__file__).read_text(encoding="utf-8")
+    panel = source.split("{id:'ssb_sweep', title:", 1)[1].split("rows:recent", 1)[0]
+    columns = re.findall(r"'([^']+)'", panel.split("columns:[", 1)[1])
+    for row, power in zip(rows, powers):
+        assert row["SS-RSRP (dBm)"] == power
+        assert "SS-RSRP (dB re unit Es)" not in row
+        assert row["Selection metric"] == "SS_RSRP_dBm"
+        # Test the actual browser column keys, not only the Python projection.
+        assert set(row).issubset(columns)
+    assert rows[0]["Containing common-carrier slot (0-based)"] == 0
+    assert rows[0]["Containing common-carrier symbol (0-based)"] == 4
+    assert "Candidate carrier slot (0-based)" not in columns
+    assert "Candidate symbol (0-based)" not in columns
+
+
+def test_ssb_sweep_never_converts_normalized_or_missing_power_to_dbm() -> None:
+    rows = dashboard.summarize_procedure_preview_rows("ssb_sweep", [
+        dict(SSBIndex=0, SS_RSRP_dBm="NaN", SS_RSRP_dB_re_UnitOccupiedRE_Es=-15.0,
+             SelectionMetric="SS_RSRP_dB_re_UnitOccupiedRE_Es"),
+        dict(SSBIndex=1, SelectionMetric="SS_RSRP_dBm"),
+    ])
+    assert all("SS-RSRP (dBm)" not in row for row in rows)
+    assert rows[0]["SS-RSRP (dB re unit Es)"] == -15.0
+    assert rows[1]["SS-RSRP (dB re unit Es)"] == "N/A"
 
 
 def test_initial_access_renderer_includes_msg1_before_completed_ra() -> None:
@@ -1188,7 +1405,11 @@ def test_ue_card_renders_separate_directional_admission() -> None:
 
 def test_ue_status_keeps_serving_ss_and_csi_measurements_distinct() -> None:
     sources = {
-        "serving": [{"UEID": 1, "Slot": 8, "ServingRSRP_dBm": -82.5}],
+        # Explicit receiver-provenance fixture; a dBm suffix alone cannot
+        # establish a received measurement (tested independently below).
+        "serving": [{"UEID": 1, "Slot": 8, "ServingRSRP_dBm": -82.5,
+                     "ServingRSRPSource": "nrChannelEstimate_port3000_reference_RE_power_per_receive_branch",
+                     "ServingRSRPReferencePlane": "physical_receive_reference_RE"}],
         "csi": [
             {
                 "UEIndex": 1,
@@ -1265,6 +1486,10 @@ def test_ue_status_keeps_serving_ss_and_csi_measurements_distinct() -> None:
     assert ue["pathloss_paths"][1]["raw_pathloss_db"] == 0
     assert ue["pathloss_paths"][1]["beam_index"] is None
     assert ue["pathloss_paths"][1]["beam_gain_db"] is None
+    del sources["serving"][0]["ServingRSRPSource"]
+    unknown = dashboard.build_realtime_ue_status({}, {}, sources)[0]
+    assert unknown["serving_rsrp_dbm"] is None
+    assert unknown["serving_rsrp_published_dbm"] == -82.5
 
 
 def test_csi_normalized_physical_power_is_not_legacy_grid_power() -> None:

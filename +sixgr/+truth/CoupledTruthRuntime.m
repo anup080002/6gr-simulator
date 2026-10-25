@@ -3821,6 +3821,14 @@ methods(Static, Access=private)
             grant, sixgr.util.structGet(grant, "PHYGrant", struct()), struct());
         if isRetx
             context = sixgr.truth.CoupledTruthRuntime.resolveHARQTrialContextImpl(state, ueIdx, direction, grant);
+            assert(isfield(context,'TransportBlockBits') && ...
+                isfield(context,'GrantSnapshot') && ...
+                isfield(context.HARQContext,'TransportBlockContext'), ...
+                'sixgr:truth:MissingOriginalHARQAttempt', ...
+                'A scheduled retry must resolve the original HARQ-owned TB and context.');
+            originalAttempt=struct('TB',context.TransportBlockBits, ...
+                'TBContext',context.HARQContext.TransportBlockContext, ...
+                'LastGrant',context.GrantSnapshot,'HARQ',context.HARQContext);
             replayGrant = sixgr.util.structGet(context, "GrantSnapshot", struct());
             if ~(isstruct(replayGrant) && ~isempty(fieldnames(replayGrant)))
                 replayGrant = grant;
@@ -3924,8 +3932,15 @@ methods(Static, Access=private)
                 % not replace that command's identity during preparation.
                 replayGrant.GrantContextId = char(scheduledContextId);
             end
-            replayGrant = sixgr.truth.CoupledTruthRuntime.refreezeReplayGrantPHYContract( ...
-                cfg, replayGrant, direction, state, context.HARQContext);
+            % The scheduler already froze this attempt before authoring its
+            % control command. Do not project and freeze it a second time:
+            % doing so reclassifies a CSI-basis/codebook operator as an
+            % explicit matrix and loses its original CRI/PMI provenance.
+            % Retain the issued contract exactly; validate it against the
+            % original HARQ-owned TB and the merged current aliases below.
+            replayGrant.HARQCurrentAttemptValidation= ...
+                sixgr.phy.grant.validateHARQCurrentAttempt( ...
+                originalAttempt,replayGrant,context.TransportBlockBits);
             context.GrantSnapshot = replayGrant;
             context.HARQContext.GrantSnapshot = replayGrant;
         else
@@ -3995,12 +4010,10 @@ methods(Static, Access=private)
         frozenPHYGrant = sixgr.util.structGet(grant, "PHYGrant", struct());
         cfgReplay = cfg;
         if isstruct(frozenPHYGrant) && ~isempty(fieldnames(frozenPHYGrant))
-            % A retransmission inherits the exact first-transmission antenna
-            % and precoding architecture.  The transient per-user cfg can
-            % carry only that user's selected 64x2 beam while the frozen
-            % cell architecture is 64x4.  Project the frozen grant into the
-            % replay cfg before refreezing so a stale per-user mirror cannot
-            % redefine the hardware matrix.
+            % mergeReplayCurrentGrantAuthority supplies THIS scheduled
+            % attempt's frozen PHY contract, not the original TB's PHY.
+            % Preserve its full spatial architecture against transient
+            % per-user config mirrors while binding this attempt's HARQ.
             cfgReplay = sixgr.phy.grant.applyPHYGrantToConfig( ...
                 cfgReplay, frozenPHYGrant);
         end
@@ -4020,7 +4033,16 @@ methods(Static, Access=private)
                 ~isempty(fieldnames(currentGrant)))
             return;
         end
+        currentPHY=sixgr.util.structGet(currentGrant,'PHYGrant',struct());
+        assert(isstruct(currentPHY) && isscalar(currentPHY) && ...
+            isequal(sixgr.util.structGet(currentPHY,'IsFrozen',false),true), ...
+            'sixgr:truth:MissingCurrentHARQPHYGrant', ...
+            'A retry requires its current scheduled frozen PHY grant; the original TB cannot supply one.');
         authorityFields = [ ...
+            ... % One current frozen spatial/control occasion, never old TB PHY.
+            "PHYGrant", "PHYGrantContextId", "PMI", "TPMI", "CRI", ...
+            "AppliedPrecoderPMI", "AppliedPrecoderPMIType", "PMICodebookMode", ...
+            "CSIReportProvenance", "CSIReportDecisionContext", "CSIReportApplication", ...
             ... % Current-slot scheduling and shared-resource identity.
             "GrantReason", "PRBSet", "PRBs", "PRBStart", ...
             "SymbolAllocation", "DMRSPortSet", "DMRSPortSetSource", ...
@@ -10934,12 +10956,16 @@ methods(Static, Access=private)
             grant.Rank = executableRI;
             grant.RankIndicator = executableRI;
         end
+        frozenSpatialAuthority=isequal(sixgr.util.structGet(grant,'PHYGrant.IsFrozen',false),true);
+        % A frozen explicit matrix may legitimately have no scalar PMI/CRI.
+        % Latest feedback belongs to a later scheduler decision, not this
+        % already issued attempt. Never invent its selector during replay.
         grant.PMI = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "PMI", NaN), NaN);
-        if ~isfinite(double(grant.PMI))
+        if ~frozenSpatialAuthority && ~isfinite(double(grant.PMI))
             grant.PMI = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(feedback, "PMI", NaN), NaN);
         end
         grant.CRI = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "CRI", NaN), NaN);
-        if ~isfinite(double(grant.CRI))
+        if ~frozenSpatialAuthority && ~isfinite(double(grant.CRI))
             grant.CRI = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(feedback, "CRI", NaN), NaN);
         end
         grant.MUMIMOEnabled = logical(sixgr.util.structGet(grant, "MUMIMOEnabled", false));
@@ -10967,12 +10993,11 @@ methods(Static, Access=private)
         grant.MUMIMOHybridRFDesignStatus = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "MUMIMOHybridRFDesignStatus", ""), "");
         grant.HybridElementToPortMatrixSHA256 = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "HybridElementToPortMatrixSHA256", ""), "");
         grant.BaseHybridElementToPortMatrixSHA256 = sixgr.truth.CoupledTruthRuntime.firstString(sixgr.util.structGet(grant, "BaseHybridElementToPortMatrixSHA256", ""), "");
-        % NumLogicalPorts is an optional executable request operand, not a
-        % reporting placeholder. Preserve absence and any explicit value
+        % NumLogicalPorts/NumRFChains are optional executable operands, not
+        % reporting placeholders. Preserve absence and any explicit value
         % verbatim: inserting NaN contradicts an otherwise valid frozen UL
         % architecture, while scalarizing malformed input hides it from the
         % strict frozen-grant guard. buildGrantTraceRow owns reporting NaN.
-        grant.NumRFChains = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "NumRFChains", NaN), NaN);
         grant.ServingCell = sixgr.truth.CoupledTruthRuntime.firstNumeric(sixgr.util.structGet(grant, "ServingCell", NaN), NaN);
         if ~isfinite(double(grant.ServingCell))
             servingVec = double(sixgr.util.structGet(state, "CurrentServingIdx", nan(state.NumUsers, 1)));

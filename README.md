@@ -2,6 +2,32 @@
 
 ## 25 October 2026: consolidated main branch and requested scenario run
 
+### Current execution and verification handoff
+
+The active integration attempt was launched as
+`n40_20mhz_sixpoint_20261025_105017`, with its output root verified as
+`E:\SixGRResults`. Its parent WebGUI entry is
+<http://127.0.0.1:62906/realtime?run_id=9127551233> (local to this laptop).
+Select the active child for radio-slot measurements. This is a running
+experiment, **not a completed or statistically qualified result**.
+
+The focused `msg1_launch_gate_20261025_03.log` finished with MATLAB exit 0:
+`testSharedMsg1TransmissionCompletion` verified native Msg1 transmission,
+16 actual silent RAR monitoring windows and timeout without fabricated PRACH
+reception; `testCellRARResponseOwnership` verified bounded physical RAR
+ownership. The new independent Msg1 TX-completion API is tested but is **not
+activated in the main scenario**: independent cell PRACH monitoring and the
+cell-owned Msg2 waveform chain remain unfinished. Earlier synchronization,
+received-configuration and measurement checks are scoped evidence, not a
+claim that all implementation gaps are closed.
+
+Set `SIXGR_RESULTS_ROOT` as shown below: supplying an external output argument
+alone does not authorize that directory. The earlier `104808` attempt was
+stopped during initialization because that environment setting was absent;
+its files were preserved. Logs, IQ and run outputs remain local and are not
+included in the GitHub source commit. The dated v267–v272 notes below are
+historical; they do not describe the current process.
+
 Use this existing checkout and the `main` branch. The current run target is the
 six-point **n40 / 2.350 GHz / 20 MHz / 30 kHz TDD** YAML below: **100 slots per
 point**, `[30, 20, 10, 0, -10, -20]` dB nominal reference Es/N0, 64 gNB TXRU,
@@ -40,6 +66,7 @@ scenario is active. The output directory is not another codebase.
 $runTag = 'n40_20mhz_sixpoint_' + (Get-Date -Format 'yyyyMMdd_HHmmss')
 $runYaml = 'simulator/configs/scenarios/lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep.yaml'
 $outputRoot = 'E:\SixGRResults'
+$env:SIXGR_RESULTS_ROOT = $outputRoot # Authorize this external evidence root for MATLAB.
 if (-not (Test-Path -LiteralPath 'E:\')) { throw 'Reconnect E: before running.' }
 New-Item -ItemType Directory -Force -Path "$outputRoot\logs" | Out-Null
 & 'C:\Program Files\MATLAB\R2026a\bin\matlab.exe' -wait -logfile "$outputRoot\logs\$runTag.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('$runYaml','$outputRoot','$runTag'); disp(out); fprintf('RUN_FOLDER=%s\n',char(out.RunFolder)); assert(out.Ok,'Campaign acceptance failed; preserve original evidence.');"

@@ -26,6 +26,11 @@ timing=struct('Source','nrPRACHOFDMInfo_actual_CP_useful_samples_excluding_guard
     'WaveformEndTimeExclusive_s',origin+edges(end)/fs, ...
     'ActiveStartTime_s',origin+edges(symbols(1))/fs, ...
     'ActiveEndTimeExclusive_s',origin+(edges(symbols(end)+1)-guard(symbols(end)))/fs);
+% Retain exact native support for both independent gNB monitoring and UE
+% occasion selection. Floating-point display seconds are not clock authority.
+timing.WaveformStartTicks=int64(round(originSample))*int64(ticksPerSample);
+timing.WaveformEndTicksExclusive=int64(round(originSample)+edges(end))*int64(ticksPerSample);
+timing.ActiveStartTicks=int64(round(originSample)+edges(symbols(1)))*int64(ticksPerSample);
 timing.ActiveEndTicksExclusive=int64(round(originSample)+ ...
     edges(symbols(end)+1)-guard(symbols(end)))*int64(ticksPerSample);
 % Resource reservations cover every carrier symbol touched by the actual

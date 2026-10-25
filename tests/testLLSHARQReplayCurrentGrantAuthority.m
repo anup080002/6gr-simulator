@@ -1,5 +1,7 @@
 function ok = testLLSHARQReplayCurrentGrantAuthority()
 %TESTLLSHARQREPLAYCURRENTGRANTAUTHORITY Preserve current-slot grant authority on HARQ replay.
+% Declared control/feedback/MU boundary inputs and real scheduler/HARQ state.
+% No waveform, received control, measured MU design or native LDPC claim.
 
 setup6GRSimToolkit("Verbose", false);
 
@@ -63,10 +65,38 @@ storedGrant = struct( ...
     "MUMIMOPairingEvidenceSource", "causal_measured_srs_complete_peer_subspace_and_runtime_irc_covariance", ...
     "MUMIMOSpatialDesignEvidenceSource", "frozen_first_transmission_spatial_design", ...
     "MUMIMOSpatialFilterMatrixSHA256", repmat('a', 1, 64), ...
-    "HARQTBContext", struct("OriginalNumLayers", 2, "TBSBits", tbsBits));
+    "HARQTBContext", struct());
+
+% The production allocation and frozen preparation contract now own TBS,
+% rank and coding metadata. Do not manufacture the canonical HARQ context.
+storedGrant.ControlAbsoluteSlot = 0;
+storedGrant.TransportBlockId = 'declared-current-grant-authority-original-TB';
+storedGrant.TBId = storedGrant.TransportBlockId;
+% Declared rank-two MU boundary matrix, not a measured pairing result.
+% The configured four-port fixture must use unit TOTAL precoder power;
+% unscaled identity columns would incorrectly double that power.
+assert(sixgr.phy.grant.resolveDLLogicalPortCount(cfg,storedGrant,2)==4);
+declaredMU = eye(4,2)/sqrt(2);
+sixgr.phy.mimo.MatrixContract.validate(declaredMU,4,2);
+storedGrant.PrecodingMatrixLogicalPorts = declaredMU;
+storedGrant.LogicalPrecodingMatrix = declaredMU;
+storedGrant.PrecodingMatrix = declaredMU;
+storedGrant.PrecoderNormalizationConvention = 'unit_frobenius';
+scheduler = sixgr.l2.mac.SchedulerPF(cfg, 'Direction', 'DL');
+storedGrant = scheduler.attachCanonicalTimingDecision(storedGrant);
+storedGrant = scheduler.finalizeExactPHYFeasibility(storedGrant);
+assert(storedGrant.ExactPHYFeasible);
+tbsBits = double(storedGrant.TBSBits);
 
 txp = state.DLHarq.allocate(rnti, 1, tbsBits / 8, "NewData", true);
 storedGrant.HARQ = txp.HARQ;
+storedGrant = scheduler.freezePHYGrantForGrant(storedGrant, ...
+    'TimingAlreadySelected', true, 'ActiveConfig', cfg);
+assert(storedGrant.PHYGrant.IsFrozen && storedGrant.PHYGrant.CodingLayout.TBSBits == tbsBits);
+assert(storedGrant.PHYGrant.AntennaArchitecture.NumElements==4 && ...
+    isequal(storedGrant.PHYGrant.PrecodingState.MatrixPhysicalPorts,declaredMU));
+sixgr.phy.mimo.MatrixContract.validate( ...
+    storedGrant.PHYGrant.PrecodingState.MatrixPhysicalPorts,4,2);
 state.DLHarq.onTx(rnti, double(txp.HARQ.HarqID), ...
     zeros(tbsBits, 1, "uint8"), storedGrant, 1);
 state.DLHarq.onFeedback(rnti, double(txp.HARQ.HarqID), "NACK", ...
@@ -78,6 +108,8 @@ currentGrant = storedGrant;
 currentGrant.Frame = 1;
 currentGrant.Slot = 5;
 currentGrant.HARQ = retx.HARQ;
+currentGrant.HARQTBContext = retx.TBContext;
+currentGrant.ControlAbsoluteSlot = 4;
 currentGrant.IsRetransmission = true;
 currentGrant.Valid = true;
 currentGrant.ExactPHYFeasibilityChecked = true;
@@ -112,6 +144,12 @@ currentGrant.PriorMUMIMOGroupId = storedGrant.MUMIMOGroupId;
 currentGrant.PriorMUMIMOGroupSize = storedGrant.MUMIMOGroupSize;
 currentGrant.PriorMUMIMOPairingEvidenceSource = ...
     storedGrant.MUMIMOPairingEvidenceSource;
+% Freeze the actual current occasion before adding deliberately stale
+% outer aliases. Those aliases must not replace this scheduler contract.
+currentGrant = scheduler.freezePHYGrantForGrant(currentGrant, 'ActiveConfig', cfg);
+assert(currentGrant.ExactPHYFeasible && currentGrant.PHYGrant.IsFrozen && ...
+    currentGrant.PHYGrant.CodingLayout.NumLayers == 2 && ...
+    currentGrant.PHYGrant.CodingLayout.TBSBits == tbsBits);
 % Reproduce the stale scheduler aliases seen in the full MU-MIMO sweep:
 % the executable grant carries two layers, while legacy RI/Rank fields
 % still contain the single-layer scheduling default.  NumLayers/Layers are
@@ -123,13 +161,13 @@ currentGrant.RankIndicator = 1;
 
 % Reproduce the slot-70 production failure exactly: the scheduler's
 % top-level replay flag is true, but a stale nested alias is false. The
-% original 256-bit TB must be resolved from HARQ state; generating a new
+% original allocation-sized TB must be resolved from HARQ state; generating a new
 % grant-sized payload here would break the single TX/RX replay chain.
 staleAliasGrant = currentGrant;
 staleAliasGrant.HARQ.IsRetransmission = false;
-staleAliasGrant.TBSBits = 128;
-staleAliasGrant.TBSBytes = 16;
-staleAliasGrant.TransportBlockSize = 128;
+staleAliasGrant.TBSBits = tbsBits + 8;
+staleAliasGrant.TBSBytes = (tbsBits + 8) / 8;
+staleAliasGrant.TransportBlockSize = tbsBits + 8;
 [~, staleAliasContext, staleAliasRow] = ...
     sixgr.truth.CoupledTruthRuntime.buildTrialContextFromGrant( ...
     state, cfg, 1, "DL", staleAliasGrant);
@@ -143,6 +181,10 @@ assert(numel(staleAliasContext.TransportBlockBits) == tbsBits && ...
 [~, context, authorityRow] = sixgr.truth.CoupledTruthRuntime.buildTrialContextFromGrant( ...
     state, cfg, 1, "DL", currentGrant);
 replayGrant = context.GrantSnapshot;
+assert(isequaln(replayGrant.PHYGrant,currentGrant.PHYGrant), ...
+    'Runtime must preserve the complete issued current PHY contract.');
+assert(isnan(replayGrant.PMI) && isnan(replayGrant.CRI), ...
+    'A frozen explicit matrix must not acquire scalar selectors from later/default feedback.');
 
 assert(double(replayGrant.NumLayers) == 2 && ...
     double(replayGrant.Layers) == 2 && ...
@@ -195,9 +237,9 @@ assert(string(replayGrant.MUMIMOSpatialDesignEvidenceSource) == ...
         string(repmat('a', 1, 64)), ...
     "Current-slot MU identity reduction must not erase the frozen HARQ spatial design contract.");
 
-% UL HARQ replay retains the original transport block, but the current
-% scheduling occasion owns its causal SRS/codebook authority. Losing these
-% fields makes refreezing fail after an earlier PUSCH has already executed.
+% Field-projection regression for the SRS authority used by UL replay.
+% This reducer-only check uses the already frozen DL envelope; it does not
+% claim a PUSCH grant, received SRS, or UL waveform preparation.
 storedULAuthority = struct( ...
     "SRSValid", false, ...
     "SRSCausalUsable", false, ...
@@ -212,6 +254,7 @@ storedULAuthority = struct( ...
     "SRSValidityState", "invalid", ...
     "CSIValidityState", "no_successful_srs");
 currentULAuthority = struct( ...
+    "PHYGrant", currentGrant.PHYGrant, ...
     "SRSValid", true, ...
     "SRSCausalUsable", true, ...
     "SRSCausalMeasurementId", "srs-ue1-slot65", ...
@@ -286,6 +329,12 @@ currentMU.PrecodingApplicationStage = ...
 currentDigest = string(sixgr.phy.mimo.MatrixContract.digest( ...
     double(currentMU.PrecodingMatrix)));
 currentMU.MUMIMOSpatialFilterMatrixSHA256 = char(currentDigest);
+currentMU.RI = 2; currentMU.RIUsed = 2;
+currentMU.Rank = 2; currentMU.RankIndicator = 2;
+currentMU = scheduler.freezePHYGrantForGrant(currentMU, ...
+    'TimingAlreadySelected', true, 'ActiveConfig', cfg);
+assert(currentMU.PHYGrant.IsFrozen && ...
+    string(currentMU.PHYGrant.PrecodingState.AppliedMatrixSHA256) == currentDigest);
 
 [~, currentMUContext] = ...
     sixgr.truth.CoupledTruthRuntime.buildTrialContextFromGrant( ...
@@ -330,8 +379,7 @@ currentGrant.RI = 2;
 currentGrant.RIUsed = 2;
 currentGrant.Rank = 2;
 currentGrant.RankIndicator = 2;
-currentGrant.HARQTBContext = struct("OriginalNumLayers", 2, ...
-    "TBSBits", tbsBits);
+currentGrant.HARQTBContext = retx.TBContext;
 adaptedRetx = sixgr.truth.CoupledTruthRuntime.applyMeasuredFeedbackAMCToGrantRuntime( ...
     currentGrant, state.LatestDLFeedback(1), [], cfgAdaptive, "DL");
 assert(double(adaptedRetx.NumLayers) == 2 && ...

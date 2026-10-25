@@ -56,6 +56,11 @@ classdef CanonicalOFDMModulator
             info.FrequencyDomainSignalPowerReference=char(string(calibration.FrequencyDomainSignalPowerReference));
             info.OFDMNoiseTransformVersion=char(string(calibration.Version));
             info.OFDMSamplingResolution=resolution;
+            % nrOFDMModulate retains a full-subframe CP vector in INFO but
+            % starts this waveform at carrier.NSlot. Consumers measuring
+            % sample intervals need that original phase, including when the
+            % grid spans more than one slot.
+            info.InitialSlotInSubframe=mod(double(carrier.NSlot),double(carrier.SlotsPerSubframe));
             info.OFDMWindowingSamples=double(resolution.WindowingSamples);
             info.OFDMWindowingSource=windowingSource;
             [gp,gpi]=sixgr.phy.waveform.ofdmReferencePower(grid,info,"Domain","occupied_re");

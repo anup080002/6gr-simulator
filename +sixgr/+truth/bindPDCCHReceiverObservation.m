@@ -4,6 +4,8 @@ function row = bindPDCCHReceiverObservation(row,rx,info)
 for name=string(fieldnames(sixgr.link.receivedWaveformEvidence())).'
     if isfield(info,name), row.(name)=info.(name); end
 end
+frequency=sixgr.link.controlFrequencyEvidence(rx);
+for name=string(fieldnames(frequency)).', row.(name)=frequency.(name); end
 candidates = sixgr.util.structGet(info,'CandidateResults',table());
 assert(istable(candidates),'sixgr:truth:InvalidPDCCHCandidateEvidence', ...
     'Receiver candidate evidence must be a table.');

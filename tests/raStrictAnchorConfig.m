@@ -17,8 +17,11 @@ cfg.phy.mib.dmrsTypeAPosition = 2;
 cfg.phy.carrier.NSizeGrid = 51;
 cfg.phy.carrier.SubcarrierSpacing = 30;
 cfg.phy.carrier.SubcarrierSpacing_kHz = 30;
-% The long PRACH occasion starts in slot 2 and spans UL symbols. Keep the
-% explicit unit fixture's common map consistent with that actual waveform.
+% Native index16 format0's waveform container starts at 1 ms (slot2),
+% including 0.5 ms leading zeros. Its actual CP/useful support starts at
+% 1.5 ms (slot3) and touches 26 carrier symbols. Occasion coordinates below
+% name occupied carrier support; NPRACHSlot and RA-RNTI retain their own
+% native reference clock. Keep the common map consistent with that support.
 cfg.phy.duplex.tddCommon.Pattern1.NumDownlinkSlots = 2;
 cfg.phy.duplex.tddCommon.Pattern1.NumDownlinkSymbols = 0;
 cfg.phy.duplex.tddCommon.Pattern1.NumUplinkSlots = 8;
@@ -50,8 +53,9 @@ cfg.phy.prach.enable = true;
 % RB 15 on this 51-RB carrier; that needs different authored allocations.
 cfg.phy.ssb.NCRBSSB = 0;
 cfg.phy.ssb.KSSB = 0;
-% Ordered monitoring is [n0,n0+1,next n0,next n0+1]. Preserve slot 40.
-cfg.initial_access.type0 = struct("monitoring_occasion_ordinal",3);
+% Ordered monitoring is [0,1,40,41]. Keep the delayed SI purpose, using
+% slot 41: slot 40 overlaps the recurring SSB0 on these same carrier REs.
+cfg.initial_access.type0 = struct("monitoring_occasion_ordinal",4);
 cfg.initial_access.sib1.pdcch_config_common=struct("commonControlResourceSet",struct( ...
     "controlResourceSetId",1,"frequencyDomainResources",char("1111"+string(repmat('0',1,41))), ...
     "duration",2,"cce_REG_MappingType","nonInterleaved","precoderGranularity","sameAsREG-bundle"), ...
@@ -87,7 +91,7 @@ cfg.random_access.restricted_set = "UnrestrictedSet";
 cfg.random_access.msg1_fdm = 1;
 cfg.random_access.frequency_start = 0;
 cfg.random_access.preamble_index = 7;
-cfg.random_access.occasion = struct("frame", 0, "slot", 2, "symbol", 0, "frequency_index", 0);
+cfg.random_access.occasion = struct("frame", 0, "slot", 3, "symbol", 0, "frequency_index", 0);
 cfg.random_access.ra_response_window_slots = 8;
 cfg.random_access.ra_contention_resolution_timer_slots = 64;
 cfg.random_access.preamble_trans_max = 10;

@@ -6,6 +6,18 @@ if nargin<1, rxDelay=0; end
 if nargin<2, rxCFO=0; end
 s=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs', ...
     'validation','lls_pdcch_known_candidate_queue.yaml'));
+% Explicit test-only codec projection: the inherited scenario now installs
+% connected DCI semantics. This arbitrary-bit queue test is not that mode.
+% Remove that policy before building, not from the production builder or
+% after retaining a misleading resolved scenario in cfg.lls6g.
+data=s.toStruct();
+for field={'connected_dci','connected_monitoring'}
+    if isfield(data.control,field{1})
+        data.control=rmfield(data.control,field{1});
+    end
+end
+data.meta.description='Test-only isolated known-candidate codec projection; no connected DCI qualification';
+s=sixgr.lls6g.config.ScenarioConfig(data);
 cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
 cfg.rf.rx.timingOffsetSamples=rxDelay;
 cfg.rf.rx.cfo_Hz=rxCFO;
@@ -45,6 +57,10 @@ assert(numel(completed)==1 && completed.Kind=="PDCCH" && isempty(owner.Pending))
 assert(state.TestPDCCHReceive.Ok && isequal(state.TestPDCCHReceive.DCIBits,bits));
 assert(state.TestPDCCHScore.PDCCHScoringRecordedRXDelay_samples==rxDelay && ...
     state.TestPDCCHScore.PDCCHScoringExecutedRXCFO_Hz==rxCFO);
+assert(state.TestPDCCHScore.PDCCHScoringMeasuredCorrectionApplied== ...
+    state.TestPDCCHReceive.CFOCorrectionApplied && ...
+    isequaln(state.TestPDCCHScore.PDCCHScoringMeasuredCorrection_Hz, ...
+    state.TestPDCCHReceive.CFOCorrectionApplied_Hz));
 rx=state.TestPDCCHReceive;
 evidence=struct('ReceiverHestSINR_dB',rx.ReceiverHestSINR_dB, ...
     'ReceiverHestSINRValueStatus',rx.ReceiverHestSINRValueStatus, ...

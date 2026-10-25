@@ -5,6 +5,11 @@ cfg = sixgr.config.defaultConfig();
 cfg.frequency.band_name = 'n77';
 cfg.phy.carrier.NSizeGrid = 25;
 cfg.phy.carrier.SubcarrierSpacing = 15;
+% The actual broadcast common reference cannot exceed either received BWP
+% SCS. Declare a coherent 15-kHz TX pattern instead of inherited ref30.
+cfg.phy.duplex.tddCommon=struct('ReferenceSubcarrierSpacingKHz',15, ...
+    'Pattern1',struct('PeriodicityMilliseconds',5,'NumDownlinkSlots',2, ...
+    'NumDownlinkSymbols',3,'NumUplinkSlots',1,'NumUplinkSymbols',2));
 cfg.phy.prach.configurationIndex = 157;
 cfg.phy.prach.preambleFormat = 'B4';
 cfg.phy.prach.subcarrierSpacing_kHz = 30;

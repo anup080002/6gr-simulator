@@ -1,5 +1,5 @@
 function ok=testMainIndependentBroadcastAccess()
-% Actual production bundle, two independent finite observation horizons.
+% Actual production bundle: delayed SI before/after and first-occasion SI.
 % No copied completion callback, preconfigured received SI, forced beam or
 % fabricated DTX. This checks SI-dependent Msg1 admission, not full RA/data.
 setup6GRSimToolkit('Verbose',false);
@@ -12,6 +12,9 @@ assert(strlength(strtrim(string(getenv('SIXGR_PROFILE_MODE'))))==0, ...
 originalRNG=rng; restore=onCleanup(@()rng(originalRNG)); %#ok<NASGU>
 path=fullfile(root,'simulator','configs','validation','main_independent_broadcast_access.yaml');
 scenario=sixgr.lls6g.config.loadScenarioConfig(path);
+earlyScenario=sixgr.lls6g.config.loadScenarioConfig(fullfile(root, ...
+    'simulator','configs','validation','main_early_broadcast_access.yaml'));
+earlyCfg=sixgr.lls6g.buildInternalConfig(earlyScenario,fullfile(folder,'early_planning'));
 cfg=sixgr.lls6g.buildInternalConfig(scenario,fullfile(folder,'planning'));
 assert(cfg.run.totalSlots==40 && cfg.phy.sib1.enable && cfg.phy.ssb.enable && ...
     cfg.phy.carrier.SubcarrierSpacing==15 && cfg.phy.carrier.NSizeGrid==25);
@@ -37,12 +40,21 @@ assert(~isempty(early) && ~isempty(late), ...
 horizons=[early(1),late(1)+3];
 assert(horizons(2)<=cfg.run.totalSlots && horizons(1)<min(calendar.AbsoluteSlot)+1, ...
     'sixgr:test:UnboundedAccessFixture','Do not extend the bounded fixture to manufacture success.');
-files=unique([scenario.SourceFiles; string(mfilename('fullpath'))+".m"; ...
+earlyPlan=sixgr.phy.frame.CommonDLResourcePlan(earlyCfg);
+earlyCalendar=earlyPlan.sib1TransmissionOccasions(0,earlyCfg.run.totalSlots);
+firstSI=earlyCalendar(earlyCalendar.RecurrenceIndex0Based==0,:);
+assert(height(firstSI)==4 && max(firstSI.AbsoluteSlot)<min(calendar.AbsoluteSlot));
+earlyPreparation=preparationSlots(preparationSlots>=max(firstSI.AbsoluteSlot)+3);
+assert(~isempty(earlyPreparation),'sixgr:test:UnboundedAccessFixture','Keep a native post-SI PRACH preparation.');
+horizons(3)=earlyPreparation(1)+3;
+files=unique([scenario.SourceFiles; earlyScenario.SourceFiles; string(mfilename('fullpath'))+".m"; ...
     string(which('sixgr.truth.runWaveformLinkBundle')); ...
     string(which('sixgr.truth.CoupledWaveformStream')); ...
     string(which('sixgr.truth.ReceivedMIBDelivery')); ...
     string(which('sixgr.truth.ReceivedSSBTimingDelivery')); ...
+    string(which('sixgr.phy.frame.SSBAcquisitionWindow')); ...
     string(which('sixgr.truth.SIB1ResultDelivery')); ...
+    string(which('sixgr.runtime.resolveExecutionIdentity')); ...
     string(which('sixgr.truth.bindSharedRAPowerReference'))],'stable');
 hashes=arrayfun(@(f)string(sixgr.util.sha256File(f)),files);
 sixgr.util.csvWriteTable(fullfile(folder,'source_hashes.csv'), ...
@@ -50,10 +62,43 @@ sixgr.util.csvWriteTable(fullfile(folder,'source_hashes.csv'), ...
 resolvedScenario=scenario.toStruct(); seed=cfg.run.seed; %#ok<NASGU>
 save(fullfile(folder,'original_configuration.mat'),'resolvedScenario','cfg','calendar','horizons','seed');
 copyfile(path,fullfile(folder,'original_fixture.yaml'));
-names=["before_SI","after_SI"];
-for k=1:2
+names=["before_SI","after_SI","first_legal_SI"];
+executionIDs=strings(1,3);
+[~,experimentID]=fileparts(folder);
+for k=1:3
     armFolder=fullfile(folder,names(k)); mkdir(armFolder);
-    armCfg=sixgr.lls6g.buildInternalConfig(scenario,armFolder);
+    armScenario=scenario;
+    if k==3, armScenario=earlyScenario; end
+    % This test invokes the lower-level bundle instead of runSingle. Install
+    % the same immutable lifecycle inputs BEFORE producing any observations;
+    % never append an identity to old receiver rows to make export pass.
+    runTag="main_independent_broadcast_access_"+string(experimentID)+"_"+names(k);
+    identity=sixgr.runtime.resolveExecutionIdentity( ...
+        armFolder,runTag,string(armScenario.ConfigHash),struct());
+    executionIDs(k)=identity.ExecutionID;
+    armCfg=sixgr.lls6g.buildInternalConfig(armScenario,armFolder);
+    armCfg.run.runTag=char(identity.RunID);
+    armCfg.run.executionID=char(identity.ExecutionID);
+    armCfg.meta.executionID=char(identity.ExecutionID);
+    armCfg.run.scenarioID=char(armScenario.ScenarioID);
+    armCfg.meta.scenarioID=char(armScenario.ScenarioID);
+    armCfg.meta.configHash=char(identity.ConfigHash);
+    persisted=jsondecode(fileread(fullfile(armFolder,'meta','execution_identity.json')));
+    assert(string(persisted.ExecutionID)==identity.ExecutionID && ...
+        string(persisted.RunID)==runTag && string(persisted.ConfigHash)==identity.ConfigHash);
+    % Exercise the actual lifecycle binder before any costly PHY work. This
+    % one-row metadata probe is NOT received evidence, is never exported and
+    % never enters a primary trial table or acceptance population.
+    lifecycleProbe=sixgr.truth.bindCoupledExecutionIdentity( ...
+        table("fixture_lifecycle_preflight_not_PHY",'VariableNames',{'ProbeScope'}), ...
+        armCfg,"PBCH",true);
+    assert(all(ismember(["RunID","ExecutionID","ConfigHash","ScenarioID", ...
+        "EvidenceScope","SameScenarioInPathEligible"],string(lifecycleProbe.Properties.VariableNames))) && ...
+        lifecycleProbe.RunID==identity.RunID && lifecycleProbe.ExecutionID==identity.ExecutionID && ...
+        lifecycleProbe.ConfigHash==identity.ConfigHash && lifecycleProbe.ScenarioID==armScenario.ScenarioID && ...
+        lifecycleProbe.EvidenceScope=="in_path" && lifecycleProbe.SameScenarioInPathEligible, ...
+        'sixgr:test:IncompleteFixtureLifecycle','Install the same full immutable lifecycle as runSingle before execution.');
+    clear lifecycleProbe
     options=struct('LinkSNR_dB',armCfg.channel.snr_dB, ...
         'LinkSNRGrid_dB',armCfg.channel.snr_dB, ...
         'LinkDuration_s',horizons(k)*slotDuration,'LinkMaxSimFrames',horizons(k), ...
@@ -62,7 +107,7 @@ for k=1:2
         'FixedLinkCampaignOnly',false,'HARQDiagnosticsEnabled',false, ...
         'SaveFigures',false,'LiveCSVPNGEnabled',false,'PersistenceEnabled',true);
     rng(double(armCfg.run.seed),'twister'); initialRNG=rng; %#ok<NASGU>
-    save(fullfile(armFolder,'original_execution_inputs.mat'),'armCfg','options','initialRNG');
+    save(fullfile(armFolder,'original_execution_inputs.mat'),'armCfg','options','initialRNG','identity');
     try
         out=sixgr.truth.runWaveformLinkBundle(armCfg,fullfile(armFolder,'air_interface'),options);
         s=out.RawTrials.CoupledRuntime;
@@ -72,7 +117,8 @@ for k=1:2
         save(fullfile(armFolder,'original_terminal_evidence.mat'),'evidence','-v7.3');
         checkAcquired(s,horizons(k));
         if k==1, checkBeforeSI(s,armCfg); else, checkAfterSI(s,armCfg); end
-        publication=checkPublished(armFolder,out,s); %#ok<NASGU>
+        if k==3, checkEarlyAcquisition(s,armCfg,firstSI,captureSeconds); end
+        publication=checkPublished(armFolder,out,s,identity); %#ok<NASGU>
         save(fullfile(armFolder,'original_publication_checks.mat'),'publication');
         fprintf('MAIN_INDEPENDENT_BROADCAST_ACCESS_ARM_PASS arm=%s slots=%d full_RA_claim=0\n', ...
             names(k),horizons(k));
@@ -83,10 +129,47 @@ for k=1:2
         rethrow(cause);
     end
 end
+assert(numel(unique(executionIDs))==3, ...
+    'sixgr:test:ReusedIndependentExecutionIdentity','Each separately executed arm needs its own execution identity.');
 assert(isequal(hashes,arrayfun(@(f)string(sixgr.util.sha256File(f)),files)), ...
     'sixgr:test:SourceChangedDuringExecution','Preserve the original tested source/config snapshot.');
 ok=true;
-fprintf('MAIN_INDEPENDENT_BROADCAST_ACCESS_PASS actual_bundle=2 no_preSI_RA=1 actual_SI=1 actual_Msg1_RX=1 root=%s\n',folder);
+fprintf('MAIN_INDEPENDENT_BROADCAST_ACCESS_PASS actual_bundle=3 no_preSI_RA=1 actual_first_SI=1 actual_Msg1_RX=1 root=%s\n',folder);
+end
+
+function checkEarlyAcquisition(s,cfg,firstSI,captureSeconds)
+[current,~,b]=sixgr.truth.ReceivedMIBDelivery.current(s,1);
+assert(current);
+fs=b.SampleRateHz; archiveEnd=round(captureSeconds*fs);
+selected=firstSI(firstSI.SSBIndex==b.Context.Data.SSBIndex,:);
+assert(height(selected)==1);
+carrier=sixgr.phy.grid.makeCarrier(cfg);
+firstSIStart=sixgr.phy.frame.slotStartSample(carrier,selected.AbsoluteSlot,fs);
+assert(b.CaptureStartSample==0 && b.CaptureEndSampleExclusive<archiveEnd && ...
+    b.DeliveredAvailableSample<firstSIStart, ...
+    'sixgr:test:AcquisitionStillWaitsForArchive','Original MIB must be delivered before its first SI, independently of the full archive.');
+accepted=s.SharedSIB1ReceptionTable(s.SharedSIB1ReceptionTable.Installed,:);
+assert(any(accepted.ResourceAbsoluteSlot0Based==selected.AbsoluteSlot), ...
+    'sixgr:test:MissedFirstSI','Require actual CRC/ASN.1-accepted first native SI, not a later repeated occasion.');
+archive=sixgr.util.structGet(s,'SharedSSBArchiveReceipts',{});
+matched=cellfun(@(r)r.AcquisitionObservationID==b.ObservationID,archive);
+assert(nnz(matched)==1,'sixgr:test:MissingFullSSBArchive','Retain exactly one independent complete archive.');
+a=archive{find(matched,1)};
+assert(a.StartSample==0 && a.EndSampleExclusive==archiveEnd && ~a.ReceiverExecuted && ...
+    a.CompletedAtSample==archiveEnd && b.DeliveredAvailableSample<a.CompletedAtSample);
+for k=1:numel(a.Planes)
+    p=a.Planes{k};
+    assert(sixgr.phy.waveform.CompletedSampleArchive.verifyFile(p.Archive)==p.Archive.Manifest.SampleSHA256 && ...
+        p.Archive.Manifest.SampleSize(1)==archiveEnd);
+end
+T=s.ControlTrials.PBCH;
+initial=T(T.ObservationStartSample==0,:);
+assert(height(initial)==a.AcquisitionWindowContract.Lmax && ...
+    numel(unique(initial.RequestedSSBOccasionIndex))==height(initial) && ...
+    nnz(initial.SelectedBeamFlag)==1 && ...
+    all(initial.ObservationEndSampleExclusive==b.CaptureEndSampleExclusive) && ...
+    all(initial.SSBReceiverSearchComplete), ...
+    'sixgr:test:DuplicateAcquisitionDelivery','The later full archive must never repeat acquisition/MIB/beam delivery.');
 end
 
 function checkAcquired(s,horizon)
@@ -208,7 +291,7 @@ for j=1:height(msg1)
 end
 end
 
-function receipts=checkPublished(folder,out,s)
+function receipts=checkPublished(folder,out,s,identity)
 % Inspect only files produced by the main runner. Never call an exporter or
 % reconstruct a CSV here to conceal missing production publication.
 layout=sixgr.report.resultLayout(folder);
@@ -219,9 +302,13 @@ receipts=checkCSV(fullfile(layout.AirInterfaceCSVDir,'sib1_received_trials.csv')
     SI,string(SI.Properties.VariableNames),true);
 PBCH=out.RawTrials.PBCH; % Final canonical table, not the pre-publication state.
 fields=["BroadcastRecoveryScope","SIB1ReceptionAttempted","BCHCrcPass", ...
-    "PBCHStrictReceiverEvidenceOk","Status"];
+    "PBCHStrictReceiverEvidenceOk","Status","RunID","ExecutionID","ConfigHash"];
 require(PBCH,fields);
 assert(all(string(PBCH.BroadcastRecoveryScope)=="SSB_MIB") && all(PBCH.SIB1ReceptionAttempted==0));
+for name=["RunID","ExecutionID","ConfigHash"]
+    assert(all(string(PBCH.(name))==string(identity.(name))), ...
+        'sixgr:test:PublicationIdentityMismatch','Original PBCH %s must retain the pre-execution identity.',name);
+end
 % Preserve additional original scalar identities if populated. The legacy
 % PBCH writer prunes all-blank columns; this does not manufacture old IDs.
 optional=["Slot","Frame","UEIndex","ServingCell","RNTI","RunUUID","ConfigHash", ...
@@ -303,7 +390,7 @@ e=struct('Scope',"actual_main_bundle_SSB_MIB_independent_SI_Msg1_not_full_RA", .
     'CellAcquisitionState',s.CellAcquisitionState,'AccessState',s.AccessState, ...
     'LastPRACHSlotByUE',s.LastPRACHSlotByUE,'ControlTrials',s.ControlTrials);
 for name=["ReceivedMIBByUE","UECommonCellConfigurationByUE","DecodedSIB1RecoveryByUE", ...
-        "RARetryByUE","SharedSIB1ReceptionTable","InitialAccessHorizonTable"]
+        "RARetryByUE","SharedSIB1ReceptionTable","InitialAccessHorizonTable","SharedSSBArchiveReceipts"]
     if isfield(s,name), e.(name)=s.(name); end
 end
 e.PendingRAAttemptPresent=~emptyCell(s,'PendingRAAttempts');

@@ -54,6 +54,9 @@ common=installedState.UECommonCellConfigurationByUE{ue};
 assert(common.Source=="decoded_sib1" && common.TreeHash==recovery.SIB1RxTreeHash && ...
     isequaln(common.ReceivedDLTimingReference,dl) && ...
     installedState.DecodedSIB1RecoveryByUE{ue}.ReceivedMIBGenerationID==current.GenerationID);
+receiverCfg=item.Context.Prepared.ReceiverConfig;
+assert(testReceivedCommonMIBRACHAuthority("combined",receiverCfg, ...
+    installedState.DecodedSIB1RecoveryByUE{ue},current));
 bad=receivedOnly; bad.DLSCHCrcPass=false;
 unchanged=sixgr.truth.installReceivedSIB1Recovery(delivered,ue,bad,delivered.CurrentSlot,current);
 assert(isequaln(unchanged,delivered));

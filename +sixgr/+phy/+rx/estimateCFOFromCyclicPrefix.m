@@ -113,13 +113,26 @@ if isvector(x)
     x = x(:);
 end
 nSamples = size(x, 1);
+% Receiver-configured control symbols select CP pairs without concatenating
+% symbols or changing their original OFDM sample positions. Absent selection
+% preserves the existing full captured-slot estimator.
+selectedSymbols=true(numel(cpLens),1);
+if isfield(observation,'SymbolIndices0Based')
+    selected=observation.SymbolIndices0Based;
+    validateattributes(selected,{'numeric'},{'vector','real','finite','integer','nonnegative','nonempty','<',numel(cpLens)});
+    assert(numel(unique(selected))==numel(selected), ...
+        'sixgr:phy:rx:CFOCPObservationSymbols','Do not count repeated control symbols twice.');
+    selectedSymbols(:)=false;
+    selectedSymbols(double(selected)+1)=true;
+    info.SymbolIndices0Based=double(selected(:).');
+end
 if policy=="received_coherence_window"
     assert(all(isfield(observation,{'WindowFraction','FalseAlarmProbability'})), ...
         'sixgr:phy:rx:CFOCPObservationPolicy','Declare CP window fraction and false-alarm probability.');
     fraction=double(observation.WindowFraction); alpha=double(observation.FalseAlarmProbability);
     validateattributes(fraction,{'double'},{'scalar','real','finite','>',0,'<=',1});
     validateattributes(alpha,{'double'},{'scalar','real','finite','>',0,'<',1});
-    [corrSum,detail]=localReceivedWindow(x,cpLens,nfft,fraction,alpha);
+    [corrSum,detail]=localReceivedWindow(x,cpLens,nfft,fraction,alpha,selectedSymbols);
     info.NumSymbolsUsed=detail.NumSymbols;
     info.Nfft=nfft; info.SampleRate_Hz=sampleRateHz;
     info.CorrelationMagnitude=abs(corrSum);
@@ -146,6 +159,10 @@ for sym = 1:numel(cpLens)
     symLen = cpLen + nfft;
     if pos + symLen - 1 > nSamples
         break;
+    end
+    if ~selectedSymbols(sym)
+        pos=pos+symLen;
+        continue;
     end
     cp = x(pos:pos+cpLen-1, :);
     tailStart = pos + cpLen + nfft - cpLen;
@@ -186,7 +203,7 @@ info.EstimatedCFO_Hz = double(cfoHz);
 info.Status = "OK";
 end
 
-function [selected,d]=localReceivedWindow(x,cpLens,nfft,fraction,alpha)
+function [selected,d]=localReceivedWindow(x,cpLens,nfft,fraction,alpha,selectedSymbols)
 % Align CP observations to the useful-symbol boundary, not the start of a
 % longer prefix. The same relative window is applied to every used symbol.
 lengthCP=min(cpLens); width=max(1,ceil(fraction*lengthCP));
@@ -195,8 +212,13 @@ d=struct('Available',false,'Status',"insufficient_cp_observation", ...
     'NumSymbols',0,'CoherenceSquared',NaN,'StartFromUsefulSymbol',NaN, ...
     'Length',width,'PairCount',0,'WindowCount',lengthCP-width+1,'Threshold',NaN);
 selected=complex(0); pos=0;
-for n=cpLens.'
+for symbolIndex=1:numel(cpLens)
+    n=cpLens(symbolIndex);
     if pos+n+nfft>size(x,1), break; end
+    if ~selectedSymbols(symbolIndex)
+        pos=pos+n+nfft;
+        continue;
+    end
     indices=pos+n-lengthCP+(1:lengthCP);
     first=x(indices,:); second=x(indices+nfft,:);
     valid=isfinite(real(first)) & isfinite(imag(first)) & ...

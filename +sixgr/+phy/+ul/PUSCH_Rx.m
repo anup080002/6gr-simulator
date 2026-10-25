@@ -1967,8 +1967,8 @@ tracking = struct( ...
     "KnownTimingDelay_samples", NaN, ...
     "MeasurementDirection", "", ...
     "ConsumerDirection", "UL", ...
-    "DirectionCompatible", true, ...
-    "AuthorityStatus", "legacy_untagged_tracking_state");
+    "DirectionCompatible", false, ...
+    "AuthorityStatus", "unavailable_receiver_tracking_authority");
 
 raw = explicitState;
 usingRuntimeUserContext = isempty(raw);
@@ -1979,28 +1979,22 @@ if ~(isstruct(raw) && ~isempty(fieldnames(raw)))
     return;
 end
 
-processed = localFirstLogical(raw, ["TRSProcessed","RuntimeTRSProcessed"], false);
+authority = sixgr.phy.rx.resolveReceiverTrackingAuthority(raw, "UL");
+processed = authority.Processed;
 tracking.TRSProcessed = logical(processed);
 tracking.TrackingState = char(localFirstString(raw, ["TrackingState","RuntimeTRSTrackingStateAfter"], ""));
 tracking.AgeSlots = double(localFirstFinite(raw, ["TRSAgeSlots","RuntimeTRSAgeSlots"], NaN));
-tracking.Source = localFirstString(raw, ["RuntimeTRSRuntimeEvidenceSource","RuntimeEvidenceSource","TrackingEstimateSource"], ...
-    "trs_receiver_tracking_state");
+tracking.Source = authority.Source;
 if ~processed
     tracking.NAReason = "trs_tracking_state_not_processed";
     return;
 end
 
-measurementDirection = upper(strtrim(localFirstString(raw, ...
-    ["TrackingMeasurementDirection","RuntimeTRSMeasurementDirection"], "")));
-consumerDirection = upper(strtrim(localFirstString(raw, ...
-    ["TrackingConsumerDirection","RuntimeReceiverTrackingConsumerDirection"], "UL")));
-directionCompatibilityDeclared = localFirstLogical(raw, ...
-    ["TrackingDirectionCompatible","RuntimeReceiverTrackingDirectionCompatible"], true);
-authorityStatus = localFirstString(raw, ...
-    ["TrackingAuthorityStatus","RuntimeReceiverTrackingAuthorityStatus"], ...
-    "legacy_untagged_tracking_state");
-authorityReason = localFirstString(raw, ...
-    ["TrackingAuthorityReason","RuntimeReceiverTrackingAuthorityReason"], "");
+measurementDirection = authority.MeasurementDirection;
+consumerDirection = authority.ConsumerDirection;
+directionCompatibilityDeclared = authority.DirectionCompatible;
+authorityStatus = authority.Status;
+authorityReason = authority.Reason;
 tracking.MeasurementDirection = char(measurementDirection);
 tracking.ConsumerDirection = char(consumerDirection);
 tracking.DirectionCompatible = logical(directionCompatibilityDeclared);

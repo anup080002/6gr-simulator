@@ -1,0 +1,14 @@
+inherits:
+  - main_independent_broadcast_access.yaml
+
+meta:
+  scenario_id: main_early_broadcast_access
+  description: >
+    Original physical initial acquisition must complete its receiver search
+    window before the independent first Type-0 SI opportunity. The original
+    seven-ms broadcast archive remains complete and must not reinstall MIB.
+  purpose: Verify early actual MIB, first native SI reception and subsequent measured-power Msg1 admission.
+
+initial_access:
+  type0:
+    monitoring_occasion_ordinal: 1

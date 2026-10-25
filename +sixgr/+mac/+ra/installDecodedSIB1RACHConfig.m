@@ -29,6 +29,40 @@ catch ME
 end
 
 cfgOut = cfgIn;
+% Mandatory received operands cannot be rescued from the transmitter's
+% authored random_access subtree and then labelled decoded. The constrained
+% semantic decoder retains these fields even when their value is zero.
+requiredRACH = ["configurationIndex","rootSequenceIndex", ...
+    "zeroCorrelationZoneConfig","restrictedSet","msg1FDM", ...
+    "msg1FrequencyStart","preambleReceivedTargetPower_dBm", ...
+    "powerRampingStep","preambleTransMax","raResponseWindow"];
+assert(isstruct(rach) && isscalar(rach) && all(isfield(rach,requiredRACH)), ...
+    'sixgr:mac:ra:MissingDecodedRACHOperand', ...
+    'Mandatory RACH common fields must come from the original decoded SIB1; host defaults are not received evidence.');
+assert(isfield(rach,'preambleFormat') && ...
+    ((ischar(rach.preambleFormat) && isrow(rach.preambleFormat)) || ...
+    (isstring(rach.preambleFormat) && isscalar(rach.preambleFormat))) && ...
+    any(string(rach.preambleFormat)==["0","1","2","3","A1","A2","A3", ...
+    "B1","B2","B3","B4","C0","C2","A1/B1","A2/B2","A3/B3"]), ...
+    'sixgr:mac:ra:MissingDecodedPRACHFormatAnchor', ...
+    'The bounded decoder must retain its derived PRACH format anchor; a host format is not decoded metadata.');
+validateattributes(rach.msg1FrequencyStart,{'numeric'}, ...
+    {'scalar','real','finite','integer','>=',0,'<=',274});
+validateattributes(rach.preambleReceivedTargetPower_dBm,{'numeric'}, ...
+    {'scalar','real','finite','integer','>=',-202,'<=',-60});
+assert(mod(rach.preambleReceivedTargetPower_dBm,2)==0, ...
+    'sixgr:mac:ra:InvalidDecodedRACHTargetPower', ...
+    'TS 38.331 preambleReceivedTargetPower uses even dBm values in [-202,-60].');
+% totalNumberOfRA-Preambles absent on the wire denotes 64. The semantic
+% decoder may already have materialized 64; this is not proof of IE presence.
+totalPreambles=64;
+totalStatus="standard_default_absent_decoded_operand";
+if isfield(rach,'nPreambles')
+    validateattributes(rach.nPreambles,{'numeric'}, ...
+        {'scalar','real','finite','integer','>=',1,'<=',64});
+    totalPreambles=double(rach.nPreambles);
+    totalStatus="decoded_semantic_operand_wire_presence_not_retained";
+end
 ra = sixgr.util.structGet(cfgOut, "random_access", struct());
 if ~(isstruct(ra) && ~isempty(fieldnames(ra)))
     ra = struct();
@@ -43,8 +77,8 @@ if sixgr.bwop.RIVFDRA.encode(275, initialUlBwpStart, initialUlBwpSize) ~= riv
 end
 initialUlBwpSCSkHz = localSCSNameToKHz(sixgr.util.structGet(ulGeneric, "subcarrierSpacing", ""));
 initialUlBwpCP = string(sixgr.util.structGet(ulGeneric, "cyclicPrefix", "normal"));
-prachSCSkHz = double(sixgr.util.structGet(rach, "msg1SubcarrierSpacing_kHz", initialUlBwpSCSkHz));
-restrictedSet = string(sixgr.util.structGet(rach, "restrictedSet", "UnrestrictedSet"));
+[prachSCSkHz,prachSCSSource] = sixgr.mac.ra.resolveDecodedPRACHSubcarrierSpacing(rach);
+restrictedSet = string(rach.restrictedSet);
 
 rows = repmat(localRow(), 0, 1);
 ssPower = double(sixgr.util.structGet(serving,'ss_PBCH_BlockPower',NaN));
@@ -64,8 +98,9 @@ validateattributes(ssPower,{'numeric'},{'scalar','real','finite','integer','>=',
     "SIB1.servingCellConfigCommon.uplinkConfigCommon.initialUplinkBWP.genericParameters.locationAndBandwidth", ...
     "", "RB", "n/a", "decoded");
 [ra, rows] = localApply(rows, ra, "subcarrier_spacing_khz", prachSCSkHz, ...
-    "SIB1.rach-ConfigCommon.msg1-SubcarrierSpacing", ...
-    "Decoded PRACH Msg1 SCS is used for PRACH waveform numerology.", "kHz", "n/a", "decoded");
+    prachSCSSource, ...
+    "Short PRACH uses received Msg1 SCS; long PRACH uses the retained index-derived format, not UL BWP SCS.", ...
+    "kHz", "n/a", prachSCSSource);
 [ra, rows] = localApply(rows, ra, "initial_ul_bwp_cyclic_prefix", initialUlBwpCP, ...
     "SIB1.servingCellConfigCommon.uplinkConfigCommon.initialUplinkBWP.genericParameters.cyclicPrefix", ...
     "", "enum", "normal", "decoded");
@@ -81,12 +116,10 @@ validateattributes(ssPower,{'numeric'},{'scalar','real','finite','integer','>=',
     "", "enum", "mandatory", "decoded");
 [ra, rows] = localApply(rows, ra, "zero_correlation_zone", double(rach.zeroCorrelationZoneConfig), ...
     "SIB1.rach-ConfigCommon.zeroCorrelationZoneConfig", "", "index", "mandatory", "decoded");
-[ra, rows] = localApply(rows, ra, "frequency_start", double(sixgr.util.structGet(rach, "msg1FrequencyStart", ...
-    sixgr.util.structGet(ra, "frequency_start", 0))), ...
+[ra, rows] = localApply(rows, ra, "frequency_start", double(rach.msg1FrequencyStart), ...
     "SIB1.rach-ConfigCommon.msg1-FrequencyStart", "", "RB", "mandatory", "decoded");
 [ra, rows] = localApply(rows, ra, "preamble_received_target_power_dbm", ...
-    double(sixgr.util.structGet(rach, "preambleReceivedTargetPower_dBm", ...
-    sixgr.util.structGet(ra, "preamble_received_target_power_dbm", NaN))), ...
+    double(rach.preambleReceivedTargetPower_dBm), ...
     "SIB1.rach-ConfigCommon.preambleReceivedTargetPower", "", "dBm", "mandatory", "decoded");
 [ra, rows] = localApply(rows, ra, "power_ramping_step_db", localPowerRampingStepDb(rach), ...
     "SIB1.rach-ConfigCommon.powerRampingStep", "", "dB", "mandatory", "decoded");
@@ -94,12 +127,14 @@ validateattributes(ssPower,{'numeric'},{'scalar','real','finite','integer','>=',
     "SIB1.rach-ConfigCommon.preambleTransMax", "", "count", "mandatory", "decoded");
 [ra, rows] = localApply(rows, ra, "ra_response_window_slots", localRAResponseWindowSlots(rach), ...
     "SIB1.rach-ConfigCommon.ra-ResponseWindow", "", "slots", "mandatory", "decoded");
-[ra, rows] = localApply(rows, ra, "preamble_count", double(sixgr.util.structGet(rach, "nPreambles", ...
-    sixgr.util.structGet(ra, "preamble_count", NaN))), ...
-    "SIB1.rach-ConfigCommon.totalNumberOfRA-Preambles", "", "count", "mandatory", "decoded");
-[ra, rows] = localApply(rows, ra, "prach_format", string(sixgr.util.structGet(rach, "preambleFormat", ...
-    sixgr.util.structGet(ra, "prach_format", ""))), ...
-    "SIB1.rach-ConfigCommon.prach-RootSequenceIndex/format anchor", "", "enum", "anchor_profile", "decoded");
+[ra, rows] = localApply(rows, ra, "preamble_count", totalPreambles, ...
+    "SIB1.rach-ConfigCommon.totalNumberOfRA-Preambles", ...
+    "Absent optional IE means 64; host preamble_count is never a received operand.", ...
+    "count", "64", totalStatus);
+[ra, rows] = localApply(rows, ra, "prach_format", string(rach.preambleFormat), ...
+    "SIB1.rach-ConfigCommon.prach-RootSequenceIndex/format anchor", ...
+    "Derived decoder-profile metadata; not a separately transmitted preamble-format IE.", ...
+    "enum", "anchor_profile", "decoded_derived_format_anchor");
 [ra, rows] = localApply(rows, ra, "pusch_common_msg3_delta_preamble", ...
     2*double(sixgr.util.structGet(puschCommon, "msg3_DeltaPreamble", NaN)), ...
     "SIB1.servingCellConfigCommon.uplinkConfigCommon.initialUplinkBWP.pusch-ConfigCommon.msg3-DeltaPreamble", ...
@@ -122,6 +157,8 @@ if ~isempty(fieldnames(pucchCommon))
                 double(pucchCommon.(decodedName)), ...
                 "SIB1.servingCellConfigCommon.uplinkConfigCommon.initialUplinkBWP.pucch-ConfigCommon." + decodedName, ...
                 "", string(mapping{3}), "optional", "decoded");
+        elseif isfield(ra,string(mapping{2}))
+            ra=rmfield(ra,string(mapping{2}));
         end
     end
 else
@@ -143,7 +180,26 @@ ra.decoded_sib1_tree_hash = string(treeHash);
 cfgOut.random_access = ra;
 cfgOut.UECommonCellConfiguration = localBuildUECommonCellConfiguration(serving, ra, payloadHash, treeHash);
 cfgOut.ue_common_cell_configuration = cfgOut.UECommonCellConfiguration;
+receivedMIB=sixgr.mac.ra.resolveReceivedCommonMIBConfiguration(cfgIn,sib1Evidence);
+if ~isempty(fieldnames(receivedMIB))
+    cfgOut.UECommonMIBConfiguration=receivedMIB;
+elseif isfield(cfgOut,'UECommonMIBConfiguration')
+    % A new received SI tree cannot inherit unrelated caller MIB authority.
+    cfgOut=rmfield(cfgOut,'UECommonMIBConfiguration');
+end
 commonCell = cfgOut.UECommonCellConfiguration;
+[ra, rows] = localApply(rows,ra,"tdd_config_common_present",commonCell.TDDConfigCommonPresent, ...
+    "SIB1.servingCellConfigCommon.tdd-UL-DL-ConfigurationCommon", ...
+    "Original optional IE presence; not scenario or dedicated-TDD authority.", ...
+    "boolean","optional","decoded_presence");
+if commonCell.TDDConfigCommonPresent
+    [ra, rows] = localApply(rows,ra,"tdd_ul_dl_config_common",commonCell.TDDConfigCommon, ...
+        "SIB1.servingCellConfigCommon.tdd-UL-DL-ConfigurationCommon", ...
+        "Original IE retained. Separate runtime maps use received BWP SCS/CP and radio-even-frame epoch; not PRACH validity qualification.", ...
+        "ASN.1 IE","optional","decoded");
+elseif isfield(ra,'tdd_ul_dl_config_common')
+    ra=rmfield(ra,'tdd_ul_dl_config_common');
+end
 offsetStatus="absent_IE_requires_standard_frequency_range_default";
 if commonCell.TimingAdvanceOffsetPresent, offsetStatus="decoded"; end
 [ra, rows] = localApply(rows,ra,"n_timing_advance_offset",commonCell.TimingAdvanceOffset, ...
@@ -302,60 +358,60 @@ cfg.InitialDLBWP = struct("StartRB", dlStart, "SizeRB", dlSize, ...
 cfg.PDCCHConfigCommon = sixgr.util.structGet(dl, "pdcch_ConfigCommon", struct());
 cfg.PDCCHConfigCommonPresent = isfield(dl, "pdcch_ConfigCommon");
 cfg.PDSCHConfigCommon = sixgr.util.structGet(dl,"pdsch_ConfigCommon",struct());
+cfg.TDDConfigCommonPresent=isfield(serving,'tdd_UL_DL_ConfigurationCommon');
+cfg.TDDConfigCommon=struct();
+cfg.TDDCommonRuntime=struct();
+if cfg.TDDConfigCommonPresent
+    cfg.TDDConfigCommon=serving.tdd_UL_DL_ConfigurationCommon;
+    % The codec profile is bounded FR1. No host TDD pattern, active traffic,
+    % dedicated symbol override or delivery-relative epoch enters this map.
+    ulTDD=sixgr.rrc.asn1.resolveTDDCommonRuntime(cfg.TDDConfigCommon, ...
+        cfg.InitialULBWP.SubcarrierSpacing_kHz,cfg.InitialULBWP.CyclicPrefix,"FR1");
+    dlTDD=sixgr.rrc.asn1.resolveTDDCommonRuntime(cfg.TDDConfigCommon, ...
+        cfg.InitialDLBWP.SubcarrierSpacing_kHz,cfg.InitialDLBWP.CyclicPrefix,"FR1");
+    assert(ulTDD.Present && dlTDD.Present,'sixgr:rrc:asn1:InvalidTDDCommonIE', ...
+        'A decoded present TDD common IE cannot be an absent marker.');
+    cfg.TDDCommonRuntime=struct('Source',"decoded_sib1_tdd_common", ...
+        'Reference',ulTDD.Reference,'EffectiveConfig',ulTDD.EffectiveConfig, ...
+        'InitialDLBWP',localTDDMap(dlTDD.SlotFormatState), ...
+        'InitialULBWP',localTDDMap(ulTDD.SlotFormatState));
+end
 cfg.ValidationStatus = "decoded_sib1_common_cell_config_installed";
 end
 
-function value = localPowerRampingStepDb(rach)
-raw = string(sixgr.util.structGet(rach, "powerRampingStep", ""));
-tokens = regexp(char(raw), "dB(\d+)", "tokens", "once");
-if isempty(tokens)
-    value = NaN;
-else
-    value = str2double(tokens{1});
+function out=localTDDMap(state)
+% Plain immutable snapshot for common-config serialization; the original
+% IE is retained separately and remains the authority for future consumers.
+out=struct();
+for name=string(properties(state)).'
+    out.(name)=state.(name);
 end
+end
+
+function value = localPowerRampingStepDb(rach)
+value=localDecodedEnumNumber(rach.powerRampingStep,["dB0","dB2","dB4","dB6"],[0 2 4 6]);
 end
 
 function value = localMsg1FDMValue(raw)
-if isnumeric(raw) && isscalar(raw) && isfinite(raw) && ...
-        any(double(raw) == [1 2 4 8])
-    value = double(raw);
-    return;
-end
-token = lower(strtrim(string(raw)));
-switch token
-    case {"one", "n1", "1"}
-        value = 1;
-    case {"two", "n2", "2"}
-        value = 2;
-    case {"four", "n4", "4"}
-        value = 4;
-    case {"eight", "n8", "8"}
-        value = 8;
-    otherwise
-        error("sixgr:mac:ra:UnsupportedDecodedMsg1FDM", ...
-            "Decoded SIB1 msg1-FDM must resolve to one of 1, 2, 4, or 8; got '%s'.", ...
-            char(token));
-end
+value=localDecodedEnumNumber(raw,["one","two","four","eight"],[1 2 4 8]);
 end
 
 function value = localPreambleTransMax(rach)
-raw = string(sixgr.util.structGet(rach, "preambleTransMax", ""));
-tokens = regexp(char(raw), "n(\d+)", "tokens", "once");
-if isempty(tokens)
-    value = NaN;
-else
-    value = str2double(tokens{1});
-end
+counts=[3 4 5 6 7 8 10 20 50 100 200];
+value=localDecodedEnumNumber(rach.preambleTransMax,"n"+string(counts),counts);
 end
 
 function value = localRAResponseWindowSlots(rach)
-raw = string(sixgr.util.structGet(rach, "raResponseWindow", ""));
-tokens = regexp(char(raw), "sl(\d+)", "tokens", "once");
-if isempty(tokens)
-    value = NaN;
-else
-    value = str2double(tokens{1});
+counts=[1 2 4 8 10 20 40 80];
+value=localDecodedEnumNumber(rach.raResponseWindow,"sl"+string(counts),counts);
 end
+
+function value=localDecodedEnumNumber(raw,tokens,values)
+assert(((ischar(raw) && isrow(raw)) || ...
+    (isstring(raw) && isscalar(raw) && ~ismissing(raw))) && ...
+    any(string(raw)==tokens),'sixgr:mac:ra:InvalidDecodedRACHEnum', ...
+    'Retain an exact received ASN.1 enum token; do not coerce numeric values, prefixes, suffixes or whitespace.');
+value=values(tokens==string(raw));
 end
 
 function txt = localScalarToText(value)
