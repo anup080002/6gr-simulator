@@ -3,6 +3,7 @@ function receipt=run_n40_integration_gate(configPath,outputRoot,runTag)
 % Configuration, output location and run identity are the only CLI inputs.
 setup6GRSimToolkit('Verbose',false);
 plan=sixgr.validation.preflightN40IntegrationGate(configPath,outputRoot,runTag);
+outputRoot=plan.ResultsRoot;
 diagnostic=fullfile(outputRoot,'integration_gates',runTag);
 assert(~isfolder(diagnostic),'sixgr:validation:N40GateExistingDiagnostics', ...
     'Use a fresh run tag; previous gate evidence must be retained.');
@@ -16,7 +17,9 @@ receipt=struct('ContractVersion',plan.ContractVersion,'Ok',false, ...
 saveReceipt();
 try
     fprintf('N40_GATE_FULL_SWEEP_START folder=%s\n',plan.RunFolder);
-    run_6g_phy_lls_single(configPath,outputRoot,runTag);
+    execution=run_6g_phy_lls_single(configPath,outputRoot,runTag);
+    assert(strcmpi(sixgr.util.canonicalPath(execution.RunFolder),sixgr.util.canonicalPath(plan.RunFolder)), ...
+        'sixgr:validation:N40GateOutputRoot','Production execution returned a different run folder.');
     assertFrozen();
     receipt.Baseline=sixgr.validation.evaluateN40IntegrationGate(plan.RunFolder,'RequireContinuation',false);
     sixgr.util.jsonWrite(fullfile(diagnostic,'baseline_acceptance.json'),serializable(receipt.Baseline));

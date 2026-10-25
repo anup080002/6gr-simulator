@@ -8,6 +8,11 @@ assert(isequaln(sixgr.runtime.SlotCheckpoint.scientificScenario(a.toStruct()), .
     sixgr.runtime.SlotCheckpoint.scientificScenario(b.toStruct())), ...
     'Integration checkpoint overlay must not alter science.');
 root=tempname;
+scratchBefore=getenv('SIXGR_REGRESSION_SCRATCH_ROOT');
+setenv('SIXGR_REGRESSION_SCRATCH_ROOT',root);
+environmentCleanup=onCleanup(@()setenv('SIXGR_REGRESSION_SCRATCH_ROOT',scratchBefore)); %#ok<NASGU>
+reject(@()sixgr.validation.preflightN40IntegrationGate(gate,tempname,'gate_preflight'), ...
+    'sixgr:validation:N40GateOutputRoot');
 plan=sixgr.validation.preflightN40IntegrationGate(gate,root,'gate_preflight');
 assert(numel(plan.Children)==2 && ~plan.PhysicalExecution);
 reject(@()sixgr.validation.preflightN40IntegrationGate(original,root,'gate_preflight'), ...
