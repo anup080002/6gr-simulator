@@ -35,6 +35,9 @@ if laPresent || csiPresent
         value = csiValue;
     end
     info = localInfo(value, value, source, false, "numeric_yaml_authority");
+    sixgr.runtime.RuntimeCallLedger.record( ...
+        "sixgr.link.resolveLinkAdaptationFeedbackDelay.numericAuthority", ...
+        "LINK_ADAPTATION", "", struct('DelaySlots',value,'Source',source));
     return;
 end
 

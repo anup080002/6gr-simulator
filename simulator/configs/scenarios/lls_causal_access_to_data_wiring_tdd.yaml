@@ -1453,26 +1453,30 @@ validation:
         subsystem: "timing"
         scenario_path: "tdd_timing.pdcch_to_pdsch_k0"
         runtime_path: "phy.schedulingTiming.pdcchToPDSCHK0"
-        consumer_source_files: ["+sixgr/+phy/+frame/TimingRelationEngine.m"]
+        consumer_source_files: []
+        consumer_functions: ["sixgr.phy.frame.TimingRelationEngine.resolveK0"]
         required: true
       - parameter_id: "k2_pdcch_to_pusch"
         subsystem: "timing"
         scenario_path: "tdd_timing.pdcch_to_pusch_k2"
         runtime_path: "phy.schedulingTiming.pdcchToPUSCHK2"
-        consumer_source_files: ["+sixgr/+phy/+frame/TimingRelationEngine.m"]
+        consumer_source_files: []
+        consumer_functions: ["sixgr.phy.frame.TimingRelationEngine.resolveK2"]
         required: true
       - parameter_id: "k1_dl_harq_candidates"
         subsystem: "timing"
         scenario_path: "tdd_timing.dl_harq_feedback_k1"
         runtime_path: "phy.schedulingTiming.dlHARQFeedbackK1Candidates"
-        consumer_source_files: ["+sixgr/+phy/+frame/TimingRelationEngine.m"]
+        consumer_source_files: []
+        consumer_functions: ["sixgr.phy.frame.TimingRelationEngine.resolveK1"]
         feature_authority: "harq"
         required: true
       - parameter_id: "k2_ul_grant"
         subsystem: "timing"
         scenario_path: "tdd_timing.ul_grant_k2"
         runtime_path: "phy.schedulingTiming.ulGrantK2"
-        consumer_source_files: ["+sixgr/+phy/+frame/TimingRelationEngine.m"]
+        consumer_source_files: []
+        consumer_functions: ["sixgr.phy.frame.TimingRelationEngine.resolveK2"]
         required: true
       - parameter_id: "harq_process_count"
         subsystem: "harq"
@@ -1499,7 +1503,8 @@ validation:
         subsystem: "harq"
         scenario_path: "harq.k2"
         runtime_path: "mac.harq.k2"
-        consumer_source_files: ["+sixgr/+phy/+frame/TimingRelationEngine.m"]
+        consumer_source_files: []
+        consumer_functions: ["sixgr.phy.frame.TimingRelationEngine.resolveK2"]
         feature_authority: "harq"
         required: true
       - parameter_id: "carrier_scs_khz"
@@ -1543,28 +1548,32 @@ validation:
         subsystem: "prach"
         scenario_path: "random_access.prach_format"
         runtime_path: "phy.prach.preambleFormat"
-        consumer_source_files: ["+sixgr/+phy/+ra/generateMsg1PRACHWaveform.m"]
+        consumer_source_files: []
+        consumer_functions: ["sixgr.phy.ra.generateMsg1PRACHWaveform"]
         feature_authority: "prach"
         required: true
       - parameter_id: "prach_root_sequence"
         subsystem: "prach"
         scenario_path: "random_access.root_sequence_index"
         runtime_path: "phy.prach.rootSeqIndex"
-        consumer_source_files: ["+sixgr/+phy/+ra/generateMsg1PRACHWaveform.m"]
+        consumer_source_files: []
+        consumer_functions: ["sixgr.phy.ra.generateMsg1PRACHWaveform"]
         feature_authority: "prach"
         required: true
       - parameter_id: "prach_zero_correlation_zone"
         subsystem: "prach"
         scenario_path: "random_access.zero_correlation_zone"
         runtime_path: "phy.prach.zeroCorrelationZone"
-        consumer_source_files: ["+sixgr/+phy/+ra/generateMsg1PRACHWaveform.m"]
+        consumer_source_files: []
+        consumer_functions: ["sixgr.phy.ra.generateMsg1PRACHWaveform"]
         feature_authority: "prach"
         required: true
       - parameter_id: "prach_preamble_index"
         subsystem: "prach"
         scenario_path: "random_access.preamble_index"
         runtime_path: "phy.prach.preambleIndex"
-        consumer_source_files: ["+sixgr/+phy/+ra/generateMsg1PRACHWaveform.m"]
+        consumer_source_files: []
+        consumer_functions: ["sixgr.phy.ra.generateMsg1PRACHWaveform"]
         feature_authority: "prach"
         required: true
       - parameter_id: "dl_layers"
@@ -1574,53 +1583,60 @@ validation:
         consumer_source_files: ["+sixgr/+phy/+dl/PDSCH_Tx.m"]
         feature_authority: "scheduled_pdsch"
         required: true
-      - parameter_id: "dl_beam_codebook_size"
+      - parameter_id: "dl_pmi_codebook_mode"
         subsystem: "beamforming"
-        scenario_path: "mimo.beam_codebook_size_dl"
-        runtime_path: "phy.beamManagement.dlCodebookSize"
-        consumer_source_files: ["+sixgr/+phy/+dl/pmiCodebookCandidates.m", "+sixgr/+link/runDLPDSCHThroughput.m"]
+        scenario_path: "csi_acquisition_and_reporting.pmi_codebook_mode"
+        runtime_path: "phy.csi.pmiCodebookMode"
+        consumer_source_files: []
+        consumer_functions: ["sixgr.phy.dl.pmiCodebookCandidates.selectedMode"]
         feature_authority: "beam_sweep"
         required: true
       - parameter_id: "ssb_beam_count"
         subsystem: "beamforming"
         scenario_path: "initial_access.ssb.beam_count"
         runtime_path: "phy.ssb.beamCount"
-        consumer_source_files: ["+sixgr/+phy/+ia/SSBBurstPlan.m", "+sixgr/+link/runSSBBeamSweep.m"]
+        consumer_source_files: []
+        consumer_functions: ["sixgr.phy.ia.SSBBurstPlan.activeBeamCount"]
         feature_authority: "beam_sweep"
         required: true
       - parameter_id: "ssb_precoder_codebook_type"
         subsystem: "beamforming"
         scenario_path: "initial_access.ssb.precoder_codebook.type"
         runtime_path: "phy.ssb.precoderCodebookType"
-        consumer_source_files: ["+sixgr/+lls6g/buildInternalConfig.m", "+sixgr/+phy/+dl/SSB_Tx.m"]
+        consumer_source_files: []
+        consumer_functions: ["sixgr.lls6g.buildInternalConfig.materializeSSBPrecoder"]
         feature_authority: "beam_sweep"
         required: true
       - parameter_id: "ssb_precoder_physical_elements"
         subsystem: "beamforming"
         scenario_path: "initial_access.ssb.precoder_codebook.physical_element_count"
         runtime_path: "phy.ssb.precoderPhysicalElementCount"
-        consumer_source_files: ["+sixgr/+lls6g/buildInternalConfig.m", "+sixgr/+phy/+dl/SSB_Tx.m"]
+        consumer_source_files: []
+        consumer_functions: ["sixgr.lls6g.buildInternalConfig.materializeSSBPrecoder"]
         feature_authority: "beam_sweep"
         required: true
       - parameter_id: "ssb_precoder_beam_grid_rows"
         subsystem: "beamforming"
         scenario_path: "initial_access.ssb.precoder_codebook.beam_grid_rows"
         runtime_path: "phy.ssb.precoderBeamGridRows"
-        consumer_source_files: ["+sixgr/+lls6g/buildInternalConfig.m", "+sixgr/+phy/+dl/SSB_Tx.m"]
+        consumer_source_files: []
+        consumer_functions: ["sixgr.lls6g.buildInternalConfig.materializeSSBPrecoder"]
         feature_authority: "beam_sweep"
         required: true
       - parameter_id: "ssb_precoder_beam_grid_columns"
         subsystem: "beamforming"
         scenario_path: "initial_access.ssb.precoder_codebook.beam_grid_columns"
         runtime_path: "phy.ssb.precoderBeamGridColumns"
-        consumer_source_files: ["+sixgr/+lls6g/buildInternalConfig.m", "+sixgr/+phy/+dl/SSB_Tx.m"]
+        consumer_source_files: []
+        consumer_functions: ["sixgr.lls6g.buildInternalConfig.materializeSSBPrecoder"]
         feature_authority: "beam_sweep"
         required: true
       - parameter_id: "ssb_precoder_beam_indices"
         subsystem: "beamforming"
         scenario_path: "initial_access.ssb.precoder_codebook.beam_indices"
         runtime_path: "phy.ssb.precoderBeamIndices"
-        consumer_source_files: ["+sixgr/+lls6g/buildInternalConfig.m", "+sixgr/+phy/+dl/SSB_Tx.m"]
+        consumer_source_files: []
+        consumer_functions: ["sixgr.lls6g.buildInternalConfig.materializeSSBPrecoder"]
         feature_authority: "beam_sweep"
         required: true
       - parameter_id: "dl_logical_antenna_ports"
@@ -1711,7 +1727,8 @@ validation:
         subsystem: "link_adaptation"
         scenario_path: "link_adaptation.feedback_delay_slots"
         runtime_path: "phy.linkAdaptation.feedbackDelaySlots"
-        consumer_source_files: ["+sixgr/+link/resolveLinkAdaptationFeedbackDelay.m"]
+        consumer_source_files: []
+        consumer_functions: ["sixgr.link.resolveLinkAdaptationFeedbackDelay.numericAuthority"]
         feature_authority: "link_adaptation_inner_loop"
         required: true
       - parameter_id: "link_adaptation_cqi_smoothing_alpha"
@@ -1835,19 +1852,22 @@ validation:
         subsystem: "antenna_channel"
         scenario_path: "antenna_and_array.bs_boresight_azimuth_deg"
         runtime_path: "antenna.bs.boresightAzimuthDeg"
-        consumer_source_files: ["+sixgr/+channel/ChannelFactory.m"]
+        consumer_source_files: []
+        consumer_functions: ["sixgr.channel.ChannelFactory.applyCDLArrayOrientation"]
         required: true
       - parameter_id: "bs_boresight_elevation"
         subsystem: "antenna_channel"
         scenario_path: "antenna_and_array.bs_boresight_elevation_deg"
         runtime_path: "antenna.bs.boresightElevationDeg"
-        consumer_source_files: ["+sixgr/+channel/ChannelFactory.m"]
+        consumer_source_files: []
+        consumer_functions: ["sixgr.channel.ChannelFactory.applyCDLArrayOrientation"]
         required: true
       - parameter_id: "bs_boresight_slant"
         subsystem: "antenna_channel"
         scenario_path: "antenna_and_array.bs_boresight_slant_deg"
         runtime_path: "antenna.bs.boresightSlantDeg"
-        consumer_source_files: ["+sixgr/+channel/ChannelFactory.m"]
+        consumer_source_files: []
+        consumer_functions: ["sixgr.channel.ChannelFactory.applyCDLArrayOrientation"]
         required: true
       - parameter_id: "bs_element_pattern_required_in_channel"
         subsystem: "antenna_channel"
@@ -1961,19 +1981,22 @@ validation:
         subsystem: "antenna_channel"
         scenario_path: "antenna_and_array.ue_boresight_azimuth_deg"
         runtime_path: "antenna.ue.boresightAzimuthDeg"
-        consumer_source_files: ["+sixgr/+channel/ChannelFactory.m"]
+        consumer_source_files: []
+        consumer_functions: ["sixgr.channel.ChannelFactory.applyCDLArrayOrientation"]
         required: true
       - parameter_id: "ue_boresight_elevation"
         subsystem: "antenna_channel"
         scenario_path: "antenna_and_array.ue_boresight_elevation_deg"
         runtime_path: "antenna.ue.boresightElevationDeg"
-        consumer_source_files: ["+sixgr/+channel/ChannelFactory.m"]
+        consumer_source_files: []
+        consumer_functions: ["sixgr.channel.ChannelFactory.applyCDLArrayOrientation"]
         required: true
       - parameter_id: "ue_boresight_slant"
         subsystem: "antenna_channel"
         scenario_path: "antenna_and_array.ue_boresight_slant_deg"
         runtime_path: "antenna.ue.boresightSlantDeg"
-        consumer_source_files: ["+sixgr/+channel/ChannelFactory.m"]
+        consumer_source_files: []
+        consumer_functions: ["sixgr.channel.ChannelFactory.applyCDLArrayOrientation"]
         required: true
       - parameter_id: "ue_element_pattern_required_in_channel"
         subsystem: "antenna_channel"

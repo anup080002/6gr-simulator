@@ -12199,7 +12199,15 @@ for k = 1:nTrials
         r.NoiseVarReason = string(sixgr.util.structGet(outSRS, "NoiseVarReason", ""));
         r.NoiseVarStrictFailure = logical(sixgr.util.structGet(outSRS, "NoiseVarStrictFailure", false));
         r.NoiseOperatingMode = string(sixgr.util.structGet(outSRS, "NoiseOperatingMode", ""));
-        absoluteNoise=sixgr.link.absoluteReferenceNoisePublication(outSRS);
+        % The flattened result contains publication fields, not the original
+        % noise receipt. Validate the retained execution operands directly;
+        % never reconstruct a receipt from its serialized summary.
+        noiseExecution=sixgr.util.structGet(outSRS,'NoiseExecutionEvidence', ...
+            struct('NoiseOperatingMode',r.NoiseOperatingMode));
+        assert(isequal(string(sixgr.util.structGet(noiseExecution,'NoiseOperatingMode',"")), ...
+            r.NoiseOperatingMode),'sixgr:truth:SRSNoiseExecutionModeMismatch', ...
+            'SRS result and original noise execution must retain the same operating mode.');
+        absoluteNoise=sixgr.link.absoluteReferenceNoisePublication(noiseExecution);
         for noiseField=string(fieldnames(absoluteNoise)).'
             r.(noiseField)=absoluteNoise.(noiseField);
         end
@@ -12408,6 +12416,7 @@ for k = 1:nTrials
         r.Crash = true;
         r.CRCPass = NaN;
         r.Status = "CRASH";
+        r.FailureReason = string(ME.identifier) + ": " + string(ME.message);
         r.Notes = string(ME.message);
     end
     rows(k) = r;

@@ -20,9 +20,16 @@ opt = ip.Results;
 nLayers = max(1, round(double(nLayers)));
 numTxPorts = max(1, round(double(numTxPorts)));
 mode = localResolveMode(cfg, opt.Mode);
+sixgr.runtime.RuntimeCallLedger.record( ...
+    "sixgr.phy.dl.pmiCodebookCandidates.selectedMode", "PMI_CODEBOOK", "DL", ...
+    struct('Mode',mode,'NumLayers',nLayers,'NumPorts',numTxPorts, ...
+    'ExplicitModeOverride',string(opt.Mode)));
 strictMIMO = logical(sixgr.util.structGet(cfg,"mimo.strict", ...
     sixgr.util.structGet(cfg,"phy.mimo.strict",false)));
 if strictMIMO
+    % Strict candidate cardinality comes from the NR codebook request.
+    % phy.beamManagement.dlCodebookSize belongs only to the compatibility
+    % DFT catalogue below and is not a strict PMI enumeration operand.
     [candidates,info] = localStrictCandidates(cfg,nLayers,numTxPorts,mode);
     return;
 end

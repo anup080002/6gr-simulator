@@ -3289,6 +3289,10 @@ classdef ChannelFactory
             propName = string(side) + "ArrayOrientation";
             if isprop(cdl, char(propName))
                 cdl.(char(propName)) = double(orientation(:));
+                sixgr.runtime.RuntimeCallLedger.record( ...
+                    "sixgr.channel.ChannelFactory.applyCDLArrayOrientation", ...
+                    "CHANNEL", "", struct('Side',string(side), ...
+                    'Orientation',double(cdl.(char(propName)))));
                 return;
             end
             arrayProp = string(side) + "AntennaArray";
@@ -3297,6 +3301,10 @@ classdef ChannelFactory
                 if isstruct(arr) && isfield(arr, "Orientation")
                     arr.Orientation = double(orientation(:));
                     cdl.(char(arrayProp)) = arr;
+                    sixgr.runtime.RuntimeCallLedger.record( ...
+                        "sixgr.channel.ChannelFactory.applyCDLArrayOrientation", ...
+                        "CHANNEL", "", struct('Side',string(side), ...
+                        'Orientation',double(arr.Orientation)));
                 end
             end
         end

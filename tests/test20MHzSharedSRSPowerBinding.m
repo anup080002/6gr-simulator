@@ -226,6 +226,7 @@ fprintf('SHARED_SRS_POWER_PASS evidence=%s\n',folder); ok=true;
             clear recheck;
             [row,originalFields]=receiverPublicationRow(ul,out,scope);
             writeReceiverPublication(folder,ul,row,originalFields);
+            assertPilotEVMPublication(folder,out,firstSlot,item.UE);
             assert(size(capture.Rx.Hest,3)==64 && size(capture.Rx.Hest,4)==4 && ...
                 out.ChannelNMSEScoring.Available && ...
                 ~out.ChannelNMSEReferenceEvidence.ReceiverEstimatorInput);
@@ -234,6 +235,46 @@ fprintf('SHARED_SRS_POWER_PASS evidence=%s\n',folder); ok=true;
             receivedCount=receivedCount+1;
         end
     end
+end
+
+function assertPilotEVMPublication(folder,out,slot,ue)
+% Publish only pairs from this original isolated shared CDL/RF reception.
+% Storage/export cannot generate a new observation or isolation receipt.
+randomState=rng;
+pairs=out.PilotEVMPairs;
+source="same_executed_isolated_emitted_SRS_received_pilot_grid";
+assert(~isempty(pairs) && out.ChannelNMSEReferenceAvailable && ...
+    out.EVMReferenceSource==source && all([pairs.IsolatedComponentProved]) && ...
+    ~any([pairs.ReceiverUsesScoringReference]) && ~any([pairs.GainOrPhaseFitted]));
+row=table(slot,ue,"UL",'VariableNames',{'Slot','UEIndex','Direction'});
+row=sixgr.report.retainControlEVMPairs(folder,row,pairs);
+trialPath=fullfile(folder,'air_interface','csv','srs_trials.csv');
+retained=sixgr.report.readControlEVMPairs(row,trialPath);
+assert(isequaln(retained,pairs),'test:SRSPilotPairRoundTrip', ...
+    'Preserve every original sample and authority field in immutable storage.');
+path=sixgr.report.exportControlEVMSamples(trialPath,row);
+T=sixgr.util.csvReadTable(path,'TextType','string');
+assert(height(T)==out.EVMSymbolCount && all(T.SignalName=="SRS") && ...
+    all(T.ReferenceSource==source) && all(T.ReferencePlane==out.EVMReferencePlane) && ...
+    all(T.MeasurementDomain=="received_resource_elements") && ...
+    all(T.MeasurementClaim=="received_pilot_grid_pair_error_not_equalized_or_RF_conformance") && ...
+    ~any(T.ReceiverUsesScoringReference) && ~any(T.GainOrPhaseFitted) && ...
+    ~any(T.StandardizedModulationEVMQualified));
+reference=complex(T.ReferenceReal,T.ReferenceImag);
+measured=complex(T.MeasuredReal,T.MeasuredImag);
+originalReference=complex(vertcat(pairs.ReferenceReal),vertcat(pairs.ReferenceImag));
+originalMeasured=complex(vertcat(pairs.MeasuredReal),vertcat(pairs.MeasuredImag));
+assert(isequal(T.SampleIndex,vertcat(pairs.SampleIndex)) && ...
+    max(abs(reference-originalReference))<=1e-12*max(abs(originalReference)) && ...
+    max(abs(measured-originalMeasured))<=1e-12*max(abs(originalMeasured)));
+errorEnergy=sum(abs(measured-reference).^2);
+referenceEnergy=sum(abs(reference).^2);
+assert(abs(errorEnergy-out.EVMErrorEnergy)<=1e-12*max(out.EVMReferenceEnergy,out.EVMErrorEnergy) && ...
+    abs(referenceEnergy-out.EVMReferenceEnergy)<=1e-12*out.EVMReferenceEnergy && ...
+    abs(sqrt(errorEnergy/referenceEnergy)-out.EVM_rms)<=1e-12*max(1,out.EVM_rms));
+assert(isequal(rng,randomState),'test:SRSPilotPublicationRandomState', ...
+    'Publishing original pairs must not consume RF/channel randomness.');
+fprintf('SHARED_SRS_PILOT_EVM_PUBLICATION_PASS samples=%d path=%s\n',height(T),path);
 end
 
 function [row,originalFields]=receiverPublicationRow(cfg,out,scope)

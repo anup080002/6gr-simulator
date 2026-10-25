@@ -143,6 +143,16 @@ cfg=struct('phy',struct('timing',struct('k',4)),'meta',struct('configHash',"unit
 out=check(scfg,cfg);
 assert(out.Ok && out.DetailTable.LedgerCallCount==1, ...
     'A call matching both its function and source file must count once.');
+% A parameter requiring one exact operation cannot borrow a different call
+% from the same source file (construction/disabled branches are not use).
+exact=scfg;
+exact.validation.causal_phy_chain_audit.parameter_bindings.consumer_source_files=strings(0,1);
+exact.validation.causal_phy_chain_audit.parameter_bindings.consumer_functions="not_executed_operation";
+missing=check(exact,cfg);
+assert(~missing.Ok && missing.ParameterBindingTable.Status=="CONSUMER_NOT_CALLED");
+exact.validation.causal_phy_chain_audit.parameter_bindings.consumer_functions="unit_actual_call";
+observed=check(exact,cfg);
+assert(observed.Ok && observed.ParameterBindingTable.ConsumerObserved);
 for field=["RunId","ConfigHash","Event","EvidenceClass","ApproximationMode"]
     bad=ledger; bad.(field)(1)="wrong_or_proxy";
     sixgr.util.csvWriteTable(ledgerPath,bad,'PreserveSchema',true);

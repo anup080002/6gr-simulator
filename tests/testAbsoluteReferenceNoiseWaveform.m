@@ -94,6 +94,7 @@ for field=string(fieldnames(pub)).'
 end
 assertNoiseSamples(capture.ReceivedWaveform,capture.ScoringReferenceWaveform, ...
     result.AbsoluteReferenceNoiseInjectedSampleVariance_mW,"SRS");
+assertSRSCollector(cfg,result,folder,pub);
 % Serialize only actual returned scalar fields; do not invent a collector row
 % or any accepted SRS/scheduler/received-control authority.
 row=pub;
@@ -109,6 +110,52 @@ writeAndCheck(fullfile(folder,'srs_returned_evidence.csv'),struct2table(row,'AsA
 fprintf('ABSOLUTE_NOISE_RX signal=SRS detected=%d H_available=%d strict=%d N0=%.17g draw=%.17g\n', ...
     result.DetectionSuccess,result.ChannelEstimateAvailable,result.StrictOk, ...
     result.ReferenceNoisePSD_mWPerHz,result.AbsoluteReferenceNoiseInjectedSampleVariance_mW);
+end
+
+function assertSRSCollector(cfg,result,folder,expected)
+% Execute the literal production reducer against the original physical
+% result. No channel, receiver, noise draw or receipt reconstruction occurs.
+source=fileread(which('sixgr.truth.runWaveformLinkBundle'));
+starts=regexp(source,'(?m)^function ','start');
+locals=source(starts(2):end);
+name='absoluteNoiseSRSCollector';
+path=fullfile(folder,[name '.m']);
+fid=fopen(path,'w'); assert(fid>=0);
+fprintf(fid,'function T=%s(cfg,received)\n',name);
+fprintf(fid,'T=localCollectSRSTrials(cfg,cfg.channel.snr_dB,1,[],1,received);\nend\n');
+fprintf(fid,'%s',locals); fclose(fid);
+addpath(folder); cleanup=onCleanup(@()rmpath(folder)); %#ok<NASGU>
+prior=rng; original=result;
+T=absoluteNoiseSRSCollector(cfg,result);
+assert(isequal(prior,rng)&&isequaln(result,original), ...
+    'Reduction must preserve original reception and RNG state.');
+assert(height(T)==1&&~T.Crash,'Actual SRS reduction failed: %s',T.Notes);
+for field=string(fieldnames(expected)).'
+    assert(isequaln(T.(field),expected.(field)), ...
+        'Production SRS collector lost original noise field %s.',field);
+end
+writeAndCheck(fullfile(folder,'srs_collected_trials.csv'),T);
+% The previously used flattened result genuinely lacks receipt authority.
+try
+    sixgr.link.absoluteReferenceNoisePublication(result);
+    error('test:MissingSRSNoiseReceiptRejection','Flattened result was accepted.');
+catch cause
+    assert(strcmp(cause.identifier,'sixgr:link:AbsoluteReferenceNoiseReceipt'));
+end
+missing=rmfield(result,'NoiseExecutionEvidence');
+T=absoluteNoiseSRSCollector(cfg,missing);
+assert(T.Crash&&~T.AbsoluteReferenceNoiseEvidenceAvailable&& ...
+    contains(T.Notes,'original absolute-reference noise replay')&& ...
+    contains(T.FailureReason,'sixgr:link:AbsoluteReferenceNoiseReceipt'));
+bad=result; bad.NoiseExecutionEvidence.NoiseOperatingMode="receiver_noise_figure_thermal_noise";
+T=absoluteNoiseSRSCollector(cfg,bad);
+assert(T.Crash&&~T.AbsoluteReferenceNoiseEvidenceAvailable&& ...
+    contains(T.Notes,'same operating mode')&& ...
+    contains(T.FailureReason,'sixgr:truth:SRSNoiseExecutionModeMismatch'));
+bad=result; bad.NoiseExecutionEvidence.PowerContextDirection="DL";
+T=absoluteNoiseSRSCollector(cfg,bad);
+assert(T.Crash&&~T.AbsoluteReferenceNoiseEvidenceAvailable&& ...
+    contains(T.Notes,'direction must match'));
 end
 
 function assertPublication(row,cfg,direction)
