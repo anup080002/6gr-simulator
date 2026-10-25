@@ -6,6 +6,9 @@ state = localMinimalAccessState(3);
 pbch = struct2table(struct( ...
     "Status", "PASS", "CRCPass", 1, "Slot", 1, "RNTI", 4601, ...
     "SSBIndex", 0), "AsArray", true);
+% Declared protocol-owner fixture, not native BCH reception evidence.
+pbch.BCHCRCValid=true; pbch.MIBDecoded=true;
+pbch.CandidateIdentityConsistent=true; pbch.SSBIdentityVerified=true;
 state = sixgr.truth.CoupledTruthRuntime.applyPBCHTrial(state, 1, pbch);
 assert(state.CellAcquisitionState(1) == "acquired", "PBCH pass must acquire the serving cell.");
 assert(any(string(state.AccessTransitionLedgerTable.new_state) == "PBCH_DECODED"), ...

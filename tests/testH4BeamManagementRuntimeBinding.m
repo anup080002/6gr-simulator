@@ -11,7 +11,7 @@ localCheckRuntimeBinding(cfg);
 % Rename resources without changing their list positions or beam matrices.
 renamed = scfg.toStruct();
 renamed.reference_signals.csi_rs_resource_ids = [17 5 33 9 41 13 57 21];
-renamed.mimo_and_beam_management.ssb_to_initial_csi_resource_ids = [17 33 41 57];
+renamed.mimo_and_beam_management.ssb_to_initial_csi_resource_ids = [17 5 33 9];
 renamedCfg = sixgr.lls6g.buildInternalConfig(renamed, tempname);
 assert(isequal(renamedCfg.phy.csirs.resourceIDs, ...
     renamed.reference_signals.csi_rs_resource_ids));
@@ -61,12 +61,12 @@ coarse.BeamManagementMachines = {sixgr.phy.beam.BeamManagementStateMachine("IDLE
 coarse.BeamManagementStateTraceTable = table();
 coarse = sixgr.truth.CoupledTruthRuntime.stageMeasuredSSBBeamRuntime( ...
     coarse, 1, 1, -82, "declared_received_PBCH_identity_fixture");
-assert(coarse.PendingBeamCRIByUE(1) == 2);
+assert(coarse.PendingBeamCRIByUE(1) == 1);
 [coarse, accepted] = sixgr.truth.CoupledTruthRuntime.applyDecodedTCIBeamRuntime( ...
-    coarse, 1, table(2,'VariableNames',{'DecodedDCITCICodepoint'}));
+    coarse, 1, table(1,'VariableNames',{'DecodedDCITCICodepoint'}));
 assert(accepted && coarse.BeamManagementMachines{1}.State == "P2_REFINING" && ...
     all(coarse.BeamManagementStateTraceTable.MeasuredResourceID(end-1:end) == ...
-        "SSB-seeded-CSI-RS-" + string(ids(3))));
+        "SSB-seeded-CSI-RS-" + string(ids(2))));
 
 % A causally received CSI-RS report may replace an untransmitted pending P1
 % candidate.  It does not activate the beam: the matching TCI codepoint
@@ -272,6 +272,8 @@ else
     row.SS_RSRP_dBm=-82; row.SS_RSRP_dB_re_UnitOccupiedRE_Es=NaN;
     row.SelectionMetricValue_dB=-82;
 end
+row.BCHCRCValid=true; row.MIBDecoded=true;
+row.CandidateIdentityConsistent=true; row.SSBIdentityVerified=true;
 candidates=repmat(row,3,1);
 candidates.SSBIndex=[0;2;1]; candidates.SelectedBeamFlag=[false;false;true];
 candidates.SS_SINR_dB=[45;3;25.58];

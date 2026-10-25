@@ -240,6 +240,11 @@ function [rxOut, freqOffsetHz, NID2, info] = freqOffsetCorrect(rxWaveform, block
     info.SelectedCandidateWindowIndex = double(bestWindowIndex);
     info.SelectedCandidateStartSymbol = double( ...
         candidateStartSymbols(bestWindowIndex));
+    % Preserve the within-half-frame SSB identity separately from the
+    % declared whole-capture phase used by the actual search/FFT clock.
+    info.SelectedCandidateAbsoluteStartSymbol = ...
+        info.SelectedCandidateStartSymbol + localHalfFrameIndex(ssbTiming)* ...
+        5*(double(ssbTiming.SSBSubcarrierSpacingKHz)/15)*14;
     info.SelectedTimingOffsetSamples = double(selectedTimingOffset);
     info.SelectedCorrelationLagSamples = double(selectedLag - 1);
     info.TimingSearchGuardSamples = double(opt.TimingSearchGuardSamples);
@@ -403,6 +408,7 @@ sampling = sixgr.phy.frame.OFDMSamplingResolver.resolve( ...
     carrier, "SampleRate", double(fs), "WindowingSamples", 0);
 subframeSymbolLengths = double(sampling.SymbolLengths(:)).';
 halfFrameSymbolLengths = repmat(subframeSymbolLengths, 1, 5);
+phaseSamples = localHalfFrameIndex(ssbTiming)*sum(halfFrameSymbolLengths);
 
 segments = cell(0, 1);
 windows = zeros(0, 2);
@@ -412,7 +418,7 @@ for candidateIndex = 1:numel(candidateSymbols)
     if startSymbol + 4 > numel(halfFrameSymbolLengths)
         continue;
     end
-    firstSample = 1 + sum(halfFrameSymbolLengths(1:startSymbol));
+    firstSample = 1 + phaseSamples + sum(halfFrameSymbolLengths(1:startSymbol));
     firstSample = max(1, firstSample - guardSamples);
     reference = localPSSReference( ...
         ssbTiming, 0, fs, startSymbol);
@@ -433,6 +439,14 @@ if isempty(segments)
     error("sixgr:phy:sync:SSBCandidateWindowsOutsideCapture", ...
         "No canonical SS/PBCH candidate window intersects the capture.");
 end
+end
+
+function value=localHalfFrameIndex(timing)
+% Compatibility timing structs without a phase retain their declared zero
+% origin. This is a configured capture clock, not a decoded PBCH estimate.
+value=sixgr.util.structGet(timing,'HalfFrameIndex',0);
+validateattributes(value,{'numeric'},{'real','scalar','finite','integer','nonnegative'});
+value=double(value);
 end
 
 function timing = localResolveTiming(blockPattern, supplied)

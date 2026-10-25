@@ -6,6 +6,11 @@ p.addParameter("NegativeResults", struct([]), @(x) isempty(x) || isstruct(x));
 p.addParameter("Identity", struct(), @(x) isstruct(x) && isscalar(x));
 p.parse(varargin{:});
 
+if localSSBOnlyContent(tx)
+    artifacts=localExportSSBMIB(runFolder,tx,result,p.Results.Identity);
+    return;
+end
+
 layout = sixgr.report.resultLayout(runFolder);
 sixgr.util.ensureFolder(layout.ControlCSVDir);
 sixgr.util.ensureFolder(layout.AirInterfaceCSVDir);
@@ -63,6 +68,7 @@ trialT.SIB1ObservationStatus=string(sixgr.util.structGet(result,'SIB1Observation
 trialT.SIB1ObservationStartSample=double(sixgr.util.structGet(result,'SIB1ObservationStartSample',NaN));
 trialT.SIB1ObservationEndSampleExclusive=double(sixgr.util.structGet(result,'SIB1ObservationEndSampleExclusive',NaN));
 trialT.SIB1AvailableCaptureSamples=double(sixgr.util.structGet(result,'SIB1AvailableCaptureSamples',NaN));
+trialT=localKSSBEvidenceColumns(trialT,result);
 candidateT = localCandidateTable(runId, result);
 negativeT = localNegativeTable(runId, p.Results.NegativeResults);
 roundtripT = localRoundtripTable(runId, tx.TxTree, result.SIB1RxTree, logical(result.SIB1TreeEqual));
@@ -195,6 +201,93 @@ artifacts.RowCounts = struct("Recovery", height(trialT), "Candidates", height(ca
     "Summary", height(summaryT));
 end
 
+function yes=localSSBOnlyContent(tx)
+yes=localScopeText(tx,'Content',"SSB_MIB") || localScopeText(tx,'WaveformContent',"ssb_mib_only");
+if ~yes, return; end
+assert(localScopeText(tx,'Content',"SSB_MIB") && localScopeText(tx,'WaveformContent',"ssb_mib_only") && ...
+    isfield(tx,'SSBEmissionIncluded') && isequal(tx.SSBEmissionIncluded,true) && ...
+    isfield(tx,'SIB1EmissionIncluded') && isequal(tx.SIB1EmissionIncluded,false) && ...
+    isfield(tx,'SIB1Transmissions') && isstruct(tx.SIB1Transmissions) && isempty(tx.SIB1Transmissions) && ...
+    isfield(tx,'SIB1TransmitSSBIndices0Based') && isnumeric(tx.SIB1TransmitSSBIndices0Based) && ...
+    isempty(tx.SIB1TransmitSSBIndices0Based) && ...
+    ~any(isfield(tx,{'SIB1Grid','PDCCHTx','PDSCHTx','SIB1Waveform'})), ...
+    'sixgr:phy:broadcast:EvidenceContentMismatch','SSB-only export requires the frozen producer scope without SI payload aliases.');
+end
+
+function yes=localScopeText(s,name,expected)
+yes=false;
+if ~isfield(s,name), return; end
+x=s.(name);
+if (isstring(x) && isscalar(x) && ~ismissing(x)) || (ischar(x) && isrow(x))
+    yes=string(x)==expected;
+end
+end
+
+function paths=localExportSSBMIB(folder,tx,result,identity)
+% The original receiver may succeed or fail acquisition. Neither outcome is
+% an SI attempt: do not create SI trials, CRCs, ASN.1 roundtrips, or plots.
+assert(localScopeText(result,'RecoveryScope',"SSB_MIB") && ...
+    isfield(result,'SIB1ReceptionAttempted') && isequal(result.SIB1ReceptionAttempted,false), ...
+    'sixgr:phy:broadcast:EvidenceRecoveryScopeMismatch', ...
+    'SSB-only evidence must retain the original SSB_MIB receiver scope and no SI attempt.');
+flags=["DetectionAttempted","PSSDetected","SSSDetected","DecodeAttempted", ...
+    "BCHCrcPass","BCHCRCValid","CandidateIdentityConsistent","MIBDecoded", ...
+    "PBCHStrictReceiverEvidenceOk","SSBMIBComplete"];
+for name=flags
+    assert(isfield(result,name) && islogical(result.(name)) && isscalar(result.(name)), ...
+        'sixgr:phy:broadcast:EvidenceReceiverFlag','Retain original logical receiver field %s.',name);
+end
+layout=sixgr.report.resultLayout(folder);
+sixgr.util.ensureFolder(layout.ControlCSVDir);
+sixgr.util.ensureFolder(layout.AirInterfaceCSVDir);
+runId=string(sixgr.util.structGet(identity,'RunID',sixgr.util.structGet(tx,'RunId',"ssb_mib_component")));
+scenario=string(sixgr.util.structGet(identity,'ScenarioID',""));
+trial=table(runId,scenario,"SSB_MIB","ssb_mib_only", ...
+    'VariableNames',{'RunId','ScenarioName','RecoveryScope','WaveformContent'});
+% Only original fields are projected. In particular no slot/frame, receiver
+% identity, or measurement is inferred from the transmitted configuration.
+names=[flags,"NCellID","SSBIndex","TimingOffset","FrequencyOffsetHz", ...
+    "SampleRateHz","ObservedSSBOccasionIndex","MIBSystemFrameNumber", ...
+    "MIBPDCCHConfigSIB1Recovered","MIBPDCCHConfigSIB1BitString", ...
+    "MIBCORESET0Index","MIBSearchSpaceZero","MIBDMRSTypeAPosition", ...
+    "MIBKSSBSubcarrierOffset","Status","FailureReason", ...
+    "SS_RSRP_dBm","SS_RSRP_dB_re_UnitOccupiedRE_Es","SS_RSRQ_dB", ...
+    "SS_SINR_dB","SSBPhysicalMeasurementReferencePlane"];
+for name=names
+    if isfield(result,name), trial.(name)=result.(name); end
+end
+trial=localKSSBEvidenceColumns(trial,result);
+pbch=localPBCHRecoveryTable(runId,scenario,result);
+mib=localMIBFieldEvidenceTable(runId,result);
+% The MIB-only path has not run Type-0 derivation; use its original decoded
+% MIB operand, not the later combined-procedure PDCCHConfigSIB1 alias.
+if isfield(result,'MIBPDCCHConfigSIB1Recovered')
+    mib.NumericValue(mib.MIBEvidenceField=="pdcch-ConfigSIB1")=result.MIBPDCCHConfigSIB1Recovered;
+end
+trace=table(repmat(runId,3,1),["SSB_detection";"PBCH_raw_CRC";"MIB_acquisition"], ...
+    [result.DetectionAttempted;result.DecodeAttempted;result.DecodeAttempted], ...
+    [result.PSSDetected && result.SSSDetected;result.BCHCrcPass; ...
+    result.BCHCrcPass && result.BCHCRCValid && result.CandidateIdentityConsistent && result.MIBDecoded], ...
+    repmat("original_receiver_stage_decision_not_conformance",3,1), ...
+    'VariableNames',{'RunId','StageName','Attempted','StagePass','EvidenceScope'});
+if ~isempty(fieldnames(identity))
+    bound=sixgr.runtime.bindInPathArtifactIdentity(struct('trial',trial,'pbch',pbch,'mib',mib,'trace',trace),identity);
+    trial=bound.trial; pbch=bound.pbch; mib=bound.mib; trace=bound.trace;
+end
+paths=struct('SSBMIBRecoveryTrialsCSV',fullfile(layout.ControlCSVDir,'ssb_mib_recovery_trials.csv'), ...
+    'PBCHRecoveryTrialsCSV',fullfile(layout.ControlCSVDir,'pbch_recovery_trials.csv'), ...
+    'MIBFieldEvidenceCSV',fullfile(layout.ControlCSVDir,'mib_field_evidence.csv'), ...
+    'WaveformDecodeTraceCSV',fullfile(layout.ControlCSVDir,'ssb_mib_waveform_decode_trace.csv'), ...
+    'AirInterfaceCSV',fullfile(layout.AirInterfaceCSVDir,'ssb_mib_trials.csv'));
+sixgr.util.csvWriteTable(paths.SSBMIBRecoveryTrialsCSV,trial);
+sixgr.util.csvWriteTable(paths.PBCHRecoveryTrialsCSV,pbch);
+sixgr.util.csvWriteTable(paths.MIBFieldEvidenceCSV,mib);
+sixgr.util.csvWriteTable(paths.WaveformDecodeTraceCSV,trace);
+sixgr.util.csvWriteTable(paths.AirInterfaceCSV,trial);
+paths.RowCounts=struct('SSBMIBRecovery',height(trial),'PBCHRecovery',height(pbch), ...
+    'MIBFieldEvidence',height(mib),'WaveformDecodeTrace',height(trace));
+end
+
 function T = localResourceGridTable(runId, grid)
 combined = sum(complex(grid), 3);
 [subcarrier, symbol] = ndgrid((0:size(combined, 1)-1).', 0:size(combined, 2)-1);
@@ -253,6 +346,7 @@ T = table(runId, scenarioName, double(sixgr.util.structGet(result, "NCellID", Na
     'BCHScrambledBlockNumBits','BCHScrambledBlockHex','BCHScrambledBlockHash','BCHCrcPass', ...
     'MIBDecoded','TimingOffsetSamples','FrequencyOffsetHz','PBCHDMRSMetric','PBCHNoiseVar', ...
     'ChannelEstimateAvailable','EqualizationAvailable','ReceiverHestSINR_dB','MIBDecodedBitSource'});
+T=localKSSBEvidenceColumns(T,result);
 end
 
 function T = localMIBFieldEvidenceTable(runId, result)
@@ -317,6 +411,18 @@ T = table(repmat(runId, numel(fieldName), 1), fieldName, bitLength, numericValue
     bitString, hashValue, source, crcPass, ...
     'VariableNames', {'RunId','MIBEvidenceField','BitLength','NumericValue', ...
     'BitOrHexValue','SHA256','DecodedBitSource','BCHCrcPass'});
+T=localKSSBEvidenceColumns(T,result);
+end
+
+function T=localKSSBEvidenceColumns(T,result)
+% Retain original v2 operands alongside the published full-value field.
+% No version or decoded value is reconstructed for historical inputs.
+T.KSSBContractVersion=repmat(sixgr.util.structGet(result,"KSSBContractVersion",""),height(T),1);
+for field=["Lmax","MIBKSSBLow4","PBCHKSSBMSB","PBCHKSSBHighContribution", ...
+        "KSSBHighBitApplicable","DecodedKSSB","k_SSB", ...
+        "BCHCRCValid","CandidateIdentityConsistent"]
+    T.(field)=repmat(sixgr.util.structGet(result,field,NaN),height(T),1);
+end
 end
 
 function T = localMIBPDCCHConfigSIB1Table(runId, result)
@@ -374,7 +480,10 @@ stages = [
     "SIB1_ASN1_DECODE"];
 passVals = [
     logical(isfinite(double(sixgr.util.structGet(result, "NCellID", NaN))))
-    logical(sixgr.util.structGet(result, "BCHCrcPass", false))
+    isequal(sixgr.util.structGet(result,"BCHCrcPass",false),true) && ...
+        isequal(sixgr.util.structGet(result,"BCHCRCValid",false),true) && ...
+        isequal(sixgr.util.structGet(result,"MIBDecoded",false),true) && ...
+        isequal(sixgr.util.structGet(result,"CandidateIdentityConsistent",false),true)
     logical(sixgr.util.structGet(result, "CORESET0Present", false))
     logical(sixgr.util.structGet(result, "DCIBlindDecodeSuccess", false)) && logical(sixgr.util.structGet(result, "DCICrcPass", false))
     logical(sixgr.util.structGet(result, "SIB1PDSCHChannelEstimateAvailable", false))
@@ -383,7 +492,7 @@ passVals = [
     logical(sixgr.util.structGet(result, "SIB1ASN1DecodeOk", false)) && logical(sixgr.util.structGet(result, "SIB1TreeEqual", false))];
 evidenceFields = [
     "NCellID,SSBIndex,TimingOffsetSamples,FrequencyOffsetHz"
-    "BCHCrcPass,MIBDecoded,PDCCHConfigSIB1"
+    "BCHCrcPass,BCHCRCValid,CandidateIdentityConsistent,MIBDecoded,PDCCHConfigSIB1"
     "CORESET0RBStart,CORESET0NumRB,CORESET0DurationSymbols,SearchSpace0ID"
     "PDCCHCandidatesAttempted,DCICrcPass,DCIRNTI,DCIFormat,DCIPayloadHex"
     "SIB1PDSCHReceiverHestSINR_dB,SIB1PDSCHReceiverHestSINRSource"

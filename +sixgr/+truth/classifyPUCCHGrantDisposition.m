@@ -1,4 +1,4 @@
-function out = classifyPUCCHGrantDisposition(grants, pucchTrials)
+function out = classifyPUCCHGrantDisposition(grants, pucchTrials, puschReceiveOnlyAudit)
 %CLASSIFYPUCCHGRANTDISPOSITION Prove how each scheduled feedback grant ended.
 %
 % A PUCCH grant has an auditable disposition only through an observed
@@ -10,6 +10,7 @@ function out = classifyPUCCHGrantDisposition(grants, pucchTrials)
 if nargin < 2 || ~istable(pucchTrials)
     pucchTrials = table();
 end
+if nargin<3 || ~istable(puschReceiveOnlyAudit), puschReceiveOnlyAudit=table(); end
 if ~istable(grants)
     grants = table();
 end
@@ -31,7 +32,14 @@ transferred = localLogical(grants, "MultiplexedOnPUSCH", false(n, 1)) & ...
     localLogical(grants, "RuntimeStateUpdated", false(n, 1)) & ...
     transferState == "pusch_uci_feedback_applied" & statusPass & finalized;
 
-[standaloneObserved,standalone] = localMatchedStandaloneReceiverRows(grants, pucchTrials);
+[standaloneObserved,standalone,receiverOnlyObserved] = localMatchedStandaloneReceiverRows(grants, pucchTrials);
+puschReceiverOnlyObserved=localMatchedPowerWithheldPUSCH(grants,puschReceiveOnlyAudit);
+if ismember('UETransmissionSuppressed',grants.Properties.VariableNames)
+    noTX=localBinary(grants,"UETransmissionSuppressed",true);
+    % A positive independent receiver row cannot override explicit original
+    % UE silence and become a transmitted-success or transferred payload.
+    transferred(noTX)=false;standaloneObserved(noTX)=false;standalone(noTX)=false;
+end
 standaloneFailed=standaloneObserved & ~standalone;
 cancelled = cancelled & finalized;
 rightCensorReason = lower(localString(grants, "CensorReason", repmat("", n, 1)));
@@ -40,19 +48,22 @@ rightCensored = rightCensored & finalized & ...
     strlength(rightCensorReason) > 0 & ...
     rightCensorReason ~= "not_applicable_for_active_pucch_grant_trace_runtime" & ...
     rightCensorStatus == "RIGHT_CENSORED";
-resolved = ~scheduled | transferred | standaloneObserved | cancelled | rightCensored;
+resolved = ~scheduled | transferred | standaloneObserved | receiverOnlyObserved | puschReceiverOnlyObserved | cancelled | rightCensored;
 reason = repmat("unresolved_scheduled_feedback_grant", n, 1);
 reason(~scheduled) = "not_scheduled";
 reason(cancelled) = "explicitly_finalized_cancellation";
 reason(rightCensored) = "explicitly_finalized_right_censoring";
 reason(standaloneFailed) = "matched_standalone_pucch_receiver_trial_failed";
 reason(standalone) = "matched_standalone_pucch_receiver_trial_success";
+reason(receiverOnlyObserved) = "power_deferred_UE_no_transmission_original_receiver_observed";
+reason(puschReceiverOnlyObserved) = "power_deferred_UE_no_transmission_selected_PUSCH_receiver_observed";
 reason(transferred) = "same_waveform_pusch_uci_decode_consumed";
 
 rows = table(scheduled, transferred, standaloneObserved, standalone, standaloneFailed, ...
-    cancelled, rightCensored, resolved, reason, ...
+    receiverOnlyObserved, puschReceiverOnlyObserved, cancelled, rightCensored, resolved, reason, ...
     'VariableNames', {'Scheduled','TransferredOnPUSCH','StandalonePUCCHTrialObserved', ...
     'StandalonePUCCHTrialMatched','StandalonePUCCHTrialFailed', ...
+    'PowerDeferredReceiverOnlyObserved','PowerDeferredPUSCHReceiverOnlyObserved', ...
     'CancelledFinalized','RightCensoredFinalized','Resolved','Disposition'});
 if ismember("PUCCHGrantId", string(grants.Properties.VariableNames))
     rows.PUCCHGrantId = localString(grants, "PUCCHGrantId", repmat("", n, 1));
@@ -66,18 +77,109 @@ out = struct( ...
     "StandaloneObservedCount", double(nnz(scheduled & standaloneObserved)), ...
     "StandaloneTrialCount", double(nnz(scheduled & standalone)), ...
     "StandaloneFailedCount", double(nnz(scheduled & standaloneFailed)), ...
+    "ReceiverOnlyObservedCount", double(nnz(scheduled & receiverOnlyObserved)), ...
+    "PUSCHReceiverOnlyObservedCount", double(nnz(scheduled & puschReceiverOnlyObserved)), ...
     "CancelledCount", double(nnz(scheduled & cancelled)), ...
     "RightCensoredCount", double(nnz(scheduled & rightCensored)), ...
     "ResolvedCount", double(nnz(scheduled & resolved)), ...
     "UnresolvedCount", double(nnz(scheduled & ~resolved)), ...
     "AllScheduledResolved", logical(all(~scheduled | resolved)), ...
-    "SchemaVersion", "pucch_grant_disposition_v4");
+    "SchemaVersion", "pucch_grant_disposition_v6");
 end
 
-function [observed,matched] = localMatchedStandaloneReceiverRows(grants, trials)
+function matched=localMatchedPowerWithheldPUSCH(grants,audit)
+% An original selected-PUSCH receiver invocation is distinct from a PUCCH
+% transmission/decoder and from successful UCI-on-PUSCH transfer. CRC/UCI
+% false acceptance remains the receiver's result, never proof of UE TX.
+matched=false(height(grants),1);
+required=["ObservationID","GrantContextID","GNBControlObservationID","ReceivedUCIObservationID", ...
+    "PowerAdmissionObservationID","LogicalPUCCHGrantIdSet","UEProducerDisposition", ...
+    "UEReceivedCodebookDigest","PhysicalOccasionID","SelectedGNBTransport", ...
+    "UEIndex","RNTI","ScheduledSlot","BaseStationID","ComponentCarrier","ActiveULBWP","SweepPointIndex", ...
+    "AdmissionDecisionSample","ClockEpoch","ReceiverClockEpoch","ObservationStartSample","ObservationEndSampleExclusive", ...
+    "AvailableAtSample","SampleRateHz","ReceiverInvocationCompleted","UETransmissionExecuted", ...
+    "UEDataTransmissionExecuted","UEPUCCHTransmissionExecuted","TransmittedTBScored","Source"];
+if isempty(grants)||isempty(audit)||~all(ismember(required,string(audit.Properties.VariableNames))), return; end
+grantRequired=["PUCCHGrantId","UEIndex","RNTI","Slot","BaseStationID","ComponentCarrier", ...
+    "ActiveULBWP","SweepPointIndex","UETransmissionSuppressed","GrantExecutedFlag", ...
+    "MultiplexedOnPUSCH","UEProducerDisposition","PowerAdmissionObservationID"];
+if ~all(ismember(grantRequired,string(grants.Properties.VariableNames))), return; end
+for field=["PUCCHGrantId","UEProducerDisposition","PowerAdmissionObservationID"]
+    if ~isstring(grants.(field))||~isequal(size(grants.(field)),[height(grants),1]), return; end
+end
+n=height(audit); valid=true(n,1);
+textFields=["ObservationID","GrantContextID","GNBControlObservationID","ReceivedUCIObservationID", ...
+    "PowerAdmissionObservationID","LogicalPUCCHGrantIdSet","UEProducerDisposition", ...
+    "UEReceivedCodebookDigest","PhysicalOccasionID","SelectedGNBTransport","Source"];
+for field=textFields
+    raw=audit.(field);
+    if ~isstring(raw)||~isequal(size(raw),[n,1]), return; end
+    valid=valid & ~ismissing(raw) & strlength(raw)>0;
+end
+for field=["UEIndex","RNTI","ScheduledSlot","BaseStationID","ComponentCarrier","ActiveULBWP", ...
+        "SweepPointIndex","AdmissionDecisionSample","ClockEpoch","ReceiverClockEpoch","ObservationStartSample", ...
+        "ObservationEndSampleExclusive","AvailableAtSample","SampleRateHz"]
+    raw=audit.(field);
+    if ~isnumeric(raw)||~isreal(raw)||~isequal(size(raw),[n,1]), return; end
+    valid=valid & isfinite(raw)&raw>=0&raw==fix(raw)&raw<=flintmax;
+end
+valid=valid & localBinary(audit,"ReceiverInvocationCompleted",true) & ...
+    localBinary(audit,"UETransmissionExecuted",false) & localBinary(audit,"UEDataTransmissionExecuted",false) & ...
+    localBinary(audit,"UEPUCCHTransmissionExecuted",false) & localBinary(audit,"TransmittedTBScored",false) & ...
+    audit.SelectedGNBTransport=="PUSCH" & ...
+    audit.UEProducerDisposition=="closed_untransmitted_missing_measured_power_reference" & ...
+    audit.Source=="stream_owned_gnb_capture_and_scheduled_grant_independent_receiver" & ...
+    audit.ClockEpoch==audit.ReceiverClockEpoch & ...
+    audit.SampleRateHz>0 & audit.ObservationEndSampleExclusive>audit.ObservationStartSample & ...
+    audit.AvailableAtSample>=audit.ObservationEndSampleExclusive & ...
+    audit.AdmissionDecisionSample<=audit.AvailableAtSample;
+for field=["Placeholder","PlaceholderFlag","Fallback","FallbackFlag"]
+    if ismember(field,string(audit.Properties.VariableNames))
+        valid=valid & localBinary(audit,field,false);
+    end
+end
+if ismember('ApproximationMode',audit.Properties.VariableNames)
+    valid=valid & ismember(localString(audit,"ApproximationMode",strings(n,1)),["","none","not_applicable"]);
+end
+% A local projection of the ORIGINAL scheduled slot is not a new clock.
+if ismember('Slot',audit.Properties.VariableNames)
+    if ~isequaln(audit.Slot,audit.ScheduledSlot), return; end
+end
+view=audit;view.Slot=audit.ScheduledSlot;
+for j=find(valid).'
+    if nnz(audit.ObservationID==audit.ObservationID(j))~=1 || ...
+            nnz(audit.PowerAdmissionObservationID==audit.PowerAdmissionObservationID(j))~=1, continue; end
+    ids=split(audit.LogicalPUCCHGrantIdSet(j),'|');
+    if any(strlength(ids)==0)||numel(unique(ids))~=numel(ids), continue; end
+    originalIDs=grants.PUCCHGrantId(grants.PowerAdmissionObservationID==audit.PowerAdmissionObservationID(j));
+    if ~isequal(sort(originalIDs(:)),sort(ids(:))), continue; end
+    indices=zeros(numel(ids),1); good=true;
+    for k=1:numel(ids)
+        index=find(localString(grants,"PUCCHGrantId",strings(height(grants),1))==ids(k));
+        if ~isscalar(index), good=false; break; end
+        indices(k)=index;
+        g=grants(index,:);
+        for field=["UEIndex","RNTI","Slot","BaseStationID","ComponentCarrier","ActiveULBWP","SweepPointIndex"]
+            raw=g.(field);
+            good=good && isnumeric(raw)&&isreal(raw)&&isscalar(raw)&&isfinite(raw)&& ...
+                raw==fix(raw)&&raw==view.(field)(j);
+        end
+        good=good && localSameOccasion(g,view(j,:)) && ...
+            localBinary(g,"UETransmissionSuppressed",true) && localBinary(g,"GrantExecutedFlag",false) && ...
+            localBinary(g,"MultiplexedOnPUSCH",false) && ...
+            localString(g,"UEProducerDisposition","")==audit.UEProducerDisposition(j) && ...
+            localString(g,"PowerAdmissionObservationID","")==audit.PowerAdmissionObservationID(j);
+        if ~good, break; end
+    end
+    if good, matched(indices)=true; end
+end
+end
+
+function [observed,matched,receiverOnlyObserved] = localMatchedStandaloneReceiverRows(grants, trials)
 n = height(grants);
 observed = false(n, 1);
 matched = false(n, 1);
+receiverOnlyObserved = false(n, 1);
 if isempty(grants) || ~(istable(trials) && ~isempty(trials))
     return;
 end
@@ -101,6 +203,9 @@ approximate=~ismember(mode,["","none","not_applicable"]);
 % trial record exists even when observation/detection itself failed.  Such
 % a row is a failed trial disposition, never a "without trial rows" case.
 trialObserved=finalized & ~placeholder & ~fallback & ~approximate;
+% Receiver-only observations can decode noise/interference successfully.
+% Such a result is never evidence that the UE transmitted its payload.
+receiverOnly=localLogical(trials,"ReceiverOnlyAssignment",false(height(trials),1));
 trialPass = trialObserved & attempted & observationAvailable & ...
     localLogical(trials, "DetectionUsable", false(height(trials), 1)) & ...
     localLogical(trials, "ReceiverUsable", false(height(trials), 1)) & ...
@@ -110,6 +215,8 @@ crcApplicable = localLogical(trials, "CRCApplicable", ...
     localLogical(trials, "UCICRCApplicable", false(height(trials), 1)));
 crcPass = localLogical(trials, "CRCPass", false(height(trials), 1));
 trialPass = trialPass & (~crcApplicable | crcPass);
+trialPass = trialPass & ~receiverOnly;
+receiverOnlyEligible=localPowerDeferredReceiverEvidence(trials,trialObserved,observationAvailable);
 % One physical PUCCH occasion can carry a codebook containing several
 % logical HARQ-ACK grants.  In that case PUCCHGrantId identifies the
 % physical occasion and LogicalPUCCHGrantIdSet preserves the exact logical
@@ -130,9 +237,60 @@ for i=1:n
     % exported columns must agree too. Never credit another UE, BWP, sweep
     % point or physical slot merely because a copied ID string matches.
     same=localSameOccasion(grants(i,:),trials) & sameID;
-    observed(i)=any(same & trialObserved);
+    observed(i)=any(same & trialObserved & ~receiverOnly);
     matched(i)=any(same & trialPass);
+    receiverOnlyObserved(i)=any(same & receiverOnlyEligible & localPowerDeferredGrantJoin(grants(i,:),trials));
 end
+end
+
+function valid=localPowerDeferredReceiverEvidence(T,observed,available)
+% Require the actual completion owner's original admission join. A producer
+% disposition alone does not finalize the independent receiver window.
+n=height(T); valid=false(n,1);
+required=["ReceiverOnlyAssignment","PUCCHTransmissionPrepared","ExecutionBackend", ...
+    "EvidenceClass","UEProducerDisposition","PowerAdmissionObservationID","PUCCHGrantId", ...
+    "ObservationStartSample","ObservationEndSampleExclusive","ObservationSampleRateHz", ...
+    "FinalizedFlag","ControlObservationAvailable"];
+if ~all(ismember(required,string(T.Properties.VariableNames))), return; end
+valid=observed & available & localBinary(T,"ReceiverOnlyAssignment",true) & ...
+    localBinary(T,"PUCCHTransmissionPrepared",false) & localBinary(T,"FinalizedFlag",true) & ...
+    localBinary(T,"ControlObservationAvailable",true) & ...
+    localString(T,"ExecutionBackend",strings(n,1))=="pucch_shared_gnb_receive_only" & ...
+    localString(T,"EvidenceClass",strings(n,1))=="actual_shared_receiver_observation_no_PUCCH_transmission_claim" & ...
+    localString(T,"UEProducerDisposition",strings(n,1))=="closed_untransmitted_missing_measured_power_reference";
+id=localString(T,"PowerAdmissionObservationID",strings(n,1));
+valid=valid & ~ismissing(id) & strlength(id)>0 & id==localString(T,"PUCCHGrantId",strings(n,1));
+for name=["ObservationStartSample","ObservationEndSampleExclusive","ObservationSampleRateHz"]
+    v=T.(name);
+    if ~isnumeric(v)||~isreal(v)||~isequal(size(v),[n,1]), valid(:)=false; return; end
+    valid=valid & isfinite(v) & v>=0;
+end
+valid=valid & T.ObservationStartSample==fix(T.ObservationStartSample) & ...
+    T.ObservationEndSampleExclusive==fix(T.ObservationEndSampleExclusive) & ...
+    T.ObservationEndSampleExclusive>T.ObservationStartSample & T.ObservationSampleRateHz>0;
+end
+
+function valid=localPowerDeferredGrantJoin(grant,trials)
+n=height(trials); valid=false(n,1);
+required=["UETransmissionSuppressed","GrantExecutedFlag","UEProducerDisposition","PowerAdmissionObservationID"];
+if ~all(ismember(required,string(grant.Properties.VariableNames))), return; end
+identity=["UEIndex","RNTI","Slot","BaseStationID","ComponentCarrier","ActiveULBWP","SweepPointIndex"];
+if ~all(ismember(identity,string(grant.Properties.VariableNames))) || ...
+        ~all(ismember(identity,string(trials.Properties.VariableNames))), return; end
+if ~(localBinary(grant,"UETransmissionSuppressed",true) && ...
+        localBinary(grant,"GrantExecutedFlag",false) && ...
+        localString(grant,"UEProducerDisposition","")=="closed_untransmitted_missing_measured_power_reference")
+    return;
+end
+id=localString(grant,"PowerAdmissionObservationID","");
+if ismissing(id)||strlength(id)==0, return; end
+valid=id==localString(trials,"PowerAdmissionObservationID",strings(n,1));
+end
+
+function value=localBinary(T,name,expected)
+raw=T.(name); value=false(height(T),1);
+if ~(isnumeric(raw)||islogical(raw))||~isreal(raw)||~isequal(size(raw),[height(T),1]), return; end
+value=isfinite(raw)&raw==double(expected);
 end
 
 function same=localSameOccasion(grant,trials)

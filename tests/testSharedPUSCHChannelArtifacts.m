@@ -1,4 +1,4 @@
-function [ok,state]=testSharedPUSCHChannelArtifacts(mode,withCoincidentSRS,deferUCIDelivery,withCSI,twoPortUL,receivedAuthority,withHARQ,outputRoot,configPath,independentEmptyUCI,independentSharedHARQ,forgetCSIProducer,unconsumedULCommand,pucchOnlyCompletion,expectedULPorts,separatePUCCH,withPacketAccounting,withReceivedCSIContinuation,withReceivedSRSContinuation,withRankTransitions)
+function [ok,state]=testSharedPUSCHChannelArtifacts(mode,withCoincidentSRS,deferUCIDelivery,withCSI,twoPortUL,receivedAuthority,withHARQ,outputRoot,configPath,independentEmptyUCI,independentSharedHARQ,forgetCSIProducer,unconsumedULCommand,pucchOnlyCompletion,expectedULPorts,separatePUCCH,withPacketAccounting,withReceivedCSIContinuation,withReceivedSRSContinuation,withRankTransitions,withPreparedCSIAcquisitionLoss,withMissingSelectedSSBReference)
 % Actual shared SRS -> received UL DCI -> coded PUSCH with HARQ-ACK UCI.
 % Initial TAG remains an explicit component input. In a configured-Es/N0
 % fixture, geometry/pathloss are deliberately not applicable. The two UCI bits
@@ -24,6 +24,15 @@ if nargin<17, withPacketAccounting=false; end
 if nargin<18, withReceivedCSIContinuation=false; end
 if nargin<19, withReceivedSRSContinuation=false; end
 if nargin<20, withRankTransitions=false; end
+if nargin<21, withPreparedCSIAcquisitionLoss=false; end
+if nargin<22, withMissingSelectedSSBReference=false; end
+assert(islogical(withMissingSelectedSSBReference) && isscalar(withMissingSelectedSSBReference));
+assert(~withMissingSelectedSSBReference || (pucchOnlyCompletion && ~withHARQ && ...
+    ~withReceivedCSIContinuation && ~withReceivedSRSContinuation && ~withPreparedCSIAcquisitionLoss));
+assert(islogical(withPreparedCSIAcquisitionLoss) && isscalar(withPreparedCSIAcquisitionLoss));
+assert(~withPreparedCSIAcquisitionLoss || (independentSharedHARQ && withCSI && ...
+    ~forgetCSIProducer && ~unconsumedULCommand && ~pucchOnlyCompletion && ...
+    ~withReceivedCSIContinuation && ~withReceivedSRSContinuation));
 assert(islogical(withRankTransitions) && isscalar(withRankTransitions));
 assert(islogical(withReceivedCSIContinuation) && isscalar(withReceivedCSIContinuation));
 assert(islogical(withReceivedSRSContinuation) && isscalar(withReceivedSRSContinuation));
@@ -70,6 +79,11 @@ s=sixgr.lls6g.config.loadScenarioConfig(configPath);
 if nargin<8, outputRoot=tempname; end
 root=outputRoot; mkdir(root);
 cfg=sixgr.lls6g.buildInternalConfig(s,root);
+retainedPower=sixgr.phy.refsig.pathlossReferenceLifetime(cfg)=="retained_filtered_reference";
+assert(~withMissingSelectedSSBReference || retainedPower);
+assert(~retainedPower || (pucchOnlyCompletion && ~withReferenceContinuation && ...
+    ~sixgr.rf.isNormalizedFixedSNRPowerReference(cfg)), ...
+    'test:RetainedPowerScope','Retained-power variant requires actual absolute-power combined PUCCH.');
 if withReferenceContinuation
     % Mint and persist this component's real lifecycle before any physical
     % observation. Do not backfill identities into an old unbound capture.
@@ -105,7 +119,14 @@ if twoPortUL
     assert(cfg.phy.srs.nPorts==expectedULPorts && ...
         cfg.phy.pusch.NumAntennaPorts==expectedULPorts && cfg.phy.pusch.numLayers==1);
 end
-if (withCSI || withHARQ) && ~independentCompletion, localSaveScenarioEvidence(s,cfg,root); end
+if (withCSI || withHARQ) && ~independentCompletion
+    if withCSI
+        localSaveScenarioEvidence(s,cfg,root, ...
+            'component: actual shared SSB/MIB/SIB1 and CSI-RS; configured periodic CSI/HARQ-coded PUSCH with deferred receiver delivery; isolated coded DL HARQ donors; declared initial connected RA/TAG; not full access, RRC or integrated 12 dB qualification');
+    else
+        localSaveScenarioEvidence(s,cfg,root);
+    end
+end
 if independentCompletion
     scope='component: actual shared SS/PBCH timing, SRS, UL DCI and PUSCH; independent UCI receive/commit; selected DL source explicitly retained; not full coordinator or 12 dB qualification';
     if unconsumedULCommand
@@ -123,6 +144,12 @@ if independentCompletion
     if withRankTransitions
         scope=[scope '; finite sustained four-port channel-stimulus component; initial TAG equals configured duration, never refreshed; observed rank coverage only, no natural-retry or random-access qualification'];
     end
+    if withCSI
+        scope=[scope '; actual full SSB/MIB/SIB1 receiver and causal measurement installation; initial RA/TAG remains declared, no full RRC/RA qualification'];
+    end
+    if withMissingSelectedSSBReference
+        scope=[scope '; original unmeasured selected SSB-1 withholds slot-10 PUCCH while the real receiver runs; later original SSB-1 reception admits a distinct slot-15 CSI/SR obligation retaining source-6 CSI; no new CSI measurement or second full-SI decode claim'];
+    end
     localSaveScenarioEvidence(s,cfg,root, ...
         scope);
 end
@@ -137,7 +164,43 @@ assert(multi.Enabled && multi.NumUsers==1 && multi.RNTIStart==1 && ...
     multi.BeamSelectionStrategy~="missing_from_config", ...
     'The component must retain the complete resolved user policy, not a test-authored subset.');
 lastSlot=11+10*logical(withHARQ);
+if withMissingSelectedSSBReference
+    % The second real burst and following configured report remain inside
+    % the original declared 20-ms TAG. No timer refresh or clock jump.
+    reference=sixgr.phy.refsig.resolveConfiguredPathlossReference(cfg,"PUCCH");
+    assert(reference.ReferenceSignalId==1 && cfg.phy.ssb.period_slots==10 && ...
+        cfg.phy.csi.reportPeriodicitySlots==5 && cfg.phy.carrier.SubcarrierSpacing==15);
+    recoveryBurstSlot=1+cfg.phy.ssb.period_slots;
+    recoveryReportSlot=10+cfg.phy.csi.reportPeriodicitySlots;
+    lastSlot=recoveryReportSlot+1;
+end
 state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,root,multi,struct(),lastSlot);
+if ~independentCompletion
+    % The legacy transport component advances the shared samples directly,
+    % but periodic reporting still requires the normal initial calendar
+    % binding. Bind the actual configured component horizon before any
+    % physical owner, received observation or pending feedback exists.
+    assert(isempty(sixgr.util.structGet(state,'SharedWaveformStream',[])) && ...
+        isempty(state.PendingFeedbackTable) && isempty(state.PendingCSITable));
+    originalControl=state.ControlTrials;
+    originalLatestDL=state.LatestDLFeedback; originalLatestUL=state.LatestULFeedback;
+    originalDLHARQ=state.DLHarq.Stats; originalULHARQ=state.ULHarq.Stats;
+    originalRNG=rng;
+    state=sixgr.truth.CoupledTruthRuntime.beginSlot( ...
+        state,cfg,cfg,1,'UL',1,1,1,lastSlot,cfg.channel.snr_dB);
+    assert(state.CurrentSlot==1 && state.CurrentCanonicalSlot==1 && ...
+        state.SweepPointStartSlot==1 && state.CanonicalSlotsPerSweepPoint==lastSlot && ...
+        state.CompletedCanonicalSlots==0 && ...
+        isempty(sixgr.util.structGet(state,'SharedWaveformStream',[])) && ...
+        isempty(state.PendingFeedbackTable) && isempty(state.PendingCSITable) && ...
+        isequaln(state.ControlTrials,originalControl) && ...
+        isequaln(state.LatestDLFeedback,originalLatestDL) && ...
+        isequaln(state.LatestULFeedback,originalLatestUL) && ...
+        isequaln(state.DLHarq.Stats,originalDLHARQ) && ...
+        isequaln(state.ULHarq.Stats,originalULHARQ) && isequal(rng,originalRNG), ...
+        'test:SharedFixtureInitialCalendar', ...
+        'Initial calendar binding must not advance PHY, invent feedback or alter receiver evidence.');
+end
 state.CurrentSlot=1; state.CurrentFrame=1; state.CurrentCanonicalSlot=1;
 state.CurrentServingIdx(:)=1; state.TestRoot=root;
 state.TestPacketAccounting=logical(withPacketAccounting);
@@ -160,6 +223,16 @@ state.TestReceivedCSIContinuation=withReceivedCSIContinuation;
 state.TestReceivedSRSContinuation=withReceivedSRSContinuation;
 state.TestReferenceContinuation=withReferenceContinuation;
 state.TestRankTransitions=withRankTransitions;
+state.TestPreparedCSIAcquisitionLoss=withPreparedCSIAcquisitionLoss;
+state.TestRetainedPower=retainedPower;
+state.TestMissingSelectedSSBReference=withMissingSelectedSSBReference;
+if withMissingSelectedSSBReference
+    state.TestSSBRecoveryBurstSlot=recoveryBurstSlot;
+    state.TestSSBRecoveryReportSlot=recoveryReportSlot;
+end
+% CSI installation must consume received SI, not the codec-only common
+% configuration used below for this component's declared initial TAG.
+state.TestReceiveSIB1=withCSI && logical(state.ControlGating.PBCHRequired);
 if withRankTransitions
     state.TestRankTransitionApplications=cell(0,1);
     state.TestRankTransitionAttemptOrdinal=0;
@@ -192,11 +265,11 @@ end
 % copy/reset DAI when the optional normal-scheduler continuation starts.
 state.ScheduledDLDAILedger=struct();
 if independentCompletion, assert(logical(cfg.phy.csi.reportCSI)==logical(withCSI)); end
-if independentCompletion && withCSI
+if withCSI
     assert(~cfg.run.controlGating.prachRequired && ...
         state.AccessState(1)=="not_required", ...
         'test:SharedCSIAccessScope', ...
-        'The component installs connected context explicitly; it does not execute or qualify random access.');
+        'The CSI component installs connected RA/TAG explicitly; it does not execute or qualify random access.');
     assert(sixgr.truth.periodicCSIReportSlotMask(10,cfg.phy.csi.reportPeriodicitySlots, ...
         cfg.phy.csi.reportOffsetSlots) && sixgr.truth.periodicCSIReferenceSlot(cfg,10)==6);
 end
@@ -210,8 +283,21 @@ if acquireDLClock
     prototype=sixgr.link.runCellSearch_MIB_SIB1(dl,'PrepareOnly',true, ...
         'UseRuntimeChannel',true,'RuntimeSlot',0);
     assert(isfield(prototype,'PreparedBroadcast'),'%s',prototype.FailureReason);
+    if state.TestReceiveSIB1
+        firstCSI=lateCSIProducerSlot;
+        if independentSharedHARQ, firstCSI=6; end
+        capture=prototype.PreparedBroadcast;
+        boundary=sixgr.phy.frame.slotStartSample( ...
+            sixgr.phy.grid.makeCarrier(dl),firstCSI-1,owner.SampleRateHz);
+        assert(capture.NumSamples<=boundary, ...
+            'test:SharedSIB1BeforeCSIFixture', ...
+            ['Original full broadcast ends at %.0f but configured CSI starts at %.0f; ' ...
+             'retain this failure rather than truncate SI or backdate installation.'],capture.NumSamples,boundary);
+        fprintf('SHARED_SIB1_CAPTURE_PLAN samples=%d Fs=%g SI_slots0=%s first_CSI_slot=%d extra_TX=0\n', ...
+            capture.NumSamples,capture.SampleRateHz,mat2str([capture.Tx.SIB1Transmissions.SIB1AbsoluteSlot]),firstCSI);
+    end
     owner.queueDownlink('PBCH',1,prototype.PreparedBroadcast, ...
-        struct('Config',dl,'Slot',1,'ServingCell',1,'TrackingOnly',true));
+        struct('Config',dl,'Slot',1,'ServingCell',1,'TrackingOnly',true,'Prototype',prototype));
 end
 [ul,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'UL');
 carrier=sixgr.phy.grid.makeCarrier(ul); fs=owner.SampleRateHz;
@@ -230,6 +316,13 @@ state.ConnectedULTimingByUE={struct('DLReference',reference, ...
     'ReceivedRARTiming',sixgr.phy.ra.resolveRARTimingAdvance(0,carrier.SubcarrierSpacing,fs), ...
     'TimingAdvanceAvailableAtSample',0,'TimingAdvanceEffectiveAtSample',0, ...
     'TimeAlignmentExpirySampleExclusive',tagExpiry)};
+if retainedPower
+    % This component does not execute RA. Install its declared TAG only
+    % after the actual SIB1 common BWP exists; no codec-only power source.
+    state.TestDeclaredTAG=state.ConnectedULTimingByUE{1};
+    state.ConnectedULTimingByUE={[]};
+end
+if ~retainedPower
 state.UECommonCellConfigurationByUE={decodedSSBPowerCodecFixture(cfg,0,1,1)};
 state.UECommonCellConfigurationByUE{1}.InitialULBWP.SubcarrierSpacing_kHz=carrier.SubcarrierSpacing;
 [~,link]=sixgr.link.applyWaveformImpairments(complex(zeros(1,1)),ul,fs,'ApplyRFChain',false);
@@ -241,6 +334,7 @@ measurement=table(0,loss,"SSB-0","analytic_component_pathloss_selector_fixture",
 state=sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementRuntime( ...
     state,'SSB','UE',1,measurement,'ProducerSlot',1,'AvailableSlot',1,'Valid',true, ...
     'Direction','DL','SourceSignal','SSB','MeasurementSource','analytic_component_selector_fixture');
+end
 if ~acquireDLClock, localQueueSRS(state,cfg,5); end
 for slot=1:lastSlot
     if independentCompletion
@@ -251,11 +345,20 @@ for slot=1:lastSlot
     end
     state.CurrentSlot=slot; state.CurrentCanonicalSlot=slot;
     state.CurrentFrame=floor((slot-1)/state.SlotsPerFrame)+1;
+    if state.TestReceiveSIB1
+        state=localDeliverReceivedSIB1(state,cfg);
+    end
+    if withMissingSelectedSSBReference
+        state=sixgr.truth.SSBOccasionResultDelivery.deliver(state);
+        if slot==state.TestSSBRecoveryBurstSlot
+            state=localQueueRecoverySSB(state,cfg,slot);
+        end
+    end
     if withReferenceContinuation
         state=localDeliverContinuationReferences(state);
         state=localQueueContinuationTRS(state,cfg,slot);
     end
-    if acquireDLClock && slot==4
+    if acquireDLClock && slot==4 && ~retainedPower
         % Freeze the slot-5 sounding only after real SS/PBCH acquisition.
         % Preparing it at initialization retained the declared phase=6
         % clock even after actual SS/PBCH established phase=0. Preparation
@@ -358,8 +461,43 @@ for slot=1:lastSlot
             sounding.lls6g.userContext.RuntimeSlotStartTime_s=9*sixgr.time.slotDurationSec(cfg);
             soundingArgs={'SlotIndex',10,'SNR_dB',cfg.channel.snr_dB,'TimingAdvanceSamples',0};
             soundingTX=sixgr.link.runSRSChannelEstimation(sounding,soundingArgs{:},'PrepareOnly',true);
-            owner.queueUplinkControl(1,soundingTX.PreparedTransmission, ...
-                struct('Config',sounding,'Arguments',{soundingArgs}));
+            soundingContext=struct('Config',sounding,'Arguments',{soundingArgs}, ...
+                'ServingCell',double(state.CurrentServingIdx(1)));
+            % Freeze the original preparation's serving link before enqueue;
+            % completion must never substitute the then-current association.
+            preparedContext=soundingTX.PreparedTransmission.ReceiverConfig.lls6g.userContext;
+            assert(soundingContext.ServingCell==sounding.lls6g.userContext.RuntimeServingCell && ...
+                soundingContext.ServingCell==preparedContext.RuntimeServingCell && ...
+                sounding.lls6g.userContext.RuntimeUEIndex==1 && preparedContext.RuntimeUEIndex==1, ...
+                'test:SharedSRSFrozenServingCell', ...
+                'Queued coincident SRS must retain the actual UE/serving-cell preparation identity.');
+            pendingBefore=owner.Pending;
+            dataBefore=owner.DataTransmissions;
+            pucchBefore=owner.PUCCHTransmissions;
+            suppressionBefore=owner.SRSSuppressionLedger;
+            sampleBefore=owner.Events.NextSampleIndex;
+            traceBefore=owner.Events.ExecutionTrace;
+            stop=soundingTX.PreparedTransmission.ReceiveEndSampleExclusive;
+            nextBefore=owner.Events.nextEventSample(stop);
+            rngBefore=rng;
+            missing=soundingContext; missing=rmfield(missing,'ServingCell');
+            wrong=soundingContext; wrong.ServingCell=soundingContext.ServingCell+1;
+            nonfinite=soundingContext; nonfinite.ServingCell=NaN;
+            for invalid={missing,wrong,nonfinite}
+                localReject(@()owner.queueUplinkControl(1,soundingTX.PreparedTransmission,invalid{1}), ...
+                    'sixgr:truth:SharedSRSCellContext');
+                assert(isequaln(owner.Pending,pendingBefore)&& ...
+                    isequaln(owner.DataTransmissions,dataBefore)&& ...
+                    isequaln(owner.PUCCHTransmissions,pucchBefore)&& ...
+                    isequaln(owner.SRSSuppressionLedger,suppressionBefore)&& ...
+                    owner.Events.NextSampleIndex==sampleBefore&& ...
+                    isequaln(owner.Events.ExecutionTrace,traceBefore)&& ...
+                    owner.Events.nextEventSample(stop)==nextBefore&&isequal(rng,rngBefore), ...
+                    'test:SharedSRSCellContextMutation', ...
+                    'Rejected SRS contexts must leave original public queue/clock/ledger/event state unchanged.');
+            end
+            fprintf('SHARED_SRS_CELL_CONTEXT_GUARD_PASS cases=3 enqueued=0 samples_executed=0\n');
+            owner.queueUplinkControl(1,soundingTX.PreparedTransmission,soundingContext);
         end
         allocation=state.ULHarq.allocate(grant.RNTI,slot,grant.TBSBytes,'NewData',true);
         assert(isequaln(allocation.HARQ.HarqID,grant.HARQ.HarqID) && ...
@@ -395,6 +533,10 @@ for slot=1:lastSlot
     end
 end
 if pucchOnlyCompletion
+    if withMissingSelectedSSBReference
+        state=localVerifyWithheldPUCCHRecovery(state);
+        ok=true; return;
+    end
     assert(state.TestSharedHARQReceived && state.TestSharedCSIReceived && ...
         numel(owner.PUCCHTransmissions)==1 && numel(owner.DataTransmissions)==1 && ...
         isempty(owner.readTransmittedULControls(1,10)) && state.ULHarq.Stats.Tx==0 && ...
@@ -516,6 +658,325 @@ fprintf('SHARED_PUSCH_CHANNEL_ARTIFACTS_PASS: %s actual SRS/DCI/PUSCH/UCI, seed=
 ok=true;
 end
 
+function before=localWithheldPreparationSnapshot(state,item,cfg,decision)
+owner=state.SharedWaveformStream;
+id=string(item.Context.ObservationID);
+hit=find(string({owner.Pending.ID})==id); assert(isscalar(hit));
+trace=state.PUCCHGrantTraceTable;
+rows=trace(trace.UEIndex==item.UE & trace.ScheduledAbsoluteSlot==item.Context.Slot,:);
+rows=rows(sixgr.truth.CoupledTruthRuntime.sharedPUCCHOccasionKey(rows)==item.Context.Key,:);
+assert(height(rows)==2 && any(contains(lower(string(rows.UCIType)),"harq")) && ...
+    any(startsWith(string(rows.PUCCHGrantId),"PUCCH-CSI-")));
+reports=state.PendingCSITable;
+report=reports(reports.UEIndex==item.UE & reports.DueSlot==item.Context.Slot,:);
+assert(height(report)==1 && ~report.Processed && report.SourceSlot==6 && ...
+    report.CSIReferenceSlot==6 && report.MeasurementAvailableAtSample<=owner.Events.NextSampleIndex);
+before=struct('Observation',owner.Pending(hit),'Rows',rows,'Report',report, ...
+    'Feedback',state.PendingFeedbackTable,'Trace',trace,'Trials',state.ControlTrials.PUCCH, ...
+    'LatestDL',state.LatestDLFeedback,'HARQ',state.DLHarq.Stats, ...
+    'MeasurementTable',state.ReferenceSignalMeasurementTable, ...
+    'Common',state.UECommonCellConfigurationByUE{item.UE}, ...
+    'Lifecycle',state.SSBPowerReferenceLifecycleByUE{item.UE}, ...
+    'Sample',owner.Events.NextSampleIndex,'RNG',rng, ...
+    'PUCCHTransmissionCount',numel(owner.PUCCHTransmissions));
+assert(before.PUCCHTransmissionCount==0 && ...
+    isempty(sixgr.truth.scheduledHARQExpectationsForOccasion(state,item.UE,15)) && ...
+    cfg.lls6g.userContext.RuntimeServingCell==state.CurrentServingIdx(item.UE) && ...
+    ~decision.PreparationAdmitted);
+end
+
+function state=localCheckWithheldPreparation(state,item,cfg,decision,before)
+owner=state.SharedWaveformStream; id=string(item.Context.ObservationID);
+hit=find(string({owner.Pending.ID})==id); assert(isscalar(hit));
+bound=owner.Pending(hit); audit=state.SharedPUCCHPowerAdmissionTable;
+audit=audit(string(audit.ObservationID)==id,:);
+assert(height(audit)==1 && bound.Kind=="PUCCHReceiveOnly" && ...
+    ~isfield(bound.Context,'Prepared') && ~bound.Context.AwaitingPreparation && ...
+    ~isempty(bound.Context.GNBReception.Mapping) && ...
+    isequaln(bound.Planes,before.Observation.Planes) && ...
+    numel(owner.PUCCHTransmissions)==before.PUCCHTransmissionCount && ...
+    owner.Events.NextSampleIndex==before.Sample && isequal(rng,before.RNG) && ...
+    isequaln(state.DLHarq.Stats,before.HARQ) && ...
+    isequaln(state.ControlTrials.PUCCH,before.Trials) && ...
+    isequaln(state.LatestDLFeedback,before.LatestDL) && ...
+    isequaln(state.ReferenceSignalMeasurementTable,before.MeasurementTable));
+ids=string(before.Rows.PUCCHGrantId);
+trace=state.PUCCHGrantTraceTable;
+trace=trace(ismember(string(trace.PUCCHGrantId),ids),:);
+disposition="closed_untransmitted_missing_measured_power_reference";
+assert(height(trace)==2 && all(trace.UETransmissionSuppressed) && ...
+    all(~trace.GrantExecutedFlag & ~trace.MultiplexedOnPUSCH) && ...
+    all(string(trace.UEProducerDisposition)==disposition) && ...
+    all(string(trace.PowerAdmissionObservationID)==id));
+feedback=state.PendingFeedbackTable;
+assert(height(feedback)==1 && feedback.Processed && ...
+    feedback.Ack==before.Feedback.Ack && string(feedback.UEProducerDisposition)==disposition);
+report=state.PendingCSITable;
+report=report(string(report.ReportIdentity)==string(before.Report.ReportIdentity),:);
+assert(height(report)==1 && report.Processed && ~report.UECSIPayloadRetired && ...
+    string(report.UEProducerDisposition)==disposition && ...
+    string(report.DeliveryStatus)=="not_transmitted_missing_measured_power_reference" && ...
+    ~report.CSIUCIDecodeOk && isnan(report.DeliveredSlot) && ...
+    isequaln(report.CSIPart1BitsToken,before.Report.CSIPart1BitsToken) && ...
+    isequaln(report.CSIPart2BitsToken,before.Report.CSIPart2BitsToken));
+unresolved=sixgr.truth.classifyPUCCHGrantDisposition(trace,table());
+assert(unresolved.UnresolvedCount==2 && unresolved.ReceiverOnlyObservedCount==0);
+pending=owner.Pending; random=rng;
+localReject(@()sixgr.truth.CoupledTruthRuntime.deferSharedPUCCHPowerRuntime( ...
+    state,item,cfg,bound.Context.GNBReception,before.Rows,decision), ...
+    'sixgr:truth:PUCCHPowerAdmissionBinding');
+assert(isequaln(owner.Pending,pending) && isequal(rng,random) && ...
+    owner.Events.NextSampleIndex==before.Sample && isequaln(state.DLHarq.Stats,before.HARQ));
+state.TestWithheldPUCCH=struct('ObservationID',id,'Key',string(item.Context.Key), ...
+    'Admission',audit,'OriginalReport',before.Report,'OriginalFeedback',before.Feedback, ...
+    'OriginalGrantIDs',ids,'PreparedDisposition',trace,'HARQBefore',before.HARQ, ...
+    'Common',before.Common,'Lifecycle',before.Lifecycle,'ReceiverCompleted',false, ...
+    'SourceCSI',state.ControlTrials.CSIRS,'DecisionSample',before.Sample);
+receipt=state.TestWithheldPUCCH;
+save(fullfile(state.TestRoot,'withheld_preparation_original.mat'),'receipt','-v7.3');
+sixgr.truth.exportPUCCHPowerAdmissionDiagnostics(state,state.TestRoot);
+fprintf('PUCCH_WITHHELD_PREPARATION_PASS slot=10 actual_DL_HARQ=1 actual_CSI=1 TX=0 receiver_not_yet_complete=1 expiry_once=1\n');
+end
+
+function state=localCompleteWithheldPUCCH(state,item)
+owner=state.SharedWaveformStream; original=state.TestWithheldPUCCH;
+assert(~original.ReceiverCompleted && string(item.Context.ObservationID)==original.ObservationID && ...
+    string(item.Context.Key)==original.Key && ~isfield(item.Context,'Prepared') && ...
+    ~isempty(item.Context.GNBReception.Mapping) && isempty(owner.PUCCHTransmissions));
+beforeHARQ=state.DLHarq.Stats;
+assert(isequaln(beforeHARQ,original.HARQBefore));
+state=sixgr.truth.CoupledTruthRuntime.completeSharedPUCCHReceiveOnlyRuntime(state,item);
+receipts=state.SharedGNBUCIReceptions;
+hit=find(cellfun(@(r)string(r.ObservationID)==original.ObservationID,receipts));
+assert(isscalar(hit)); reception=receipts{hit}; rx=reception.Receiver;
+trial=state.ControlTrials.PUCCH;
+trial=trial(string(trial.PowerAdmissionObservationID)==original.ObservationID,:);
+harq=state.SharedGNBUCIHARQTable;
+harq=harq(string(harq.ObservationID)==original.ObservationID,:);
+assert(height(trial)==1 && trial.ReceiverOnlyAssignment==1 && trial.PUCCHTransmissionPrepared==0 && ...
+    trial.ExecutionBackend=="pucch_shared_gnb_receive_only" && ...
+    trial.DTXFlag==rx.DTX && trial.ReceiverUsable==rx.ReceiverUsable && ...
+    height(harq)==1 && harq.HARQFeedbackApplied && ~harq.StaleFeedbackIgnored && ...
+    numel(state.SharedHARQFeedbackCommittedMappings)==1 && ...
+    nnz(state.SharedPUCCHRXCommittedIDs==original.Key)==1 && isempty(owner.PUCCHTransmissions));
+% Expected state is computed from the actual normalized receiver decision,
+% not the missing transmitter. A noise false detection remains evidence.
+outcome=string(harq.FeedbackOutcome);
+assert(state.DLHarq.Stats.Ack-beforeHARQ.Ack==double(outcome=="ACK") && ...
+    state.DLHarq.Stats.Nack-beforeHARQ.Nack==double(outcome=="NACK") && ...
+    state.DLHarq.Stats.Dtx-beforeHARQ.Dtx==double(outcome=="DTX"));
+trace=state.PUCCHGrantTraceTable;
+trace=trace(ismember(string(trace.PUCCHGrantId),original.OriginalGrantIDs),:);
+classified=sixgr.truth.classifyPUCCHGrantDisposition(trace,trial);
+% Preserve the original live producer/consumer contract BEFORE acceptance.
+% A later writer must not be needed to make an actual completed RX visible.
+admission=original.Admission;
+receiverOutcome=struct('DTX',rx.DTX,'ReceiverUsable',rx.ReceiverUsable, ...
+    'CRCPassed',rx.CRCPassed,'DecodedFields',rx.DecodedFields);
+diagnosticPath=fullfile(state.TestRoot,'withheld_receiver_disposition_original.mat');
+save(diagnosticPath,'trace','trial','classified','harq','admission','receiverOutcome','-v7.3');
+sixgr.util.csvWriteTable(fullfile(state.TestRoot,'withheld_receiver_disposition.csv'), ...
+    classified.Rows,'PreserveSchema',true);
+identityFields=["PUCCHGrantId","LogicalPUCCHGrantIdSet","PowerAdmissionObservationID", ...
+    "UEIndex","RNTI","Slot","BaseStationID","ComponentCarrier","ActiveULBWP", ...
+    "SweepPointIndex","RunUUID","ConfigHash","FinalizedFlag","ControlObservationAvailable"];
+grantIdentity=trace(:,cellstr(identityFields(ismember(identityFields,string(trace.Properties.VariableNames)))));
+receiverIdentity=trial(:,cellstr(identityFields(ismember(identityFields,string(trial.Properties.VariableNames)))));
+assert(classified.ReceiverOnlyObservedCount==2 && classified.UnresolvedCount==0 && ...
+    classified.StandaloneTrialCount==0 && ~any(trace.GrantExecutedFlag), ...
+    'test:WithheldPUCCHDisposition', ...
+    ['Actual no-TX RX disposition mismatch: observed=%d unresolved=%d transmittedSuccess=%d. ' ...
+     'Original grants=%s; actual receiver=%s. Inputs/result retained at %s.'], ...
+    classified.ReceiverOnlyObservedCount,classified.UnresolvedCount,classified.StandaloneTrialCount, ...
+    jsonencode(table2struct(grantIdentity)),jsonencode(table2struct(receiverIdentity)),diagnosticPath);
+assert(islogical(trial.FinalizedFlag) && trial.FinalizedFlag && ...
+    islogical(trial.ControlObservationAvailable) && trial.ControlObservationAvailable, ...
+    'The actual completion owner must publish typed availability/finalization before export.');
+committed=state.SharedHARQFeedbackCommittedMappings; trials=state.ControlTrials.PUCCH;
+afterHARQ=state.DLHarq.Stats; random=rng;
+localReject(@()sixgr.truth.CoupledTruthRuntime.completeSharedPUCCHReceiveOnlyRuntime(state,item), ...
+    'sixgr:truth:InvalidPUCCHReceiveOnlyCompletion');
+assert(isequaln(state.DLHarq.Stats,afterHARQ) && isequaln(state.ControlTrials.PUCCH,trials) && ...
+    isequaln(state.SharedHARQFeedbackCommittedMappings,committed) && isequal(rng,random));
+original.ReceiverCompleted=true;
+original.ReceiverAvailableAtSample=owner.Events.NextSampleIndex;
+original.ReceiverTrial=trial; original.HARQOutcome=harq;
+original.HARQAfter=afterHARQ; original.FinalTrace=trace;
+original.FinalReport=state.PendingCSITable( ...
+    string(state.PendingCSITable.ReportIdentity)==string(original.OriginalReport.ReportIdentity),:);
+assert(height(original.FinalReport)==1 && original.FinalReport.Processed && ...
+    original.FinalReport.UEProducerDisposition=="closed_untransmitted_missing_measured_power_reference");
+state.TestWithheldPUCCH=original;
+save(fullfile(state.TestRoot,'withheld_receiver_terminal.mat'), ...
+    'item','reception','original','classified','-v7.3');
+sixgr.util.csvWriteTable(fullfile(state.TestRoot,'withheld_receiver_terminal.csv'),trial,'PreserveSchema',true);
+fprintf('PUCCH_WITHHELD_RECEIVER_PASS slot=10 actual_RX=1 TX=0 DTX=%d outcome=%s HARQ_commits=1 duplicate_rejected=1\n', ...
+    rx.DTX,outcome);
+end
+
+function state=localQueueRecoverySSB(state,cfg,slot)
+owner=state.SharedWaveformStream; carrier=sixgr.phy.grid.makeCarrier(cfg);
+assert(isfield(state,'TestWithheldPUCCH') && slot==state.TestSSBRecoveryBurstSlot && ...
+    mod(slot-1,carrier.SlotsPerFrame)==0 && sixgr.truth.isActiveSSBOccasion(cfg,slot));
+[dl,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'DL');
+prototype=sixgr.link.runCellSearch_MIB_SIB1(dl,'PrepareOnly',true, ...
+    'UseRuntimeChannel',true,'RuntimeSlot',slot-1);
+assert(isfield(prototype,'PreparedBroadcast'),'%s',prototype.FailureReason);
+p=prototype.PreparedBroadcast;
+first=sixgr.phy.frame.slotStartSample(carrier,slot-1,owner.SampleRateHz);
+assert(p.BroadcastStartSample==first && p.BroadcastStartAbsoluteSlot==slot-1 && ...
+    first==owner.Events.NextSampleIndex);
+beforeIDs=string({owner.Pending.ID});
+firstExecutionSegment=numel(owner.Events.ExecutionTrace)+1;
+owner.queueDownlink('PBCH',1,p,struct('Config',dl,'Slot',slot,'ServingCell',1, ...
+    'TrackingOnly',true,'Prototype',prototype));
+pending=owner.Pending;
+added=pending(~ismember(string({pending.ID}),beforeIDs));
+parents=added(string({added.Kind})=="PBCH");
+parent=parents(arrayfun(@(x)x.Context.Slot==slot,parents));
+assert(isscalar(parent) && numel(parents)==1 && ...
+    isequaln(parent.Context.Prepared.TransmitSamples,p.TransmitSamples) && ...
+    parent.Context.Prepared.BroadcastStartSample==first && ...
+    owner.Events.NextSampleIndex==first && numel(owner.Events.ExecutionTrace)+1==firstExecutionSegment, ...
+    'Queue one original parent observation without claiming physical execution.');
+occasions=added(string({added.Kind})=="SSBOccasion");
+assert(~isempty(occasions) && numel(added)==1+numel(occasions) && ...
+    numel(unique(arrayfun(@(x)x.Context.SSBOccasionHorizon.SSBIndex,occasions)))==numel(occasions) && ...
+    all(arrayfun(@(x)x.Context.BroadcastStartSample==first && ...
+        isequaln(x.Context.Prepared.TransmitSamples,p.TransmitSamples),occasions)), ...
+    'Per-SSB receive windows must retain the same original prepared broadcast.');
+state.TestRecoveryBroadcast=struct('ObservationID',string(parent.ID),'Slot',slot, ...
+    'StartSample',first,'EndSampleExclusive',first+p.NumSamples, ...
+    'PreparedWaveformSHA256',sixgr.phy.waveform.WaveformHash.numeric(p.TransmitSamples), ...
+    'RadioFrame',p.Config.phy.carrier.NFrame,'QueuedParentObservationsAdded',numel(parents), ...
+    'QueuedSSBOccasionObservationsAdded',numel(occasions), ...
+    'TransmitterID',"gnb_"+string(parent.Context.ServingCell), ...
+    'FirstExecutionTraceIndex',firstExecutionSegment,'PhysicalExecutionVerified',false, ...
+    'FullSIReceiverExecuted',false);
+state.TestRecoveryBroadcastFullCaptureCompleted=false;
+plan=state.TestRecoveryBroadcast;
+save(fullfile(state.TestRoot,'recovery_broadcast_original_plan.mat'),'plan');
+fprintf('PUCCH_RECOVERY_SSB_QUEUED slot=%d frame=%d start=%d end=%d parent_observations=1 physical_execution_verified=0\n', ...
+    slot,plan.RadioFrame,first,plan.EndSampleExclusive);
+end
+
+function evidence=localRecoveryBroadcastExecution(state)
+% Original successful physical intervals, not the private enqueue cache.
+owner=state.SharedWaveformStream; plan=state.TestRecoveryBroadcast;
+stop=min(plan.EndSampleExclusive,owner.Events.NextSampleIndex);
+next=plan.StartSample; ids=strings(0,1); receipts=cell(0,1); nonzero=0;
+for k=plan.FirstExecutionTraceIndex:numel(owner.Events.ExecutionTrace)
+    segment=owner.Events.ExecutionTrace{k};
+    if segment.StartSample>=stop, break; end
+    assert(segment.StartSample==next && segment.EndSampleExclusive<=stop);
+    consumed=segment.Execution.ExecutedContributors;
+    original=consumed(string({consumed.TransmitterID})==plan.TransmitterID);
+    assert(isscalar(original) && original.Receipt.CompleteContributorList && ...
+        original.Receipt.StartSample==segment.StartSample && ...
+        original.Receipt.EndSampleExclusive==segment.EndSampleExclusive);
+    component=original.Receipt.Components;
+    assert(isscalar(component) && component.OriginalSampleSHA256==plan.PreparedWaveformSHA256 && ...
+        component.StartSample==segment.StartSample && ...
+        component.EndSampleExclusive==segment.EndSampleExclusive, ...
+        'Exactly one original gNB broadcast component must supply this executed recovery interval.');
+    ids(end+1,1)=string(component.ComponentID); %#ok<AGROW>
+    nonzero=nonzero+component.NonzeroSampleCount;
+    receipts{end+1,1}=original; %#ok<AGROW>
+    next=segment.EndSampleExclusive;
+end
+assert(next==stop && stop>plan.StartSample && numel(unique(ids))==1 && nonzero>0);
+evidence=struct('TransmitterID',plan.TransmitterID,'ComponentID',unique(ids), ...
+    'OriginalSampleSHA256',plan.PreparedWaveformSHA256,'StartSample',plan.StartSample, ...
+    'ExecutedThroughSample',stop,'ExecutedParentComponentCount',numel(unique(ids)), ...
+    'NonzeroSampleCount',nonzero,'OriginalExecutedContributors',{receipts}, ...
+    'Source',"original_successful_event_runtime_executed_contributors");
+end
+
+function state=localCheckRecoveryPreparation(state,item,decision)
+owner=state.SharedWaveformStream; old=state.TestWithheldPUCCH;
+assert(old.ReceiverCompleted && decision.PowerReferenceProducerSlot==state.TestSSBRecoveryBurstSlot && ...
+    decision.PowerReferenceAvailableSlot>state.TestSSBRecoveryBurstSlot && ...
+    decision.PowerReferenceAvailableSlot<=decision.DecisionSlot && ...
+    isequaln(state.UECommonCellConfigurationByUE{item.UE},old.Common) && ...
+    isequaln(state.SSBPowerReferenceLifecycleByUE{item.UE},old.Lifecycle) && ...
+    isequaln(state.ControlTrials.CSIRS,old.SourceCSI));
+measurements=state.ReferenceSignalMeasurementTable;
+selected=measurements(string(measurements.MeasurementId)==decision.PowerReferenceMeasurementID,:);
+assert(height(selected)==1 && selected.ResourceId==1 && ...
+    selected.ProducerSlot==state.TestSSBRecoveryBurstSlot && ...
+    selected.AvailableSlot==decision.PowerReferenceAvailableSlot && ...
+    selected.ObservationStartSample==state.TestRecoveryBroadcast.StartSample && ...
+    selected.ObservationEndSampleExclusive<=owner.Events.NextSampleIndex && ...
+    selected.ObservationStartSample>=old.DecisionSample && selected.SSBOccasionBCHCRCPass==1 && ...
+    string(selected.MeasurementSource)=="actual_shared_ssb_occasion_pre_rx_rf_measurement");
+reports=state.PendingCSITable;
+report=reports(reports.UEIndex==item.UE & reports.DueSlot==item.Context.Slot,:);
+assert(height(report)==1 && ~report.Processed && ...
+    report.ReportIdentity~=old.OriginalReport.ReportIdentity && ...
+    report.SourceSlot==old.OriginalReport.SourceSlot && report.SourceSlot==6 && ...
+    report.MeasurementAvailableAtSample==old.OriginalReport.MeasurementAvailableAtSample && ...
+    report.CSIReferenceSlot==state.TestSSBRecoveryBurstSlot && ...
+    isempty(sixgr.truth.scheduledHARQExpectationsForOccasion(state,item.UE,item.Context.Slot)));
+expired=reports(string(reports.ReportIdentity)==string(old.FinalReport.ReportIdentity),:);
+assert(isequaln(expired(:,old.FinalReport.Properties.VariableNames),old.FinalReport));
+broadcastExecution=localRecoveryBroadcastExecution(state);
+state.TestRecoveredPUCCHPreparation=struct('Decision',decision,'SelectedMeasurement',selected, ...
+    'OriginalReport',report,'PreparedAtSample',owner.Events.NextSampleIndex, ...
+    'OriginalBroadcastExecution',broadcastExecution, ...
+    'CSIObservationReused',true,'CSIObservationSourceSlot',6, ...
+    'CSIObservationAgeAtReportSlots',item.Context.Slot-6, ...
+    'NewCSIObservationClaimed',false,'OldObligationReplayed',false);
+receipt=state.TestRecoveredPUCCHPreparation;
+save(fullfile(state.TestRoot,'recovery_preparation_original.mat'),'receipt','-v7.3');
+end
+
+function state=localVerifyWithheldPUCCHRecovery(state)
+owner=state.SharedWaveformStream; old=state.TestWithheldPUCCH;
+prepared=state.TestRecoveredPUCCHPreparation; slot=state.TestSSBRecoveryReportSlot;
+assert(old.ReceiverCompleted && numel(owner.PUCCHTransmissions)==1 && ...
+    numel(owner.DataTransmissions)==1 && state.ULHarq.Stats.Tx==0 && ...
+    numel(state.SharedPUCCHTXLedger)==1 && height(state.SharedGNBUCIHARQTable)==1 && ...
+    numel(state.SharedHARQFeedbackCommittedMappings)==1 && isequaln(state.DLHarq.Stats,old.HARQAfter));
+trial=state.ControlTrials.PUCCH(state.ControlTrials.PUCCH.Slot==slot,:);
+received=state.SharedGNBCSIReportTable(state.SharedGNBCSIReportTable.DueSlot==slot,:);
+assert(height(trial)==1 && trial.PUCCHDecodeOk && trial.ReceiverExpectedHARQBitCount==0 && ...
+    trial.ReceiverExpectedCSIPart1BitCount>0 && height(received)==1 && received.CSIUCIDecodeOk && ...
+    string(received.ReportIdentity)==string(prepared.OriginalReport.ReportIdentity));
+oldReport=state.PendingCSITable( ...
+    string(state.PendingCSITable.ReportIdentity)==string(old.FinalReport.ReportIdentity),:);
+oldTrace=state.PUCCHGrantTraceTable( ...
+    ismember(string(state.PUCCHGrantTraceTable.PUCCHGrantId),old.OriginalGrantIDs),:);
+assert(isequaln(oldReport(:,old.FinalReport.Properties.VariableNames),old.FinalReport) && ...
+    isequaln(oldTrace(:,old.FinalTrace.Properties.VariableNames),old.FinalTrace));
+tx=owner.PUCCHTransmissions(1);
+assert(tx.Identity.ObservationID~=old.ObservationID && ...
+    tx.FirstActiveSample>=prepared.PreparedAtSample && ...
+    tx.FirstActiveSample<state.ConnectedULTimingByUE{1}.TimeAlignmentExpirySampleExclusive && ...
+    state.ConnectedULTimingByUE{1}.TimeAlignmentExpirySampleExclusive== ...
+    state.TestDeclaredTAG.TimeAlignmentExpirySampleExclusive);
+pending=owner.Pending;
+pendingFullCapture=any(string({pending.ID})==state.TestRecoveryBroadcast.ObservationID);
+terminal=struct('InitialSIB1Decoded',true,'InitialMeasuredSSBIndex',0,'SelectedPUCCHSSBIndex',1, ...
+    'WithheldOriginalSlot',10,'ReceiverOnlyObservationID',old.ObservationID, ...
+    'ReceiverDTX',logical(old.ReceiverTrial.DTXFlag),'ReceiverHARQOutcome',string(old.HARQOutcome.FeedbackOutcome), ...
+    'RecoveredSlot',slot,'RecoveryPUCCHTransmissionID',string(tx.Identity.TransmissionID), ...
+    'RecoveryReportIdentity',string(received.ReportIdentity),'OriginalCSIObservationSlot',6, ...
+    'RecoveryExecutedBroadcastComponentCount',prepared.OriginalBroadcastExecution.ExecutedParentComponentCount, ...
+    'NewCSIObservationClaimed',false,'OriginalHARQCommitCount',1,'OldObligationReplayed',false, ...
+    'RecoveryFullBroadcastCapturePending',pendingFullCapture, ...
+    'RecoveryFullBroadcastCaptureCompleted',state.TestRecoveryBroadcastFullCaptureCompleted, ...
+    'RecoveryFullSIReceiverExecuted',false,'FinalSample',owner.Events.NextSampleIndex, ...
+    'FullAccessQualified',false,'StatisticalQualification',false);
+assert(xor(terminal.RecoveryFullBroadcastCapturePending,terminal.RecoveryFullBroadcastCaptureCompleted));
+state.TestWithheldRecoveryTerminal=terminal;
+sixgr.truth.CoupledTruthRuntime.writeTables(state,state.TestRoot);
+save(fullfile(state.TestRoot,'withheld_recovery_terminal.mat'),'terminal','trial','received','-v7.3');
+sixgr.util.csvWriteTable(fullfile(state.TestRoot,'withheld_recovery_terminal.csv'), ...
+    struct2table(terminal,'AsArray',true),'PreserveSchema',true);
+fprintf('PUCCH_WITHHELD_RECOVERY_PASS blocked_slot=10 actual_RX=1 expiry_once=1 fresh_SSB=1 recovered_slot=%d CSI_source_slot=6 new_CSI_observation=0 full_SI_pending=%d root=%s\n', ...
+    slot,pendingFullCapture,state.TestRoot);
+end
+
 function row=localContinuationReferenceRow(out,receiver,state,sourceSlot)
 % Lossless scalar projection of this completed receiver, not authored PASS.
 % Large arrays remain in the separately saved receiver artifact.
@@ -541,6 +1002,43 @@ r.MeasurementClockEpoch=state.SharedWaveformStream.Physical.ConfigurationEpoch;
 r.ResultCompletedAtSample=state.SharedWaveformStream.Events.NextSampleIndex;
 r.RuntimeIntegrationMode="coupled_slot_runtime";
 row=struct2table(r,'AsArray',true);
+end
+
+function state=localDeliverReceivedSIB1(state,cfg)
+% The same causal queue and original decoded-tree installation as the
+% coordinator. No codec fixture, SSB-only result, or configured tree can
+% satisfy this receiver boundary. Initial RA/TAG remains a declared input.
+[state,ready]=sixgr.truth.BroadcastResultDelivery.takeAvailable(state);
+for item=reshape(ready,1,[])
+    recovered=item.Recovery;
+    assert(~item.TrackingOnly && recovered.StrictOk && recovered.BCHCrcPass && ...
+        recovered.DCICrcPass && recovered.DLSCHCrcPass && recovered.SIB1ASN1DecodeOk && ...
+        recovered.SIB1TreeEqual && recovered.RecoveryScope=="SSB_MIB_SIB1", ...
+        'test:SharedSIB1NotDecoded','Only the actual full SI receiver may install measurement authority.');
+    state=sixgr.truth.CoupledTruthRuntime.applyPBCHTrial(state,item.UEIndex,item.Trial);
+    state=sixgr.truth.installReceivedSIB1Recovery(state,item.UEIndex,recovered,state.CurrentSlot);
+    common=state.UECommonCellConfigurationByUE{item.UEIndex};
+    if state.TestRetainedPower
+        tag=state.TestDeclaredTAG;
+        tag.DLReference=state.TestReceivedDLClock;
+        tag.Offset=common.ULTimingAdvanceOffset;
+        tag.TimingAdvanceAvailableAtSample=state.SharedWaveformStream.Events.NextSampleIndex;
+        tag.TimingAdvanceEffectiveAtSample=tag.TimingAdvanceAvailableAtSample;
+        state.ConnectedULTimingByUE{item.UEIndex}=tag;
+    end
+    receipt=state.PreconfiguredDLMeasurementInstallationByUE{item.UEIndex};
+    assert(receipt.EffectiveSample==state.SharedWaveformStream.Events.NextSampleIndex && ...
+        receipt.EffectiveSample>=item.Trial.ObservationEndSampleExclusive && ...
+        receipt.SIB1TreeHash==string(common.TreeHash) && ~receipt.DecodedDedicatedRRC);
+    state.TestActualSIB1Installation=receipt;
+    state.TestActualSIB1DeliveredSlot=double(state.CurrentSlot);
+    state.TestContinuationPBCH=item.Trial;
+    trial=item.Trial;
+    sixgr.util.csvWriteTable(fullfile(state.TestRoot,'shared_received_sib1.csv'),trial,'PreserveSchema',true);
+    save(fullfile(state.TestRoot,'shared_received_sib1_installation.mat'),'recovered','common','receipt','trial','-v7.3');
+    fprintf('SHARED_RECEIVED_SIB1_INSTALLATION_PASS delivery_slot=%d sample=%d SI_DCI_CRC=%d SI_TB_CRC=%d dedicated_RRC=0 RA_TAG=declared_component\n', ...
+        state.CurrentSlot,receipt.EffectiveSample,recovered.DCICrcPass,recovered.DLSCHCrcPass);
+end
 end
 
 function state=localDeliverContinuationReferences(state)
@@ -1995,6 +2493,42 @@ for item=items
         continue;
     end
     if item.Kind=="PreparePUCCH"
+        withheld=false;
+        if state.TestRetainedPower
+            [powerCfg,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext( ...
+                state.CfgMobility,state,item.UE,'UL');
+            [admitted,~,powerDecision]=sixgr.truth.resolveSharedPUCCHPowerAdmission( ...
+                state,powerCfg,item.UE,item.Context.Slot);
+            assert(powerDecision.MeasuredPowerReferenceRequired && ...
+                powerDecision.PathlossReferenceLifetime=="retained_filtered_reference");
+            if state.TestMissingSelectedSSBReference
+                assert(powerDecision.PowerReferenceSignalID==1);
+                withheld=item.Context.Slot==10;
+                if withheld
+                    assert(~admitted && powerDecision.PowerReferenceStatus=="reference_lifecycle_unavailable" && ...
+                        powerDecision.ReferenceLifecycleStatus=="no_observation_for_current_reference_power_generation");
+                    measurements=state.ReferenceSignalMeasurementTable;
+                    ssb=string(measurements.SignalType)=="SSB" & measurements.TargetId==item.UE;
+                    assert(any(ssb & measurements.ResourceId==0) && ~any(ssb & measurements.ResourceId==1), ...
+                        'Initial beam-0 reception must not manufacture a selected beam-1 measurement.');
+                    before=localWithheldPreparationSnapshot(state,item,powerCfg,powerDecision);
+                else
+                    assert(item.Context.Slot==state.TestSSBRecoveryReportSlot && admitted && ...
+                        isfinite(powerDecision.MeasuredPathloss_dB));
+                    state=localCheckRecoveryPreparation(state,item,powerDecision);
+                end
+            else
+                assert(admitted && isfinite(powerDecision.MeasuredPathloss_dB), ...
+                    'test:ActualRetainedReferenceMissing','Actual decoded SI and SSB must own PUCCH preparation.');
+            end
+            state.TestActualPUCCHPowerDecision=powerDecision;
+            name='actual_pucch_power_admission.csv';
+            if state.TestMissingSelectedSSBReference
+                name=sprintf('actual_pucch_power_admission_slot_%d.csv',item.Context.Slot);
+            end
+            sixgr.util.csvWriteTable(fullfile(state.TestRoot,name), ...
+                powerDecision,'PreserveSchema',true);
+        end
         if state.TestPUCCHOnlyCompletion
             preparation=struct('CurrentSlot',state.CurrentSlot, ...
                 'NextSampleIndex',owner.Events.NextSampleIndex,'Occasion',item.Context, ...
@@ -2006,9 +2540,16 @@ for item=items
                 'preparation','-v7.3');
         end
         state=sixgr.truth.CoupledTruthRuntime.prepareSharedPUCCHFeedbackRuntime(state,item);
+        if withheld
+            state=localCheckWithheldPreparation(state,item,powerCfg,powerDecision,before);
+        end
         continue;
     end
     if item.Kind=="PUCCHReceiveOnly"
+        if state.TestMissingSelectedSSBReference && item.Context.Slot==10
+            state=localCompleteWithheldPUCCH(state,item);
+            continue;
+        end
         % Before actual CSI-RS TX, only an installed SR remains applicable.
         % Keep its actual capture and do not manufacture a CSI observation.
         assert(state.TestWithCSI && isempty(item.Context.GNBReception.Mapping) && ...
@@ -2061,7 +2602,8 @@ for item=items
             % test-wide assumption that every later PUCCH repeats the prefix.
             obligations=sixgr.truth.scheduledHARQExpectationsForOccasion(observer,item.UE,c.Slot);
             initialCombined=~isfield(state,'TestContinuationAdmittedReport') && ...
-                ~logical(sixgr.util.structGet(state,'TestSRSContinuationStarted',false));
+                ~logical(sixgr.util.structGet(state,'TestSRSContinuationStarted',false)) && ...
+                ~state.TestMissingSelectedSSBReference;
             if isempty(obligations)
                 independent=sixgr.truth.buildConfiguredPUCCHReception( ...
                     observer,c.Config,item.UE,c.Slot,c.ObservationID);
@@ -2077,15 +2619,15 @@ for item=items
                 independent.Context.Digest==original.Context.Digest, ...
                 'UE bookkeeping or TX references must not own the combined receive schema.');
             [~,~,~,~,capture]=sixgr.truth.sharedObservationEvidence(item.Planes,c.Prepared);
-            prior=state.ReceivedULTimingReferences{item.UE};
-            if isempty(obligations)
-                % Use the same receiver-owned timing-history selector as
-                % configured SR/CSI completion, not the prepared TX timing.
-                carrier=sixgr.phy.grid.makeCarrier(c.Config);
-                nominal=sixgr.phy.frame.slotStartSample(carrier,c.Slot-1,capture.SampleRateHz);
-                prior=sixgr.truth.selectReceivedULTimingReference( ...
-                    observer,item.UE,capture.EndSampleExclusive,nominal);
-            end
+            % Use the production receiver-history selector for every
+            % occasion. Format 2 acquires timing from its actual DM-RS and
+            % legitimately needs no earlier SRS. Never manufacture a prior
+            % from the prepared TX or require an unrelated SRS in this test.
+            % HARQ-bearing Format 0 still enforces its real prior in RX.
+            carrier=sixgr.phy.grid.makeCarrier(c.Config);
+            nominal=sixgr.phy.frame.slotStartSample(carrier,c.Slot-1,capture.SampleRateHz);
+            prior=sixgr.truth.selectReceivedULTimingReference( ...
+                observer,item.UE,capture.EndSampleExclusive,nominal);
             replay=sixgr.link.receivePUCCHObservation(c.Config,independent.Assignment, ...
                 independent.Context,capture,prior);
         end
@@ -2141,6 +2683,21 @@ for item=items
         end
         continue;
     end
+    if state.TestMissingSelectedSSBReference && item.Kind=="SSBOccasion" && ...
+            item.Context.Slot==state.TestSSBRecoveryBurstSlot
+        % The real periodic receiver owns these measurements. It neither
+        % reruns initial SI nor resets the unchanged common-power lifecycle.
+        state=sixgr.truth.SSBOccasionResultDelivery.complete(state,item);
+        continue;
+    end
+    if state.TestMissingSelectedSSBReference && item.Kind=="PBCH" && ...
+            item.Context.Slot==state.TestSSBRecoveryBurstSlot
+        % An odd radio-frame SI occasion can extend beyond this test. If its
+        % full capture finishes, retain that fact without claiming a second
+        % full-SI decode. Early periodic SSB reception is a separate owner.
+        state.TestRecoveryBroadcastFullCaptureCompleted=true;
+        continue;
+    end
     c=item.Context; p=c.Prepared;
     if any(item.Kind==["PBCH","SSBOccasion","TRS"])
         [~,pre,tx,replay,receiver]=sixgr.truth.sharedObservationEvidence(item.Planes);
@@ -2149,7 +2706,42 @@ for item=items
     end
     assert(all(cellfun(@(s)~isfield(s.Execution,'ChannelReferences'),replay.ReceiveStreamExecutionSegments)));
     if item.Kind=="PBCH"
-        % This component qualifies SS/PBCH timing, not full SIB1 recovery.
+        if state.TestReceiveSIB1
+            assert(isfield(state,'TestReceivedDLClock'), ...
+                'The full SI receiver uses the already received SS/PBCH candidate.');
+            prototype=c.Prototype;
+            prototype.RuntimeChannelReplay=replay;
+            prototype.RuntimeDLChannelState=owner.channelState(item.UE,'DL');
+            prototype.RuntimeChannelStateUsed=true;
+            prototype.PowerContext=p.PowerContext;
+            options=struct('UseRuntimeChannel',true,'RuntimeSlot',c.Slot-1, ...
+                'CandidateSSBIndices',[],'SSBIndex',state.TestReceivedDLClock.SSBIndex, ...
+                'WriteArtifacts',false,'RunFolder','','RunId','shared_uci_component_actual_sib1', ...
+                'PhysicalMeasurementObservation',pre,'TransmitObservation',tx);
+            [options.DesiredReferenceObservation,options.DesiredReferenceEvidence]= ...
+                sixgr.truth.sharedLinkScoringObservation(item.Planes,p,c.DesiredReferencePlane);
+            rxID=string(options.DesiredReferenceEvidence.ReceiverID);
+            options.ReceiveElementBinding=owner.Physical.receiveElementLayout(rxID);
+            options.OriginalSSBPowerObservationBinding=struct('Planes',{item.Planes}, ...
+                'DesiredReferencePlaneID',c.DesiredReferencePlane, ...
+                'ReceiveBranchBinding',owner.Physical.receiveBranchLayout(rxID));
+            output=sixgr.link.completeCellSearchBroadcast(p,receiver,prototype,options,tic);
+            save(fullfile(state.TestRoot,'shared_received_sib1_original.mat'),'item','output','-v7.3');
+            assert(isfield(output,'SIB1') && output.SIB1.StrictOk, ...
+                'test:SharedSIB1Receiver','Actual full SI reception failed: %s',string(output.FailureReason));
+            recovered=output.SIB1;
+            recovered.ReferenceConfigurationEpoch=c.Config.initial_access.configuration_epoch;
+            recovered.MeasurementClockEpoch=owner.Physical.ConfigurationEpoch;
+            recovered.OriginalServingCell=c.ServingCell;
+            row=localContinuationReferenceRow(recovered,receiver,state,c.Slot);
+            captureFilter=sixgr.rrc.resolvePreconnectionRSRPFilter(c.Config);
+            if ~isempty(fieldnames(captureFilter))
+                row.SSBPowerReferenceCaptureFilterConfigHash=string(captureFilter.ConfigHash);
+            end
+            row.CRCPass=logical(recovered.BCHCrcPass && recovered.MIBDecoded && ...
+                recovered.DCICrcPass && recovered.DLSCHCrcPass && recovered.SIB1ASN1DecodeOk);
+            state=sixgr.truth.BroadcastResultDelivery.enqueue(state,item.UE,row,recovered,false);
+        end
         continue;
     elseif item.Kind=="SSBOccasion"
         if isfield(state,'TestReceivedDLClock'), continue; end
@@ -2160,8 +2752,10 @@ for item=items
         if recovered.BCHCrcPass && recovered.MIBDecoded
                 state.TestReceivedDLClock=sixgr.phy.frame.receivedDLTimingReference( ...
                     p.ReceiverConfig,recovered,receiver,ch.ChannelTrimSamples);
-                state.ConnectedULTimingByUE{1}.DLReference=state.TestReceivedDLClock;
-                if state.TestReferenceContinuation
+                if ~state.TestRetainedPower
+                    state.ConnectedULTimingByUE{1}.DLReference=state.TestReceivedDLClock;
+                end
+                if state.TestReferenceContinuation && ~state.TestReceiveSIB1
                     % Retain this actually decoded SS/PBCH for the ordinary
                     % acquisition reducer at its causal delivery boundary.
                     row=localContinuationReferenceRow(recovered,receiver,state,c.Slot);
@@ -2233,8 +2827,25 @@ for item=items
         state=sixgr.truth.recordSharedQCLTimingReference(state,p,receiver,out,item.UE,c.ServingCell);
         row=localContinuationReferenceRow(out,receiver,state,c.Slot);
         row=sixgr.truth.bindTRSFrequencyEvidence(row,out);
+        % Match the production completion boundary: the original captured
+        % TRS/configuration is stamped before causal delivery, not after an
+        % admission failure. No decoder result, clock or validity is changed.
+        originalRow=row;
+        row=sixgr.truth.DLMeasurementInstallation.stamp(state,row,p.ReceiverConfig,item.UE,"TRS");
+        assert(isequaln(row(:,originalRow.Properties.VariableNames),originalRow));
+        if state.TestReceiveSIB1
+            installed=state.TestActualSIB1Installation;
+            assert(row.DLMeasurementAuthorityEligible && ...
+                row.DLMeasurementInstallationSHA256==installed.SHA256 && ...
+                row.ObservationStartSample>=installed.EffectiveSample && ...
+                row.ObservationEndSampleExclusive<=owner.Events.NextSampleIndex, ...
+                'test:ContinuationTRSInstallation', ...
+                'Only original post-installation TRS may become operational tracking evidence.');
+        end
         state=sixgr.truth.TRSResultDelivery.enqueue( ...
             state,c.ServingCell,item.UE,row,c.Config,out.ObservedREAllocationTable);
+        sixgr.util.csvWriteTable(fullfile(state.TestRoot, ...
+            sprintf('continuation_trs_installation_slot_%d.csv',c.Slot)),row,'PreserveSchema',true);
     elseif item.Kind=="PDCCH"
         if state.TestIndependentCompletion && string(c.Grant.Direction)=="UL"
             assert(any(cellfun(@(x)x.GrantContextID==string(c.Grant.PHYGrant.GrantContextId), ...
@@ -2397,6 +3008,50 @@ for item=items
             state.TestUEHARQState=result.Result.UEHARQState;
         end
         owner.queueData(1,result.Result.PreparedTransmission,struct('Job',job));
+        if state.TestPreparedCSIAcquisitionLoss && ~isRetx
+            % Inject only a UE-private acquisition-loss transition AFTER
+            % genuine encoded IQ is bound. This is not a simulated second
+            % SSB acquisition, nor permission to change the gNB hypothesis.
+            % A previous power-deferred occasion expands the private table
+            % schema. Exercise the next fresh report under that schema. The
+            % empty disposition is a DECLARED schema boundary, not evidence
+            % that this physically transmitted report was power-withheld.
+            assert(~ismember('UEProducerDisposition',state.PendingCSITable.Properties.VariableNames));
+            state.PendingCSITable.UEProducerDisposition=strings(height(state.PendingCSITable),1);
+            report=table2struct(state.PendingCSITable);
+            assert(isscalar(report) && sixgr.truth.DLMeasurementInstallation.required(state) && ...
+                sixgr.truth.UEQueuedCSIAdmission.waveformBound(state,report));
+            [eligible,~]=sixgr.truth.UEQueuedCSIAdmission.eligible(state,report);
+            assert(eligible && state.CellAcquisitionState(1)=="acquired");
+            originalPending=owner.Pending; originalRNG=rng;
+            originalCSI=state.PendingCSITable; originalFeedback=state.PendingFeedbackTable;
+            originalTrace=state.PUCCHGrantTraceTable; originalLatest=state.LatestDLFeedback;
+            prepared=result.Result.PreparedTransmission;
+            assert(isa(prepared,'sixgr.link.PreparedDataTransmission'));
+            beforeHash=sixgr.phy.waveform.WaveformHash.numeric(prepared.Tx.Waveform);
+            state.CellAcquisitionState(1)="searching";
+            [eligible,status]=sixgr.truth.UEQueuedCSIAdmission.eligible(state,report);
+            assert(~eligible);
+            state=sixgr.truth.UEQueuedCSIAdmission.reconcile(state);
+            assert(isequaln(state.PendingCSITable,originalCSI) && ...
+                isequaln(state.PendingFeedbackTable,originalFeedback) && ...
+                isequaln(state.PUCCHGrantTraceTable,originalTrace) && ...
+                isequaln(state.LatestDLFeedback,originalLatest) && ...
+                isequaln(owner.Pending,originalPending) && isequal(originalRNG,rng) && ...
+                sixgr.truth.UEQueuedCSIAdmission.waveformBound(state,report));
+            hit=find(string({owner.Pending.Kind})=="PUSCH");
+            assert(isscalar(hit));
+            after=owner.Pending(hit).Context.Prepared;
+            assert(isequaln(after.RequestBinding,prepared.RequestBinding) && ...
+                isequaln(after.Tx.Waveform,prepared.Tx.Waveform) && ...
+                sixgr.phy.waveform.WaveformHash.numeric(after.Tx.Waveform)==beforeHash);
+            state.TestPreparedCSITransition=struct('ReportIdentity',string(report.ReportIdentity), ...
+                'PreparedWaveformSHA256',beforeHash,'AdmissionStatusAfterLoss',status, ...
+                'TransitionSample',owner.Events.NextSampleIndex, ...
+                'DeclaredPriorPowerDeferralSchema',true, ...
+                'Scope',"injected_UE_private_acquisition_loss_after_actual_IQ_binding_not_new_SSB_reacquisition");
+            fprintf('PREPARED_CSI_ACQUISITION_LOSS_BOUNDARY_PASS original_IQ_unchanged=1 gNB_context_unchanged=1 not_retired=1\n');
+        end
         if state.TestIndependentCompletion
             % Actual encoded PUSCH and its exact pending producer ledgers.
             state.SharedPendingULGrants=grant;
@@ -2451,7 +3106,7 @@ for item=items
         assert(ismember('AppliedAWGNSNRSource',out.TrialTable.Properties.VariableNames) && ...
             out.TrialTable.AppliedAWGNSNRSource==string(sixgr.util.structGet(replay,'AppliedAWGNSNRSource',"")), ...
             'The DL trial must retain the actual executed noise-calibration source.');
-        out=sixgr.truth.bindSharedDLCSICompletion(out,p,receiver,owner);
+        out=localBindAndCheckEmbeddedCSI(state,out,p,receiver,item.UE);
         csi=out.CSIRSTrialTable;
         assert(height(csi)==1 && csi.Observed && csi.CSIMeasurementAvailable && ...
             csi.ResultAvailableAtSample==owner.Events.NextSampleIndex && ...
@@ -3037,8 +3692,23 @@ if state.TestWithCSI
     assert(height(csi)==1 && csi.Observed && csi.CSIMeasurementAvailable && ...
         csi.ResultAvailableAtSample<=state.SharedWaveformStream.Events.NextSampleIndex, ...
         'CSI must come from an available, executed CSI-RS receiver.');
-    state=sixgr.truth.CoupledTruthRuntime.enqueueCSIReportRuntime(state,1,'DL',out.TrialTable,cfg,csi);
+    % The periodic calendar owns this transmission occasion. The separate
+    % generic AMC delay must not be repurposed to force source slot + delay
+    % onto the PUSCH. Use the already published original receiver row.
+    assert(sixgr.truth.periodicCSIReportSlotMask(dueSlot, ...
+        cfg.phy.csi.reportPeriodicitySlots,cfg.phy.csi.reportOffsetSlots));
+    originalMeasurements=state.ControlTrials.CSIRS;
+    state=sixgr.truth.CoupledTruthRuntime.refreshPeriodicCSIReportsRuntime(state);
+    obligations=state.CSIReportObligationTable;
+    obligation=obligations(obligations.UEIndex==1 & obligations.ReportSlot==dueSlot,:);
+    assert(height(obligation)==1 && obligation.ULResourceAvailable && ...
+        obligation.CSIReferenceSlot==sixgr.truth.periodicCSIReferenceSlot(cfg,dueSlot) && ...
+        csi.Slot<=obligation.CSIReferenceSlot && ...
+        isequaln(state.ControlTrials.CSIRS,originalMeasurements));
     assert(height(state.PendingCSITable)==1 && state.PendingCSITable.DueSlot==dueSlot && ...
+        string(state.PendingCSITable.ReportIdentity)==string(obligation.ObligationID) && ...
+        state.PendingCSITable.CSIReferenceSlot==obligation.CSIReferenceSlot && ...
+        state.PendingCSITable.SourceSlot==csi.Slot && ...
         string(state.PendingCSITable.SourceSignal)=="CSI-RS" && ...
         state.PendingCSITable.MeasurementAvailableAtSample==csi.ResultAvailableAtSample);
     state.TestExpectedCSI=state.PendingCSITable;
@@ -3090,10 +3760,8 @@ assert(isequal(grant.GrantContextId,job.GrantContextId) && ...
     string(grant.PHYGrantContextId)==job.GrantContextId);
 control=sixgr.link.prepareSharedPDCCHTransmission(dl,'Grant',grant,'RNTI',grant.RNTI,'K',numel(grant.DCI.Bits));
 controlContext=struct('Grant',grant,'SharedCSISource',~sharedHARQ,'SharedHARQSource',sharedHARQ);
-if sharedHARQ
-    assert(isfield(state,'TestReceivedDLClock'),'Actual shared SS/PBCH timing is required for connected DL control.');
-    controlContext.ReceivedDLTimingReference=state.TestReceivedDLClock;
-end
+assert(isfield(state,'TestReceivedDLClock'),'Actual shared SS/PBCH timing is required for connected DL control.');
+controlContext.ReceivedDLTimingReference=state.TestReceivedDLClock;
 owner.queuePDCCH(1,control,controlContext);
 if sharedHARQ, state.ScheduledDLDAILedger=candidateLedger; end
 result=sixgr.truth.executeGrantPHYJob(job);
@@ -3107,6 +3775,51 @@ end
 state.TestSharedCSIReceived=false;
 end
 
+
+function out=localBindAndCheckEmbeddedCSI(state,raw,p,receiver,ue)
+% No receiver re-execution: bind/check copies of this original completion.
+owner=state.SharedWaveformStream;
+before=rng;
+out=sixgr.truth.bindSharedDLCSICompletion(raw,p,receiver,owner,state,ue);
+if ~isfield(raw,'CSIRSTrialTable') || isempty(raw.CSIRSTrialTable), return; end
+assert(isequaln(raw.CSIRSTrialTable,out.CSIRSTrialTable(:,raw.CSIRSTrialTable.Properties.VariableNames)), ...
+    'Binding installation must preserve every original practical measurement.');
+assert(isequaln(out,sixgr.truth.bindSharedDLCSICompletion(out,p,receiver,owner,state,ue)));
+localReject(@()sixgr.truth.bindSharedDLCSICompletion(raw,p,receiver,owner), ...
+    'sixgr:truth:CSICompletionStateRequired');
+bad=raw; bad.CSIRSTrialTable.UEIndex(:)=ue+1;
+localReject(@()sixgr.truth.bindSharedDLCSICompletion(bad,p,receiver,owner,state,ue), ...
+    'sixgr:truth:CSICompletionReceiverIdentity');
+bad=raw; bad.CSIRSTrialTable.ServingCell=repmat(state.CurrentServingIdx(ue)+1,height(bad.CSIRSTrialTable),1);
+localReject(@()sixgr.truth.bindSharedDLCSICompletion(bad,p,receiver,owner,state,ue), ...
+    'sixgr:truth:CSICompletionReceiverIdentity');
+badState=rmfield(state,'SharedWaveformStream');
+localReject(@()sixgr.truth.bindSharedDLCSICompletion(raw,p,receiver,owner,badState,ue), ...
+    'sixgr:truth:CSICompletionStateRequired');
+bad=out; bad.CSIRSTrialTable.DLMeasurementConfigurationSHA256(:)="changed-original-binding";
+localReject(@()sixgr.truth.bindSharedDLCSICompletion(bad,p,receiver,owner,state,ue), ...
+    'sixgr:truth:CSICompletionInstallationConflict');
+if sixgr.truth.DLMeasurementInstallation.required(state)
+    assert(isfield(state,'TestActualSIB1Installation') && ...
+        all(out.CSIRSTrialTable.DLMeasurementAuthorityEligible) && ...
+        all(out.CSIRSTrialTable.DLMeasurementInstallationSHA256==state.TestActualSIB1Installation.SHA256) && ...
+        all(out.CSIRSTrialTable.ObservationStartSample>=state.TestActualSIB1Installation.EffectiveSample));
+    missing=state; missing.PreconfiguredDLMeasurementInstallationByUE{ue}=[];
+    unavailable=sixgr.truth.bindSharedDLCSICompletion(raw,p,receiver,owner,missing,ue);
+    assert(all(~unavailable.CSIRSTrialTable.DLMeasurementAuthorityEligible) && ...
+        all(unavailable.CSIRSTrialTable.DLMeasurementAuthorityStatus== ...
+        "awaiting_received_DL_acquisition_and_configuration"));
+    changed=state;
+    changed.CfgMobility.phy.csi.reportConfigurationEpoch= ...
+        changed.CfgMobility.phy.csi.reportConfigurationEpoch+1;
+    unavailable=sixgr.truth.bindSharedDLCSICompletion(raw,p,receiver,owner,changed,ue);
+    assert(all(~unavailable.CSIRSTrialTable.DLMeasurementAuthorityEligible) && ...
+        isequal(unavailable.CSIRSTrialTable.DLMeasurementConfigurationSHA256, ...
+        out.CSIRSTrialTable.DLMeasurementConfigurationSHA256));
+end
+assert(isequal(before,rng));
+fprintf('EMBEDDED_CSI_INSTALLATION_BINDING_PASS rows=%d negative_guards=7 additional_RX=0\n',height(out.CSIRSTrialTable));
+end
 
 function state=localCompleteSharedHARQSource(state,item,p,pre,tx,replay,receiver)
 % Same actual shared DCI/decoder/event/slot reducer used by the coordinator.
@@ -3123,7 +3836,7 @@ job.ReceivedContext=struct('Prepared',p,'Observation',receiver, ...
     'ReceivedHARQState',sixgr.link.ReceivedDLHARQState(job.Cfg,1));
 result=sixgr.truth.executeGrantPHYJob(job); out=result.Result;
 assert(result.ReadyForReceiverCommit && height(out.TrialTable)==1);
-out=sixgr.truth.bindSharedDLCSICompletion(out,p,receiver,owner);
+out=localBindAndCheckEmbeddedCSI(state,out,p,receiver,item.UE);
 if state.TestWithCSI
     csi=out.CSIRSTrialTable;
     assert(height(csi)==1 && csi.Observed && csi.CSIMeasurementAvailable && ...

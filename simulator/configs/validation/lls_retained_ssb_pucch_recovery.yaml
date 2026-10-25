@@ -1,0 +1,25 @@
+inherits:
+  - ../scenarios/lls_tdd_pucch_independent_harq_csi_sr_fixture.yaml
+meta:
+  scenario_id: lls_retained_ssb_pucch_recovery
+  research_class: optional_research_experiment
+  description: Actual shared SSB/SIB1 retained power and combined PUCCH; initial RA/TAG remains an explicit component input.
+canonical_control:
+  launch:
+    run_class: ue_placement_geometry_lls
+    scenario_mode: ue_placement_geometry
+    sweep_enabled: false
+    fixed_link_campaign_enabled: false
+    geometry_enabled: true
+  integration:
+    run_mode: GEOMETRY_NETWORK
+    subprofile: connected_network
+    configured_snr_is_link_authority: false
+    power_reference_mode: absolute_calibrated_sqrt_mw
+simulation:
+  noise_operating_mode: receiver_noise_figure_thermal_noise
+channels:
+  pathloss_enabled: true
+rf_frontend:
+  ul_power_control:
+    pathloss_reference_lifetime: retained_filtered_reference

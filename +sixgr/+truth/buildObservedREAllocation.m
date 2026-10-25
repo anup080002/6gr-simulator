@@ -227,12 +227,15 @@ if isempty(rows)
 end
 
 T = struct2table(rows, "AsArray", true);
+if channel == "PUSCH"
+    T.transform_precoded(:) = result.TransformPrecoding;
+end
 if channel == "PRACH"
     T = sixgr.truth.annotatePRACHNativeAllocation(T, tx, nativeGrid, nativePortDomain);
 end
 slotsPerFrame = localSlotsPerFrame(tx.Carrier);
-T.sfn = floor(T.absolute_slot ./ slotsPerFrame);
-T.slot_within_frame = mod(T.absolute_slot, slotsPerFrame);
+[T.sfn,T.slot_within_frame] = sixgr.truth.reAllocationRadioClock( ...
+    T.absolute_slot,slotsPerFrame);
 T = sortrows(T, ["absolute_slot", "direction", "symbol_index", ...
     "subcarrier_start", "port_index", "channel", "component"]);
 end
@@ -380,6 +383,9 @@ function parts = localPUSCHParts(tx, result)
 prefixes = ["PUSCH", "DMRS", "PTRS"];
 resultFields = ["Data", "DMRS", "PTRS"];
 labels = ["PUSCH_DATA", "PUSCH_DMRS", "PUSCH_PTRS"];
+if result.PTRS.EmbeddedInData
+    labels(1) = "PUSCH_TRANSFORMED_DATA_AND_PTRS";
+end
 parts = cell(1,3);
 assert(isfield(tx,'Grid') && ~isempty(tx.Grid), ...
     'sixgr:truth:MissingExecutedTXGrid','Observed PUSCH requires the executed waveform grid.');
@@ -396,6 +402,15 @@ for k=1:3
     assert(isequal(expected,sort(unique(double(native(:))))), ...
         'sixgr:truth:ExecutedREIndexMismatch', ...
         'Native TX field %s differs from the Toolbox-rematerialized allocation.',nativeField);
+    if k==3 && ~(isempty(native) && isempty(result.PTRS.GridIndices1Based))
+        % The retained TX alias is already projected into carrier-grid
+        % coordinates. Raw DFT-relative positions live separately in the
+        % materializer; port/row reordering cannot pass a set-only check.
+        assert(isnumeric(native) && isreal(native) && ...
+            isequal(double(native),result.PTRS.GridIndices1Based), ...
+            'sixgr:truth:ExecutedREIndexMismatch', ...
+            'Native PT-RS must preserve the ordered projected carrier matrix.');
+    end
     indices = tx.(mappedField);
     symbols = tx.(symbolsField);
     assert(isnumeric(indices) && isreal(indices) && isnumeric(symbols) && ...
@@ -425,6 +440,11 @@ for k=1:3
     assert(isequaln(tx.Grid(indices),symbols), ...
         'sixgr:truth:ExecutedREGridMismatch', ...
         'Mapped %s symbols disagree with the actual TX grid.',prefixes(k));
+    if k==3 && result.TransformPrecoding
+        % Validate all original PT-RS evidence above, but do not count the
+        % selected transformed PUSCH values a second time as pilot REs.
+        continue;
+    end
     evidence = struct('Grid',tx.Grid,'Indices',indices(symbols~=0));
     parts{k}=localExecutedPart(evidence,'Indices',labels(k));
 end
@@ -476,5 +496,6 @@ row = struct("absolute_slot", NaN, "sfn", NaN, "slot_within_frame", NaN, ...
     "layer_count", NaN, "authority", "", "resolver", "", ...
     "allocation_id", "", "coordinate_precision", "exact_contiguous_re_run", ...
     "evidence_scope", "runtime_observed_tx_occupancy", ...
-    "active_flag", false, "grid_domain", "carrier_cp_ofdm");
+    "active_flag", false, "grid_domain", "carrier_cp_ofdm", ...
+    "transform_precoded", false);
 end

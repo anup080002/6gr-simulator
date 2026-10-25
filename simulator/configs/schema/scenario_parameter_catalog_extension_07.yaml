@@ -381,7 +381,7 @@ sections:
     parameters:
       sv_rank_threshold: {required: false, type: number, min: 0}
       precoder_prg_size_rbs: {required: false, type: string_or_number}
-      codebook_subset_restriction: {required: false, type: string}
+      codebook_subset_restriction: {required: false, type: string, pattern: '^(unrestricted|[01]*|UNRESTRICTED)$', description: 'Empty/unrestricted or a0-first binary bitmap for the active supported Type-I single-panel codebook; length N1*N2*O1*O2. Nonempty masks require more than two ports and the implemented rank domain.'}
       type2_codebook_oversampling_factor_O1: {required: false, type: integer, min: 1}
       type2_codebook_oversampling_factor_O2: {required: false, type: integer, min: 1}
       csi_rs_based_precoder_update: {required: false, type: boolean}

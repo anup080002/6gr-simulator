@@ -14,6 +14,9 @@ p.addParameter("RunId", "sib1_runtime", @(x) ischar(x) || isstring(x));
 p.addParameter("WriteArtifacts", false, @(x) islogical(x) || isnumeric(x));
 p.addParameter("UseRuntimeChannel", false, @(x) islogical(x) || isnumeric(x));
 p.addParameter("PrepareOnly", false, @(x) islogical(x) && isscalar(x));
+p.addParameter("Content", "SSB_MIB_SIB1", @(x) ...
+    (ischar(x) || (isstring(x) && isscalar(x))) && ...
+    any(string(x)==["SSB_MIB_SIB1","SSB_MIB"]));
 p.addParameter("InitialDLChannelState", struct(), @(x) isempty(x) || isstruct(x));
 % Explicit zero-based absolute slot, independent of the coupled runner's
 % one-based loop index. NaN means no explicit runtime origin was supplied.
@@ -32,6 +35,7 @@ out.FailureIdentifier = "";
 out.FailureReason = "";
 out.BER = NaN;
 out.BLER = NaN;
+out=localBCHOutcome(out,struct());
 out.Throughput_Mbps = NaN;
 out.EVM_rms = NaN;
 out.Notes = "";
@@ -179,23 +183,28 @@ if exist("nrWaveformGenerator","file") ~= 2
 end
 
 wantSIB1 = logical(sixgr.util.structGet(cfg, "phy.sib1.enable", false));
-if p.Results.PrepareOnly && (~wantSIB1 || ...
+% Explicit SSB/MIB composition uses the same original prepared-capture
+% owner without enabling SI. The legacy unspecified/composite request still
+% follows the configured SIB1 switch, including its PBCH-only legacy path.
+usePreparedBroadcast = wantSIB1 || string(p.Results.Content)=="SSB_MIB";
+if p.Results.PrepareOnly && (~usePreparedBroadcast || ...
         ~logical(p.Results.UseRuntimeChannel) || logical(p.Results.WriteArtifacts))
     error("sixgr:link:InvalidBroadcastPreparationRequest", ...
-        "PrepareOnly requires the SIB1 runtime-channel path with in-memory artifact ownership.");
+        "PrepareOnly requires an explicit SSB_MIB or enabled SIB1 runtime-channel path with in-memory artifact ownership.");
 end
 if ~isempty(p.Results.CandidateSSBIndices) && ...
-        (~wantSIB1 || logical(p.Results.WriteArtifacts))
+        (~usePreparedBroadcast || logical(p.Results.WriteArtifacts))
     error("sixgr:link:InvalidSharedBurstReceiverRequest", ...
-        "Shared-burst candidate decoding requires the SIB1 capture path and in-memory artifact ownership.");
+        "Shared-burst candidate decoding requires the prepared broadcast capture path and in-memory artifact ownership.");
 end
 sixgr.config.assertRuntimeFeatureUse(cfg, "sib1", wantSIB1, ...
     "runCellSearch_MIB_SIB1.SIB1");
-if wantSIB1
+if usePreparedBroadcast
     try
         tStart = tic;
         prepared = sixgr.link.prepareCellSearchBroadcast(cfg, ...
-            logical(p.Results.UseRuntimeChannel),"ApplyPA",~logical(p.Results.PrepareOnly));
+            logical(p.Results.UseRuntimeChannel),"ApplyPA",~logical(p.Results.PrepareOnly), ...
+            "RuntimeSlot",p.Results.RuntimeSlot,"Content",p.Results.Content);
         cfg = prepared.Config;
         receiverCfg = prepared.ReceiverConfig;
         tx = prepared.Tx;
@@ -216,15 +225,15 @@ if wantSIB1
             truthState = sixgr.link.initWaveformTruthChannelState( ...
                 receiverCfg, runtimeTx, txInfo, ...
                 "InitialRuntimeChannelState", p.Results.InitialDLChannelState);
-            runtimeSlot = double(p.Results.RuntimeSlot);
-            if isfinite(runtimeSlot) && runtimeSlot >= 0 && ...
-                    logical(sixgr.util.structGet( ...
+            if logical(sixgr.util.structGet( ...
                     truthState, "RuntimeChannelState.Initialized", false))
-                slotStart_s = runtimeSlot * sixgr.time.slotDurationSec(cfg);
+                slotStart_s = prepared.BroadcastStartSample/prepared.SampleRateHz;
                 truthState.RuntimeChannelState = ...
                     sixgr.channel.ChannelFactory.advanceRuntimeChannelStateToTime( ...
                     truthState.RuntimeChannelState, slotStart_s, ...
                     size(runtimeTxWaveform, 2), runtimeTxWaveform);
+            else
+                truthState.WaveformImpairmentNextSample=prepared.BroadcastStartSample;
             end
             [rxWaveform, channelReplay, truthState] = ...
                 sixgr.link.applyWaveformTruthImpairments( ...
@@ -238,7 +247,7 @@ if wantSIB1
         % Materialize and receive the physical burst once. Candidate search
         % windows must not regenerate TX, fading, RF impairments, or noise.
         receiveOrigin = double(sixgr.util.structGet(out, ...
-            "RuntimeChannelReplay.RuntimeChannelStartSample", 0));
+            "RuntimeChannelReplay.ImpairmentStartSample", 0));
         receiver = sixgr.phy.waveform.WaveformReceiveDispatcher( ...
             double(tx.SampleRateHz), size(rxWaveform,2), receiveOrigin);
         receiver.register("cell_search_broadcast", ...
@@ -251,15 +260,16 @@ if wantSIB1
         return;
     catch ME
         out.Ok = false;
-        out.BLER = 1;
+        % Preserve only an already-returned original BCH outcome. A TX,
+        % receiver, or publication exception is not a failed BCH block.
         out.Skipped = false;
         out.Crash = true;
         out.Status = "CRASH";
         out.FailureIdentifier = string(ME.identifier);
         out.FailureReason = string(ME.identifier) + ":" + string(ME.message);
-        out.Notes = "Strict SIB1 waveform failure: " + string(ME.message);
+        out.Notes = "Strict broadcast waveform failure: " + string(ME.message);
         if ~isempty(log)
-            log.warn("runCellSearch_MIB_SIB1 strict SIB1 failed: " + string(ME.message));
+            log.warn("runCellSearch_MIB_SIB1 strict broadcast failed: " + string(ME.message));
         end
         return;
     end
@@ -267,13 +277,20 @@ end
 
 try
     tStart = tic;
+    if ~isnan(p.Results.RuntimeSlot)
+        cfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,double(p.Results.RuntimeSlot)+1);
+    end
+    broadcastCarrier=sixgr.phy.grid.makeCarrier(cfg);
+    assert(broadcastCarrier.NSlot==0,'sixgr:link:BroadcastRuntimeFrameAlignment', ...
+        'A complete SS/PBCH waveform requires its actual radio-frame origin.');
+    broadcastSlot=double(broadcastCarrier.NFrame)*double(broadcastCarrier.SlotsPerFrame);
     ssbArgs = {"NumSubframes", numSF};
     if ~isempty(p.Results.SSBIndex)
         ssbArgs = [ssbArgs, {"SSBIndex", round(double(p.Results.SSBIndex))}]; %#ok<AGROW>
     end
     [txWave, waveInfo, txInfo] = sixgr.phy.dl.SSB_Tx(cfg, ssbArgs{:});
     capture=sixgr.link.applySSBPBCHChannel(txWave,waveInfo,txInfo,cfg, ...
-        p.Results.InitialDLChannelState,p.Results.RuntimeSlot);
+        p.Results.InitialDLChannelState,broadcastSlot);
     cfg=capture.ReceiverConfig;
     sampleRateHz=capture.SampleRateHz;
     rxWave=capture.Waveform;
@@ -314,6 +331,9 @@ try
     out.EqualizationAttempted = true;
     out.DecodeAttempted = true;
     [pb, pbchInfo] = sixgr.phy.dl.PBCH_Recovery(rxSSB, sync, cfg);
+    completedBCH=pb;
+    completedBCH.DecodeAttempted=true; % This exact original call returned.
+    out=localBCHOutcome(out,completedBCH);
     out.ComputeLatency_ms = 1e3 * toc(tStart);
     out.ProcedureDelay_ms = NaN;
     out.AirInterfaceObservation_ms = double(numSF);
@@ -383,7 +403,8 @@ try
         out.Status = "FAIL";
         out.FailureReason = "pbch_bch_crc_failed";
     end
-    out.BLER = double(~out.Ok);
+    % BLER remains the original completed BCH CRC, independently of the
+    % accepted candidate identity and downstream measurement procedure.
     out.InjectedCFO_Hz = injectedCFO_Hz;
     out.EstimatedCFO_PreCorrection_Hz = estimatedCFO_PreCorrection_Hz;
     out.ResidualCFO_PostCorrection_Hz = injectedCFO_Hz-estimatedCFO_PreCorrection_Hz;
@@ -434,6 +455,16 @@ catch ME
     if ~isempty(log)
         log.warn("runCellSearch_MIB_SIB1 failed: " + string(ME.message));
     end
+end
+
+function out=localBCHOutcome(out,original)
+e=sixgr.link.broadcastBCHBlockOutcome(original);
+out.BLER=e.BlockError;
+out.BLERScope="BCH_original_completed_block";
+out.BLEREligibleTrialCount=double(e.Eligible);
+out.BLERErrorCount=e.BlockError;
+out.BLERSource=e.Source;
+out.BLERStatus=e.Status;
 end
 
 function evidence = localBuildSSBTxEvidence(tx)

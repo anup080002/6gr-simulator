@@ -14,12 +14,16 @@ if string(sixgr.util.structGet(state,'RuntimeViewMode','execution'))=="future_ul
     knowledgeSlot=state.PlanningDecisionSlot;
     validateattributes(knowledgeSlot,{'numeric'},{'scalar','integer','positive','finite','<=',slot});
 end
-age=sixgr.util.structGet(cfg,'phy.pusch.powerControl.maxPathlossMeasurementAgeSlots', ...
-    sixgr.util.structGet(cfg,'phy.pusch.power_control.max_pathloss_measurement_age_slots',Inf));
-validateattributes(age,{'numeric'},{'scalar','real','nonnegative','nonnan'});
 configured=sixgr.phy.refsig.resolveConfiguredPathlossReference(cfg,channel);
-if string(channel)=="SRS", age=Inf; end
+age=Inf;
+if upper(string(channel))=="PUSCH"
+    age=sixgr.util.structGet(cfg,'phy.pusch.powerControl.maxPathlossMeasurementAgeSlots', ...
+        sixgr.util.structGet(cfg,'phy.pusch.power_control.max_pathloss_measurement_age_slots',Inf));
+    validateattributes(age,{'numeric'},{'scalar','real','nonnegative','nonnan'});
+end
 if configured.Available, age=min(age,configured.MaximumAgeSlots); end
+lifetime=sixgr.phy.refsig.pathlossReferenceLifetime(cfg);
+configuredAge=age;
 epoch=sixgr.util.structGet(cfg,'initial_access.configuration_epoch',NaN);
 policy=sixgr.rrc.resolvePreconnectionRSRPFilter(cfg);
 cellId=NaN;
@@ -38,9 +42,21 @@ if ~isempty(fieldnames(policy)) && all(ismember(required,string(T.Properties.Var
 else
     T=T([],:);
 end
+lifecycleStatus="not_enabled_configured_age_limit";
+if lifetime=="retained_filtered_reference"
+    [T,lifecycleStatus]=sixgr.truth.SSBPowerReferenceLifecycle.select(state,cfg,ue,selected,T);
+    % Retention is governed by the installed power/configuration generation,
+    % never by an inferred timer or by blind removal of causal checks.
+    age=Inf;
+end
 filteredState=state; filteredState.ReferenceSignalMeasurementTable=T;
 measurement=sixgr.truth.CoupledTruthRuntime.consumeReferenceSignalMeasurementRuntime( ...
     filteredState,'SSB','UE',ue,slot,age);
+if lifetime=="retained_filtered_reference" && isempty(T)
+    measurement.Usable=false;
+    measurement.Status="reference_lifecycle_unavailable";
+    measurement.Blocker=lifecycleStatus;
+end
 common=struct();
 items=sixgr.util.structGet(state,'UECommonCellConfigurationByUE',{});
 if iscell(items) && numel(items)>=ue && isstruct(items{ue}), common=items{ue}; end
@@ -127,6 +143,9 @@ decision.ServingCell=double(cellId); decision.ReferenceConfigurationEpoch=double
 decision.UERSRPFilterSource=filterSource; decision.UERSRPFilterConfigHash=filterHash;
 decision.UERSRPFilterEffectiveAlpha=filterAlpha; decision.UERSRPFilterUpdateCount=filterCount;
 decision.AbsolutePowerReferenceApplicable=~fixedNormalizedEsN0;
+decision.PathlossReferenceLifetime=lifetime;
+decision.ConfiguredResearchMaximumAgeSlots=double(configuredAge);
+decision.ReferenceLifecycleStatus=lifecycleStatus;
 decision.OperatingPointAuthority="received_sib1_and_filtered_absolute_rsrp";
 if fixedNormalizedEsN0
     decision.Source(:)="normalized_fixed_esn0_no_absolute_power_reference";

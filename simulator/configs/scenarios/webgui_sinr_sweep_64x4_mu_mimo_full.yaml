@@ -481,23 +481,30 @@ canonical_control:
     num_tx_antennas: 4
     num_prach_occasions: 4
     enable_frequency_estimation_metric: true
-    # The requested connected-data PT-RS feature remains authoritative for
-    # every waveform stage.  Common RA links use their explicit rank-one
-    # DM-RS port association rather than inheriting rank-two data ports.
+    timing:
+      # Bounded SRB1 timing: DL phase 1 -> full UL phase 4. Phase 2 is
+      # occupied every five slots by this scenario's CSI-RS resources.
+      setup_complete_k2_slots: 3
+    # Common DL does not inherit dedicated connected-data PT-RS. Msg2
+    # uses RA-RNTI; Msg4 has no installed dedicated phaseTrackingRS.
+    # TS 38.214 V18.8.0 5.1.6.3; RAR Msg3 also excludes PT-RS (6.2.3).
+    # CORESET0 index 0 starts at carrier PRB126 for SSB NCRB253/KSSB0.
     msg2_pdsch:
-      ptrs_enabled: true
+      prb_start: 126
+      ptrs_enabled: false
       ptrs_port_set: [0]
       ptrs_time_density: 1
       ptrs_frequency_density: 2
       ptrs_re_offset: '00'
     msg3_pusch:
-      ptrs_enabled: true
+      ptrs_enabled: false
       ptrs_port_set: [0]
       ptrs_time_density: 1
       ptrs_frequency_density: 2
       ptrs_re_offset: '00'
     msg4_pdsch:
-      ptrs_enabled: true
+      prb_start: 126
+      ptrs_enabled: false
       ptrs_port_set: [0]
       ptrs_time_density: 1
       ptrs_frequency_density: 2

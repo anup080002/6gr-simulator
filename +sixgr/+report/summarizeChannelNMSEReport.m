@@ -7,6 +7,14 @@ arguments
 end
 summary = struct2table(summaryPrototype(), 'AsArray', true); summary = summary([],:);
 observations = struct2table(observationPrototype(), 'AsArray', true); observations = observations([],:);
+% Runtime startup tables can retain named 0-by-0 variables after struct2table
+% of an empty trial struct. There are no operands or observations to validate
+% in that case. Preserve typed empty outputs rather than creating a row or
+% requiring a measurement-column shape before its first observation exists.
+% Use height, not isempty: nonempty observations retain every guard below.
+if height(T)==0
+    return;
+end
 numericFields = ["NMSE_dB","NMSEScoringAvailable","ChannelEstimateReferenceUsedByReceiver", ...
     "ChannelNMSEReferenceUsedByReceiver","ChannelNMSEGainOrPhaseFitted", ...
     "ChannelNMSEGainFitted","ChannelNMSEPhaseAligned", ...

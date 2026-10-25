@@ -5107,6 +5107,13 @@ def _specialized_live_report_table(
                     out_row.update({
                         "estimated_cfo_hz": _row_text(row, "EstimatedCFO_Hz"),
                         "residual_cfo_post_correction_hz": _row_text(row, "ResidualCFO_PostCorrection_Hz"),
+                        "receiver_common_residual_hz": _row_text(row, "ResidualCFO_EstimatedPostCorrection_Hz"),
+                        "receiver_residual_available": _row_text(row, "ResidualCFOEstimateAvailable"),
+                        "receiver_residual_source": _row_text(row, "ResidualCFOEstimateSource"),
+                        "receiver_residual_role": _row_text(row, "ResidualCFOEstimateRole"),
+                        "reuses_acquisition_observation": _row_text(row, "ResidualCFOReusesAcquisitionObservation"),
+                        "uses_different_observable": _row_text(row, "ResidualFrequencyUsesDifferentObservable"),
+                        "receiver_residual_status": _row_text(row, "ResidualFrequencyStatus"),
                         "true_cfo_hz": _row_text(row, "TrueCFO_Hz"),
                         "estimated_timing_offset_samples": _row_text(row, "EstimatedTimingOffset_PreCorrection_samples", "TimingOffset_samples"),
                         "residual_timing_error_samples": _row_text(row, "ResidualTimingError_PostCorrection_samples"),
@@ -10268,6 +10275,17 @@ def _runtime_cfo_tracking_chart(
         pilot_rate = _row_float(row, "PilotCommonPhaseRate_Hz")
         applied = _row_float(row, "CFOCorrectionApplied_Hz")
         reused = _row_float(row, "ResidualCFOReusesAcquisitionObservation")
+        residual_role = _row_text(row, "ResidualCFOEstimateRole")
+        residual_domain = _row_text(row, "ResidualCFOEstimateDomain")
+        # Sharing a capture is not sharing an estimator: TRS can use a
+        # different observable on the same corrected received samples.
+        if residual_role == "same_observation_estimator_consistency_not_independent_residual":
+            residual_label = "Estimator self-consistency"
+        elif (residual_role == "received_common_frequency_not_separated_oscillator" or
+              residual_domain == "receiver_measured_common_frequency_after_correction"):
+            residual_label = "Post-correction common frequency"
+        else:
+            residual_label = "Post-correction estimate (scope unspecified)"
         sample_index = float(len(csv_rows) + 1)
         point = _row_text(row, "SweepPointIndex")
         snr = _row_text(row, "ConfiguredSNR_dB")
@@ -10299,9 +10317,11 @@ def _runtime_cfo_tracking_chart(
             "configured_snr_db": snr,
             "ue": ue,
             "receiver_residual_source": _row_text(row, "ResidualCFOEstimateSource"),
-            "receiver_residual_domain": _row_text(row, "ResidualCFOEstimateDomain"),
-            "receiver_residual_role": _row_text(row, "ResidualCFOEstimateRole"),
+            "receiver_residual_domain": residual_domain,
+            "receiver_residual_role": residual_role,
+            "receiver_residual_available": _row_text(row, "ResidualCFOEstimateAvailable"),
             "reuses_acquisition_observation": "" if reused is None else reused,
+            "uses_different_observable": _row_text(row, "ResidualFrequencyUsesDifferentObservable"),
             "reference_residual_definition": _row_text(row, "ResidualCFOReferenceDefinition"),
             "status": _row_text(row, "Status", "ReceiverResidualObservationStatus"),
             "source_table_logical_path": source_path,
@@ -10311,7 +10331,7 @@ def _runtime_cfo_tracking_chart(
             ("Pre-correction estimate", estimated_cfo),
             ("Applied correction", applied),
             ("Oscillator reference difference", residual_cfo),
-            ("Estimator self-consistency" if reused == 1 else "Post-correction common frequency", measured_residual),
+            (residual_label, measured_residual),
             ("Pilot channel common phase rate (not Doppler spread)", pilot_rate),
         ]
         for label, value in metrics:
@@ -10338,7 +10358,8 @@ def _runtime_cfo_tracking_chart(
                 "pilot_phase_source", "pilot_phase_status", "doppler_measurement_status",
                 "applied_correction_hz", "sweep_point_index", "configured_snr_db", "ue",
                 "receiver_residual_source", "receiver_residual_domain", "receiver_residual_role",
-                "reuses_acquisition_observation", "reference_residual_definition", "status",
+                "receiver_residual_available", "reuses_acquisition_observation", "uses_different_observable",
+                "reference_residual_definition", "status",
                 "source_table_logical_path",
             ],
             csv_rows,
@@ -12859,6 +12880,10 @@ def _specialized_chart_materialization(
     run_id: int,
 ) -> dict[str, Any] | None:
     chart_name = str(chart_name or "")
+    if chart_name == "Applied rank KPI diagnostics":
+        import sys
+        from lls_applied_rank_plots import applied_rank_chart
+        return applied_rank_chart(sys.modules[__name__], chart_name, existing, fetch_artifact_bytes, run_id)
     if chart_name in {"RSRP/CSI-RSRP timeline", "ServingRSRP / RSRP / CSI-RSRP trends"}:
         # Do not fall through to numeric-column or legacy calibrated-RSRP
         # rendering when original source/plane authority is absent.

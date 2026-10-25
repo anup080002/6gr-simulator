@@ -259,6 +259,11 @@ control:
   # CORESET. Start 112 is encoded as 18 six-RB groups plus rb-Offset-r16=4.
   connected_dci:
     coreset_id: 1
+  # This family moves the connected CORESET from parent ID0 to ID1.
+  # Keep its installed association in the same identity domain. This is
+  # configuration, not a received TCI command or an injected timing value.
+  coreset_qcl_association:
+    coreset_id: 1
   coreset_duration: 2
   aggregation_levels: [1, 2, 4, 8, 16]
   candidate_aggregation_levels: [1, 2, 4, 8, 16]
@@ -439,11 +444,13 @@ reference_signals:
     num_ports: 4
     port_set: [0, 1, 2, 3]
   trs_enabled: true
-  trs_periodicity_slots: 20
+  # Full-band 273-RB TRS cannot use the 10-ms cadence (38.214 5.1.6.1.1).
+  trs_periodicity_slots: 40
+  trs_periodicity_ms: 20
   trs:
     enabled: true
-    periodicity: "20"
-    periodicity_slots: 20
+    periodicity: "40"
+    periodicity_slots: 40
     period_offset: 6
     # Use the periodic resource calendar below, not the inherited fixture's
     # explicit within-frame slots [7, 8]. Offset 6 is zero-based.
@@ -531,7 +538,12 @@ mimo_and_beam_management:
   tci_activation_authority: decoded_pdcch_tci_codepoint
   # The four measured SSB candidates seed four coarse CSI/data states. A
   # later independently received CRI may select any of the eight states.
-  ssb_to_initial_csi_resource_ids: [0, 2, 4, 6]
+  # Preserve the emitted SSB directions [0,8,16,24]. CSI resources 0..3
+  # contain those exact physical spatial vectors; 0,2,4,6 did not.
+  # This spatial-containment policy is an array-design choice, not an NR
+  # requirement that arbitrary SSB/CSI resource associations be identical.
+  ssb_initial_csi_spatial_policy: contains_ssb_precoder
+  ssb_to_initial_csi_resource_ids: [0, 1, 2, 3]
   csi_rs_resource_to_tci_state_ids: [16, 17, 18, 19, 20, 21, 22, 23]
   csi_rs_resource_to_tci_codepoints: [0, 1, 2, 3, 4, 5, 6, 7]
   # Physical BFR is intentionally not claimed until BFD, candidate-beam

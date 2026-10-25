@@ -21,6 +21,7 @@ switch kind
         localValidateTXLinearReferencePolicy(cfg, catalog, logical(opt.AllowPartial), ctx);
         localValidateAbsoluteReferenceNoisePolicy(cfg, catalog, logical(opt.AllowPartial), ctx);
         localValidateScenarioSections(cfg, schemaDef, catalog, logical(opt.AllowPartial), ctx);
+        localValidateSRSPeriodDuration(cfg, logical(opt.AllowPartial), ctx);
         % Validate explicit policy values even in partial/canonical documents.
         % Optional [] is not an instruction to silently restore a decoder default.
         sixgr.lls6g.config.mergeLDPCPolicyAuthority(struct(),cfg);
@@ -62,6 +63,42 @@ switch kind
     otherwise
         error("sixgr:lls6g:config:UnknownValidationKind", ...
             "Unsupported validation kind '%s'.", kind);
+end
+end
+
+function localValidateSRSPeriodDuration(cfg, allowPartial, ctx)
+% SRS duration aliases use milliseconds, while TS 38.331 enumerates slots.
+% Validate each declaration's raw domain in partial layers, but defer its
+% numerology-dependent legality until the final inherited carrier is known.
+refs=sixgr.util.structGet(cfg,'reference_signals',struct());
+values=cell(0,1); paths=strings(0,1);
+if isfield(refs,'srs_periodicity_ms')
+    values{end+1,1}=refs.srs_periodicity_ms;
+    paths(end+1,1)="reference_signals.srs_periodicity_ms";
+end
+if isfield(refs,'srs') && isstruct(refs.srs) && isscalar(refs.srs) && isfield(refs.srs,'periodicity')
+    token=refs.srs.periodicity;
+    assert((ischar(token)&&isrow(token)) || ...
+        (isstring(token)&&isscalar(token)&&~ismissing(token)), ...
+        'sixgr:lls6g:config:InvalidSRSPeriodDuration', ...
+        'reference_signals.srs.periodicity in %s must be a numeric-string millisecond duration.',localCtx(ctx));
+    values{end+1,1}=str2double(token);
+    paths(end+1,1)="reference_signals.srs.periodicity";
+end
+for k=1:numel(values)
+    value=values{k};
+    assert(isnumeric(value) && ~islogical(value) && isreal(value) && ...
+        isscalar(value) && isfinite(value) && value>0, ...
+        'sixgr:lls6g:config:InvalidSRSPeriodDuration', ...
+        '%s in %s must be a finite positive real millisecond duration.',paths(k),localCtx(ctx));
+    if allowPartial, continue; end
+    % Do not let an explicit slot alias short-circuit validation of an
+    % independently supplied duration. Actual period/offset selection and
+    % resource-type validation remain with the installed SRS builder.
+    clock=struct('frame',cfg.frame,'reference_signals',struct('srs_periodicity_ms',value));
+    period=sixgr.lls6g.config.resolveCarrierPeriodSlots(clock,strings(0,1), ...
+        "reference_signals.srs_periodicity_ms");
+    sixgr.phy.srs.validateSRSPeriodOffset(period,0);
 end
 end
 
@@ -2657,9 +2694,11 @@ end
 try
     fs = sixgr.phy.FrameStructureEngine(cfg);
 catch ME
-    error("sixgr:lls6g:config:PrachULSafeOccasionValidationFailed", ...
+    failure=MException("sixgr:lls6g:config:PrachULSafeOccasionValidationFailed", ...
         "Cannot validate PRACH/TDD slot ownership in %s for configuration_index=%g and subcarrier_spacing_khz=%g: %s", ...
         localCtx(ctx), double(configurationIndex), double(subcarrierSpacing), string(ME.message));
+    failure=addCause(failure,ME);
+    throwAsCaller(failure);
 end
 validSlots = double(fs.PRACHValidSlots1Based);
 validSlots = validSlots(isfinite(validSlots) & validSlots >= 1);

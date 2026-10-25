@@ -111,6 +111,22 @@ winners=mixed(mixed.Metric=="P1SelectedSSBBeamIndex",:);
 assert(height(winners)==2 && numel(unique(winners.PowerReferencePlane))==2);
 assert(winners.MeanValue(winners.ScoreAxis=="SS_RSRP_dBm")==0 && ...
     winners.MeanValue(winners.ScoreAxis=="SS_RSRP_dB_re_UnitOccupiedRE_Es")==1);
+% Two original grants sharing a legacy slot/UE scope do not create a
+% fractional selected or best beam identifier.
+beam=table([1;1],[1;1],[0;1],[3;8],["grant-a";"grant-b"], ...
+    'VariableNames',{'UEIndex','Slot','SelectedBeamIndex','BestBeamIndex','FrozenGrantContextId'});
+specs=[struct('Metric',"DataSelectedBeamIndex",'Columns',"SelectedBeamIndex"); ...
+    struct('Metric',"DataBestBeamIndex",'Columns',"BestBeamIndex")];
+originalBeam=beam;
+discrete=sixgr.truth.buildBeamMeasurementSummary(beam,"DL","declared_beam_fixture.csv",specs);
+selected=discrete(discrete.Metric=="DataSelectedBeamIndex",:);
+assert(height(selected)==2&&isequal(selected.MeanValue,[0;1])&&all(selected.SampleCount==1)&& ...
+    all(isnan(selected.P05Value))&&all(isnan(selected.P95Value))&& ...
+    numel(unique(selected.SelectionPopulationID))==2&&isequaln(beam,originalBeam));
+for k=1:2
+    identity=jsondecode(selected.SelectionPopulationJSON(k));
+    assert(identity.SourceRowIndex==k&&string(identity.FrozenGrantContextId)==beam.FrozenGrantContextId(k));
+end
 fprintf('PASS testLLSBeamSummaryMeasurementAuthority; fixture artifacts: %s\n',root);
 ok = true;
 end

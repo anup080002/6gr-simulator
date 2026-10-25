@@ -35,7 +35,7 @@ if ~isempty(varargin)
             case "targetid"
                 opt.TargetId = double(varargin{ii + 1});
             case "maxageslots"
-                opt.MaxAgeSlots = double(varargin{ii + 1});
+                opt.MaxAgeSlots = varargin{ii + 1};
             case "knownatslot"
                 opt.KnownAtSlot = double(varargin{ii + 1});
             case "knownatsample"
@@ -59,17 +59,20 @@ if ~(isscalar(consumerSlot) && isfinite(consumerSlot))
     error("sixgr:phy:refsig:CausalMeasurementBadConsumerSlot", ...
         "consumerSlot must be a finite scalar.");
 end
-maxAge = double(opt.MaxAgeSlots);
+% Malformed policy must not silently disable freshness. Positive infinity
+% is an explicit no-age-limit choice; NaN/negative/text/complex are errors.
+rawMaxAge=opt.MaxAgeSlots;
+assert(isnumeric(rawMaxAge) && isreal(rawMaxAge) && isscalar(rawMaxAge) && ...
+    ~isnan(rawMaxAge) && rawMaxAge>=0, ...
+    'sixgr:phy:refsig:InvalidMeasurementMaximumAge', ...
+    'MaxAgeSlots must be a nonnegative numeric scalar or explicit positive Inf.');
+maxAge = double(rawMaxAge);
 knownAtSlot = opt.KnownAtSlot;
 if isempty(knownAtSlot), knownAtSlot = consumerSlot; end
 if ~(isscalar(knownAtSlot) && isreal(knownAtSlot) && isfinite(knownAtSlot) && knownAtSlot<=consumerSlot)
     error("sixgr:phy:refsig:CausalMeasurementBadKnowledgeSlot", ...
         "KnownAtSlot must be finite and no later than the resource-consumer slot.");
 end
-if ~(isscalar(maxAge) && isfinite(maxAge) && maxAge >= 0)
-    maxAge = inf;
-end
-
 out = localEmptyResult(consumerSlot, maxAge);
 out.KnownAtSlot = double(knownAtSlot);
 sampleMode = ~isempty(opt.KnownAtSample) || ~isempty(opt.ClockSampleRateHz) || ...

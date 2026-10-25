@@ -47,21 +47,18 @@ classdef ChannelAllocationMaterializer
             opt = localOptions(carrier, varargin{:});
             [dataIndices, dataInfo] = nrPDSCHIndices( ...
                 carrier, pdsch, "IndexStyle", "index", ...
-                "IndexBase", "1based");
+                "IndexBase", "1based", "IndexOrientation", "carrier");
             dmrsIndices = nrPDSCHDMRSIndices( ...
                 carrier, pdsch, "IndexStyle", "index", ...
-                "IndexBase", "1based");
+                "IndexBase", "1based", "IndexOrientation", "carrier");
             ptrsIndices = zeros(0, 1);
             if isprop(pdsch, "EnablePTRS") && logical(pdsch.EnablePTRS)
                 ptrsIndices = nrPDSCHPTRSIndices( ...
                     carrier, pdsch, "IndexStyle", "index", ...
-                    "IndexBase", "1based");
+                    "IndexBase", "1based", "IndexOrientation", "carrier");
             end
-            reservedIndices = zeros(0, 1);
-            if isprop(pdsch, "ReservedRE") && ~isempty(pdsch.ReservedRE)
-                reservedIndices = unique(double(pdsch.ReservedRE(:)) + 1, ...
-                    "stable");
-            end
+            [reservedIndices, reservationDomain] = ...
+                localPDSCHReservedIndices(carrier, pdsch, dataInfo);
             data = localLinearComponent(carrier, dataIndices, ...
                 "PDSCH_DATA", "nrPDSCHIndices", opt);
             dmrs = localLinearComponent(carrier, dmrsIndices, ...
@@ -86,7 +83,7 @@ classdef ChannelAllocationMaterializer
                     "nrPDSCHIndices/DMRS/PTRS still occupy an RE in " + ...
                     "nrPDSCHConfig.ReservedRE.");
             end
-            [startRB, numRB] = localPRBEnvelope(pdsch.PRBSet);
+            [startRB, numRB] = localCoordinatePRBEnvelope(candidateCoordinates);
             symbolAllocation = localSymbolAllocation(pdsch);
             mappingType = upper(string(pdsch.MappingType));
             allocation = localAllocation( ...
@@ -107,7 +104,11 @@ classdef ChannelAllocationMaterializer
             result.RateMatchProof = struct( ...
                 "Source", "nrPDSCHConfig.ReservedRE", ...
                 "ReservedREIndexBase", "zero_based_toolbox_input", ...
+                "ReservedREIndexDomain", "bwp_resource_grid", ...
+                "OriginalReservedRE0Based", double(pdsch.ReservedRE), ...
                 "MaterializedIndexBase", "one_based_toolbox_output", ...
+                "MaterializedIndexDomain", "carrier_resource_grid", ...
+                "ReservationDomain", reservationDomain, ...
                 "ReservedIndices1Based", reserved.Indices1Based, ...
                 "ReservedREKeys", reservedKeys, ...
                 "NoOccupiedReservedRECollision", ...
@@ -127,26 +128,55 @@ classdef ChannelAllocationMaterializer
             opt = localOptions(carrier, varargin{:});
             [dataIndices, dataInfo] = nrPUSCHIndices( ...
                 carrier, pusch, "IndexStyle", "index", ...
-                "IndexBase", "1based");
+                "IndexBase", "1based", "IndexOrientation", "carrier");
             dmrsIndices = nrPUSCHDMRSIndices( ...
                 carrier, pusch, "IndexStyle", "index", ...
-                "IndexBase", "1based");
+                "IndexBase", "1based", "IndexOrientation", "carrier");
+            transformPrecoding = logical(pusch.TransformPrecoding);
             ptrsIndices = zeros(0, 1);
+            nativePTRSIndices = zeros(0, 1);
             if isprop(pusch, "EnablePTRS") && logical(pusch.EnablePTRS)
-                ptrsIndices = nrPUSCHPTRSIndices( ...
+                nativePTRSIndices = nrPUSCHPTRSIndices( ...
                     carrier, pusch, "IndexStyle", "index", ...
                     "IndexBase", "1based");
+                ptrsIndices = sixgr.phy.resource.puschPTRSGridIndices( ...
+                    carrier, pusch, "IndexBase", "1based");
             end
+            embeddedPTRS = transformPrecoding && ~isempty(ptrsIndices);
+            dataLabel = "PUSCH_DATA";
+            if embeddedPTRS, dataLabel = "PUSCH_TRANSFORMED_DATA_AND_PTRS"; end
             data = localLinearComponent(carrier, dataIndices, ...
-                "PUSCH_DATA", "nrPUSCHIndices", opt);
+                dataLabel, "nrPUSCHIndices", opt);
             dmrs = localLinearComponent(carrier, dmrsIndices, ...
                 "PUSCH_DMRS", "nrPUSCHDMRSIndices", opt);
             ptrs = localLinearComponent(carrier, ptrsIndices, ...
-                "PUSCH_PTRS", "nrPUSCHPTRSIndices", opt);
-            coordinates = unique([data.Coordinates0Based; ...
-                dmrs.Coordinates0Based; ptrs.Coordinates0Based], ...
-                "rows", "stable");
-            [startRB, numRB] = localPRBEnvelope(pusch.PRBSet);
+                "PUSCH_PTRS", "nrPUSCHPTRSIndices+puschPTRSGridIndices", opt);
+            % Keep ordered native matrices separate from occupancy sets.
+            % TS 38.211 V18.8.0 6.3.1.4/6.4.1.2.2.2 inserts PT-RS
+            % before the DFT. Its projected addresses bind nrPUSCH's extra
+            % output to existing transformed values, not isolated pilots.
+            data.GridIndices1Based = double(dataIndices);
+            data.IndexDomain = "carrier_resource_grid";
+            ptrs.NativeIndices1Based = double(nativePTRSIndices);
+            ptrs.GridIndices1Based = double(ptrsIndices);
+            ptrs.NativeIndexDomain = "carrier_resource_grid";
+            ptrs.IndexDomain = "carrier_resource_grid";
+            ptrs.EmbeddedInData = embeddedPTRS;
+            ptrs.IndependentPhysicalOccupancy = ~transformPrecoding;
+            coordinates = [data.Coordinates0Based; dmrs.Coordinates0Based];
+            if transformPrecoding
+                ptrs.NativeIndexDomain = "pre_transform_pusch_allocation_relative";
+                ptrs.IndexDomain = "carrier_grid_projected_allocation_rows";
+                assert(all(ismember(ptrsIndices(:), dataIndices(:))), ...
+                    "sixgr:phy:frame:EmbeddedPUSCHPTRSOutsideAllocation", ...
+                    "Projected DFT PT-RS must be inside its transformed PUSCH allocation.");
+            else
+                coordinates = [coordinates; ptrs.Coordinates0Based];
+            end
+            coordinates = unique(coordinates, "rows", "stable");
+            % Native coordinates already contain the BWP offset and both
+            % frequency hops. PRBSet alone is BWP-relative and first-hop only.
+            [startRB, numRB] = localCoordinatePRBEnvelope(coordinates);
             symbolAllocation = localSymbolAllocation(pusch);
             allocation = localAllocation( ...
                 "PUSCH", "UL", coordinates, startRB, numRB, ...
@@ -160,6 +190,7 @@ classdef ChannelAllocationMaterializer
             result.DMRS = dmrs;
             result.PTRS = ptrs;
             result.IndicesInfo = dataInfo;
+            result.TransformPrecoding = transformPrecoding;
         end
 
         function result = materializePUCCH(carrier, pucch, varargin)
@@ -252,8 +283,13 @@ classdef ChannelAllocationMaterializer
                     source = "nrPUSCHDMRSIndices";
                     direction = "UL";
                 case "PUSCH_PTRS"
-                    indices = nrPUSCHPTRSIndices(carrier, configObject);
-                    source = "nrPUSCHPTRSIndices";
+                    localRequireObject(configObject, "nrPUSCHConfig", "pusch");
+                    assert(~logical(configObject.TransformPrecoding), ...
+                        "sixgr:phy:frame:EmbeddedPUSCHPTRSRequiresCombinedAllocation", ...
+                        "DFT-spread PT-RS has no isolated frequency-domain pilot allocation. " + ...
+                        "Use materializePUSCH for its combined physical occupancy.");
+                    indices = sixgr.phy.resource.puschPTRSGridIndices(carrier, configObject);
+                    source = "nrPUSCHPTRSIndices+puschPTRSGridIndices";
                     direction = "UL";
                 case "PUCCH_DMRS"
                     indices = nrPUCCHDMRSIndices(carrier, configObject);
@@ -433,13 +469,26 @@ nStartBWP = localObjectValue(pdcch, "NStartBWP", ...
     double(carrier.NStartGrid));
 nSizeBWP = localObjectValue(pdcch, "NSizeBWP", ...
     double(carrier.NSizeGrid));
+if isempty(nStartBWP), nStartBWP = double(carrier.NStartGrid); end
+if isempty(nSizeBWP), nSizeBWP = double(carrier.NSizeGrid); end
 localStartBWP = double(nStartBWP) - double(carrier.NStartGrid);
+% Match native CORESET bitmap placement, not only the BWP origin. For
+% nonzero CORESET IDs the empty RBOffset aligns the first bitmap group
+% to the next six-CRB boundary. An explicit RBOffset replaces alignment.
+% CORESET0 ignores RBOffset and starts at the BWP anchor.
+bitmapRBOffset = 0;
+if double(coreset.CORESETID) ~= 0
+    bitmapRBOffset = localObjectValue(coreset, "RBOffset", []);
+    if isempty(bitmapRBOffset)
+        bitmapRBOffset = 6*ceil(double(nStartBWP)/6)-double(nStartBWP);
+    end
+end
 activeGroups = find(frequencyResources == 1) - 1;
 rbSet = zeros(1, 6 * numel(activeGroups));
 cursor = 1;
 for group = activeGroups
     rbSet(cursor:(cursor + 5)) = ...
-        localStartBWP + group * 6 + (0:5);
+        localStartBWP + double(bitmapRBOffset) + group * 6 + (0:5);
     cursor = cursor + 6;
 end
 if isempty(rbSet) || any(rbSet < 0) || ...
@@ -469,6 +518,7 @@ monitoring = struct( ...
     "StartSymbol", startSymbol, ...
     "NumSymbols", duration, ...
     "FrequencyResourceBitmap", frequencyResources, ...
+    "BitmapRBOffsetWithinBWP", double(bitmapRBOffset), ...
     "RBSet", rbSet, ...
     "StartRB", min(rbSet), ...
     "NumRB", max(rbSet) - min(rbSet) + 1, ...
@@ -479,15 +529,54 @@ monitoring = struct( ...
     "Exact", true);
 end
 
-function [startRB, numRB] = localPRBEnvelope(prbSet)
-prbSet = unique(double(prbSet(:).'), "stable");
-if isempty(prbSet) || any(~isfinite(prbSet)) || ...
-        any(prbSet < 0) || any(prbSet ~= fix(prbSet))
-    error("sixgr:phy:frame:InvalidToolboxPRBSet", ...
-        "Toolbox channel PRBSet must contain zero-based integers.");
+function [startRB, numRB] = localCoordinatePRBEnvelope(coordinates)
+if isempty(coordinates)
+    error("sixgr:phy:frame:EmptyToolboxAllocation", ...
+        "Toolbox channel functions returned no occupied carrier-grid RE.");
 end
-startRB = min(prbSet);
-numRB = max(prbSet) - startRB + 1;
+startRB = floor(min(coordinates(:, 1)) / 12);
+lastRB = floor(max(coordinates(:, 1)) / 12);
+numRB = lastRB - startRB + 1;
+end
+
+function [indices, domain] = localPDSCHReservedIndices(carrier, pdsch, dataInfo)
+% R2026a nrPDSCHIndices/nrPDSCHPTRSIndices interpret ReservedRE on the
+% BWP grid, collapse reservations across layers, and apply that union to
+% every data layer. Do not decode these input indices using carrier stride.
+% Native functions above remain the authority for actual mapped occupancy.
+nStartBWP = pdsch.NStartBWP;
+if isempty(nStartBWP), nStartBWP = carrier.NStartGrid; end
+nSizeBWP = pdsch.NSizeBWP;
+if isempty(nSizeBWP), nSizeBWP = carrier.NSizeGrid; end
+bwpOffset = double(nStartBWP) - double(carrier.NStartGrid);
+bwpK = 12 * double(nSizeBWP);
+carrierK = 12 * double(carrier.NSizeGrid);
+nSymbols = localSymbolsPerSlot(carrier);
+nLayers = double(pdsch.NumLayers);
+domain = struct("NStartBWP", double(nStartBWP), ...
+    "NSizeBWP", double(nSizeBWP), "CarrierRBOffset", bwpOffset, ...
+    "BWPSubcarrierCount", bwpK, "CarrierSubcarrierCount", carrierK, ...
+    "SymbolsPerSlot", nSymbols, "NumLayers", nLayers, ...
+    "LayerProjection", "union_across_input_layers_applied_to_all_data_layers", ...
+    "MaterializedScope", "scheduled_native_prb_and_symbol_intersection");
+indices = zeros(0, 1);
+if isempty(pdsch.ReservedRE), return; end
+% mod by one BWP page is exactly the native full-grid modulo followed by
+% its layer union. Keep the original input shape/values in RateMatchProof.
+oneLayer = unique(mod(double(pdsch.ReservedRE(:)), bwpK*nSymbols), "stable");
+subcarrier = mod(oneLayer, bwpK);
+symbol = floor(oneLayer / bwpK);
+symbolAllocation = localSymbolAllocation(pdsch);
+% A BWP reservation may lie outside this channel's allocation. It must not
+% enlarge the PDSCH or become falsely published as one of its punctures.
+% dataInfo.PRBSet is native PHYSICAL PRBs, including VRB interleaving.
+inside = ismember(floor(subcarrier/12), double(dataInfo.PRBSet)) & ...
+    symbol >= symbolAllocation(1) & ...
+    symbol < sum(symbolAllocation);
+if ~any(inside), return; end
+carrierOneLayer = subcarrier(inside) + 12*bwpOffset + ...
+    carrierK*symbol(inside) + 1;
+indices = reshape(carrierOneLayer(:) + carrierK*nSymbols*(0:nLayers-1), [], 1);
 end
 
 function allocation = localSymbolAllocation(configObject)

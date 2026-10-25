@@ -3,10 +3,53 @@
 (() => {
 const {CHAPTERS, esc, S, T, N} = window.H4Guide;
 const $=id=>document.getElementById(id), cache=new Map();
-let current='',epoch=0;
+let current='',currentSection='',currentTopic='',epoch=0;
 const json=url=>{if(!cache.has(url))cache.set(url,fetch(url).then(r=>{if(!r.ok)throw Error(`${r.status}: ${url}`);return r.json();}).catch(e=>{cache.delete(url);throw e;}));return cache.get(url);};
 const plain=html=>{const d=document.createElement('div');d.innerHTML=html;return d.textContent;};
 const index=CHAPTERS.map(c=>`${c.title} ${c.lead} ${plain(c.body())}`.toLowerCase());
+// Reading order is deliberately independent of the authored chapter array.
+// Existing chapter hashes and bodies remain the canonical detail pages.
+const chapterByID=new Map(CHAPTERS.map(c=>[c.id,c]));
+const reading=(id,label='',section='')=>({id,label:label||chapterByID.get(id)?.title||id,section});
+const playbook=(id,label)=>reading('channel-playbooks',label,`playbook-${id}`);
+const TOPICS=[
+ {id:'orientation',title:'Orientation & link architecture',lead:'Start with the vocabulary, processing boundaries and production source owners.',entries:['start','fundamentals','architecture','engineering-handbook'].map(id=>reading(id))},
+ {id:'configuration',title:'Configuration & execution',lead:'Resolve YAML, choose the experiment and understand execution scope before running it.',entries:['configuration-map','configuration','parameters','run-families','scenarios','recipe','n40-reference-sweep'].map(id=>reading(id))},
+ {id:'antennas',title:'BS / UE, antennas & ports',lead:'Keep physical arrays, waveform columns, logical ports, layers and codebook dimensions distinct.',entries:['mimo','antenna-port-power-audit','port-layer-measurement-flow'].map(id=>reading(id))},
+ {id:'waveform',title:'Waveform, frame & resources',lead:'Follow the radio clock, resource grid, OFDM transform and allocation boundaries.',entries:['grid','ofdm','resource-efficiency'].map(id=>reading(id))},
+ {id:'transmit',title:'Transmit chain & coding',lead:'Follow information bits through coding, rate matching, modulation and mapping.',entries:['tx','coding'].map(id=>reading(id))},
+ {id:'radio-link',title:'RF, channel, power & noise',lead:'Separate propagation, RF processing, waveform normalization and the declared noise reference.',entries:['channel-model-lab','channel','rf-port-lab','rf','power','absolute-power-n40','type1o-power-and-sliv'].map(id=>reading(id))},
+ {id:'initial-access',title:'Initial access, SSB & PBCH',lead:'Acquire cell identity, synchronization and broadcast information from received samples.',entries:[reading('access'),playbook('ssb','SSB / PSS / SSS / PBCH execution')]},
+ {id:'random-access',title:'PRACH, timing advance & RRC',lead:'Trace random access and connection state without confusing detection with completed access.',entries:[reading('prach'),playbook('prach','PRACH → RAR → Msg3 → connection')]},
+ {id:'spatial-feedback',title:'Beams, CSI-RS, SRS & TRS',lead:'Generate, receive and interpret spatial and tracking measurements before using feedback.',entries:[reading('beam'),reading('referencesignals'),playbook('csirs','CSI-RS / CSI-IM measurement'),playbook('srs','SRS sounding and UL spatial evidence'),playbook('trs','TRS tracking and QCL timing')]},
+ {id:'control',title:'PDCCH & received DCI',lead:'Follow control search, decoding and semantic admission into a later data grant.',entries:[reading('pdcch'),playbook('pdcch','PDCCH transmitter-to-receiver procedure')]},
+ {id:'downlink-data',title:'PDSCH & DL-SCH',lead:'Follow the complete connected downlink data procedure, from admission to received CRC and delivery.',entries:[playbook('pdsch','PDSCH: full connected DL data chain')]},
+ {id:'uplink-data',title:'PUSCH, PUCCH & UCI',lead:'Keep uplink data, HARQ-ACK, CSI, DTX and independent decode outcomes separate.',entries:[playbook('pusch','PUSCH: full connected UL data chain'),reading('uci')]},
+ {id:'receive',title:'Receiver algorithms',lead:'Work through synchronization, estimation, equalization, soft decisions and decoding.',entries:[reading('rx'),reading('receiver-algorithm-lab'),reading('flexran-algorithm-review'),playbook('demodulation','DM-RS / PT-RS, equalization and soft decoding')]},
+ {id:'scheduling',title:'Scheduling, adaptation & HARQ',lead:'Join causal measurements, legal grants, retransmissions, delivery and checkpoint state.',entries:['scheduler','adaptation','harq','causal-flow','restart-flow'].map(id=>reading(id))},
+ {id:'measurements',title:'Measurements & results',lead:'Read definitions, units, populations, original evidence and availability before interpreting a plot.',entries:['measurements','measurement-operator-maths','measurement-contract','worked-calculations','outputs','dashboard-reading','output-atlas','result-reading','qualification','threshold-authority'].map(id=>reading(id))},
+ {id:'references',title:'Source & standards reference',lead:'Use the searchable registers and versioned references to verify the implementation basis.',entries:['channel-playbooks','algorithm-register','comparison','standards-crosswalk','sources','glossary','references'].map(id=>reading(id))}
+];
+// Newly authored chapters remain reachable until their topic is assigned.
+const assigned=new Set(TOPICS.flatMap(t=>t.entries.filter(e=>!e.section).map(e=>e.id)));
+const unassigned=CHAPTERS.filter(c=>!assigned.has(c.id));
+TOPICS.at(-1).entries.push(...unassigned.map(c=>reading(c.id)));
+Object.assign(window.H4Guide,{topics:TOPICS,unassignedTopicChapters:unassigned.map(c=>c.id)});
+const readingHref=e=>`#${e.id}${e.section?'?section='+encodeURIComponent(e.section):''}`;
+const topicHref=t=>`#topic-${t.id}`;
+const readingSearch=new Map(TOPICS.flatMap(t=>t.entries.map(e=>{
+ let text=index[CHAPTERS.findIndex(c=>c.id===e.id)]||'';
+ if(e.section.startsWith('playbook-')){
+  const fragment=document.createElement('div');fragment.innerHTML=chapterByID.get(e.id).body();
+  const detail=[...fragment.querySelectorAll('[data-playbook]')].find(n=>`playbook-${n.dataset.playbook}`===e.section);
+  text=detail?.textContent.toLowerCase()||text;
+ }
+ return [readingHref(e),text];
+})));
+function topicFor(id,section=''){
+ return (section&&TOPICS.find(t=>t.entries.some(e=>e.id===id&&e.section===section)))||
+  TOPICS.find(t=>t.entries.some(e=>e.id===id&&!e.section))||TOPICS.at(-1);
+}
 const val=v=>v===undefined?'Not declared here':typeof v==='string'?v:JSON.stringify(v);
 const getPath=(obj,p)=>String(p).split('.').reduce((x,k)=>x?.[k],obj);
 // A real CSV parser: quoted commas/newlines and escaped quotes are valid in
@@ -103,7 +146,72 @@ async function evidenceExplorer(stamp,params){
  }catch(e){if(stamp===epoch)error('evidence-inventory-summary',e);}
 }
 function flatten(obj,prefix='',out=[]){Object.entries(obj||{}).forEach(([k,v])=>{const p=prefix?`${prefix}.${k}`:k;if(v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).length)flatten(v,p,out);else out.push({path:p,value:v});});return out;}
-function navigation(){const q=$('search').value.trim().toLowerCase();let group='',html='',count=0;CHAPTERS.forEach((c,i)=>{if(q&&!index[i].includes(q))return;count++;if(group!==c.group){group=c.group;html+=`<div class="nav-group">${esc(group)}</div>`;}html+=`<a href="#${c.id}"${c.id===current?' class="active" aria-current="page"':''}><span>${String(i+1).padStart(2,'0')}</span>${esc(c.title)}</a>`;});$('navigation').innerHTML=html||'<p>No chapter matches. Try a shorter term.</p>';$('navigation').setAttribute('aria-label',`${count} matching chapters`);}
+function navigation(){
+ const q=$('search').value.trim().toLowerCase();let matches=0;
+ const html=TOPICS.map((topic,i)=>{
+  const topicMatch=`${topic.title} ${topic.lead}`.toLowerCase().includes(q);
+  const entries=topic.entries.filter(e=>!q||topicMatch||e.label.toLowerCase().includes(q)||readingSearch.get(readingHref(e)).includes(q));
+  if(!entries.length)return '';
+  matches+=entries.length;
+  const active=topic.id===currentTopic;
+  const links=entries.map(e=>{
+   const selected=active&&current===e.id&&(!e.section||e.section===currentSection);
+   return `<a class="nav-reading${selected?' active':''}" href="${readingHref(e)}"${selected?' aria-current="page"':''}>${esc(e.label)}</a>`;
+  }).join('');
+  return `<details class="nav-topic${active?' current-topic':''}" data-topic="${topic.id}"${q||active?' open':''}>
+   <summary><span class="topic-number">${String(i+1).padStart(2,'0')}</span><span class="topic-name">${esc(topic.title)}</span></summary>
+   <div class="topic-readings"><a class="topic-overview" href="${topicHref(topic)}"${active&&current.startsWith('topic-')?' aria-current="page"':''}>Topic overview <span aria-hidden="true">↗</span></a>${links}</div></details>`;
+ }).join('');
+ $('navigation').innerHTML=html||'<p class="nav-empty">No topic or subsection matches. Try a shorter term.</p>';
+ $('nav-status').textContent=q?`${matches} matching readings · clear search to restore topics`:`${TOPICS.length} ordered topics · ${CHAPTERS.length} preserved chapters`;
+ $('navigation').setAttribute('aria-label',q?'Search results by topic':'Ordered guide topics');
+ // Native details provide keyboard operation; open one topic at a time when
+ // not searching. Search intentionally opens all matching topic groups.
+ $('navigation').querySelectorAll('.nav-topic').forEach(detail=>detail.addEventListener('toggle',()=>{
+  if(detail.isConnected&&detail.open&&!$('search').value.trim())$('navigation').querySelectorAll('.nav-topic[open]').forEach(other=>{if(other!==detail)other.open=false;});
+ }));
+}
+function contextHeader(topic,position=''){
+ const number=TOPICS.indexOf(topic)+1;
+ $('breadcrumb').textContent=`${String(number).padStart(2,'0')} / ${topic.title}`;
+ return `<div class="reading-context"><a href="${topicHref(topic)}">Topic ${String(number).padStart(2,'0')} · ${esc(topic.title)}</a>${position?`<span>${esc(position)}</span>`:''}</div>`;
+}
+function readingFooter(topic,entryIndex=-1){
+ const topicIndex=TOPICS.indexOf(topic),previous=topic.entries[entryIndex-1],next=topic.entries[entryIndex+1];
+ const back=entryIndex<0?(TOPICS[topicIndex-1]?{href:topicHref(TOPICS[topicIndex-1]),label:TOPICS[topicIndex-1].title}:null):
+  previous?{href:readingHref(previous),label:previous.label}:{href:topicHref(topic),label:topic.title+' overview'};
+ const forward=entryIndex<0?{href:readingHref(topic.entries[0]),label:topic.entries[0].label}:
+  next?{href:readingHref(next),label:next.label}:TOPICS[topicIndex+1]?{href:topicHref(TOPICS[topicIndex+1]),label:TOPICS[topicIndex+1].title}:null;
+ $('chapter-footer').innerHTML=(back?`<a class="reading-previous" href="${back.href}"><small>← Previous reading</small>${esc(back.label)}</a>`:'<span></span>')+
+  (forward?`<a class="reading-next" href="${forward.href}"><small>${entryIndex<0?'Start this topic':'Read next'} →</small>${esc(forward.label)}</a>`:'<a href="#topic-orientation">Return to the guide overview ↑</a>');
+}
+function renderTopic(topic){
+ $('content').innerHTML=contextHeader(topic)+`<div class="eyebrow">Ordered topic guide</div><h1>${esc(topic.title)}</h1><p class="lead">${esc(topic.lead)}</p>
+  <p class="doc-note">Read the subsections in order or jump directly to a question. Existing chapters, source links and detailed explanations are retained; grouping is not an execution or qualification claim.</p>
+  <ol class="topic-cards">${topic.entries.map((e,i)=>`<li><a href="${readingHref(e)}"><span class="reading-index">${String(i+1).padStart(2,'0')}</span><div><strong>${esc(e.label)}</strong><p>${esc(e.section?'Targeted procedure in the existing channel-by-channel walkthrough.':chapterByID.get(e.id).lead)}</p><span class="reading-action">Read ${e.section?'procedure':'chapter'} →</span></div></a></li>`).join('')}</ol>`;
+ document.title=`${topic.title} · SixGR Field Guide`;readingFooter(topic);
+}
+function topicDirectory(){
+ return `<section class="guide-topic-directory" aria-label="Guide topic index"><h2 id="guide-topic-index">Read the guide in ${TOPICS.length} ordered topics</h2>
+  <p>Choose a topic, then follow its detailed subsections and read-next links. The existing chapter bookmarks still work; the topic sequence is the main reading structure.</p>
+  <ol>${TOPICS.map((t,i)=>`<li><a href="${topicHref(t)}"><span>${String(i+1).padStart(2,'0')}</span>${esc(t.title)}</a></li>`).join('')}</ol></section>`;
+}
+function pageOutline(chapter){
+ const content=$('chapter-body');
+ // Give existing playbook details stable, explicit routing targets without
+ // copying their content into new chapters or changing authored old IDs.
+ content.querySelectorAll('[data-playbook]').forEach(node=>{if(!node.id)node.id=`playbook-${node.dataset.playbook}`;});
+ const headings=[...content.querySelectorAll('h2, details.playbook > summary, details.eng-contract > summary')];
+ const entries=headings.map((node,i)=>{
+  const target=node.tagName==='SUMMARY'?node.parentElement:node;
+  if(!target.id){
+   const slug=plain(node.innerHTML).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||String(i+1);
+   let id=`section-${slug}`,suffix=2;while(document.getElementById(id))id=`section-${slug}-${suffix++}`;target.id=id;
+  }
+  return `<li><a href="#${chapter.id}?section=${encodeURIComponent(target.id)}">${esc(node.textContent.trim())}</a></li>`;
+ });
+ if(entries.length)$('page-outline').innerHTML=`<details class="page-outline"${entries.length<=8?' open':''}><summary>On this page <span>${entries.length} subsections</span></summary><ol>${entries.join('')}</ol></details>`;
+}
 function table(target,rows,heads,rowFn,page=0,size=40){const pages=Math.max(1,Math.ceil(rows.length/size));page=Math.max(0,Math.min(page,pages-1));target.innerHTML=`<div class="pagination"><span>${rows.length?page*size+1:0}–${Math.min(rows.length,(page+1)*size)} of ${rows.length}</span><button data-prev ${!page?'disabled':''}>Previous</button><button data-next ${page===pages-1?'disabled':''}>Next</button><span>Page ${page+1}/${pages}</span></div>`+(rows.length?T(heads,rows.slice(page*size,(page+1)*size).map(rowFn)):'<p class="empty">No matches. Nothing has been substituted.</p>');target.querySelector('[data-prev]').onclick=()=>table(target,rows,heads,rowFn,page-1,size);target.querySelector('[data-next]').onclick=()=>table(target,rows,heads,rowFn,page+1,size);}
 function error(id,e){if($(id))$(id).innerHTML=N('Could not load local documentation data',esc(e.message)+' Start serve.py using the documented command; do not open index.html directly.',true);}
 async function configExplorer(stamp){try{const d=await json('/api/reference');if(stamp!==epoch)return;if(!d.available)throw Error(d.reason);$('config-summary').innerHTML=`<strong>${d.snapshot_matches_yaml?'Snapshot matches all inherited YAML hashes.':'WARNING: YAML changed since this snapshot.'}</strong><br>Generated ${esc(d.created)} · MATLAB ${esc(d.matlab)} · ${d.sources.length} inherited source occurrences.<br>Configuration only; not a completed-run receipt.`+(d.source_changes_since_snapshot.length?`<p>${esc(d.source_changes_since_snapshot.join(', '))}</p>`:'');const rows=flatten(d.resolved);const update=()=>{const q=$('config-filter').value.toLowerCase();table($('config-values'),rows.filter(r=>`${r.path} ${val(r.value)}`.toLowerCase().includes(q)),['Resolved field','Value'],r=>[`<code>${esc(r.path)}</code>`,`<code>${esc(val(r.value))}</code>`]);};$('config-filter').oninput=update;update();$('config-sources').innerHTML=T(['Merge sequence','Source','SHA-256'],d.sources.map((s,i)=>[i+1,S(s.path,s.path),`<code>${esc(s.sha256)}</code>`]));}catch(e){if(stamp===epoch)error('config-summary',e);}}
@@ -201,23 +309,44 @@ $('source-find').onkeydown=e=>{if(e.key==='Enter')findSource(true);};$('source-f
 function route(){
   const [anchor,query='']=location.hash.slice(1).split('?'),requested=anchor||'start',params=new URLSearchParams(query);
   if(requested==='content'){$('content').focus();return;}
+  const topic=TOPICS.find(t=>`topic-${t.id}`===requested);
   const idx=CHAPTERS.findIndex(c=>c.id===requested);
-  if(idx<0){location.hash='start';return;}
-  const c=CHAPTERS[idx];current=c.id;const stamp=++epoch;navigation();
-  $('content').innerHTML=`<div class="eyebrow"><span class="chapter-number">${String(idx+1).padStart(2,'0')}</span>${esc(c.group)}</div><h1>${esc(c.title)}</h1><p class="lead">${esc(c.lead)}</p>${window.H4Guide.chapterAuthority(c.id)}${c.body()}`;
-  document.title=`${c.title} · SixGR Field Guide`;
-  $('chapter-footer').innerHTML=(idx?`<a href="#${CHAPTERS[idx-1].id}">← ${esc(CHAPTERS[idx-1].title)}</a>`:'<span>SixGR · Local field guide</span>')+(idx<CHAPTERS.length-1?`<a href="#${CHAPTERS[idx+1].id}">${esc(CHAPTERS[idx+1].title)} →</a>`:'<a href="#start">Back to the beginning ↑</a>');
+  if(idx<0&&!topic){location.hash='start';return;}
+  current=requested;currentSection=params.get('section')||'';
+  const activeTopic=topic||topicFor(current,currentSection);currentTopic=activeTopic.id;
+  const stamp=++epoch;navigation();
   $('sidebar').classList.remove('open');$('menu').setAttribute('aria-expanded','false');
   window.scrollTo({top:0,behavior:'instant'});
+  if(topic){renderTopic(topic);return;}
+  const c=CHAPTERS[idx];
+  const entryIndex=activeTopic.entries.findIndex(e=>e.id===c.id&&(!e.section||e.section===currentSection));
+  $('content').innerHTML=contextHeader(activeTopic,`Reading ${entryIndex+1} of ${activeTopic.entries.length}`)+`<h1>${esc(c.title)}</h1><p class="lead">${esc(c.lead)}</p><div id="page-outline"></div>${window.H4Guide.chapterAuthority(c.id)}<article id="chapter-body">${c.id==='start'?topicDirectory():''}${c.body()}</article>`;
+  document.title=`${c.title} · SixGR Field Guide`;
+  readingFooter(activeTopic,entryIndex);
   const labs={start:hero,architecture:flow,grid,mimo:rankLab,harq:harqLab,rf:qamLab,prach:prachLab};
   if(labs[c.id])labs[c.id]();
   window.H4Guide.initMethodChapter(c.id);
+  window.H4Guide.initEngineeringChapter?.(c.id);
   if(c.id==='configuration')configExplorer(stamp);
   if(c.id==='parameters')parameterExplorer(stamp,params);
   if(c.id==='scenarios')scenarioExplorer(stamp,params);
   if(c.id==='output-atlas')evidenceExplorer(stamp,params);
+  pageOutline(c);
+  // Deep links stay inside the chapter router. Open the containing details
+  // before scrolling; a subsection ID must never be mistaken for a chapter.
+  const section=params.get('section');
+  if(section){
+    const target=document.getElementById(section);
+    if(target&&$('content').contains(target)){
+      for(let node=target;node&&node!==$('content');node=node.parentElement){
+        if(node.tagName==='DETAILS')node.open=true;
+      }
+      requestAnimationFrame(()=>{if(stamp===epoch)target.scrollIntoView({block:'start',behavior:'instant'});});
+    }
+  }
 }
 $('search').oninput=navigation;$('menu').onclick=()=>{$('sidebar').classList.toggle('open');$('menu').setAttribute('aria-expanded',String($('sidebar').classList.contains('open')));};document.addEventListener('keydown',e=>{if(e.key==='Escape'){$('sidebar').classList.remove('open');$('menu').setAttribute('aria-expanded','false');}});
+$('close-menu').onclick=()=>{$('sidebar').classList.remove('open');$('menu').setAttribute('aria-expanded','false');$('menu').focus();};
 try{document.body.classList.toggle('dark',localStorage.getItem('sixgr-guide-theme')==='dark');}catch{}
 $('theme').onclick=()=>{document.body.classList.toggle('dark');try{localStorage.setItem('sixgr-guide-theme',document.body.classList.contains('dark')?'dark':'light');}catch{}};$('print').onclick=()=>window.print();window.addEventListener('hashchange',route);route();
 })();

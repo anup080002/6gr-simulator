@@ -30,8 +30,21 @@ assert(~isempty(dl) && ~isempty(ul));
 assert(all(dl.authority=="configured_RRC_BWP_resource_pool_not_scheduler_grant"));
 assert(all(rows.evidence_scope=="planned_config_not_runtime_observation"));
 reservedCounts=[]; quietCounts=[];
+frame=sixgr.phy.FrameStructureEngine(cfg);
 for slot=unique(dl.absolute_slot).'
     actual=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,slot+1);
+    if ~frame.IsDLAllocation(slot,actual.phy.pdsch.symbolAllocation)
+        % The planner now retains authored special-slot pools as well as
+        % baseline full-DL pools. Build their native reference from the
+        % original catalog, not the full-slot baseline's DM-RS positions.
+        partition=frame.SlotPartition(slot);
+        region=double(partition.DLSymbolAllocation);
+        catalog=double(cfg.phy.pdsch.timeDomainAllocations);
+        hit=find(catalog(:,2)>=region(1) & ...
+            catalog(:,2)+catalog(:,3)<=sum(region) & catalog(:,4)==0,1,'first');
+        assert(~isempty(hit),'Every planned special-slot pool needs an authored legal TDRA.');
+        actual.phy.pdsch.symbolAllocation=catalog(hit,2:3);
+    end
     carrier=sixgr.phy.grid.makeCarrier(actual);
     reservation=sixgr.phy.frame.ssbPRBSymbolReservation(actual,carrier,slot);
     selected=dl(dl.absolute_slot==slot,:);

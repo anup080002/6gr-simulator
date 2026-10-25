@@ -131,5 +131,72 @@ terminal.FinalizedFlag = false;
 result = sixgr.truth.classifyPUCCHGrantDisposition(terminal, table());
 assert(~result.AllScheduledResolved && result.UnresolvedCount == 1, ...
     "An unfinalized right-censor marker must fail closed.");
+
+% Declared original admission plus an independently completed receiver row.
+% This is a metadata join test, not a physical false-detection campaign.
+suppressed=bundledGrants;
+suppressed.GrantExecutedFlag(:)=false;
+suppressed.UETransmissionSuppressed=true(2,1);
+suppressed.UEProducerDisposition=repmat("closed_untransmitted_missing_measured_power_reference",2,1);
+suppressed.PowerAdmissionObservationID=repmat("original_no_tx_observation",2,1);
+rxOnly=bundledTrials;
+rxOnly.PUCCHGrantId="original_no_tx_observation";
+rxOnly.PowerAdmissionObservationID=rxOnly.PUCCHGrantId;
+rxOnly.UEProducerDisposition="closed_untransmitted_missing_measured_power_reference";
+rxOnly.ReceiverOnlyAssignment=1; rxOnly.PUCCHTransmissionPrepared=0;
+rxOnly.ExecutionBackend="pucch_shared_gnb_receive_only";
+rxOnly.EvidenceClass="actual_shared_receiver_observation_no_PUCCH_transmission_claim";
+rxOnly.ObservationStartSample=100; rxOnly.ObservationEndSampleExclusive=1100;
+rxOnly.ObservationSampleRateHz=30720000; rxOnly.FinalizedFlag=true;
+rxOnly.ControlObservationAvailable=true;
+for field=["UEIndex","RNTI","Slot","BaseStationID","ComponentCarrier","ActiveULBWP","SweepPointIndex"]
+    suppressed.(field)=ones(2,1); rxOnly.(field)=1;
+end
+beforeGrants=suppressed; beforeRX=rxOnly;
+result=sixgr.truth.classifyPUCCHGrantDisposition(suppressed,table());
+assert(result.UnresolvedCount==2&&result.ReceiverOnlyObservedCount==0, ...
+    'Closing UE work alone must not manufacture independent gNB reception.');
+for decoded=[false true]
+    actual=rxOnly; actual.PUCCHDecodeOk=decoded; actual.DetectionUsable=decoded;
+    actual.ReceiverUsable=decoded; actual.UCIContentMatch=decoded;
+    result=sixgr.truth.classifyPUCCHGrantDisposition(suppressed,actual);
+    assert(result.AllScheduledResolved&&result.ReceiverOnlyObservedCount==2&& ...
+        result.StandaloneObservedCount==0&&result.StandaloneTrialCount==0&&result.StandaloneFailedCount==0&& ...
+        all(result.Rows.Disposition=="power_deferred_UE_no_transmission_original_receiver_observed"), ...
+        'A received false acceptance is not a successful transmitted PUCCH; actual noise RX still resolves observation.');
+end
+for mutation=["pending","missing_finalized","unavailable","missing_availability", ...
+        "no_samples","prepared","missing_join","wrong_join","wrong_source","wrong_scope","proxy"]
+    bad=rxOnly;
+    switch mutation
+        case "pending", bad.FinalizedFlag=false;
+        case "missing_finalized", bad.FinalizedFlag=[];
+        case "unavailable", bad.ControlObservationAvailable=false;
+        case "missing_availability", bad.ControlObservationAvailable=[];
+        case "no_samples", bad.ObservationEndSampleExclusive=bad.ObservationStartSample;
+        case "prepared", bad.PUCCHTransmissionPrepared=1;
+        case "missing_join", bad.PowerAdmissionObservationID=[];
+        case "wrong_join", bad.PowerAdmissionObservationID="other_observation";
+        case "wrong_source", bad.ExecutionBackend="declared_receiver";
+        case "wrong_scope", bad.EvidenceClass="preparation_admission_not_PHY_execution";
+        case "proxy", bad.ApproximationMode="fast_proxy";
+    end
+    result=sixgr.truth.classifyPUCCHGrantDisposition(suppressed,bad);
+    assert(result.UnresolvedCount==2&&result.ReceiverOnlyObservedCount==0&&result.StandaloneTrialCount==0);
+end
+for field=["UEIndex","RNTI","Slot","BaseStationID","ComponentCarrier","ActiveULBWP","SweepPointIndex"]
+    for replacement=[2 NaN]
+        bad=rxOnly; bad.(field)=replacement;
+        result=sixgr.truth.classifyPUCCHGrantDisposition(suppressed,bad);
+        assert(result.UnresolvedCount==2,'Original no-TX join must not relax %s.',field);
+    end
+    bad=rxOnly; bad.(field)=[];
+    result=sixgr.truth.classifyPUCCHGrantDisposition(suppressed,bad);
+    assert(result.UnresolvedCount==2,'Missing receiver identity is not a match.');
+    noIdentity=suppressed; noIdentity.(field)=[];
+    result=sixgr.truth.classifyPUCCHGrantDisposition(noIdentity,bad);
+    assert(result.UnresolvedCount==2,'New admission joins cannot use legacy missing-both identity bypass.');
+end
+assert(isequaln(suppressed,beforeGrants)&&isequaln(rxOnly,beforeRX));
 ok = true;
 end

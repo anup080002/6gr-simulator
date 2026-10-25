@@ -63,6 +63,20 @@ legacy=removevars(T,{'ObservationStartSample','ObservationEndSampleExclusive', .
 candidate=sixgr.phy.refsig.causalMeasurementState(legacy,9);
 assert(candidate.Usable && candidate.MeasurementId=="older_available" && ...
     candidate.ProducerSlot==3 && candidate.AvailableSlot==9 && candidate.AgeSlots==6);
+% A malformed age policy previously silently became unlimited (or text was
+% converted to character codes). Never turn invalid configuration into use
+% of an old measurement. Explicit Inf retains causal/identity checks.
+for age={NaN,-1,-Inf,[],[1 2],1+1i,'20',"20",true}
+    expect(@()sixgr.phy.refsig.causalMeasurementState(legacy,9,'MaxAgeSlots',age{1}), ...
+        'sixgr:phy:refsig:InvalidMeasurementMaximumAge');
+end
+expired=sixgr.phy.refsig.causalMeasurementState(legacy,9,'MaxAgeSlots',4);
+assert(~expired.Usable && expired.Status=="stale");
+retained=sixgr.phy.refsig.causalMeasurementState(legacy,9,'MaxAgeSlots',Inf);
+assert(retained.Usable && retained.AgeSlots==6);
+future=legacy; future.AvailableSlot(:)=10;
+retained=sixgr.phy.refsig.causalMeasurementState(future,9,'MaxAgeSlots',Inf);
+assert(~retained.Usable && retained.Status=="future_measurement_not_available");
 fprintf('CSI_SAMPLE_CLOCK_UNIT_PASS boundary/retention/order/clock/epoch/malformed/legacy; RF_executions=0 not_12db_qualification=1\n');
 ok=true;
 end

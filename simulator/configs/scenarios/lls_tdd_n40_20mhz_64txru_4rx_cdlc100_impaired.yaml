@@ -129,6 +129,10 @@ rf_frontend:
     phr_report_enabled: true
     require_measured_reference_rs: true
     configured_snr_pathloss_forbidden: true
+    # TS 38.213 PL uses received power minus filtered RSRP. There is no
+    # generic 20-slot NR expiry for this filter. Preserve the original
+    # decoded-power/capture generation; UL synchronization remains separate.
+    pathloss_reference_lifetime: retained_filtered_reference
     # P0/alpha are configured study choices. PCMAX is a declared 23-dBm
     # limit, not an implemented allocation-dependent UE RF/MPR certificate.
     pusch: {p0_dbm: -80, p0_ue_db: 0, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
@@ -195,6 +199,8 @@ reference_signals:
     num_rbs: 52
     offset_slots: 5
   srs:
+    # Legacy numeric-string alias is milliseconds, not a slot count.
+    periodicity: '2.5'
     # TS 38.211 Table 6.4.1.4.3-1: C_SRS=12/B_SRS=0 sounds 48 PRBs.
     # Preserve literal coverage; do not label the remaining three RBs sounded.
     c_srs: 12
@@ -202,8 +208,17 @@ reference_signals:
     expected_num_rb: 51
     expected_bandwidth_coverage_percent: 94.11764705882354
     full_carrier_coverage_tolerance_rb: 3
+  srs_periodicity_ms: 2.5
+  tracking_rs:
+    # Descriptive compatibility label; actual TX/RX uses trs below.
+    periodicity: '10ms'
+  # 51 RBs permit 10 ms, which is 20 slots at the actual 30-kHz SCS.
+  trs_periodicity_slots: 20
+  trs_periodicity_ms: 10
   trs:
     num_rb: 51
+    periodicity: '20'
+    periodicity_slots: 20
     period_offset: 6
 csi_acquisition_and_reporting:
   report_periodicity: 5ms

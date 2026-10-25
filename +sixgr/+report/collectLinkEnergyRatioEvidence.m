@@ -85,6 +85,28 @@ for k=1:height(trials)
         'Original noiseless received-energy measurement is required.');
     family="PDSCH"; if direction=="UL", family="PUSCH"; end
     require(string(m.SignalFamily)==family,'Energy must belong to the original SCH direction.');
+    % Validate the original JSON operands before double/reshape/concatenation.
+    % Otherwise a resealed text field can become its numeric character codes
+    % and even satisfy a coherently changed arithmetic closure.
+    for value={e.GridSize,m.GridSize}
+        require(realNumericVector(value{1}) && numel(value{1})==2 && ints(value{1}), ...
+            'Original grid dimensions must be a two-element numeric vector.');
+    end
+    for value={e.EnergySumPerReceiveBranch,m.EnergySumPerReceiveBranch}
+        require(realNumericVector(value{1}) && all(value{1}(:)>=0), ...
+            'Original branch energies must be a finite nonnegative numeric vector.');
+    end
+    for name=["UniqueTimeFrequencyRECount","ModulationOrderQm","ModulationSymbolCount", ...
+            "CodedBitCount","TransportBlockBitCount","NumLayers"]
+        require(realNumericScalar(e.(name)) && ints(e.(name)), ...
+            "Original energy count must be a positive numeric integer: "+name);
+    end
+    for name=["TransmitterIndexCount","UniqueTimeFrequencyRECount","ReceiveBranchCount","ObservationCount"]
+        require(realNumericScalar(m.(name)) && ints(m.(name)), ...
+            "Original measurement count must be a positive numeric integer: "+name);
+    end
+    require(realNumericScalar(m.SignalEnergyPerOccupiedRE) && m.SignalEnergyPerOccupiedRE>=0, ...
+        'Original measured mean energy must be a finite nonnegative numeric scalar.');
     validateNoise(n,m);
     gridSize=double(e.GridSize(:)); count=double(e.UniqueTimeFrequencyRECount);
     energy=double(e.EnergySumPerReceiveBranch(:)); branches=double(m.ReceiveBranchCount);
@@ -170,6 +192,15 @@ for record={m,n}
     require(all(isfield(value,["ApproximationMode","ProxyUsed","FallbackUsed"])) && ...
         string(value.ApproximationMode)=="none" && isequal(value.ProxyUsed,false) && isequal(value.FallbackUsed,false), ...
         'Approximate/proxy/fallback evidence cannot qualify the native energy arithmetic contract.');
+    require(realNumericScalar(value.ConfiguredSubcarrierSpacing_kHz) && ...
+        value.ConfiguredSubcarrierSpacing_kHz>0, ...
+        'Original operator SCS must be a positive numeric scalar.');
+end
+require(realNumericScalar(n.NumRxColumns) && ints(n.NumRxColumns), ...
+    'Original noise branch count must be a positive numeric integer.');
+for name=["GridNoiseVariance","SampleNoiseVariance","SampleToGridNoiseVarianceGain", ...
+        "SignalEnergyPerOccupiedRE","RequestedEsN0_dB"]
+    require(realNumericScalar(n.(name)),"Original noise operand must be a finite numeric scalar: "+name);
 end
 require(n.NumRxColumns==m.ReceiveBranchCount && ...
     string(n.ConfiguredCyclicPrefix)==string(m.ConfiguredCyclicPrefix) && ...
@@ -203,7 +234,14 @@ function require(tf,message)
 assert(isscalar(tf) && tf,'sixgr:report:InvalidEnergyEvidence','%s',message);
 end
 function tf=ints(x)
-tf=isnumeric(x) && isreal(x) && ~isempty(x) && all(isfinite(x(:)) & x(:)>0 & x(:)==fix(x(:)));
+tf=isnumeric(x) && isreal(x) && ~isempty(x) && all(isfinite(x(:)) & x(:)>0 & ...
+    x(:)==fix(x(:)) & x(:)<=flintmax);
+end
+function tf=realNumericScalar(x)
+tf=isnumeric(x) && isreal(x) && isscalar(x) && isfinite(x);
+end
+function tf=realNumericVector(x)
+tf=isnumeric(x) && isreal(x) && isvector(x) && ~isempty(x) && all(isfinite(x(:)));
 end
 function tf=near(a,b)
 tf=isnumeric(a) && isnumeric(b) && isscalar(a) && isscalar(b) && isfinite(a) && isfinite(b) && ...

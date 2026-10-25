@@ -1,0 +1,64 @@
+inherits:
+  - ../scenarios/lls_causal_access_to_data_wiring_tdd_short.yaml
+
+meta:
+  scenario_id: main_independent_broadcast_access
+  description: >
+    Bounded main-runner integration fixture: actual SSB/MIB acquisition,
+    no received SI at an eligible PRACH preparation boundary, then independent
+    SI and actual Msg1 reception. The first SI ordinal is deliberately delayed;
+    this is not the selected n40 campaign or full attachment qualification.
+  purpose: Verify the production missing-SI admission boundary without copied callbacks or fabricated received state.
+  research_class: optional_research_experiment
+  maturity_tag: regression
+  tags: [lls, truth, tdd, 5mhz, independent_si, initial_access, bounded]
+
+# The same legal all-active Type-0 recipe as the existing two-UE fixture.
+# Table 13-11 index4 gives slots5,6,7,8 at15kHz. Ordinal3 deliberately
+# starts these transmissions one20ms repetition later, then retains20ms.
+# The UE still monitors its own received-MIB calendar, not this TX ordinal.
+initial_access:
+  sib1_transmission_scope: all_active_ssb_occasions
+  mib:
+    pdcch_config_sib1: 20
+  type0:
+    monitoring_occasion_ordinal: 3
+  sib1:
+    pdsch:
+      symbol_start: 2
+      num_symbols: 7
+      mcs: 2
+
+reference_signals:
+  csi_rs_resource_symbol_locations: [12]
+  trs:
+    slot_numbers: [2, 3]
+
+# Hard upper bound. The regression derives two shorter finite observation
+# horizons from this configured SI calendar and the native PRACH calendar.
+run_control:
+  total_slots: 40
+  warmup_slots: 0
+  measurement_slots: 40
+  total_time_ms: 40
+  warmup_time_ms: 0
+  measurement_time_ms: 40
+
+simulation:
+  n_frames: 4
+  n_slots: 40
+  n_subframes: 40
+  min_duration_s: 0.040
+  reference_sweep_enabled: false
+  adaptive_sweep_enabled: false
+
+random_access:
+  num_slots: 40
+  num_subframes: 40
+
+output:
+  profile: main_independent_broadcast_access
+  generate_summary_plots: false
+  profiler_enabled: false
+  live_heavy_refresh_interval_frames: 40
+  live_heavy_refresh_each_sweep_point: false

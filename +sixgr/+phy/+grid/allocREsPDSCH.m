@@ -75,17 +75,12 @@ end
 function [pdsch,plan] = localReserveCSIIMResources(carrier,pdsch,cfg)
 plan=sixgr.phy.refsig.csiIMResource(carrier,cfg);
 if ~plan.Scheduled, return; end
-reservedZero=localReferenceREInsidePDSCHAllocation(plan.PhysicalIndices1Based-1,carrier,pdsch);
-if isempty(reservedZero), return; end
-assert(isempty(intersect(reservedZero,double(pdsch.ReservedRE(:)))), ...
-    'sixgr:phy:csiim:ReferenceCollision','CSI-IM overlaps an existing serving reference reservation.');
-localRejectReferenceDMRSCollision(reservedZero,carrier,pdsch,'CSI-IM', ...
-    'sixgr:phy:csiim:DMRSCollision');
-ptrs=nrPDSCHPTRSIndices(carrier,pdsch,'IndexBase','0based');
-plane=12*double(carrier.NSizeGrid)*double(carrier.SymbolsPerSlot);
-assert(isempty(intersect(reservedZero,mod(double(ptrs(:)),plane))), ...
-    'sixgr:phy:csiim:PTRSCollision','CSI-IM cannot puncture PDSCH PT-RS.');
-pdsch.ReservedRE=unique([double(pdsch.ReservedRE(:));reservedZero(:)],'sorted');
+pdsch=sixgr.phy.grid.reservePDSCHReferenceRE(carrier,pdsch, ...
+    plan.PhysicalIndices1Based-1,'SignalName','CSI-IM', ...
+    'DMRSCollisionIdentifier','sixgr:phy:csiim:DMRSCollision', ...
+    'RejectExistingReservations',true, ...
+    'ExistingCollisionIdentifier','sixgr:phy:csiim:ReferenceCollision', ...
+    'RejectPTRS',true,'PTRSCollisionIdentifier','sixgr:phy:csiim:PTRSCollision');
 end
 
 function text = localModulationText(raw)
@@ -122,45 +117,11 @@ end
 % CSI-RS is sparse inside each configured RB.  Reserving an entire PRB for
 % every CSI-RS symbol removes unrelated PDSCH data and can remove every
 % active DM-RS RE from a narrow scheduler grant.  nrPDSCHConfig.ReservedRE
-% is zero-based, so project the physical multi-port CSI-RS indices onto one
-% resource-grid plane and retain only REs inside this PDSCH allocation.
-plane = double(carrier.NSizeGrid) * 12 * double(carrier.SymbolsPerSlot);
-csirsBaseZero = unique(mod(double(csirsInd(:)), plane), "sorted");
-prbs = double(pdsch.PRBSet(:).');
-symbolAllocation = double(pdsch.SymbolAllocation(:).');
-subcarriers = reshape(12 .* prbs + (0:11).', 1, []);
-scheduledSymbols = symbolAllocation(1) + (0:(symbolAllocation(2) - 1));
-[k, l] = ndgrid(subcarriers, scheduledSymbols);
-allocationZero = double(k(:) + 12 .* double(carrier.NSizeGrid) .* l(:));
-reservedZero = intersect(csirsBaseZero, allocationZero, "sorted");
-if isempty(reservedZero)
-    return;
-end
-
-% PDSCH data can be rate-matched around exact CSI-RS REs, but PDSCH DM-RS
-% cannot be punctured by CSI-RS.  Reject a colliding YAML schedule before
-% the Toolbox silently deactivates the receiver's channel-estimation
-% reference symbols.
-dmrsSub = nrPDSCHDMRSIndices(carrier, pdsch, ...
-    "IndexStyle", "subscript", "IndexBase", "0based");
-dmrsBaseZero = unique(double(dmrsSub(:,1) + ...
-    12 .* double(carrier.NSizeGrid) .* dmrsSub(:,2)), "sorted");
-dmrsCollision = intersect(reservedZero, dmrsBaseZero, "sorted");
-if ~isempty(dmrsCollision)
-    error("sixgr:phy:grid:allocREsPDSCH:CSIRSDMRSCollision", ...
-        ['Configured CSI-RS overlaps %d active PDSCH DM-RS RE(s) in slot %d. ' ...
-         'Move the YAML-owned CSI-RS resource(s) off the DM-RS symbols; ' ...
-         'DM-RS puncturing is not permitted.'], ...
-        numel(dmrsCollision), double(carrier.NSlot));
-end
-
-try
-    existing = double(pdsch.ReservedRE(:));
-    pdsch.ReservedRE = unique([existing; reservedZero(:)], "sorted");
-catch ME
-    error("sixgr:phy:grid:allocREsPDSCH:CSIRSReservationApplyFailed", ...
-        "CSI-RS runtime resources were generated but could not be reserved in the PDSCH allocation: %s", ME.message);
-end
+% is BWP-relative, whereas these generated indices are carrier-relative.
+% The shared owner retains carrier-space collisions before converting once.
+pdsch = sixgr.phy.grid.reservePDSCHReferenceRE(carrier,pdsch,csirsInd, ...
+    'SignalName','CSI-RS','DMRSCollisionIdentifier', ...
+    'sixgr:phy:grid:allocREsPDSCH:CSIRSDMRSCollision');
 end
 
 function pdsch = localReserveTRSResources(carrier, pdsch, cfg)
@@ -215,54 +176,7 @@ if isempty(trsIndices)
         "TRS is active in carrier slot %d but produced no exact REs.", slot0);
 end
 
-plane = double(carrier.NSizeGrid) * 12 * double(carrier.SymbolsPerSlot);
-trsBaseZero = unique(mod(double(trsIndices(:)), plane), "sorted");
-reservedZero = localReferenceREInsidePDSCHAllocation( ...
-    trsBaseZero, carrier, pdsch);
-if isempty(reservedZero)
-    return;
-end
-
-localRejectReferenceDMRSCollision( ...
-    reservedZero, carrier, pdsch, "TRS", ...
-    "sixgr:phy:grid:allocREsPDSCH:TRSDMRSCollision");
-try
-    pdsch.ReservedRE = unique([double(pdsch.ReservedRE(:)); ...
-        reservedZero(:)], "sorted");
-catch ME
-    error("sixgr:phy:grid:allocREsPDSCH:TRSReservationApplyFailed", ...
-        "Exact TRS REs were resolved but could not be installed in PDSCH ReservedRE: %s", ...
-        ME.message);
-end
-end
-
-function reservedZero = localReferenceREInsidePDSCHAllocation( ...
-        referenceBaseZero, carrier, pdsch)
-prbs = double(pdsch.PRBSet(:).');
-symbolAllocation = double(pdsch.SymbolAllocation(:).');
-subcarriers = reshape(12 .* prbs + (0:11).', 1, []);
-scheduledSymbols = symbolAllocation(1) + ...
-    (0:(symbolAllocation(2) - 1));
-[k, l] = ndgrid(subcarriers, scheduledSymbols);
-allocationZero = double(k(:) + ...
-    12 .* double(carrier.NSizeGrid) .* l(:));
-reservedZero = intersect(double(referenceBaseZero(:)), ...
-    allocationZero, "sorted");
-end
-
-function localRejectReferenceDMRSCollision( ...
-        reservedZero, carrier, pdsch, signalName, identifier)
-dmrsSub = nrPDSCHDMRSIndices(carrier, pdsch, ...
-    "IndexStyle", "subscript", "IndexBase", "0based");
-dmrsBaseZero = unique(double(dmrsSub(:,1) + ...
-    12 .* double(carrier.NSizeGrid) .* dmrsSub(:,2)), "sorted");
-dmrsCollision = intersect(double(reservedZero(:)), ...
-    dmrsBaseZero, "sorted");
-if ~isempty(dmrsCollision)
-    error(identifier, ...
-        ['Configured %s overlaps %d active PDSCH DM-RS RE(s) in slot %d. ' ...
-         'Move the YAML-owned reference resource off the DM-RS symbols; ' ...
-         'DM-RS puncturing is not permitted.'], ...
-        signalName, numel(dmrsCollision), double(carrier.NSlot));
-end
+pdsch = sixgr.phy.grid.reservePDSCHReferenceRE(carrier,pdsch,trsIndices, ...
+    'SignalName','TRS','DMRSCollisionIdentifier', ...
+    'sixgr:phy:grid:allocREsPDSCH:TRSDMRSCollision');
 end

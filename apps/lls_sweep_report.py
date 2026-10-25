@@ -582,15 +582,216 @@ def _is_nmse_measurement(row):
             and str(row.get("Statistic", "")) in {"mean", "p05", "p95", "max", "pooled_error_reference_ratio"})
 
 
+def _is_csi_observation_metric(row):
+    return (row.get("MetricKey") in {"csi_rsrp", "csi_rsrq", "csi_sinr"}
+            or re.fullmatch(r"CSI-(?:RSRP_absolute|RSRP_normalized|RSRQ|SINR)@source_row=[0-9]+",
+                            str(row.get("Entity", ""))) is not None)
+
+
+def _is_srs_observation_metric(row):
+    return (row.get("MetricKey") == "srs_rsrp"
+            or re.fullmatch(r"SRS-(?:RSRP_absolute|reference-power_normalized)@source_row=[0-9]+",
+                            str(row.get("Entity", ""))) is not None)
+
+
+def _validated_csi_observation_population(row):
+    """Validate the current publisher identity, not PHY/accuracy or a series.
+
+    This is the outer report population digest, not the distinct original
+    CSIObservationPopulationSHA256 inside that population. Legacy populations
+    remain opaque marker identities and cannot authorize source coordinates.
+    """
+    return _validated_reference_observation_population(row, "CSI",
+        r"CSI-(?:RSRP_absolute|RSRP_normalized|RSRQ|SINR)@source_row=[0-9]+", {
+            "MeasurementRSRP_dBm": ("csi_rsrp", "dBm", "CSI-RSRP_absolute"),
+            "MeasurementRSRP_dB_re_UnitOccupiedRE_Es": ("csi_rsrp", "dB_re_UnitOccupiedRE_Es", "CSI-RSRP_normalized"),
+            "MeasurementRSRQ_dB": ("csi_rsrq", "dB", "CSI-RSRQ"),
+            "ReferenceMeasuredSINR_dB": ("csi_sinr", "dB", "CSI-SINR"),
+        }, "air_interface/csv/csi_rs_trials.csv")
+
+
+def _validated_srs_observation_population(row):
+    """Bind published SRS observations, not PHY, calibrated power or a curve.
+
+    The report digest is distinct from SRSAbsolutePowerEvidenceSHA256. The
+    absolute branch-selection observation and the normalized engineering
+    branch mean retain different fields/units; neither licenses a series.
+    """
+    return _validated_reference_observation_population(row, "SRS",
+        r"SRS-(?:RSRP_absolute|reference-power_normalized)@source_row=[0-9]+", {
+            "SRS_RSRP_dBm": ("srs_rsrp", "dBm", "SRS-RSRP_absolute"),
+            "SRS_RSRP_dB_re_UnitOccupiedRE_Es": (
+                "srs_rsrp", "dB_re_UnitOccupiedRE_Es", "SRS-reference-power_normalized"),
+        }, "air_interface/csv/srs_trials.csv")
+
+
+def _validated_reference_observation_population(row, family, entity_pattern, contracts, artifact):
+    """Shared byte/alias guard; family-specific producer fields stay explicit."""
+    token, digest = row.get("PopulationJSON", ""), row.get("PopulationID", "")
+    if not isinstance(token, str) or not isinstance(digest, str):
+        raise ValueError(f"{family} population identity requires original text bytes")
+    current_entity = re.fullmatch(entity_pattern, str(row.get("Entity", ""))) is not None
+    if not token.strip():
+        if digest.strip() or current_entity:
+            raise ValueError(f"Current {family} population requires its original ID and JSON together")
+        return None
+
+    def pairs(items):
+        value = {}
+        for key, operand in items:
+            if key in value:
+                raise ValueError(f"Duplicate {family} population identity field")
+            value[key] = operand
+        return value
+
+    try:
+        population = json.loads(token, object_pairs_hook=pairs,
+            parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)))
+    except (ValueError, TypeError) as exc:
+        raise ValueError(f"Malformed original {family} population JSON") from exc
+    if not isinstance(population, dict):
+        raise ValueError(f"Original {family} population must be a scalar object")
+    if digest and (not re.fullmatch(r"[0-9a-fA-F]{64}", digest)
+                   or hashlib.sha256(token.encode("utf-8")).hexdigest() != digest.lower()):
+        raise ValueError(f"Original {family} PopulationID does not match exact PopulationJSON bytes")
+    scope = "retained_source_row_not_independent_reception_verification"
+    if population.get("ProvenanceScope") != scope and not current_entity:
+        return None
+    if not digest or population.get("ProvenanceScope") != scope:
+        raise ValueError(f"Current {family} observation scope/identity is missing or contradictory")
+    source_field = population.get("SourceField")
+    if not isinstance(source_field, str) or source_field not in contracts:
+        raise ValueError(f"Current {family} observation has an unknown original scalar field")
+    metric, unit, entity = contracts[source_field]
+    source_row = population.get("SourceRowIndex")
+    if (isinstance(source_row, bool) or not isinstance(source_row, (int, float))
+            or not math.isfinite(source_row) or source_row < 1
+            or source_row >= 2**53 or source_row != int(source_row)):
+        raise ValueError(f"Current {family} source row requires an exact positive integer identity")
+    if (row.get("MetricKey") != metric or row.get("Statistic") != "observation"
+            or row.get("SourceArtifact") != artifact or population.get("SourceArtifact") != artifact
+            or row.get("Unit") != unit or population.get("Unit") != unit
+            or row.get("Entity") != f"{entity}@source_row={int(source_row)}"):
+        raise ValueError(f"Current {family} metric/unit/source-row aliases disagree with original population")
+
+    def scalar(raw):
+        if isinstance(raw, bool) or not isinstance(raw, (str, int, float)):
+            raise ValueError(f"{family} scalar alias must be numeric CSV text or a numeric scalar")
+        try:
+            value = float(raw)
+        except (ValueError, TypeError, OverflowError) as exc:
+            raise ValueError(f"Invalid {family} scalar alias") from exc
+        if math.isnan(value):
+            raise ValueError(f"A retained {family} observation cannot acquire a fabricated NaN value")
+        return value
+
+    original_text = population.get("OriginalValueText")
+    if not isinstance(original_text, str) or not isinstance(row.get("ValueText"), str):
+        raise ValueError(f"Current {family} observation must retain original numeric text")
+    original = scalar(original_text)
+    for raw in (row.get("ValueNumeric"), row.get("ValueText")):
+        actual = scalar(raw)
+        # CSV decimal roundtrip only; this is not a physical error threshold.
+        equal = actual == original
+        if not equal and math.isfinite(actual) and math.isfinite(original):
+            equal = abs(actual-original) <= 64 * math.ulp(max(1.0, abs(actual), abs(original)))
+        if not equal:
+            raise ValueError(f"Current {family} scalar aliases disagree with original observation")
+    return population
+
+
+def _is_selection_observation_metric(row):
+    return (row.get("MetricKey") in {"pmi", "cri", "ri", "cqi"}
+            or str(row.get("Entity", "")).startswith("CSI-selection-")
+            or "sixgr.report.discrete_selection_observation/v1" in str(row.get("PopulationJSON", "")))
+
+
+def _validated_selection_observation_population(row):
+    """Original index/token identity, never configured-candidate or PHY accuracy."""
+    token, digest = row.get("PopulationJSON", ""), row.get("PopulationID", "")
+    current = str(row.get("Entity", "")).startswith("CSI-selection-")
+    if not isinstance(token, str) or not isinstance(digest, str):
+        raise ValueError("Selection population requires original text bytes")
+    if not token.strip():
+        if current or digest:
+            raise ValueError("Current selection requires original population ID and JSON")
+        return None
+
+    def pairs(items):
+        obj = {}
+        for key, value in items:
+            if key in obj:
+                raise ValueError("Duplicate selection population field")
+            obj[key] = value
+        return obj
+
+    p = json.loads(token, object_pairs_hook=pairs,
+                   parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)))
+    if not isinstance(p, dict):
+        raise ValueError("Selection population must be an original scalar object")
+    if p.get("ContractVersion") != "sixgr.report.discrete_selection_observation/v1":
+        if current:
+            raise ValueError("Unknown current selection population contract")
+        return None
+    if (not re.fullmatch(r"[0-9a-fA-F]{64}", digest)
+            or hashlib.sha256(token.encode("utf-8")).hexdigest() != digest.lower()):
+        raise ValueError("Selection population hash differs from original bytes")
+    field = p.get("SourceField")
+    index = p.get("SourceRowIndex")
+    unit = "layers" if field == "RI" else "index"
+    if (not isinstance(field, str) or field not in {"PMI", "CRI", "RI", "CQI"} or isinstance(index, bool)
+            or not isinstance(index, (int, float)) or not math.isfinite(index)
+            or index < 1 or index >= 2**53 or index != int(index)
+            or row.get("Entity") != f"CSI-selection-{field}@source_row={int(index)}"
+            or row.get("MetricKey") != field.lower() or row.get("Statistic") != "observation"
+            or row.get("Unit") != unit or p.get("Unit") != unit
+            or row.get("SourceArtifact") != "air_interface/csv/csi_rs_trials.csv"
+            or p.get("SourceArtifact") != row.get("SourceArtifact")
+            or p.get("ProvenanceScope") != "retained_source_row_not_independent_reception_verification"):
+        raise ValueError("Selection metric/source/namespace aliases contradict original observation")
+    original = p.get("OriginalValueText")
+    if not isinstance(original, str) or row.get("ValueText") != original:
+        raise ValueError("Selection must preserve its original scalar/component token")
+    try:
+        decoded = json.loads(original) if original.strip().startswith("[") else float(original)
+    except (ValueError, TypeError) as exc:
+        raise ValueError("Malformed discrete selection token") from exc
+    components = decoded if isinstance(decoded, list) else [decoded]
+    if (not components or any(isinstance(v, bool) or not isinstance(v, (int, float))
+                              or not math.isfinite(v) or v < 0 or v >= 2**53 or v != int(v)
+                              for v in components)):
+        raise ValueError("Selection operands must be original nonnegative integers")
+    numeric = number(row.get("ValueNumeric"))
+    if isinstance(decoded, list) and len(decoded) > 1:
+        if field != "PMI" or numeric is not None:
+            raise ValueError("PMI components must not acquire a synthetic scalar index")
+    elif numeric != components[0]:
+        raise ValueError("Selection scalar differs from original token")
+    return p
+
+
 def _source_operating_point(row):
     result = {field: "" for field in MEASUREMENT_OPERATING_POINT_FIELDS}
-    token = str(row.get("PopulationJSON", ""))
-    if not token.strip():
-        return result
-    try:
-        population = json.loads(token)
-    except (ValueError, TypeError) as exc:
-        raise ValueError("Original PopulationJSON is malformed; no operating point can be inferred") from exc
+    if _is_csi_observation_metric(row):
+        population = _validated_csi_observation_population(row)
+        if population is None:
+            return result
+    elif _is_srs_observation_metric(row):
+        population = _validated_srs_observation_population(row)
+        if population is None:
+            return result
+    elif _is_selection_observation_metric(row):
+        population = _validated_selection_observation_population(row)
+        if population is None:
+            return result
+    else:
+        token = str(row.get("PopulationJSON", ""))
+        if not token.strip():
+            return result
+        try:
+            population = json.loads(token)
+        except (ValueError, TypeError) as exc:
+            raise ValueError("Original PopulationJSON is malformed; no operating point can be inferred") from exc
     if not isinstance(population, dict):
         raise ValueError("Original PopulationJSON must retain a scalar object")
     # Configured and legacy source SNR remain distinct metadata roles, neither
@@ -613,6 +814,21 @@ def _source_operating_point(row):
 
 
 def _plot_operating_point(row):
+    if _is_selection_observation_metric(row) or _is_csi_observation_metric(row) or _is_srs_observation_metric(row):
+        family = "selection" if _is_selection_observation_metric(row) else ("CSI" if _is_csi_observation_metric(row) else "SRS")
+        original = _source_operating_point(row)  # Direct plot calls cannot bypass the importer.
+        for field in MEASUREMENT_OPERATING_POINT_FIELDS:
+            supplied = row.get(field, "")
+            expected = original[field]
+            if supplied == "":
+                continue
+            if field == "PublishedOperatingPoint_dB":
+                if expected == "" or isinstance(supplied, bool) or number(supplied) != expected:
+                    raise ValueError(f"{family} plot coordinate contradicts verified original population")
+            elif supplied != expected:
+                raise ValueError(f"{family} plot coordinate role contradicts original population")
+        value = number(original["PublishedOperatingPoint_dB"])
+        return value if value is not None else number(row.get("ConfiguredSNR_dB"))
     value = number(row.get("PublishedOperatingPoint_dB"))
     return value if value is not None else number(row.get("ConfiguredSNR_dB"))
 
@@ -670,6 +886,8 @@ def standardized_measurement_rows(progress):
                             "EvidenceClass": "runtime_published_standardized_measurement_row",
                         }
                         row.update(_source_operating_point(row))
+                        if _is_selection_observation_metric(row) and str(row.get("Entity", "")).startswith("CSI-selection-"):
+                            row["EvidenceClass"] = "original_discrete_selection_observation_not_selection_accuracy"
                         _measurement_series_key(row)  # Validate supplied pairs even on unavailable rows.
                         availability_rows.append(row)
                         value = number(source.get("ValueNumeric"))

@@ -151,7 +151,11 @@ if ~(isscalar(candidateStartSymbol) && isfinite(candidateStartSymbol) && ...
     error('sixgr:phy:ia:SSBNotDetected', ...
         'PSS timing search did not identify a canonical candidate symbol.');
 end
-nSlot = floor(candidateStartSymbol / 14);
+absoluteCandidateStartSymbol=double(sixgr.util.structGet( ...
+    finfo,"SelectedCandidateAbsoluteStartSymbol",candidateStartSymbol));
+validateattributes(absoluteCandidateStartSymbol,{'numeric'}, ...
+    {'real','scalar','finite','integer','nonnegative'});
+nSlot = floor(absoluteCandidateStartSymbol / 14);
 symbolWithinSlot = mod(candidateStartSymbol, 14);
 
 ssbCarrier = nrCarrierConfig;
@@ -304,6 +308,7 @@ sync.TimingInfo = tinfo;
 sync.SSSInfo = sssInfo;
 sync.SSBTiming = timing;
 sync.SelectedCandidateStartSymbol = candidateStartSymbol;
+sync.SelectedCandidateAbsoluteStartSymbol = absoluteCandidateStartSymbol;
 sync.DemodulationSlot = double(nSlot);
 sync.SymbolPhaseCompensationCarrierFrequencyHz = double(timing.CarrierFrequencyHz);
 sync.SymbolPhaseCompensationSource = 'configured_carrier_nr_ofdm_demodulation';

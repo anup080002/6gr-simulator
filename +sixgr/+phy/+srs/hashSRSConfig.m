@@ -20,7 +20,12 @@ end
 
 function txt = localValueString(v)
 if isnumeric(v) || islogical(v)
-    txt = strjoin(string(double(v(:))).', ",");
+    values=string(double(v(:)));
+    % MATLAB converts numeric NaN to missing string. An absent AP calendar
+    % has a meaningful NaN sentinel; preserve it explicitly in the hash.
+    % Finite periodic configuration serialization remains unchanged.
+    values(isnan(v(:)))="NaN";
+    txt = strjoin(values.', ",");
 else
     txt = strjoin(string(v(:)).', ",");
 end

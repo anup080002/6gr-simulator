@@ -25,7 +25,20 @@ srs.EnableStartRBHopping = logical(srsCfg.EnableStartRBHopping);
 srs.FrequencyScalingFactor = max(1, round(double(srsCfg.FrequencyScalingFactor)));
 srs.StartRBIndex = max(0, round(double(srsCfg.StartRBIndex)));
 srs.BHop = max(0, round(double(srsCfg.BHop)));
-srs.SRSPeriod = [max(1, round(double(srsCfg.Periodicity))) max(0, round(double(srsCfg.Offset)))];
+if strcmpi(string(srsCfg.ResourceType),'aperiodic') && ...
+        isnumeric(srsCfg.Periodicity) && isreal(srsCfg.Periodicity) && ...
+        isscalar(srsCfg.Periodicity) && isnan(srsCfg.Periodicity)
+    % This builder represents one triggered capture. 'on' is the native
+    % waveform-generation context, not permission for periodic emissions;
+    % decoded-DCI authority is checked by validateSRSConfigStrict. Preserve
+    % an explicitly supplied native trigger calendar in the other branch.
+    assert(isnumeric(srsCfg.Offset) && isreal(srsCfg.Offset) && isscalar(srsCfg.Offset) && isnan(srsCfg.Offset), ...
+        'sixgr:phy:srs:InvalidPeriodOffset','An absent aperiodic trigger calendar cannot retain an orphan offset.');
+    srs.SRSPeriod = 'on';
+else
+    [period,offset]=sixgr.phy.srs.validateSRSPeriodOffset(srsCfg.Periodicity,srsCfg.Offset);
+    srs.SRSPeriod = [period offset];
+end
 srs.ResourceType = char(string(srsCfg.ResourceType));
 
 csrs = double(srsCfg.C_SRS);

@@ -40,6 +40,16 @@ assert(delivered.LastSuccessfulPBCHSlotByUE(1)==6);
 measurement=delivered.ReferenceSignalMeasurementTable(end,:);
 assert(measurement.ProducerSlot==1 && measurement.AvailableSlot==6);
 assert(all(delivered.InitialAccessLifecycleTraceTable.Slot==6));
+% CRC-only/contradictory identity must not acquire, publish power or alter
+% the raw CRC. These are explicitly declared callback-negative fixtures.
+for field=["BCHCRCValid","MIBDecoded","CandidateIdentityConsistent","SSBIdentityVerified"]
+    rejected=ready.Trial; rejected.(field)=false;
+    unchanged=rejected;
+    denied=sixgr.truth.CoupledTruthRuntime.applyPBCHTrial(state,1,rejected);
+    assert(denied.CellAcquisitionState(1)=="failed" && ...
+        isequaln(denied.ReferenceSignalMeasurementTable,state.ReferenceSignalMeasurementTable) && ...
+        isequaln(rejected,unchanged) && rejected.CRCPass==1);
+end
 [~,again]=sixgr.truth.BroadcastResultDelivery.takeAvailable(state);
 assert(isempty(again),"Delivery must be exactly once.");
 
@@ -81,6 +91,14 @@ tracking=sixgr.truth.CoupledTruthRuntime.applyServingSSBTrackingTrial( ...
 assert(tracking.CellAcquisitionState(1)=="acquired");
 assert(tracking.LastSuccessfulSSBTrackingSlotByUE(1)==6);
 assert(tracking.ReferenceSignalMeasurementTable.AvailableSlot(end)==6);
+wrongIdentity=trackingReady.Trial;
+wrongIdentity.CandidateIdentityConsistent=false;
+rejectedTracking=sixgr.truth.CoupledTruthRuntime.applyServingSSBTrackingTrial( ...
+    delivered,1,wrongIdentity);
+assert(rejectedTracking.SSBTrackingFailureCountByUE(1)==1 && ...
+    rejectedTracking.CellAcquisitionState(1)=="acquired" && ...
+    rejectedTracking.LastSuccessfulPBCHSlotByUE(1)==delivered.LastSuccessfulPBCHSlotByUE(1) && ...
+    wrongIdentity.CRCPass==1);
 censored=sixgr.truth.BroadcastResultDelivery.censorAtSweepBoundary(late);
 assert(~sixgr.truth.BroadcastResultDelivery.hasPending(censored,1));
 assert(numel(censored.CensoredBroadcastResults)==1);
@@ -91,6 +109,7 @@ end
 
 function row=localRow(fs,last)
 row=struct2table(struct("Slot",1,"Status","PASS","CRCPass",true, ...
+    "BCHCRCValid",true,"MIBDecoded",true,"CandidateIdentityConsistent",true,"SSBIdentityVerified",true, ...
     "RNTI",1,"ServingCell",1,"SSBIndex",0,"ReferenceSignalId",0,"SS_RSRP_dBm",-95, ...
     "MeasuredReferenceSignalPathloss_dB",100, ...
     "PathlossReferenceRS","SSB-0", ...

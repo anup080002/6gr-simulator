@@ -807,7 +807,8 @@ T = struct2table(rows);
 % the latest accepted tuple to an older/newer raw observation by slot alone.
 T.SRSMeasurementEvidenceRole=repmat("raw_receiver_srs_measurement_not_accepted_spatial_decision",height(T),1);
 names=string(sourceT.Properties.VariableNames);
-retained=names(startsWith(names,"SweepAggregate")|ismember(names,[ ...
+retained=names(startsWith(names,"SweepAggregate")|startsWith(names,"SRSAbsolutePower")| ...
+    startsWith(names,"SRS_RSRP_")|startsWith(names,"SRSRSRP")|ismember(names,[ ...
     "MeasurementId","MeasurementID","ObservationID","ResourceID","ResourceSetID", ...
     "SRSConfigurationContextID","SRSNumPorts", ...
     "SRSConfigurationContextVersion","SRSConfigurationEpoch","SRSResourceID","SRSResourceIDsJSON", ...
@@ -855,6 +856,7 @@ if ~isempty(T)
     % differing only by case and never infer it from publication metadata.
     if ismember("RunID",names), T.SourceRunID=sourceT.RunID; end
 end
+T=iRetainDLMeasurementAuthority(T,sourceT);
 end
 
 function T = iCSIReportTable(cqiTable, meta)
@@ -951,6 +953,21 @@ T = iBuildMinimalTable(sourceT, meta, "trs_receiver_tracking_table", { ...
     "TimingEstimateAvailability", ["TimingEstimateAvailability"]; "TimingEstimateSamples", ["TRSTimingEstimate_samples"]; ...
     "CFOEstimateAvailability", ["CFOEstimateAvailability"]; "CFOEstimateHz", ["TRSEstimatedCFO_Hz"]; ...
     "CorrectionLoopStatus", ["TRSReceiverIntegrationStatus"]; "RuntimeEvidenceStatus", ["RuntimeEvidenceStatus","runtime_evidence","TRSRuntimeEvidenceSource"]});
+T=iRetainDLMeasurementAuthority(T,sourceT);
+end
+
+function T=iRetainDLMeasurementAuthority(T,sourceT)
+% Retain original operational eligibility separately from diagnostic success.
+% No defaults or installation authority are inferred for historical rows.
+if isempty(T), return; end
+assert(height(T)==height(sourceT),'sixgr:truth:DLMeasurementProjectionRows', ...
+    'Preserve original row cardinality when projecting measurement authority.');
+fields=["DLMeasurementConfigurationFamily","DLMeasurementConfigurationSHA256", ...
+    "DLMeasurementNCellID","DLMeasurementInstallationSHA256", ...
+    "DLMeasurementAuthorityRequired","DLMeasurementAuthorityEligible", ...
+    "DLMeasurementAuthorityStatus","DLMeasurementAuthoritySource"];
+fields=fields(ismember(fields,string(sourceT.Properties.VariableNames)));
+for field=fields, T.(field)=sourceT.(field); end
 end
 
 function T = iSSBPBCHTable(sourceT, meta)
@@ -966,7 +983,6 @@ rows = repmat(struct("OutputId", "ssb_pbch_cell_search_table", "RunId", iLogical
 for i = 1:height(sourceT)
     row = sourceT(i, :);
     [sinrValue, ~] = iSINR(row);
-    crcApplicable = iFirstLogical(row, ["CRCApplicable"], true);
     rows(i).TrialId = i;
     rows(i).SFN = iFirstNum(row, "SFN", NaN);
     rows(i).Slot = iFirstNum(row, ["Slot"], NaN);
@@ -976,10 +992,19 @@ for i = 1:height(sourceT)
     rows(i).PSSDetected = iFirstLogical(row, ["PSSDetected"], false);
     rows(i).SSSDetected = iFirstLogical(row, ["SSSDetected"], false);
     rows(i).NCellIDRecovered = iFirstNum(row, ["NCellIDRecovered","NCellID"], NaN);
-    rows(i).PBCHDecodeAttempted = iFirstLogical(row, ["PBCHDecodeAttempted","DecodeAttempted"], true);
-    rows(i).PBCHCRC = iCRCOutcome(crcApplicable, iFirstLogical(row, ...
-        ["BCHCrcPass","PBCHCRCPass","CRCPass","DecodeSuccess"], false));
-    rows(i).MIBRecovered = iFirstLogical(row, ["MIBRecovered","MIBDecoded"], false);
+    [attempted,attemptKnown]=iOriginalPBCHFlag(row,["PBCHDecodeAttempted","DecodeAttempted"]);
+    rows(i).PBCHDecodeAttempted = attempted;
+    [crc,crcKnown]=iOriginalPBCHFlag(row,["BCHCRCValid","BCHCrcPass","PBCHCRCPass","CRCPass"]);
+    [applicable,applicabilityKnown]=iOriginalPBCHFlag(row,"CRCApplicable");
+    rows(i).PBCHCRC="unavailable";
+    if applicabilityKnown && ~applicable
+        rows(i).PBCHCRC="not_applicable";
+    elseif attemptKnown && ~attempted
+        rows(i).PBCHCRC="not_attempted";
+    elseif attemptKnown && attempted && crcKnown
+        rows(i).PBCHCRC=iCRCOutcome(true,crc);
+    end
+    rows(i).MIBRecovered = iOriginalPBCHFlag(row,["MIBRecovered","MIBDecoded"]);
     rows(i).RSRP_dB = iFirstNum(row, ["RSRP_dB"], NaN);
     rows(i).RSRQ_dB = iFirstNum(row, ["RSRQ_dB"], NaN);
     rows(i).SINR_dB = sinrValue;
@@ -994,11 +1019,50 @@ scoreFields=string(fieldnames(sixgr.truth.scoreSharedPBCHReception())).';
 powerFields=string(fieldnames(sixgr.link.ssbPowerReferenceEvidence())).';
 frequencyFields=string(fieldnames(sixgr.phy.broadcast.measurePBCHResidualFrequency())).';
 fields=[scoreFields powerFields frequencyFields "SS_RSRP_dBm" "SS_RSRP_dB_re_UnitOccupiedRE_Es" ...
-    "PowerReferencePlane" "EVM_rms" "EVMReferenceSource" "EVMValueStatus"];
+    "PowerReferencePlane" "EVM_rms" "EVMReferenceSource" "EVMValueStatus" ...
+    "BCHCrcPass" "BCHCRCValid" "MIBDecoded" "CandidateIdentityConsistent" ...
+    "SSBIdentityVerified" "PBCHStrictReceiverEvidenceOk" "StrictReceiverEvidenceOk" ...
+    "Status" "Crash" "Skipped" "CRCApplicable" "CRCPass" "CRCOutcome" ...
+    "KSSBContractVersion" "Lmax" "MIBKSSBLow4" "PBCHKSSBMSB" ...
+    "PBCHKSSBHighContribution" "KSSBHighBitApplicable" "DecodedKSSB" ...
+    "MIBKSSBSubcarrierOffset" "k_SSB" "DetectionAttempted" "DecodeAttempted" ...
+    "PSSDetected" "SSSDetected" "NCellIDRecovered" "NCellID" ...
+    "PSSDetectionSource" "SSSDetectionSource" ...
+    "BCHTransportBlockNumBits" "BCHTransportBlockHash" ...
+    string(fieldnames(sixgr.phy.sync.ssbDetectionEvidence())).'];
 for field=unique(fields,'stable')
     if ismember(field,string(sourceT.Properties.VariableNames))
         T.(field)=sourceT.(field);
     end
+end
+% A diagnostic derived from original accepted-MIB operands, never from raw
+% CRC alone or the combined SIB1 Status. Missing historical operands fail
+% closed; their absence is retained by the pass-through above.
+T.MIBAcquisitionAccepted=sixgr.truth.pbchAcquisitionAccepted(sourceT);
+T.MIBAcquisitionEvidenceComplete=true(height(sourceT),1);
+for field=["BCHCRCValid","MIBDecoded","CandidateIdentityConsistent","SSBIdentityVerified"]
+    if ~ismember(field,string(sourceT.Properties.VariableNames))
+        T.MIBAcquisitionEvidenceComplete(:)=false; continue;
+    end
+    value=sourceT.(field);
+    if ~((isnumeric(value)||islogical(value)) && isreal(value) && ...
+            isequal(size(value),[height(sourceT),1]))
+        T.MIBAcquisitionEvidenceComplete(:)=false; continue;
+    end
+    T.MIBAcquisitionEvidenceComplete=T.MIBAcquisitionEvidenceComplete & ...
+        isfinite(value) & (value==0 | value==1);
+end
+end
+
+function [value,known]=iOriginalPBCHFlag(row,names)
+value=false; known=false;
+for field=names
+    if ~ismember(field,string(row.Properties.VariableNames)), continue; end
+    raw=row.(field);
+    known=(isnumeric(raw)||islogical(raw)) && isreal(raw) && isscalar(raw) && ...
+        isfinite(raw) && (raw==0 || raw==1);
+    if known, value=raw==1; end
+    return; % Do not bypass an explicit unavailable/malformed original alias.
 end
 end
 

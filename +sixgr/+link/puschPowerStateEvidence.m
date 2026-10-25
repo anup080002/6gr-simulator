@@ -11,4 +11,10 @@ for name=["TPCCommandBits","TPCDelta_dB","AppliedTPCDelta_dB","PreviousF_dB", ..
 end
 row.PUSCHTPCAdjustmentHeldAtPowerLimit=double(sixgr.util.structGet( ...
     pc,'TPCAdjustmentHeldAtPowerLimit',NaN));
+for name=["P0Nominal_dBm","P0UE_dB","Alpha","DeltaTF_dB","MRB","Mu","BandwidthTerm_dB"]
+    raw=sixgr.util.structGet(pc,name,NaN);
+    assert(isnumeric(raw)&&isreal(raw)&&isscalar(raw)&&(isfinite(raw)||isnan(raw)), ...
+        'sixgr:link:PUSCHPowerOperandEvidence','Retain original scalar power operands; do not cast text or infer missing values.');
+    row.("PUSCH"+name)=raw;
+end
 end

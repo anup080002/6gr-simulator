@@ -136,5 +136,6 @@ else
         storageRoot,row,prepared,reception,channelSource,channelCaptures);
 end
 row=sixgr.report.retainControlEVMPairs(storageRoot,row,paired);
+row=sixgr.truth.DLMeasurementInstallation.stamp(state,row,prepared.ReceiverConfig,item.UE,"CSI-RS");
 state = sixgr.truth.CoupledTruthRuntime.applyCSIRSTrial(state,item.UE,row);
 end

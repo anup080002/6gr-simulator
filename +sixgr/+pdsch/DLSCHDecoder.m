@@ -50,9 +50,7 @@ if isscalar(codewords)
 end
 parityCells=cellfun(@(x) x.FinalParityChecks,codewords,"UniformOutput",false);
 parityStages=string(cellfun(@(x) x.LDPCParityEvidence.Stage,codewords,"UniformOutput",false));
-parityStage="initial_decode";
-if any(parityStages=="harq_combined_decode"), parityStage="harq_combined_decode"; end
-parityEvidence=sixgr.phy.phycode.summarizeLDPCParity(parityCells,parityStage);
+parityEvidence=sixgr.phy.phycode.summarizeLDPCParity(parityCells,parityStages);
 tbCells = cellfun(@(x) x.TransportBlock, codewords, "UniformOutput", false);
 crcPass = cellfun(@(x) x.CRCPass, codewords);
 active = cellfun(@(x) x.ActiveIterations, codewords, "UniformOutput", false);

@@ -1,8 +1,88 @@
-# H4 field guide: 4 GHz / 100 MHz TDD
+# SixGR single implementation guide: H4 and n40 LLS
 
 A local, read-only documentation website in the **main repository**, not a
 second simulator, worktree or branch. It does not start MATLAB runs or change
 configuration. The separate simulator dashboard on port 62906 is unaffected.
+
+This is the single home for mathematics, port/layer diagrams, algorithms,
+configuration flows, measurements, source links, and 3GPP/MATLAB references.
+The primary reading order now uses 16 topic areas rather than a flat list of
+all chapters. Detailed chapters remain subsections with their original deep
+links, current-topic context, on-page outline and ordered next-reading links.
+Search still reaches the detailed content. This navigation consolidation
+preserves the explanations; it is not a claim that every repeated paragraph
+has already been merged.
+`../lls_gap_status_20261023.html` is an issue ledger only: pending work,
+root causes, implemented-but-unverified repairs, and scoped verified fixes.
+The guide serves that same ledger at `/issues.html`; it is not a second copy.
+Local logs/results remain private and are not exposed by the documentation server.
+
+### External output location for a waveform run
+
+The documentation server never launches a simulation. When launching the
+selected six-point scenario separately, the external evidence directory must
+also be authorized through the existing storage allowlist. Merely passing
+`E:\SixGRResults` as a CLI argument is insufficient: an unauthorized absolute
+root can resolve to the repository's `results` folder. This is a storage
+setting, not a PHY/noise/decoder override. Check the resolved root before
+starting physical work; use a fresh run tag to preserve earlier evidence.
+
+```powershell
+$env:SIXGR_RESULTS_ROOT = 'E:\SixGRResults'
+matlab -batch "setup6GRSimToolkit('Verbose',false,'RunToolboxChecks',false); assert(strcmpi(sixgr.report.resolveResultsRoot('E:\SixGRResults'),'E:\SixGRResults')); tag=['n40_sixpoint_' char(datetime('now','Format','yyyyMMdd_HHmmss_SSS'))]; out=run_6g_phy_lls_single('simulator/configs/scenarios/lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep.yaml','E:\SixGRResults',tag); disp(out.RunFolder); disp(out.Ok);"
+```
+
+Do not start this command while an existing waveform run is active. The YAML
+owns the six reference-Es/N0 points, 60-slot child duration and disabled
+checkpoints. A launched or completed process is not automatically a passed
+physical or statistical result; inspect every child and the final receipt.
+
+The latest technical chapters are [ports and CSI flow](http://127.0.0.1:62907/#port-layer-measurement-flow),
+[n40 six-point reference sweep](http://127.0.0.1:62907/#n40-reference-sweep), and
+[measurement operators](http://127.0.0.1:62907/#measurement-operator-maths).
+They share the existing navigation, search, source viewer and authority labels.
+Chapter subsections use `#chapter-id?section=section-id` links, which expand
+the relevant mathematics panel automatically. `implementation.js` is a chapter
+module of this guide, not a separate documentation website.
+
+The [engineering handbook](http://127.0.0.1:62907/#engineering-handbook)
+adds four source-linked notebooks with the overview / input / algorithm /
+output structure reviewed in the user's Intel v21.07 and 22.11 documents.
+Ten expandable channel contracts connect the actual SixGR owners; receiver,
+TDL/CDL/UMa/O2I and RF/port chapters contain original explanatory equations,
+reference-plane cautions and two interactive arithmetic calculators.
+The Intel PDFs and figures are not copied or served. This is an explanation
+of SixGR, not a claim that Intel features or performance have been reproduced.
+
+The receiver notebook also includes a worked one-RE layer/precoder/channel
+example and a separate UL-SCH versus UCI decision diagram, with clickable
+production owners. Teaching matrices are explicitly not simulated results;
+receiver completion, CRC, usable feedback, delivered feedback and scheduler
+state changes are explained separately. The measurement notebook explains
+original SRS branch-power observations and their absolute/normalized planes.
+
+24 October handbook verification: 15 affected documentation/security tests
+passed. Headless Chromium verified four new chapters, 45 live source links,
+chapter navigation, expandable contracts, source viewer, desktop/mobile
+layout, theme switching and calculator positive/invalid-input cases.
+These checks do not close the five older snapshot/inventory failures below.
+Recheck with `python docs/lls/h4_100mhz_guide/verify_browser.py --handbook-only`.
+
+24 October supplemental verification: 17 affected documentation/security
+checks pass. The expanded handbook browser check verifies 47 source links,
+the worked MIMO example and the independent PUSCH data/UCI branches. The
+implementation-chapter browser check verifies 36 source links, subsection
+navigation, source display and the separate issue-ledger filter. These are
+documentation checks, not a replacement for the MATLAB repair receipts.
+
+24 October relocation verification: 14 affected Python checks and focused
+Chromium checks passed (three chapters, 34 current-source links, expandable
+math panels, source viewer, mobile layout, and the issue filter). The broader
+documentation suite still has five existing failures: a stale evidence
+inventory, an obsolete power-control status expectation, and three stale
+MATLAB-generated configuration/catalog snapshots. They remain visible and
+must be refreshed with their real generators; no snapshot hash was patched
+to disguise the mismatch. This is not PHY or campaign qualification.
 
 ## Open the guide
 
@@ -25,7 +105,7 @@ required. Specification and MathWorks links need internet when clicked.
 
 ## Contents and evidence boundaries
 
-- 47 chapters covering the exact H4 configuration,
+- Chapters covering H4 and n40 configurations,
   LLS fundamentals, TX/RX, access, channels/signals, coding, scheduling,
   feedback/adaptation, arrays/beam management, propagation, RF and exports.
 - The [antenna/port/power audit](http://127.0.0.1:62907/#antenna-port-power-audit)

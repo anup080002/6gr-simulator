@@ -4,6 +4,18 @@ policy=sixgr.util.structGet(p.ReceiverConfig,'phy.pdsch.qclTCI',struct());
 if ~logical(sixgr.util.structGet(policy,'enabled',false)), return; end
 if ~out.DetectionSuccess || ~out.TRSTimingEstimateAvailable || ...
         ~out.TRSTimingEstimateUsable || ~observation.isComplete(), return; end
+installationSHA=""; configurationSHA="";
+if sixgr.truth.DLMeasurementInstallation.required(state)
+row=table(double(ue),double(cellIndex),double(observation.StartSample), ...
+    double(observation.EndSampleExclusive),double(observation.SampleRateHz), ...
+    double(state.SharedWaveformStream.Physical.ConfigurationEpoch), ...
+    'VariableNames',{'UEIndex','ServingCell','ObservationStartSample','ObservationEndSampleExclusive', ...
+    'ObservationSampleRateHz','MeasurementClockEpoch'});
+row=sixgr.truth.DLMeasurementInstallation.stamp(state,row,p.ReceiverConfig,ue,"TRS");
+if ~row.DLMeasurementAuthorityEligible, return; end
+installationSHA=row.DLMeasurementInstallationSHA256;
+configurationSHA=row.DLMeasurementConfigurationSHA256;
+end
 mapping=p.Tx.ResourceMappingTable;
 timingSourceResourceID=double(sixgr.util.structGet(policy, ...
     'timing_source_resource_id',sixgr.util.structGet(policy,'source_resource_id',NaN)));
@@ -27,6 +39,10 @@ reference=struct('UEIndex',double(ue),'ServingCellIndex',double(cellIndex), ...
     'TimingPhaseSamples',observation.StartSample+double(out.EstimatedTimingOffset_samples)-round(nominalStart), ...
     'Source',"received_nzp_csi_rs_trs_timing_estimator", ...
     'SourceConfigHash',string(p.StrictConfig.ConfigHash));
+if sixgr.truth.DLMeasurementInstallation.required(state)
+    reference.DLMeasurementInstallationSHA256=installationSHA;
+    reference.DLMeasurementConfigurationSHA256=configurationSHA;
+end
 if isfield(sixgr.util.structGet(p.ReceiverConfig,'phy.pdcch.operatorControl',struct()),'connected_dci')
     context=sixgr.phy.pdcch.DCIContextFactory.fromRuntimeConfig(p.ReceiverConfig,'1_1');
     reference.RRCServingCellIndex=double(context.Data.ScheduledServingCell);

@@ -9,6 +9,9 @@ cfg.channel.model = "AWGN";
 cfg.channel.awgnOnly = true;
 cfg.lls6g.userContext.RuntimeServingPathloss_dB = 100;
 cfg.lls6g.userContext.RuntimeServingBasePathloss_dB = 100;
+% Declared component UE cap; not an allocation/MPR-qualified hardware
+% limit. The production RA path must not invent 23 dBm when absent.
+cfg.phy.pusch.powerControl.pcmax_dBm = 23;
 cfg.phy.carrier.NCellID = 17;
 cfg.phy.mib.dmrsTypeAPosition = 2;
 cfg.phy.carrier.NSizeGrid = 51;

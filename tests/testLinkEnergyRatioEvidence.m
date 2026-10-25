@@ -137,6 +137,41 @@ bad=e; bad.EnergySumPerReceiveBranch(1)=NaN; reject(@()collect(reseal(trial,bad)
 bad=e; bad.CodedBitCount=bad.CodedBitCount+2; reject(@()collect(reseal(trial,bad)));
 bad=e; bad.ModulationOrderQm=8; reject(@()collect(reseal(trial,bad)));
 bad=e; bad.MeasurementReceipt.ReceiveBranchCount=1; reject(@()collect(reseal(trial,bad)));
+% Resealed coherent text operands must not pass as ASCII-valued arithmetic.
+% These are corrupted original receipts, not alternate physical observations.
+bad=e; bad.EnergySumPerReceiveBranch='AB';
+bad.MeasurementReceipt.EnergySumPerReceiveBranch='AB';
+bad.MeasurementReceipt.SignalEnergyPerOccupiedRE=sum(double('AB'))/(2*e.UniqueTimeFrequencyRECount);
+reject(@()collect(reseal(trial,bad)));
+bad=e; bad.GridSize=char(e.GridSize); bad.MeasurementReceipt.GridSize=bad.GridSize;
+reject(@()collect(reseal(trial,bad)));
+bad=e; bad.UniqueTimeFrequencyRECount=char(e.UniqueTimeFrequencyRECount);
+bad.MeasurementReceipt.UniqueTimeFrequencyRECount=bad.UniqueTimeFrequencyRECount;
+reject(@()collect(reseal(trial,bad)));
+bad=e; bad.NoiseReceipt.GridNoiseVariance='A'; bad.NoiseReceipt.SampleNoiseVariance=1;
+bad.NoiseReceipt.SampleToGridNoiseVarianceGain=65;
+bad.NoiseReceipt.SignalEnergyPerOccupiedRE=65; bad.NoiseReceipt.RequestedEsN0_dB=0;
+reject(@()collect(reseal(trial,bad)));
+bad=e; bad.MeasurementReceipt.ReceiveBranchCount=char(2); bad.NoiseReceipt.NumRxColumns=char(2);
+reject(@()collect(reseal(trial,bad)));
+for name=["GridNoiseVariance","SampleNoiseVariance","SampleToGridNoiseVarianceGain", ...
+        "SignalEnergyPerOccupiedRE","RequestedEsN0_dB","NumRxColumns","ConfiguredSubcarrierSpacing_kHz"]
+    for invalid={"1",true,[1 2],[]}
+        bad=e; bad.NoiseReceipt.(name)=invalid{1}; reject(@()collect(reseal(trial,bad)));
+    end
+end
+for name=["UniqueTimeFrequencyRECount","ModulationOrderQm","ModulationSymbolCount", ...
+        "CodedBitCount","TransportBlockBitCount","NumLayers"]
+    bad=e; bad.(name)=char(1); reject(@()collect(reseal(trial,bad)));
+end
+bad=e; bad.EnergySumPerReceiveBranch=reshape([1 2],[1 1 2]);
+reject(@()collect(reseal(trial,bad)));
+bad=e; bad.EnergySumPerReceiveBranch=[1 2;3 4];
+bad.MeasurementReceipt.EnergySumPerReceiveBranch=bad.EnergySumPerReceiveBranch;
+reject(@()collect(reseal(trial,bad)));
+assert(isequaln(e.EnergySumPerReceiveBranch,compact.EnergySumPerReceiveBranch) && ...
+    isequaln(e.NoiseReceipt,originalNoise) && isequaln(collect(bound),o), ...
+    'Typed validation must not change valid original arithmetic or observations.');
 bad=e; bad.EnergySumPerReceiveBranch(:)=0; bad.MeasurementReceipt.EnergySumPerReceiveBranch(:)=0;
 bad.MeasurementReceipt.SignalEnergyPerOccupiedRE=0;
 zero=collect(reseal(trial,bad));

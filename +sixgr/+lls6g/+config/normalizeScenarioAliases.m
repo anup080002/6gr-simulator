@@ -9,8 +9,22 @@ ip.addParameter("Authority", struct(), @(x)builtin("isstruct", x) && isscalar(x)
 ip.addParameter("EnergyAuthority", struct(), @(x)builtin("isstruct", x) && isscalar(x));
 ip.addParameter("LDPCIterationAuthority", struct(), @(x)builtin("isstruct", x) && isscalar(x));
 ip.addParameter("LDPCPolicyAuthority", struct(), @(x)builtin("isstruct", x) && isscalar(x));
+ip.addParameter("PUSCHDMRSAuthority", struct(), @(x)builtin("isstruct", x) && isscalar(x));
+ip.addParameter("PUCCHPowerAuthority", struct(), @(x)builtin("isstruct", x) && isscalar(x));
+ip.addParameter("RSPeriodAuthority", struct(), @(x)builtin("isstruct", x) && isscalar(x));
+ip.addParameter("CSIReportPeriodAuthority", struct(), @(x)builtin("isstruct", x) && isscalar(x));
 ip.parse(cfg, varargin{:});
 opt = ip.Results;
+csiReportPeriodAuthority=opt.CSIReportPeriodAuthority;
+if isempty(fieldnames(csiReportPeriodAuthority))
+    csiReportPeriodAuthority=sixgr.lls6g.config.CSIReportPeriodAuthority.capture(cfg,opt.Authority);
+end
+% Capture original declarations before defaults/mirrors erase authorship.
+rsPeriodAuthority=opt.RSPeriodAuthority;
+if isempty(fieldnames(rsPeriodAuthority))
+    rsPeriodAuthority=sixgr.lls6g.config.RSPeriodAuthority.merge(struct(),cfg);
+    rsPeriodAuthority=sixgr.lls6g.config.RSPeriodAuthority.merge(rsPeriodAuthority,opt.Authority);
+end
 authoredDuplex = localCaptureDuplexAuthorship(cfg, string(opt.ConfigPath));
 
 newBase = localNewDefaults();
@@ -23,6 +37,18 @@ cfg = localEnsureConfigInheritance(cfg, string(opt.SourceFiles(:)), string(opt.C
 cfg = localEnsureScenarioSchemaVersion(cfg);
 cfg = localNormalizeLDPCIterations(cfg,opt.LDPCIterationAuthority,opt.Authority);
 cfg = localNormalizeLDPCPolicy(cfg,opt.LDPCPolicyAuthority,opt.Authority);
+dmrsAuthority=opt.PUSCHDMRSAuthority;
+if isempty(fieldnames(dmrsAuthority))
+    % A sweep carries the exact authored override, not a new merged-layer
+    % conflict. For other fields the already resolved mirrors must agree.
+    dmrsAuthority=sixgr.lls6g.config.PUSCHDMRSAuthority.merge(struct(),opt.Authority);
+end
+cfg=sixgr.lls6g.config.PUSCHDMRSAuthority.apply(cfg,dmrsAuthority);
+pucchPowerAuthority=opt.PUCCHPowerAuthority;
+if isempty(fieldnames(pucchPowerAuthority))
+    pucchPowerAuthority=sixgr.lls6g.config.PUCCHPowerAuthority.merge(struct(),opt.Authority);
+end
+cfg=sixgr.lls6g.config.PUCCHPowerAuthority.apply(cfg,pucchPowerAuthority);
 cfg = localExpandCanonicalControl(cfg, sixgr.util.mergeStruct(newBase, oldBase));
 outputBackend = lower(strtrim(string(sixgr.util.structGet( ...
     cfg,"output.backend","filesystem"))));
@@ -139,6 +165,7 @@ cfg = localSyncValue(cfg, newBase, oldBase, "channel_model.scenario_label", "cha
   cfg = localSyncValue(cfg, newBase, oldBase, "csi_acquisition_and_reporting.dl_csi_mode", "reference_signals.csi_feedback_mode", "csi_mode");
   cfg = localSyncValue(cfg, newBase, oldBase, "csi_acquisition_and_reporting.csi_report_type", "reference_signals.csi_feedback_mode", "csi_report_type");
   cfg = localSyncValue(cfg, newBase, oldBase, "csi_acquisition_and_reporting.csi_report_periodicity_slots", "reference_signals.csi_report_periodicity_slots", "identity");
+  cfg = localSyncValue(cfg, newBase, oldBase, "csi_acquisition_and_reporting.csi_report_offset_slots", "reference_signals.csi_report_offset_slots", "identity");
   cfg = localSyncValue(cfg, newBase, oldBase, "csi_acquisition_and_reporting.csi_reporting_delay_slots", "reference_signals.csi_reporting_delay_slots", "identity");
   cfg = localSyncValue(cfg, newBase, oldBase, "csi_acquisition_and_reporting.cqi_table", "reference_signals.cqi_table", "identity");
   cfg = localSyncValue(cfg, newBase, oldBase, "csi_acquisition_and_reporting.pmi_codebook_mode", "reference_signals.pmi_codebook_mode", "identity");
@@ -278,6 +305,10 @@ cfg = localApplyDeclaredRadioAliases(cfg, newBase);
 cfg = localExpandCanonicalControl(cfg, newBase);
 cfg = localFinalizeLDPCIterationOverrides(cfg);
 cfg = localFinalizeLDPCPolicyOverrides(cfg);
+cfg = localFinalizePUSCHDMRSOverrides(cfg);
+cfg = localFinalizePUCCHPowerOverrides(cfg);
+cfg = localFinalizeRSPeriodOverrides(cfg,rsPeriodAuthority);
+cfg = localFinalizeCSIReportPeriodOverrides(cfg,csiReportPeriodAuthority);
 % Canonical runtime_overrides are applied by the expansion above. Re-run
 % the fixed-sweep semantic projection afterwards so a child YAML that
 % overrides canonical_control.run.fixed_link_snr_grid_db cannot execute the
@@ -290,6 +321,60 @@ cfg = localEnforceDuplexIsolation(cfg, authoredDuplex);
 if isfield(cfg, "sixgrAliasAuthorityInternal")
     cfg = rmfield(cfg, "sixgrAliasAuthorityInternal");
 end
+end
+
+function cfg=localFinalizeRSPeriodOverrides(cfg,authority)
+overrides=sixgr.util.structGet(cfg,'canonical_control.runtime_overrides',[]);
+authored=struct();
+for k=1:numel(overrides)
+    if ~isstruct(overrides)||~isfield(overrides(k),'path')||~isfield(overrides(k),'value'), continue; end
+    path=strtrim(string(overrides(k).path));
+    if strlength(path)>0, authored=sixgr.util.structSet(authored,path,overrides(k).value); end
+end
+authority=sixgr.lls6g.config.RSPeriodAuthority.merge(authority,authored);
+cfg=sixgr.lls6g.config.RSPeriodAuthority.apply(cfg,authority);
+end
+
+function cfg=localFinalizeCSIReportPeriodOverrides(cfg,authority)
+overrides=sixgr.util.structGet(cfg,'canonical_control.runtime_overrides',[]);
+authored=struct();
+for k=1:numel(overrides)
+    if ~isstruct(overrides)||~isfield(overrides(k),'path')||~isfield(overrides(k),'value'), continue; end
+    path=strtrim(string(overrides(k).path));
+    if strlength(path)>0, authored=sixgr.util.structSet(authored,path,overrides(k).value); end
+end
+authority=sixgr.lls6g.config.CSIReportPeriodAuthority.merge(authority,authored);
+cfg=sixgr.lls6g.config.CSIReportPeriodAuthority.apply(cfg,authority);
+end
+
+function cfg=localFinalizePUCCHPowerOverrides(cfg)
+% The ordered runtime override list is another authored layer. Repeated
+% writes to one path retain its final value; conflicting aliases reject.
+overrides=sixgr.util.structGet(cfg,'canonical_control.runtime_overrides',[]);
+authored=struct();
+for k=1:numel(overrides)
+    if ~isstruct(overrides)||~isfield(overrides(k),'path')||~isfield(overrides(k),'value')
+        continue;
+    end
+    path=strtrim(string(overrides(k).path));
+    if strlength(path)>0, authored=sixgr.util.structSet(authored,path,overrides(k).value); end
+end
+authority=sixgr.lls6g.config.PUCCHPowerAuthority.merge(struct(),authored);
+cfg=sixgr.lls6g.config.PUCCHPowerAuthority.apply(cfg,authority);
+end
+
+function cfg=localFinalizePUSCHDMRSOverrides(cfg)
+overrides=sixgr.util.structGet(cfg,'canonical_control.runtime_overrides',[]);
+authored=struct();
+for k=1:numel(overrides)
+    if ~isstruct(overrides)||~isfield(overrides(k),'path')||~isfield(overrides(k),'value')
+        continue;
+    end
+    path=strtrim(string(overrides(k).path));
+    if strlength(path)>0, authored=sixgr.util.structSet(authored,path,overrides(k).value); end
+end
+authority=sixgr.lls6g.config.PUSCHDMRSAuthority.merge(struct(),authored);
+cfg=sixgr.lls6g.config.PUSCHDMRSAuthority.apply(cfg,authority);
 end
 
 function cfg=localNormalizeLDPCPolicy(cfg,authority,leaf)
@@ -1439,6 +1524,19 @@ end
 end
 
 function cfg = localEnsureConfigInheritance(cfg, sourceFiles, configPath)
+% Re-normalizing an already resolved in-memory scenario is not a new file
+% load. Preserve its original provenance rather than replacing the source
+% chain with empty defaults. Retention does not authenticate those files;
+% an actual load supplies explicit paths below and records that new load.
+if isempty(sourceFiles) && strlength(configPath)==0 && ...
+        isfield(cfg,'config_inheritance') && isstruct(cfg.config_inheritance) && ...
+        isscalar(cfg.config_inheritance) && ...
+        isfield(cfg.config_inheritance,'provenance') && ...
+        isstruct(cfg.config_inheritance.provenance) && ...
+        isscalar(cfg.config_inheritance.provenance) && ...
+        all(isfield(cfg.config_inheritance.provenance,{'source_files','config_path','resolved_at_loader','source_kind'}))
+    return;
+end
 parents = strings(0,1);
 if numel(sourceFiles) > 1
     parents = sourceFiles(1:end-1);

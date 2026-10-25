@@ -10,6 +10,9 @@ summary=struct('NMSE_dB',NaN,'MeasurementAvailable',false, ...
     'AllTrialsQualified',false, ...
     'NMSEAggregation',"equal_trial_mean_linear_normalized_error", ...
     'ReferenceAvailableTrials',0,'UnreferencedNumericTrials',0);
+% An empty original trial struct can become a table with 0-by-0 named
+% variables. No status/reference/measurement exists to qualify in that case.
+if height(T)==0, return; end
 vars=string(T.Properties.VariableNames);
 status=strings(height(T),1);
 if ismember('Status',vars)

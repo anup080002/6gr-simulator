@@ -64,10 +64,10 @@ strictCfg.BWPSize = double(sixgr.util.structGet(cfg, "phy.srs.bwpSize", nSizeGri
 strictCfg.ResourceSetId = double(sixgr.util.structGet(cfg, "phy.srs.resourceSetId", 0));
 strictCfg.ResourceSetUsage = string(usage);
 strictCfg.ResourceType = string(resourceType);
-strictCfg.Periodicity = double(sixgr.util.structGet(cfg, "phy.srs.period_slots", ...
-    sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.periodicity_slots", 4)));
-strictCfg.Offset = double(sixgr.util.structGet(cfg, "phy.srs.period_offset", ...
-    sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.period_offset", 0)));
+strictCfg.Periodicity = sixgr.util.structGet(cfg, "phy.srs.period_slots", ...
+    sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.periodicity_slots", NaN));
+strictCfg.Offset = sixgr.util.structGet(cfg, "phy.srs.period_offset", ...
+    sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.period_offset", NaN));
 [slotNumbers, slotAuthority] = localResolveExpectedSlotSet( ...
     cfg, resourceType, strictCfg.Periodicity, strictCfg.Offset);
 strictCfg.ExpectedSlotSetSource = string(slotAuthority);
@@ -209,19 +209,27 @@ function [slots0, source] = localResolveExpectedSlotSet(cfg, resourceType, perio
 % the same schedule authority as the coupled runtime.  Slot numbers are
 % zero-based here because nrCarrierConfig.NSlot is zero-based; the public
 % slotWithinPeriod1Based surface remains one-based for operator clarity.
+resourceType = lower(strtrim(string(resourceType)));
+if resourceType == "periodic"
+    [periodicity,offset]=sixgr.phy.srs.validateSRSPeriodOffset(periodicity,offset);
+    sixgr.phy.srs.validateSRSOccasionCoordinates(periodicity,offset, ...
+        sixgr.util.structGet(cfg,"phy.srs.slotNumbers",sixgr.util.structGet(cfg,"lls6g.reference_signals.srs.slot_numbers",[])), ...
+        sixgr.util.structGet(cfg,"phy.srs.slotWithinPeriod1Based",[]));
+end
 explicitSlots = sixgr.util.structGet(cfg, "phy.srs.slotNumbers", ...
     sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.slot_numbers", []));
 if ~isempty(explicitSlots)
-    slots0 = unique(round(double(explicitSlots(:).')), "stable");
-    if any(~isfinite(slots0) | slots0 < 0)
+    if ~(isnumeric(explicitSlots) && ~islogical(explicitSlots) && isreal(explicitSlots) && ...
+            isvector(explicitSlots) && all(isfinite(explicitSlots(:))) && ...
+            all(explicitSlots(:)>=0 & explicitSlots(:)<=flintmax & explicitSlots(:)==fix(explicitSlots(:))))
         error("sixgr:phy:srs:InvalidExplicitSlotSet", ...
-            "Configured SRS slotNumbers must contain finite zero-based carrier slots >= 0.");
+            "Configured SRS slotNumbers must contain exact finite zero-based integer carrier slots >= 0.");
     end
+    slots0 = unique(double(explicitSlots(:).'), "stable");
     source = "phy.srs.slotNumbers";
     return;
 end
 
-resourceType = lower(strtrim(string(resourceType)));
 if resourceType ~= "periodic"
     % Aperiodic execution is triggered by decoded DCI rather than a
     % periodic offset.  Slot zero is only the deterministic waveform-test
@@ -231,29 +239,18 @@ if resourceType ~= "periodic"
     return;
 end
 
-periodicity = round(double(periodicity));
-offset = round(double(offset));
-if ~(isscalar(periodicity) && isfinite(periodicity) && periodicity >= 1)
-    error("sixgr:phy:srs:InvalidPeriodicity", ...
-        "Periodic SRS requires a finite integer period_slots >= 1.");
-end
-if ~(isscalar(offset) && isfinite(offset) && offset >= 0 && offset < periodicity)
-    error("sixgr:phy:srs:InvalidPeriodOffset", ...
-        "Periodic SRS period_offset=%g must be an integer in [0,%d].", ...
-        double(offset), periodicity - 1);
-end
-
 withinPeriod1 = sixgr.util.structGet(cfg, ...
     "phy.srs.slotWithinPeriod1Based", []);
-withinPeriod1 = unique(round(double(withinPeriod1(:).')), "stable");
 if ~isempty(withinPeriod1)
-    if any(~isfinite(withinPeriod1) | withinPeriod1 < 1 | ...
-            withinPeriod1 > periodicity)
+    if ~(isnumeric(withinPeriod1) && ~islogical(withinPeriod1) && isreal(withinPeriod1) && ...
+            isvector(withinPeriod1) && all(isfinite(withinPeriod1(:))) && ...
+            all(withinPeriod1(:)>=1 & withinPeriod1(:)<=periodicity & withinPeriod1(:)==fix(withinPeriod1(:))))
         error("sixgr:phy:srs:InvalidSlotWithinPeriod", ...
             ["Configured SRS slotWithinPeriod1Based must contain finite " + ...
              "integers in [1,%d] for period_slots=%d."], ...
             periodicity, periodicity);
     end
+    withinPeriod1 = unique(double(withinPeriod1(:).'), "stable");
     positions0 = withinPeriod1 - 1;
     matching = positions0(mod(positions0 - offset, periodicity) == 0);
     if isempty(matching)

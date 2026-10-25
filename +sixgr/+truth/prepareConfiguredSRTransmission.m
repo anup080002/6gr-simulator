@@ -1,6 +1,7 @@
-function prepared=prepareConfiguredSRTransmission(state,cfg,h)
+function [prepared,admission]=prepareConfiguredSRTransmission(state,cfg,h)
 % UE-side procedure decision only. It must not define the gNB hypothesis.
 prepared=[];
+admission=table(); % Negative SR is not a power-deferred positive request.
 assert(~logical(sixgr.util.structGet(cfg,'mac.phase08.sr.enabled',false)), ...
     'sixgr:truth:UnboundMACSRProcedure','Bind enabled MAC triggers/timers before physical SR transmission.');
 states=sixgr.phy.pucch.SchedulingRequestState.atSlot( ...
@@ -33,6 +34,8 @@ end
 frame=struct('TargetSlot',h.TargetSlot,'SlotSymbolOwnership',string(ownership), ...
     'FlexibleResolutionProvided',false);
 plan=sixgr.phy.pucch.PUCCHConfigBuilder.planSR(cfg,ue,sr,frame);
+[admitted,cfg,admission]=sixgr.truth.resolveSharedPUCCHPowerAdmission(state,cfg,h.UEIndex,h.TargetSlot);
+if ~admitted, return; end
 connected=sixgr.phy.pucch.PUCCHConfigBuilder.materialize(cfg,plan);
 args={'Carrier',carrier,'Assignment',connected.Assignment,'Report',connected.Report, ...
     'ReceiverContext',connected.ReceiverContext,'SNR_dB',sixgr.truth.resolvePUCCHConfiguredSNRMetadata(state,cfg), ...

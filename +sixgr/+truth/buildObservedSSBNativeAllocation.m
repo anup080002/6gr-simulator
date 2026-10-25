@@ -4,6 +4,22 @@ function T=buildObservedSSBNativeAllocation(p,observation,cellID)
 % transmitted symbols. Carrier PRB intersections belong to a separate load
 % model; these rows retain original beam/port/component ownership.
 tx=p.Tx; common=tx.Carrier; fs=double(p.SampleRateHz);
+assert(isa(observation,'sixgr.phy.waveform.WaveformObservationBuffer') && ...
+    isscalar(observation) && observation.isComplete() && ...
+    observation.SampleRateHz==fs && ...
+    observation.EndSampleExclusive-observation.StartSample==p.NumSamples && ...
+    observation.NumReceiveAntennas==size(p.TransmitSamples,2), ...
+    'sixgr:truth:BroadcastGridObservationMismatch', ...
+    'Native SS/PBCH evidence requires its complete original committed observation.');
+assert(all(isfield(p,{'BroadcastStartAbsoluteSlot','BroadcastStartSample'})) && ...
+    all(isfield(tx,{'BroadcastStartAbsoluteSlot','BroadcastStartSample'})) && ...
+    isequal(p.BroadcastStartAbsoluteSlot,tx.BroadcastStartAbsoluteSlot) && ...
+    isequal(p.BroadcastStartSample,tx.BroadcastStartSample) && ...
+    isequal(p.BroadcastStartSample,observation.StartSample) && ...
+    isequal(p.BroadcastStartSample,sixgr.phy.frame.slotStartSample( ...
+        common,p.BroadcastStartAbsoluteSlot,fs)), ...
+    'sixgr:truth:BroadcastGridOriginMismatch', ...
+    'Native SS/PBCH rows cannot transplant original IQ into another radio frame.');
 scs=double(tx.SSBInfo.SSBTiming.SSBSubcarrierSpacingKHz);
 grid=tx.SSBWaveInfo.SSBComposite.TransmitPortResourceGrid;
 logicalGrid=tx.SSBWaveInfo.ResourceGridSSBurst.ResourceGrid;
@@ -13,21 +29,9 @@ assert(size(grid,1)==240 && size(logicalGrid,3)==1 && ...
     'sixgr:truth:BroadcastGridPortMismatch','Native SSB logical and waveform-port support must agree.');
 native=nrCarrierConfig('NSizeGrid',20,'SubcarrierSpacing',scs, ...
     'NCellID',common.NCellID,'CyclicPrefix','normal');
-ofdm=nrOFDMInfo(native,'SampleRate',fs,'Nfft',fs/(scs*1000));
-lengths=double(ofdm.SymbolLengths(:)); cp=double(ofdm.CyclicPrefixLengths(:));
-nSymbols=size(grid,2); count=ceil(nSymbols/numel(lengths));
-lengths=repmat(lengths,count,1); cp=repmat(cp,count,1);
-starts=[0;cumsum(lengths(1:nSymbols-1))];
-ends=starts+lengths(1:nSymbols);
-waveformSamples=size(tx.SSBWaveform,1);
-% nrWaveformGenerator retains a frame-padded SS burst grid even when its
-% requested waveform ends earlier (e.g. a 9-ms waveform and 10-ms grid).
-% Only zero padding may lie beyond the emitted interval; never publish an
-% untransmitted nonzero symbol or stretch the actual waveform to fit it.
-outside=ends>waveformSamples;
-assert(any(ends==waveformSamples) && ~any(grid(:,outside,:)~=0,'all'), ...
-    'sixgr:truth:SSBNativeSampleClockMismatch', ...
-    'The emitted waveform must end on its native symbol clock and contain every nonzero SSB grid symbol.');
+clock=sixgr.truth.ssbEmittedSymbolClock(grid,size(tx.SSBWaveform,1),scs,fs);
+starts=clock.CPStartSample0; cp=clock.CyclicPrefixLengths;
+nSymbols=size(grid,2);
 origin=double(observation.StartSample);
 nativeBase=origin/(fs/(1000*native.SlotsPerSubframe));
 commonBase=origin/(fs/(1000*common.SlotsPerSubframe));
@@ -79,7 +83,7 @@ for cycle=0:period:nSymbols-1
         part.grid_subcarrier_spacing_hz=repmat(scs*1000,n,1);
         part.grid_subcarrier_count=repmat(240,n,1);
         part.grid_symbol_count=repmat(nSymbols,n,1);
-        part.emitted_symbol_count=repmat(nnz(~outside),n,1);
+        part.emitted_symbol_count=repmat(nnz(clock.EmittedSymbolMask),n,1);
         part.native_symbol_index_from_burst=symbol-1;
         part.carrier_origin_slot0=repmat(commonBase,n,1);
         part.ssb_index0=repmat(index,n,1); part.associated_ssb_index0=part.ssb_index0;
@@ -91,7 +95,7 @@ for cycle=0:period:nSymbols-1
         part.observation_sample_rate_hz=repmat(fs,n,1);
         part.cp_start_sample=origin+starts(symbol);
         part.useful_start_sample=part.cp_start_sample+cp(symbol);
-        part.useful_end_sample_exclusive=part.useful_start_sample+double(ofdm.Nfft);
+        part.useful_end_sample_exclusive=part.useful_start_sample+clock.Nfft;
         part.frequency_first_hz=low-bandwidth/2+part.subcarrier_start*scs*1000;
         part.frequency_last_hz=part.frequency_first_hz+(part.subcarrier_count-1)*scs*1000;
         part.frequency_axis_source=repmat("native_bin_centers_relative_to_common_carrier_center",n,1);

@@ -3,15 +3,32 @@ function tf = coupledSRSResourceOpportunity(cfg, slotIdx, ueIdx, numUsers, perio
 % The opportunity gate must honor configured SRS slots; multiplexing controls
 % how many due UEs share an occasion, not whether the occasion itself exists.
 
-slotIdx = max(1, round(double(slotIdx)));
-ueIdx = max(1, round(double(ueIdx)));
-numUsers = max(1, round(double(numUsers)));
-periodSlots = max(1, round(double(periodSlots)));
+validateattributes(slotIdx,{'numeric'},{'real','scalar','finite','integer','positive','<=',flintmax});
+validateattributes(ueIdx,{'numeric'},{'real','scalar','finite','integer','positive'});
+validateattributes(numUsers,{'numeric'},{'real','scalar','finite','integer','positive'});
+periodSlots = sixgr.phy.srs.validateSRSPeriodOffset(periodSlots,0);
+assert(strcmpi(string(sixgr.util.structGet(cfg,'phy.srs.resourceType','periodic')),'periodic'), ...
+    'sixgr:truth:NonPeriodicSRSCalendar', ...
+    'Periodic opportunity selection cannot authorize aperiodic or semi-persistent SRS without its control procedure.');
+[configuredPeriod,offset]=sixgr.phy.srs.validateSRSPeriodOffset( ...
+    sixgr.util.structGet(cfg,'phy.srs.period_slots',NaN), ...
+    sixgr.util.structGet(cfg,'phy.srs.period_offset',NaN));
+assert(isequal(configuredPeriod,periodSlots),'sixgr:truth:SRSCalendarMismatch', ...
+    'The runtime SRS period must match the configured resource period.');
+slotIdx = double(slotIdx); ueIdx = double(ueIdx); numUsers = double(numUsers);
 schedulingPolicy = lower(strtrim(string(schedulingPolicy)));
 maxUEsPerSlot = max(1, round(double(maxUEsPerSlot)));
 
-slotWithinPeriod1 = double(sixgr.util.structGet(cfg, "phy.srs.slotWithinPeriod1Based", []));
-slotWithinPeriod1 = unique(round(slotWithinPeriod1(isfinite(slotWithinPeriod1) & slotWithinPeriod1 >= 1)), "stable");
+[absoluteSlots0,slotWithinPeriod1]=sixgr.phy.srs.validateSRSOccasionCoordinates(periodSlots,offset, ...
+    sixgr.util.structGet(cfg,"phy.srs.slotNumbers",[]), ...
+    sixgr.util.structGet(cfg,"phy.srs.slotWithinPeriod1Based",[]));
+% Explicit absolute selection is a subset of the native calendar, with the
+% same precedence used by strict waveform generation.
+if ~isempty(absoluteSlots0)
+    tf=ismember(slotIdx-1,absoluteSlots0);
+    return;
+end
+if isempty(slotWithinPeriod1), slotWithinPeriod1=offset+1; end
 if ~isempty(slotWithinPeriod1)
     slotInPeriod = mod(slotIdx - 1, periodSlots) + 1;
     matchIdx = find(slotWithinPeriod1 == slotInPeriod, 1, "first");
@@ -34,12 +51,4 @@ if ~isempty(slotWithinPeriod1)
     tf = any(ueIdx == scheduledUEs);
     return;
 end
-absoluteSlots0 = double(sixgr.util.structGet(cfg, "phy.srs.slotNumbers", []));
-absoluteSlots0 = unique(round(absoluteSlots0(isfinite(absoluteSlots0) & absoluteSlots0 >= 0)), "stable");
-if ~isempty(absoluteSlots0)
-    tf = ismember(slotIdx - 1, absoluteSlots0);
-    return;
-end
-error("sixgr:truth:MissingSRSSlotAuthority", ...
-    "Enabled SRS requires phy.srs.slotWithinPeriod1Based or phy.srs.slotNumbers; no hardcoded phase is permitted.");
 end

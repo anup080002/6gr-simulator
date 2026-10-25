@@ -1,7 +1,9 @@
-function ok=testCellCommonSIB1Broadcast()
+function ok=testCellCommonSIB1Broadcast(verifyMIBOwnership)
 % Two receivers consume one physical cell burst, including all authored SI
 % beam occasions. This is bounded physical access, not a full data run.
 setup6GRSimToolkit('Verbose',false);
+if nargin<1, verifyMIBOwnership=false; end
+validateattributes(verifyMIBOwnership,{'logical'},{'scalar'});
 scenario=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs', ...
     'scenarios','lls_tdd_5mhz_two_ue_rank2_al8_shared_awgn_20db.yaml'));
 root=fullfile(pwd,'results','lls','cell_common_sib1', ...
@@ -80,7 +82,12 @@ for slot=1:lastSlot
             'CandidateSSBIndices',0:3,'SSBIndex',[],'WriteArtifacts',false, ...
             'RunFolder','','RunId','cell_common_sib1', ...
             'PhysicalMeasurementObservation',pre,'TransmitObservation',txObs);
-        received=sixgr.link.completeCellSearchBroadcast(prepared,post,prototype,options,tic);
+        [received,mibContexts]=sixgr.link.completeCellSearchBroadcast(prepared,post,prototype,options,tic);
+        if verifyMIBOwnership
+            chosen=ue; % Different actually decoded candidates, not a TX hint.
+            assert(testReceivedMIBDelivery(state,item,mibContexts{chosen}, ...
+                received.CandidateResults{chosen}.SIB1,post,root));
+        end
         save(fullfile(root,sprintf('ue_%d.mat',ue)),'received');
         observed=sixgr.truth.buildObservedBroadcastREAllocation(prepared,txObs,1);
         siRows=observed(observed.rnti==65535,:);

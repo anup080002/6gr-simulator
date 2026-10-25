@@ -427,6 +427,7 @@
       ,"ftp3_direction": {"required": false, "type": "string", "allowed_values": ["UL", "DL"]}
     }},
     "csi_acquisition_and_reporting": {"parameters": {
+      "report_calendar_authority": {"required": false, "type": "struct", "description": "Versioned resolved CSI-report declaration provenance. Validated against authored units, resolved aliases and the reporting UL-BWP clock; not received RRC evidence."},
       "dl_csi_mode": {"required": false, "type": "string"},
       "ul_csi_mode": {"required": false, "type": "string"},
       "csi_report_type": {"required": false, "type": "string"},

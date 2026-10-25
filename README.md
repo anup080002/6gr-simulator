@@ -1,17 +1,88 @@
 # SixGR Foundation v2
 
-## 24 October 2026: restart handoff and six-point n40 sweep
+## 25 October 2026: consolidated main branch and requested scenario run
+
+Use this existing checkout and the `main` branch. The current run target is the
+six-point **n40 / 2.350 GHz / 20 MHz / 30 kHz TDD** YAML below: **100 slots per
+point**, `[30, 20, 10, 0, -10, -20]` dB nominal reference Es/N0, 64 gNB TXRU,
+four UE chains, adaptive ranks `[1,2,4]`, UMa and CDL-C/100 ns, physical control
+and RF, 20-ms SSB, **no checkpoints**. Actual measured SINR is recorded separately;
+successful attachment and higher ranks at every point are not guaranteed.
+
+This is an **integration/measurement run**, not accepted statistical NR/6G study
+evidence. The latest completed core gate, v268, passes **4/4** focused MATLAB
+tests with 5,888 monitored files unchanged and exit 0. It covers original
+per-beam received timing, causal delivery, PRACH admission, retained MIB and
+power-reference guards. v267 passes **6/6** noiseless-reference/BCH checks.
+The subsequent **v271 beam/control repair gate passes 5/5**, with all 5,891
+monitored files unchanged and MATLAB exit 0. The production TDD parent now
+installs its explicit one-port connected DCI/monitoring policy; H4 retains
+its own CORESET identity. The emitted SSB patterns are unchanged, but their
+initial CSI resource map is corrected to `[0,1,2,3]`, with actual spatial
+containment and active-bitmap identity validation. All four-to-eight declared
+state handoffs, TCI guards, selected-basis freezing and PDSCH TX checks pass.
+These are not full physical n40 feedback-loop qualification.
+
+The original v269 slot-1 failure and v270 intermediate failures remain
+preserved. The bounded SI-to-Msg1 main-path rerun is **v272; completion pending**.
+Do not start the full sweep concurrently or treat that pending run as passed.
+The guide's configuration/catalog snapshots were regenerated using MATLAB,
+not by replacing provenance hashes. A component pass is not full-scenario acceptance.
+Only affected tests are requested; **do not run `testAll`** for this handoff.
+
+### Run from this repository root (PowerShell)
+
+Use a fresh tag for every attempt. Keep E: connected for the complete run.
+Do not launch a second MATLAB simulation while the focused gate or another
+scenario is active. The output directory is not another codebase.
+
+```powershell
+$runTag = 'n40_20mhz_sixpoint_' + (Get-Date -Format 'yyyyMMdd_HHmmss')
+$runYaml = 'simulator/configs/scenarios/lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep.yaml'
+$outputRoot = 'E:\SixGRResults'
+if (-not (Test-Path -LiteralPath 'E:\')) { throw 'Reconnect E: before running.' }
+New-Item -ItemType Directory -Force -Path "$outputRoot\logs" | Out-Null
+& 'C:\Program Files\MATLAB\R2026a\bin\matlab.exe' -wait -logfile "$outputRoot\logs\$runTag.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('$runYaml','$outputRoot','$runTag'); disp(out); fprintf('RUN_FOLDER=%s\n',char(out.RunFolder)); assert(out.Ok,'Campaign acceptance failed; preserve original evidence.');"
+```
+
+The runner reports `RUN_FOLDER`; retain that entire directory, its resolved
+configuration and input snapshots, child results, source/seed metadata and the
+console log. The parent sweep requests joint reports across all six points;
+each child's raw evidence remains separate for traceability. Failed or
+unexecuted measurements must not be replaced with synthetic rows. A terminal
+process is not necessarily a successful campaign: inspect `out.Ok`, child
+outcomes, final publication and the original failure receipts.
+
+### Monitor and understand the run
+
+- WebGUI: <http://127.0.0.1:62906/runs>; select the new tag and the active child.
+  Do not mistake an older failed run or a completed parent summary for live PHY.
+- Technical guide: <http://127.0.0.1:62907/>; source links, algorithms and
+  standards-versus-implementation distinctions live here.
+- [Remaining issues only](docs/lls/lls_gap_status_20261023.html): unresolved
+  implementation, integration, measurement and statistical qualification.
+- Git tracks source/YAML/tests/documentation. Existing ignore rules keep large
+  IQ/results/logs local; **a clean Git worktree does not mean deleting evidence**.
+
+The sections below retain dated history. Their old pending-test statements do
+not supersede the current issue ledger or newer original receipts.
+
+## Historical 24 October 2026: restart handoff and six-point n40 sweep
 
 All saved source edits are consolidated in the existing `main` checkout; no
-second simulator or worktree is required. MATLAB was stopped for the requested
-laptop restart, preserving logs, results and the incomplete broadcast test.
-No simulation, automatic restart or `testAll` is scheduled.
+second simulator or worktree is required. The requested laptop restart preserved
+logs, results and the incomplete broadcast test. Affected verification has since
+resumed; the bounded v213 SRS gate is pending as described below. No full campaign, automatic scenario
+restart or `testAll` is scheduled.
 
 The selected YAML is
 [`lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep.yaml`](simulator/configs/scenarios/lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep.yaml).
-It requests **30, 20, 10, 0, -10, -20 dB in that order**, with 60 slots per
+It requests **30, 20, 10, 0, -10, -20 dB in that order**, with 100 slots (50 ms) per
 independent point, no checkpoints, n40/2.350 GHz, 20 MHz, uniform 30 kHz TDD,
 64 TXRU/four-chain UE, received-feedback rank up to four, UMa and CDL-C/100 ns.
+The selected sweep retains the **20-ms SSB period** and measured-reference
+freshness guards. The standalone thermal-noise YAML remains a 60-slot check.
+The longer horizon is not a guarantee of successful access at every point.
 The points are **nominal reference Es/N0**, not guaranteed measured SINR.
 Absolute power and UMa loss remain active; the declared reference fixes noise
 PSD separately for DL and UL without normalizing current received samples.
@@ -19,16 +90,80 @@ This controlled-noise choice is research policy, not mandatory 3GPP
 normalization or hardware/thermal-noise qualification. Actual RSRP/SINR,
 decoding failures and rank decisions must remain original measurements.
 
-**Not yet cleared for the full campaign.** In v187, four completed focused
-tests passed on the preceding five-point source/configuration: noise publication,
-reference arithmetic/configuration, DL/UL native-OFDM noise injection at
-15/30 kHz, and runner authority. All 387 monitored source hashes were unchanged.
-`test20MHzUniformNumerologyBroadcast` was interrupted, not passed. The new
-six-point order was updated afterward and needs the affected MATLAB check.
-The direct DL/UL/SRS consumer test and CSI population-export regression remain
-unexecuted. The CSI exporter still needs its resource/receiver/plane pooling
-repair; absolute units alone must not be labelled calibrated. Broader existing
-gaps remain documented in the [HTML guide](docs/lls/lls_gap_status_20261023.html#sweep-reference-20261024).
+**Not yet cleared for the full campaign.** v200 passed 13 affected MATLAB
+checks and 53 reporting checks. The later v203 batch passed four tests but
+failed three CSI/control integration tests; those retained failures are
+superseded only within the explicitly verified scopes below.
+v204 passed all six reference-noise/configuration groups, including the selected
+100-slot horizon for all six children, unchanged 20-ms SSB cadence and the
+unchanged standalone 60-slot thermal-noise parent. This is configuration
+verification, not waveform execution or successful access/adaptation.
+The channel calendar/resource repairs now pass their affected checks:
+v205 passed 10/11 tests; the failed BWP test exposed an empty-intersection
+shape error and ambiguous native multi-column fixture indices. v206 passed
+four direct dependents after the core repair. v207 passes all seven BWP test
+groups after independently cross-checking supported native subscript indices;
+the original failures remain retained. These bounded passes do not establish
+final publication, performance statistics or complete scenario acceptance.
+The subsequent v208 standards/calendar batch passes **9/9 affected tests**
+(terminal exit 0; all 5,795 monitored source/config/test hashes unchanged).
+It fixes the tracking-specific TRS cadence: n40/51 RB uses 20 slots at
+30 kHz (10 ms); H4/273 RB uses 40 slots at 30 kHz (20 ms); the
+106-RB/15-kHz parent uses 20 slots (20 ms). The native-bound guard rejects
+invalid periods and the 10-ms option above 52 RBs. Carrier milliseconds
+are converted using physical SCS, not run duration, without fractional
+rounding. Original TRS resource IDs survive runtime observation selection.
+These focused results do not close the CSI/control failures above or the
+alias/inheritance and independent-SI limitations below.
+Receipt: [v208 calendar checks](logs/n40_calendar_standards_20261024_v208_receipt.json).
+The next [v209 component batch](logs/n40_csi_calendar_integration_20261024_v209_receipt.json)
+passes 5/5 checks with all 5,797 source/config/test hashes unchanged. It verifies
+the HARQ-only/no-CSI delivery-audit repair and periodic-PUCCH CSI period/offset
+validation at config and obligation owners.
+The terminal [v210 physical batch](logs/n40_csi_physical_completion_20261024_v210_receipt.json)
+passed **1/3 tests**, with all 5,797 monitored hashes unchanged. Actual shared
+SSB/MIB/SIB1 reception and causal measurement installation succeeded; the
+independent PUSCH CSI completion test passed both retained/removed UE-bookkeeping
+arms. The initial connected RA/TAG remains declared component input, not a
+completed access procedure. Late periodic-CSI timing and CSI-to-PDSCH continuation
+still failed. Their fixture calendar and missing original TRS installation
+binding are repaired in source, **pending physical rerun**; no full n40 pass.
+The terminal [v211 SRS batch](logs/n40_srs_calendar_repairs_20261024_v211_receipt.json)
+passed **4/5 tests**, with all 5,800 monitored hashes unchanged. Exact carrier
+period conversion, causal SRS scheduling, native mapping evidence and generic
+CSI delay enqueue checks passed. The broader SRS calendar test stopped because
+its disabled-SRS case retained contradictory SRS-backed UL signaling. The test
+now preserves that rejection and uses an isolated disabled-SRS fixture for the
+absent-calendar check. The terminal
+[v212 retry](logs/n40_calendar_csi_affected_20261024_v212_receipt.json) passed
+**1/3 tests**, with all 5,800 monitored hashes unchanged: actual received CSI
+drove scheduled slot-16 PDSCH at MCS26/rank1 with CRC success. This does not
+qualify TCI activation, a full scenario or statistics. The SRS check exposed
+an absent disabled/aperiodic period represented as NaN in an integer catalog;
+the core now omits that absent field rather than inventing a period. Late CSI
+still failed because its fixture skipped the public slot-entry call and had
+no canonical sweep horizon; that fixture repair is ongoing, not a radio-slot-zero
+failure. **v213 verification is pending** for three bounded SRS checks.
+Enabled periodic SRS now requires
+an explicit exact period/offset, with no four-slot fallback; final YAML overrides,
+native resource phase and runtime slot lists must agree. Native mapping is not
+received evidence: `NativeMappingOccasion` is computed from native indices,
+while `ObservedOccasion` remains unavailable without a receiver observation.
+The standalone SRS runner also no longer supplies a missing period or rewrites
+the offset to make the requested slot active: an incompatible slot rejects.
+The selected n40 YAML now expresses SRS as **five 30-kHz slots = 2.5 ms** in
+both `reference_signals.srs_periodicity_ms` and the legacy nested
+`reference_signals.srs.periodicity`; the inherited slot field remains five.
+`reference_signals.tracking_rs.periodicity: '10ms'` now agrees with the actual
+`reference_signals.trs_periodicity_slots: 20`. General alias reconciliation is
+still open; these selected-label corrections do not change the physical cadence.
+The active periods/offsets are defined through YAML inheritance, with exact
+keys in the [calendar guide](http://127.0.0.1:62907/#resource-efficiency).
+Generic duplicate-period alias validation and independent SI repetition remain
+open; nested cosmetic labels must not be mistaken for runtime controls.
+Technical explanations live in the single [local documentation guide](http://127.0.0.1:62907/#n40-reference-sweep).
+Pending work, fixes and dated evidence remain in the separate
+[issue ledger](docs/lls/lls_gap_status_20261023.html#documentation-location).
 
 After restart, run only these affected checks first (not a full campaign):
 
@@ -36,10 +171,10 @@ After restart, run only these affected checks first (not a full campaign):
 & 'C:\Program Files\MATLAB\R2026a\bin\matlab.exe' -wait -batch "setup6GRSimToolkit('Verbose',false); assert(testAbsoluteReferenceNoise()); assert(test20MHzUniformNumerologyBroadcast()); assert(testAbsoluteReferenceNoiseWaveform());"
 ```
 
-The pending CSI reporting reproducer is `testCSIPhysicalMeasurementPopulationReporting`;
-it is expected to expose the current pooling defect and is not a readiness gate
-already passed. Repair and verify that producer and its plotted-CSV consumers
-before launching. The following is the **manual campaign command after those
+The remaining integration failures are `testSharedPUSCHLateCSIDelivery`,
+`testTDDSharedPUSCHIndependentCSICompletion` and
+`testReceivedCSIToScheduledPDSCH`; channel-specific power admission and joint
+publication also require closure. The following is the **manual campaign command after those
 gates**, not a claim it has run or passed. Use a new run tag, reconnect E:, and
 execute from this repository root:
 

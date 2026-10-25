@@ -16,7 +16,7 @@ cfg = sixgr.lls6g.buildInternalConfig(scenario, ...
 baseline = localCheckBasis(cfg);
 renamed = scenario.toStruct();
 renamed.reference_signals.csi_rs_resource_ids = [17 5 33 9 41 13 57 21];
-renamed.mimo_and_beam_management.ssb_to_initial_csi_resource_ids = [17 33 41 57];
+renamed.mimo_and_beam_management.ssb_to_initial_csi_resource_ids = [17 5 33 9];
 renamedCfg = sixgr.lls6g.buildInternalConfig(renamed,tempname);
 relabelled = localCheckBasis(renamedCfg);
 assert(isequaln(cfg.phy.csirs.precoderMatrices,renamedCfg.phy.csirs.precoderMatrices), ...

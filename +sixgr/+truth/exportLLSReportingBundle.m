@@ -272,10 +272,12 @@ if ~(istable(ctx.Tables.PRACHCorrelationTrace) && ~isempty(ctx.Tables.PRACHCorre
 end
 ctx.Tables.PDCCH = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "pdcch_trials.csv"));
 ctx.Tables.PUCCH = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "pucch_trials.csv"));
-ctx.Tables.CSIRS = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "csi_rs_trials.csv"));
+ctx.Tables.CSIRS = sixgr.report.readCSIPhysicalMeasurementTrials( ...
+    fullfile(layout.AirInterfaceCSVDir, "csi_rs_trials.csv"));
 ctx.Tables.CSIFeedback = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "csi_feedback_reports.csv"));
 ctx.Tables.ReceivedCSI = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "received_csi_reports.csv"));
-ctx.Tables.SRS = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "srs_trials.csv"));
+ctx.Tables.SRS = sixgr.report.readSRSPhysicalMeasurementTrials( ...
+    fullfile(layout.AirInterfaceCSVDir, "srs_trials.csv"));
 ctx.Tables.TRS = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "trs_trials.csv"));
 ctx.Tables.InitialAccessLifecycle = localReadOptionalTable(fullfile(layout.ControlCSVDir, "initial_access_lifecycle_trace.csv"));
 if ~(istable(ctx.Tables.InitialAccessLifecycle) && ~isempty(ctx.Tables.InitialAccessLifecycle))
@@ -961,13 +963,13 @@ switch key
     case "csi_sinr"
         T = localCSIPhysicalMeasurementRows(cat, metric, ctx.Tables.CSIRS, "ReferenceMeasuredSINR_dB", "CSI-SINR", "dB");
     case "cqi"
-        T = localDistributionRows(cat, metric, ctx.Tables.CSIRS, "CQI", "CSI-RS", "index", "air_interface/csv/csi_rs_trials.csv");
+        T = localCSISelectionRows(cat,metric,ctx.Tables.CSIRS,"CQI");
     case "pmi"
-        T = localDistributionRows(cat, metric, ctx.Tables.CSIRS, "PMI", "CSI-RS", "index", "air_interface/csv/csi_rs_trials.csv");
+        T = localCSISelectionRows(cat,metric,ctx.Tables.CSIRS,"PMI");
     case "ri"
-        T = localDistributionRows(cat, metric, ctx.Tables.CSIRS, "RI", "CSI-RS", "layers", "air_interface/csv/csi_rs_trials.csv");
+        T = localCSISelectionRows(cat,metric,ctx.Tables.CSIRS,"RI");
     case "cri"
-        T = localDistributionRows(cat, metric, ctx.Tables.CSIRS, "CRI", "CSI-RS", "index", "air_interface/csv/csi_rs_trials.csv");
+        T = localCSISelectionRows(cat,metric,ctx.Tables.CSIRS,"CRI");
     case "csi_age"
         T = localCustomNumericSummaryRows(cat, metric, ctx.Tables.CSIFeedback, "CSIAgeSeconds", "CSI_feedback", "s", "air_interface/csv/csi_feedback_reports.csv", ...
             "Age from completed CSI reference-resource observation to causal scheduler delivery/use.");
@@ -980,11 +982,11 @@ switch key
     case "beam_recovery_time"
         T = localBeamRecoveryRows(cat, metric, ctx);
     case "one_shot_ssb_detection_probability"
-        T = localPassRateRows(cat, metric, ctx.Tables.PBCH, "PBCH");
+        T = localPBCHStageOutcomeRows(cat, metric, ctx);
     case "cell_id_detection_success"
-        T = localPassRateRows(cat, metric, ctx.Tables.PBCH, "cell_search_pbch");
+        T = localPBCHStageOutcomeRows(cat, metric, ctx);
     case "pbch_decode_success"
-        T = localPassRateRows(cat, metric, ctx.Tables.PBCH, "PBCH");
+        T = localPBCHStageOutcomeRows(cat, metric, ctx);
     case "initial_access_latency"
         T = localInitialAccessLatencyRows(cat, metric, ctx);
     case "search_complexity"
@@ -1617,6 +1619,136 @@ failMask = status(validMask) == "FAIL" | status(validMask) == "CRASH";
 T = [T; ...
     localMetricTableRow(cat, metric, entity, "rate", "available", mean(failMask), "", "fraction", localDefaultSource(entity), ""); ...
     localMetricTableRow(cat, metric, entity, "count", "available", sum(failMask), "", "count", localDefaultSource(entity), "")];
+end
+
+function T=localPBCHStageOutcomeRows(cat,metric,ctx)
+% Detector decisions, raw BCH CRC and accepted MIB are different outcomes.
+% Combined SIB1 Status/Crash cannot supply or erase an earlier decision.
+source=ctx.Tables.PBCH; n=height(source); key=string(metric.key);
+artifact="air_interface/csv/pbch_trials.csv";
+[detectionAttempted,detectionKnown]=localPBCHFlag(source,"DetectionAttempted");
+[pss,pssKnown]=localPBCHDetector(source,"PSS");
+[sss,sssKnown]=localPBCHDetector(source,"SSS");
+terminalDetection=detectionKnown & detectionAttempted & pssKnown & (~pss | sssKnown);
+eligible=terminalDetection; success=pss & sss;
+entity="SSB_receiver_detection";
+denominator="completed original PSS decision, and original SSS decision when PSS detected";
+numerator="original PSSDetected and SSSDetected";
+if key=="cell_id_detection_success"
+    [recovered,recoveredKnown]=localPBCHFlag(source,"NCellIDRecovered");
+    eligible=terminalDetection & recoveredKnown & (~recovered | (pss & sss));
+    success=pss & sss & recovered;
+    entity="receiver_cell_id_recovery";
+    numerator="original PSSDetected, SSSDetected and NCellIDRecovered; not transmitted-PCI correctness";
+elseif key=="pbch_decode_success"
+    [attempted,attemptKnown]=localPBCHFlag(source,"DecodeAttempted");
+    [crc,crcKnown]=localPBCHFlag(source,"BCHCRCValid");
+    bits=localPBCHNumber(source,"BCHTransportBlockNumBits");
+    hashes=localPBCHText(source,"BCHTransportBlockHash");
+    hasHash=~cellfun('isempty',regexp(cellstr(hashes),'^[0-9a-fA-F]{64}$','once'));
+    % These original outputs are assigned on return from PBCH_Recovery,
+    % before subsequent SSS power/SI operations. The initialized false CRC
+    % alone is not evidence that the decoder ever completed.
+    eligible=attemptKnown & attempted & crcKnown & ...
+        isfinite(bits) & bits>0 & bits==fix(bits) & hasHash;
+    success=crc; entity="PBCH_completed_decoder";
+    denominator="original DecodeAttempted plus returned BCH transport-block count/hash and binary BCHCRCValid";
+    numerator="raw BCHCRCValid, independent of candidate identity and later SI";
+end
+eligible=eligible(:); success=eligible & success(:);
+num=sum(success); den=sum(eligible);
+accepted=sixgr.truth.pbchAcquisitionAccepted(source);
+identityKnown=true(n,1);
+for field=["BCHCRCValid","MIBDecoded","CandidateIdentityConsistent","SSBIdentityVerified"]
+    [~,known]=localPBCHFlag(source,field); identityKnown=identityKnown & known;
+end
+fields=["Frame","SFN","Slot","UEIndex","UEID","ServingCell","SSBIndex", ...
+    "RunID","ExecutionID","ConfigHash","SweepPointIndex","ConfiguredSNR_dB","SNR_dB", ...
+    "ReceiverID","ReceiverWindowID","ReceiverObservationSHA256", ...
+    "ObservationStartSample","ObservationEndSampleExclusive","ObservationSampleRateHz", ...
+    "Status","Crash","DetectionAttempted","PSSDetected","SSSDetected","NCellIDRecovered", ...
+    "PSSDetectionSource","SSSDetectionSource","DecodeAttempted","BCHCRCValid", ...
+    "BCHTransportBlockNumBits","BCHTransportBlockHash","MIBDecoded", ...
+    "CandidateIdentityConsistent","SSBIdentityVerified","PBCHStrictReceiverEvidenceOk", ...
+    string(fieldnames(sixgr.phy.sync.ssbDetectionEvidence())).'];
+path=fullfile(ctx.RunFolder,char(artifact)); digest="";
+if isfile(path), digest=string(sixgr.util.sha256File(path)); end
+population=struct('ContractVersion',"sixgr.report.original_PBCH_stage_population/v1", ...
+    'MetricKey',key,'Entity',entity,'SourceArtifact',artifact,'SourceSHA256',digest, ...
+    'SourceRowCount',n,'IncludedSourceRows',find(eligible).', ...
+    'SuccessSourceRows',find(success).','ExcludedSourceRows',find(~eligible).', ...
+    'OriginalOperandsJSON',localSCHProjection(source,fields), ...
+    'NumeratorDefinition',numerator,'DenominatorDefinition',denominator, ...
+    'SourceScope',"descriptive_original_receiver_attempts_not_independent_trials", ...
+    'StatisticallyQualified',false,'StandardizedAccuracyQualified',false);
+token=string(jsonencode(sixgr.util.jsonSafeValue(population)));
+populationID=string(sixgr.util.sha256Hex(char(token)));
+note="Original receiver-stage outcomes only; combined Status is unchanged and unused. " + ...
+    "Missing/malformed/uncompleted operands are excluded, not counted as missed detection or CRC failure. " + ...
+    "No independent-trial confidence interval, transmitted-PCI correctness, or conformance claim. " + ...
+    "Numerator: "+numerator+". Denominator: "+denominator+".";
+stats=["rate","count","attempt_count","excluded_row_count"];
+values=[NaN,double(num),double(den),double(n-den)];
+availability="not_available";
+if den>0, values(1)=num/den; availability="available"; end
+if key=="pbch_decode_success"
+    stats(end+1)="accepted_mib_count";
+    values(end+1)=sum(eligible & identityKnown & accepted);
+    if ~any(eligible & identityKnown), values(end)=NaN; end
+    stats(end+1)="accepted_mib_evaluable_attempt_count";
+    values(end+1)=sum(eligible & identityKnown);
+end
+T=localEmptyMetricTable();
+for j=1:numel(stats)
+    unit="count"; if stats(j)=="rate", unit="fraction"; end
+    rowAvailability=availability;
+    if startsWith(stats(j),"accepted_mib") && ~any(eligible & identityKnown)
+        rowAvailability="not_available";
+    end
+    row=localMetricTableRow(cat,metric,entity,stats(j),rowAvailability,values(j),"",unit,artifact,note);
+    row.PopulationID=populationID; row.PopulationJSON=token;
+    T=[T;row]; %#ok<AGROW>
+end
+end
+
+function [detected,known]=localPBCHDetector(T,stage)
+[detected,decisionKnown]=localPBCHFlag(T,stage+"Detected");
+[available,availableKnown]=localPBCHFlag(T,stage+"DetectionDecisionAvailable");
+[valid,validKnown]=localPBCHFlag(T,stage+"DetectionMetricValid");
+metric=localPBCHNumber(T,stage+"NormalizedMetric");
+threshold=localPBCHNumber(T,stage+"DetectionThreshold");
+hypotheses=localPBCHNumber(T,stage+"DetectionHypothesisCount");
+known=decisionKnown & availableKnown & available & validKnown & valid & ...
+    isfinite(metric) & metric>=0 & metric<=1+64*eps & ...
+    isfinite(threshold) & threshold>=0 & ...
+    isfinite(hypotheses) & hypotheses>=1 & hypotheses==fix(hypotheses) & ...
+    detected==(metric>threshold);
+end
+
+function [value,known]=localPBCHFlag(T,field)
+raw=localPBCHNumber(T,field);
+known=isfinite(raw) & (raw==0 | raw==1); value=known & raw==1;
+end
+
+function value=localPBCHNumber(T,field)
+value=nan(height(T),1);
+if ~ismember(field,string(T.Properties.VariableNames)), return; end
+raw=T.(field);
+if ~((isnumeric(raw)||islogical(raw)) && isreal(raw) && isequal(size(raw),[height(T),1]))
+    return; % Never turn text/ASCII, vectors or unknowns into observed values.
+end
+value=double(raw);
+end
+
+function value=localPBCHText(T,field)
+value=strings(height(T),1);
+if ~ismember(field,string(T.Properties.VariableNames)), return; end
+raw=T.(field);
+if isstring(raw) && isequal(size(raw),[height(T),1])
+    value=raw; value(ismissing(value))="";
+elseif iscellstr(raw) && isequal(size(raw),[height(T),1])
+    value=string(raw);
+end
 end
 
 function T = localPassRateRows(cat, metric, trialT, entity)
@@ -2463,17 +2595,20 @@ end
 
 function T = localCSIPhysicalMeasurementRows(cat, metric, csirs, varName, entity, unit)
 T = localEmptyMetricTable();
-if ~(istable(csirs) && ~isempty(csirs)), return; end
-note = "Receiver measurement on executed CSI-RS resources; exact source column: " + varName + ". ";
-if unit=="dBm"
-    note = note + "Absolute calibrated power plane; not substituted from normalized or post-front-end grid power.";
-elseif unit=="dB_re_UnitOccupiedRE_Es"
-    note = note + "Normalized occupied-RE reference power; not an absolute dBm claim or the legacy post-front-end aggregate.";
-else
-    note = note + "Dimensionless received reference-resource ratio; not the rank/PMI scheduling objective.";
+observations=sixgr.report.collectCSIPhysicalMeasurementObservations(csirs,varName,unit);
+for k=1:height(observations)
+    observation=observations(k,:);
+    % Entity is part of the legacy natural key. Retain the source-row key
+    % there as well as the complete population capsule; never collapse
+    % different observations into mean/p95/max or a cross-point series.
+    row=localMetricTableRow(cat,metric,entity+"@source_row="+string(observation.SourceRowIndex), ...
+        "observation",observation.Availability,observation.ValueNumeric,observation.ValueText, ...
+        unit,"air_interface/csv/csi_rs_trials.csv",observation.Notes);
+    row.PopulationID=observation.PopulationID;
+    row.PopulationJSON=observation.PopulationJSON;
+    row.SupportConfigurationJSON=observation.SupportConfigurationJSON;
+    T=[T;row]; %#ok<AGROW>
 end
-T = localCustomNumericSummaryRows(cat, metric, csirs, varName, entity, unit, ...
-    "air_interface/csv/csi_rs_trials.csv", note);
 end
 
 function T = localSSMeasurementRows(cat, metric, pbch, varName, entity, unit)
@@ -2697,17 +2832,29 @@ end
 
 function T = localSRSRSRPRows(cat, metric, srs)
 T = localEmptyMetricTable();
-for field = ["SRS_RSRP_dBm","SRS_RSRP_dB_re_UnitOccupiedRE_Es","MeasuredSRSRSRP_dB"]
+% Absolute antenna-plane RSRP and the practical normalized branch mean
+% are distinct measurements, not aliases or a pooled dB population.
+% Ambiguous legacy MeasuredSRSRSRP_dB remains only in its original raw CSV.
+for field = ["SRS_RSRP_dBm","SRS_RSRP_dB_re_UnitOccupiedRE_Es"]
     unit = "dB_re_UnitOccupiedRE_Es";
-    if contains(field, "dBm"), unit = "dBm"; end
-    T = [T; localCustomNumericSummaryRows(cat, metric, srs, field, "SRS", unit, ...
-        "air_interface/csv/srs_trials.csv", ...
-        "SRS received power is exported only from a receiver-measured SRS power field with its original reference plane.")]; %#ok<AGROW>
+    entity = "SRS-reference-power_normalized";
+    if field=="SRS_RSRP_dBm", unit="dBm"; entity="SRS-RSRP_absolute"; end
+    observations=sixgr.report.collectSRSPhysicalMeasurementObservations(srs,field,unit);
+    for k=1:height(observations)
+        observation=observations(k,:);
+        row=localMetricTableRow(cat,metric,entity+"@source_row="+string(observation.SourceRowIndex), ...
+            "observation",observation.Availability,observation.ValueNumeric,observation.ValueText, ...
+            unit,"air_interface/csv/srs_trials.csv",observation.Notes);
+        row.PopulationID=observation.PopulationID;
+        row.PopulationJSON=observation.PopulationJSON;
+        row.SupportConfigurationJSON=observation.SupportConfigurationJSON;
+        T=[T;row]; %#ok<AGROW>
+    end
 end
 if isempty(T)
     T = localMetricTableRow(cat, metric, "SRS", "received_reference_power", ...
         "not_available", NaN, "", "", "air_interface/csv/srs_trials.csv", ...
-        "The active SRS receiver emits pilot-reconstruction SINR and NMSE but no standards-labelled SRS-RSRP field; those quantities are not substituted.");
+        "No retained SRS power observation is present in the declared fields. SINR, NMSE, channel gain and ambiguous legacy dB fields are not power substitutes.");
 end
 end
 
@@ -3533,6 +3680,19 @@ elseif any(tail > 1e-4)
     desc = "possible_error_floor_above_1e-4";
 end
 T = localMetricTableRow(cat, metric, entity, "assessment", "available", NaN, desc, "bler", "air_interface/csv/lls_snr_sweep.csv", "");
+end
+
+function T=localCSISelectionRows(cat,metric,trials,field)
+T=localEmptyMetricTable();
+observations=sixgr.report.collectCSISelectionObservations(trials,field,"air_interface/csv/csi_rs_trials.csv");
+for k=1:height(observations)
+    o=observations(k,:);
+    row=localMetricTableRow(cat,metric,"CSI-selection-"+field+"@source_row="+string(o.SourceRowIndex), ...
+        "observation","observed",o.ValueNumeric,o.ValueText,o.Unit,o.SourceArtifact,o.Notes);
+    row.PopulationID=o.PopulationID; row.PopulationJSON=o.PopulationJSON;
+    row.SupportConfigurationJSON=o.SupportConfigurationJSON;
+    T=[T;row]; %#ok<AGROW>
+end
 end
 
 function T = localDistributionRows(cat, metric, trialT, varName, entity, unit, source)
@@ -6815,6 +6975,8 @@ artifacts.ComplexityVsGainPlot = fullfile(ctx.Layout.ReportImageDir, "complexity
 artifacts.BandFeatureKPIHeatmap = fullfile(ctx.Layout.ReportImageDir, "heatmap_band_feature_kpi.png");
 artifacts.ImpairmentKPIHeatmap = fullfile(ctx.Layout.ReportImageDir, "heatmap_impairment_kpi.png");
 artifacts.BeamRankTRPKPIHeatmap = fullfile(ctx.Layout.ReportImageDir, "heatmap_beam_rank_trp_kpi.png");
+artifacts.AppliedRankKPIDiagnostics = fullfile(ctx.Layout.ReportCSVDir,"applied_rank_kpi_diagnostics.csv");
+artifacts.AppliedRankKPIDiagnosticsPlot = fullfile(ctx.Layout.ReportImageDir,"applied_rank_kpi_diagnostics.png");
 [accessSamples,accessSource]=localInitialAccessProcedureDelaySamples(ctx);
 accessSamples=sort(accessSamples(:));
 count=numel(accessSamples);
@@ -6840,6 +7002,9 @@ if exist(legacyPerSweep, "file") == 2
 end
 sixgr.util.csvWriteTable(artifacts.MeasuredSINRComparisonTable, localBuildMeasuredSINRComparisonTable(ctx));
 sixgr.util.csvWriteTable(artifacts.BaselineCandidateDeltaTable, localBuildBaselineDeltaTable(ctx));
+% Original rank-group observations are source data, independent of which
+% renderer owns PNG publication. Never put their CSV behind a figure gate.
+localExportAppliedRankDiagnostics(ctx,artifacts.AppliedRankKPIDiagnosticsPlot);
 localWriteAutomaticMarkdownSummary(artifacts.AutomaticMarkdownSummary, ctx, coverageT, plots, artifacts);
 
 if localCanRenderReportFigures(ctx)
@@ -7535,12 +7700,14 @@ n = height(T);
 for name = ["CFOCorrectionApplied","CFOCorrectionApplied_Hz", ...
         "ResidualCFO_EstimatedPostCorrection_Hz","ResidualCFOEstimateAvailable", ...
         "ResidualCFOReusesAcquisitionObservation","ResidualCFOEstimatorConsistency_Hz", ...
+        "ResidualFrequencyUsesDifferentObservable", ...
         "SweepPointIndex","SweepIndex","ConfiguredSNR_dB","SampleRate_Hz", ...
         "PilotCommonPhaseRate_Hz","PilotPhaseFitResidualRMS_deg", ...
         "PilotPhasePairCount","PilotPhaseUnaliasedHalfWidth_Hz"]
     T.(name) = localDebugNumericColumn(sourceT, name, n);
 end
 for name = ["ResidualCFOEstimateSource","ResidualCFOEstimateDomain","ResidualCFOReferenceDefinition", ...
+        "ResidualFrequencyStatus", ...
         "ResidualCFOEstimateRole","TimingMetricRole","TimingReferenceSource","TimingErrorDefinition", ...
         "PilotPhaseEvolutionSource","PilotPhaseEvolutionStatus","DopplerMeasurementStatus"]
     T.(name) = localDebugStringColumn(sourceT, name, n);
@@ -8040,6 +8207,7 @@ figPaths = [ ...
     string(artifacts.BandFeatureKPIHeatmap)
     string(artifacts.ImpairmentKPIHeatmap)
     string(artifacts.BeamRankTRPKPIHeatmap)
+    string(artifacts.AppliedRankKPIDiagnosticsPlot)
     ];
 for i = 1:numel(figPaths)
     fprintf(fid, "- `%s`\n", localRelativeToRunFolder(figPaths(i), ctx.RunFolder));
@@ -8310,16 +8478,10 @@ localExportNamedHeatmap(pathOut, "Impairment vs KPI", labels, rowLabel, values, 
 end
 
 function localPlotBeamRankTRPKPIHeatmapPlaceholder(pathOut, ctx, ~)
-beamCount = localMeanColumn(ctx.Tables.BeamScoreTrace, "BeamCountConfigured");
-if ~isfinite(beamCount)
-    beamCount = localMeanColumn(ctx.Tables.BeamManagement, "BeamCandidateCount");
-end
-rankVal = localMeanColumn(ctx.Tables.DL, "Layers");
-if ~isfinite(rankVal)
-    rankVal = localMeanColumn(ctx.Tables.DL, "RankIndicator");
-end
-numTrps = double(ctx.ScenarioConfig.get("deployment_topology.num_trps", 1));
-rowLabel = "B" + string(localSafeZero(beamCount)) + "_R" + string(localSafeZero(rankVal)) + "_T" + string(localSafeZero(numTrps));
+% An aggregate snapshot is not one beam/rank/TRP operating point. In
+% particular, mean([1 4]) is not an executed rank 2.5; missing rank is not 0.
+rowLabel="Mixed observation diagnostic; DL layers "+localObservedLayerSet(ctx.Tables.DL)+ ...
+    "; UL layers "+localObservedLayerSet(ctx.Tables.UL)+"; no joint beam/TRP attribution";
 values = [ ...
     localProbeMetricScalar(ctx.Tables.BeamManagement, "beam_index_hit_rate"), ...
     localProbeMetricScalar(ctx.Tables.BeamManagement, "top_k_beam_hit_rate"), ...
@@ -8336,6 +8498,64 @@ end
 localWriteHeatmapSource(ctx, "heatmap_beam_rank_trp_kpi.csv", rowLabel, labels, values, "summary_heatmap");
 localExportNamedHeatmap(pathOut, "Beam/Rank/TRP vs KPI", labels, rowLabel, values, ...
     "No beam/rank/TRP KPI snapshot was emitted by the current LLS path.");
+end
+
+function label=localObservedLayerSet(T)
+label="unavailable";
+if isempty(T)||~ismember('Layers',T.Properties.VariableNames), return; end
+v=sixgr.truth.numericMeasurementColumn(T.Layers,"Layers");
+assert(numel(v)==height(T),'sixgr:report:AppliedRankShape','One applied layer count per trial.');
+assert(all(isfinite(v)|isnan(v)),'sixgr:report:AppliedRankValue','Infinite applied layer counts are invalid.');
+known=isfinite(v);
+assert(all(v(known)>0 & v(known)==fix(v(known))), ...
+    'sixgr:report:AppliedRankValue','Applied Layers must be positive integer counts.');
+if any(known), label="{"+strjoin(string(unique(v(known),'stable')),",")+"}"; end
+if any(~known), label=label+"; unknown rows retained"; end
+end
+
+function localExportAppliedRankDiagnostics(ctx,pathOut)
+% Retain actual rank groups in a separate diagnostic, not a fabricated
+% joint operating point or a controlled rank-gain comparison.
+out=table('Size',[0 10],'VariableTypes', ...
+    {'string','double','string','double','double','double','double','double','logical','string'}, ...
+    'VariableNames',{'Direction','AppliedLayers','SourceRowsJSON','SourceObservationCount', ...
+    'CompletedDecodeAttemptCount','CRCErrorCount','CompletedAttemptBLER','MeanTrialThroughput_Mbps', ...
+    'StatisticalIndependenceClaimed','Scope'});
+for direction=["DL","UL"]
+    T=ctx.Tables.(direction); if isempty(T), continue; end
+    localObservedLayerSet(T); % Validate the original applied field only.
+    ranks=nan(height(T),1);
+    if ismember('Layers',T.Properties.VariableNames)
+        ranks=sixgr.truth.numericMeasurementColumn(T.Layers,"Layers");
+    end
+    groups=unique(ranks(isfinite(ranks)),'stable');
+    if any(isnan(ranks)), groups(end+1,1)=NaN; end
+    for rank=reshape(groups,1,[])
+        selected=ranks==rank; if isnan(rank), selected=isnan(ranks); end
+        subset=T(selected,:); errors=localCompletedSCHErrorSamples(subset);
+        valid=isfinite(errors); count=nnz(valid); failures=sum(errors(valid)); rate=NaN;
+        if count>0, rate=failures/count; end
+        out(end+1,:)={direction,rank,string(jsonencode(find(selected).')),height(subset), ...
+            count,failures,rate,localRuntimeTrialThroughputMean(subset),false, ...
+            "actual_applied_Layers_groups_mixed_MCS_channel_attempts_diagnostic_not_controlled_rank_gain"}; %#ok<AGROW>
+    end
+end
+if isempty(out), return; end
+sixgr.util.ensureFolder(ctx.Layout.ReportCSVDir);
+sixgr.util.csvWriteTable(fullfile(ctx.Layout.ReportCSVDir,'applied_rank_kpi_diagnostics.csv'),out, ...
+    'PreserveSchema',true,'RoundTripNumericText',true);
+% Contract rendering owns raster publication when enabled. The diagnostic
+% CSV remains available; this legacy path must not emit a duplicate PNG.
+if ~localCanRenderReportFigures(ctx), return; end
+labels=out.Direction+" layers="+string(out.AppliedLayers);
+labels(isnan(out.AppliedLayers))=out.Direction(isnan(out.AppliedLayers))+" layers=unknown";
+fig=figure('Visible','off','Color','w'); cleanup=onCleanup(@()close(fig)); %#ok<NASGU>
+ax=subplot(2,1,1,'Parent',fig); bar(ax,out.MeanTrialThroughput_Mbps);
+set(ax,'XTick',1:height(out),'XTickLabel',cellstr(labels)); ylabel(ax,'Mean trial Mbps');
+title(ax,'Original applied-layer groups; not controlled rank-gain evidence');
+ax=subplot(2,1,2,'Parent',fig); bar(ax,out.CompletedAttemptBLER);
+set(ax,'XTick',1:height(out),'XTickLabel',cellstr(labels)); ylabel(ax,'Completed-attempt BLER');
+sixgr.util.exportFigureArtifact(fig,pathOut,'Resolution',160);
 end
 
 function localWriteHeatmapSource(ctx, fileName, rowLabel, labels, values, curveConstruction)

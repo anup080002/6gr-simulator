@@ -70,15 +70,15 @@ ssbEnabled = isSelected("SSB_PBCH") && ssbConfigured;
 sib1Configured = logical(sixgr.util.structGet(cfg, "phy.sib1.enable", false));
 type0Enabled = isSelected("TYPE0_PDCCH") && sib1Configured;
 [rows, checks, type0] = localAttemptValue(rows, checks, ...
-    "TYPE0_PDCCH", "DL", type0Enabled, "decoded_MIB_pdcch_ConfigSIB1", ...
+    "TYPE0_PDCCH", "DL", type0Enabled, "configured_MIB_bits_preflight_not_received", ...
     "deriveType0PDCCHFromMIB+nrPDCCHResources", ...
-    @() localType0(cfg, carrier, totalSlots));
+    @() localType0(cfg, carrier, totalSlots, frame));
 
 sib1Enabled = isSelected("SIB1_PDSCH") && sib1Configured;
 [rows, checks] = localAttempt(rows, checks, "SIB1_PDSCH", "DL", ...
-    sib1Enabled, "decoded_Type0_DCI_1_0_SI_RNTI", ...
+    sib1Enabled, "configured_Type0_DCI_1_0_SI_RNTI_not_received", ...
     "buildSIB1DCI10+nrPDSCHIndices", ...
-    @() localSIB1(cfg, carrier, type0, totalSlots));
+    @() localSIB1(cfg, carrier, type0, totalSlots, frame));
 
 pdcchEnabled = isSelected("PDCCH") && ...
     logical(sixgr.util.structGet(cfg, "phy.pdcch.enable", false));
@@ -153,12 +153,14 @@ else
     T.grid_subcarrier_count(carrierRows)=12*double(carrier.NSizeGrid);
     T.grid_symbol_count(carrierRows)=double(carrier.SymbolsPerSlot);
     slotsPerFrame = 10 * round(double(carrier.SlotsPerSubframe));
-    T.sfn = floor(T.absolute_slot ./ slotsPerFrame);
-    T.slot_within_frame = mod(T.absolute_slot, slotsPerFrame);
+    [T.sfn,T.slot_within_frame] = sixgr.truth.reAllocationRadioClock( ...
+        T.absolute_slot,slotsPerFrame);
     nativeSSB=T.grid_domain=="ssb_native_cp_ofdm";
     nativeSlotsPerFrame=10*T.grid_subcarrier_spacing_hz(nativeSSB)/15000;
-    T.sfn(nativeSSB)=floor(T.absolute_slot(nativeSSB)./nativeSlotsPerFrame);
-    T.slot_within_frame(nativeSSB)=mod(T.absolute_slot(nativeSSB),nativeSlotsPerFrame);
+    [nativeSFN,nativeSlot] = sixgr.truth.reAllocationRadioClock( ...
+        T.absolute_slot(nativeSSB),nativeSlotsPerFrame);
+    T.sfn(nativeSSB)=nativeSFN;
+    T.slot_within_frame(nativeSSB)=nativeSlot;
     T = sortrows(T, ["absolute_slot","direction","symbol_index", ...
         "subcarrier_start","port_index","channel","component"]);
 end
@@ -190,7 +192,15 @@ if any(~isfinite([nCRB kSSB]))
     error("sixgr:truth:MissingSSBFrequencyPlacement", ...
         "Enabled SSB requires resolved nCRBSSB and kSSB.");
 end
-baseSC = 12*nCRB + kSSB;
+% nCRB/kSSB are Point-A reference units, not necessarily carrier bins.
+% Use the same physical grid relationship as the production SSB reservation.
+grid=timing.GridRelationship;
+assert(timing.CarrierSubcarrierSpacingKHz==carrier.SubcarrierSpacing && ...
+    grid.NStartGrid==carrier.NStartGrid && grid.NSizeGrid==carrier.NSizeGrid, ...
+    'sixgr:truth:PlannedSSBCarrierMismatch','SSB and planned carrier must share one physical grid.');
+baseSC=(double(grid.SSBLowOffsetFromPointAHz)- ...
+    double(grid.CarrierLowOffsetFromPointAHz))/(double(carrier.SubcarrierSpacing)*1000);
+validateattributes(baseSC,{'numeric'},{'scalar','real','finite','integer','nonnegative'});
 spec = { ...
     "PSS", @() nrPSSIndices(); ...
     "SSS", @() nrSSSIndices(); ...
@@ -287,14 +297,14 @@ function coords = localSSBCoordinates(linearIndices)
 coords = [subcarrier-1 symbol-1 zeros(numel(subcarrier),1)];
 end
 
-function out = localType0(cfg, carrier, totalSlots)
+function out = localType0(cfg, carrier, totalSlots, frame)
 indices=sixgr.phy.broadcast.resolveSIB1TransmitSSBIndices(cfg);
 if numel(indices)>1
     rows=repmat(localEmptyRow(),0,1); count=0; value=struct();
     for index=indices
         child=cfg; child.phy.sib1.transmissionScope="selected_ssb_occasion";
         child.phy.ssb.runtimeSSBIndex=index;
-        part=localType0(child,carrier,totalSlots);
+        part=localType0(child,carrier,totalSlots,frame);
         for row=1:numel(part.Rows)
             part.Rows(row).allocation_id=part.Rows(row).allocation_id+"_ssb_"+index;
         end
@@ -326,11 +336,23 @@ end
 [resolution,cfgSI] = sixgr.phy.broadcast.deriveType0PDCCHFromMIB( ...
     carrier,cfg,mib,"RNTI",65535);
 occasions = resolution.MonitoringOccasions;
-slots = unique(double(occasions.AbsoluteSlot));
+% The resolver provides the canonical monitoring period. Expand its exact
+% occasions, not an assumed SSB period or an executed-transmission claim.
+slots=zeros(0,1);
+for ordinal=1:height(occasions)
+    first=double(occasions.AbsoluteSlot(ordinal));
+    period=double(occasions.PeriodSlots(ordinal));
+    validateattributes(period,{'numeric'},{'scalar','finite','integer','positive'});
+    slots=[slots;(first:period:totalSlots-1).']; %#ok<AGROW>
+end
+slots=unique(slots);
 slots = slots(slots >= 0 & slots < totalSlots);
+controlSymbols=[double(resolution.PDCCH.SearchSpace.StartSymbolWithinSlot), ...
+    double(resolution.PDCCH.CORESET.Duration)];
+slots=slots(arrayfun(@(slot)frame.IsDLAllocation(slot,controlSymbols),slots));
 if isempty(slots)
     error("sixgr:truth:NoType0Occasion", ...
-        "Decoded MIB resolved no Type-0 monitoring occasion in the run window.");
+        "Configured MIB resolved no DL-capable Type-0 monitoring occasion in the run window.");
 end
 rows = repmat(localEmptyRow(),0,1);
 for slot0 = reshape(slots,1,[])
@@ -338,7 +360,7 @@ for slot0 = reshape(slots,1,[])
     materialized = sixgr.phy.frame.ChannelAllocationMaterializer. ...
         materializePDCCH(c,resolution.PDCCH,"AbsoluteSlot",slot0);
     rows = [rows; localResultRows(materialized,slot0,"TYPE0_PDCCH", ...
-        1,NaN,"decoded_MIB_pdcch_ConfigSIB1", ...
+        1,NaN,"configured_MIB_bits_preflight_not_received", ...
         "deriveType0PDCCHFromMIB+nrPDCCHResources")]; %#ok<AGROW>
 end
 value = struct("Resolution",resolution,"Config",cfgSI, ...
@@ -349,14 +371,14 @@ out = localPayload(rows,sum([rows.re_count]), ...
     sprintf("%d Type-0 monitoring slot(s)",numel(slots)),value);
 end
 
-function out = localSIB1(cfg, carrier, type0, totalSlots)
+function out = localSIB1(cfg, carrier, type0, totalSlots, frame)
 indices=sixgr.phy.broadcast.resolveSIB1TransmitSSBIndices(cfg);
 if numel(indices)>1
     rows=repmat(localEmptyRow(),0,1); count=0;
     for index=indices
         child=cfg; child.phy.sib1.transmissionScope="selected_ssb_occasion";
         child.phy.ssb.runtimeSSBIndex=index;
-        part=localSIB1(child,carrier,type0,totalSlots);
+        part=localSIB1(child,carrier,type0,totalSlots,frame);
         for row=1:numel(part.Rows)
             part.Rows(row).allocation_id=part.Rows(row).allocation_id+"_ssb_"+index;
         end
@@ -369,18 +391,32 @@ if isempty(type0) || ~isstruct(type0) || ~isfield(type0,"Resolution")
     % Resolve the dependency even when TYPE0_PDCCH is not selected for
     % publication. Errors remain fatal to this enabled SIB1 allocation;
     % unrequested Type-0 rows are not inserted in the output table.
-    localType0(cfg, carrier, totalSlots);
+    localType0(cfg, carrier, totalSlots, frame);
 end
-[~,cfgSI,c,~,slot0] = sixgr.phy.broadcast.resolveSIB1ControlOccasion(carrier,cfg);
-pdsch = sixgr.phy.broadcast.configuredSIB1Allocation(c,cfgSI);
-materialized = sixgr.phy.frame.ChannelAllocationMaterializer. ...
-    materializePDSCH(c,pdsch,"AbsoluteSlot",slot0);
-rows = localResultRows(materialized,slot0,"SIB1_PDSCH",1,double(pdsch.NumLayers), ...
-    "configured_Type0_DCI_1_0_SI_RNTI_not_received", ...
-    "buildSIB1DCI10+nrPDSCHIndices");
+% Reuse installed SI resource ownership. BroadcastPeriodSlots is the legacy
+% alias for the SI calendar, not the independently configured SSB period.
+% Never modulo-fold an SI transmission before its first configured occasion.
+common=sixgr.phy.frame.CommonDLResourcePlan(cfg);
+pdsch=common.SIB1PDSCH;
+slots=common.SIB1Slot0:common.BroadcastPeriodSlots:totalSlots-1;
+controlSymbols=[double(common.SIB1PDCCH.SearchSpace.StartSymbolWithinSlot), ...
+    double(common.SIB1PDCCH.CORESET.Duration)];
+rows=repmat(localEmptyRow(),0,1);
+for slot0=slots
+    assert(frame.IsDLAllocation(slot0,controlSymbols) && ...
+        frame.IsDLAllocation(slot0,pdsch.SymbolAllocation), ...
+        'sixgr:truth:PlannedSIB1OutsideDL', ...
+        'Configured repeated SI control/data symbols are not DL-capable at slot0 %d.',slot0);
+    c=localCarrierAtSlot(carrier,slot0);
+    materialized = sixgr.phy.frame.ChannelAllocationMaterializer. ...
+        materializePDSCH(c,pdsch,"AbsoluteSlot",slot0);
+    rows=[rows;localResultRows(materialized,slot0,"SIB1_PDSCH",1,double(pdsch.NumLayers), ...
+        "configured_Type0_DCI_1_0_SI_RNTI_not_received", ...
+        "CommonDLResourcePlan+buildSIB1DCI10+nrPDSCHIndices")]; %#ok<AGROW>
+end
 for rowIndex = 1:numel(rows), rows(rowIndex).ue_id = NaN; end
-out = localPayload(rows,size(materialized.ActualCoordinates0Based,1), ...
-    "SI-RNTI DCI and SIB1 PDSCH resolve on the same slot");
+out = localPayload(rows,sum([rows.re_count]), ...
+    "Configured periodic SI-RNTI DCI and SIB1 PDSCH share each planned slot; not observed execution");
 end
 
 function out = localPDCCH(cfg,totalSlots,frame,compactPeriodicOutput)
@@ -451,12 +487,29 @@ if numel(symbolAllocation) ~= 2
         "Exact PDSCH planning requires phy.pdsch.symbolAllocation.");
 end
 for slot0 = 0:(totalSlots-1)
-    if ~frame.IsDLAllocation(slot0,symbolAllocation), continue; end
+    allocation = symbolAllocation;
+    selectedTDRA = NaN;
+    if ~frame.IsDLAllocation(slot0,allocation)
+        % A planned pool uses the same authored, same-slot TDRA selection
+        % as the scheduler budget. Never clip a full-slot allocation into
+        % the DL part of a special slot or manufacture a scheduled grant.
+        if frame.DuplexMode ~= "TDD", continue; end
+        partition = frame.SlotPartition(slot0);
+        selection = sixgr.truth.selectConfiguredTDRARow( ...
+            cfg,"DL",double(partition.DLSymbolAllocation),0);
+        if isempty(selection), continue; end
+        allocation = selection.SymbolAllocation;
+        selectedTDRA = selection.Index;
+        assert(frame.IsDLAllocation(slot0,allocation), ...
+            "sixgr:truth:PlannedPDSCHTDRAPartitionMismatch", ...
+            "The configured TDRA must fit the original resolved DL symbols.");
+    end
     actual=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,slot0+1);
+    actual.phy.pdsch.symbolAllocation = allocation;
     c=sixgr.phy.grid.makeCarrier(actual);
     pdsch=sixgr.phy.grid.pdschConfigFromConfig(c,actual);
     reservation=sixgr.phy.frame.ssbPRBSymbolReservation(actual,c,slot0);
-    key = localPDSCHCoordinateTemplateKey(actual,c,slot0,reservation);
+    key = localPDSCHCoordinateTemplateKey(actual,c,slot0,reservation,pdsch,selectedTDRA);
     if cacheEnabled && isKey(cache,key)
         cached = cache(key);
         if cached.Blocked
@@ -588,17 +641,30 @@ end
 out = localPayload(rows,count,detail);
 end
 
-function key = localPDSCHCoordinateTemplateKey(cfg,carrier,slot0,reservation)
-% Exact coordinate ownership changes only when one of the installed
-% reference reservations changes. NSlot/NFrame alter sequences, not RE
-% positions, and therefore are deliberately absent from this coordinate
-% table key.
+function key = localPDSCHCoordinateTemplateKey(cfg,carrier,slot0,reservation,pdsch,selectedTDRA)
+% Reuse requires the same effective TDRA and every occasion-owned resource
+% reservation. Native slot numbers also alter reference sequences, but this
+% table stores coordinates, not those sequence values.
 [csirsScheduled,~] = sixgr.phy.refsig.csirsOccasion(cfg,slot0);
 trsScheduled = sixgr.truth.isActiveTRSOccasion(cfg,slot0+1);
 csiimScheduled = false;
 if logical(sixgr.util.structGet(cfg,'phy.csiim.enabled',false))
     csiim = sixgr.phy.refsig.csiIMResource(carrier,cfg);
     csiimScheduled = logical(csiim.Scheduled);
+end
+connectedCORESET = false;
+patterns = string(sixgr.util.structGet(cfg, ...
+    'phy.pdsch.rateMatchingPattern',strings(0,1)));
+if any(patterns == "connected_coreset")
+    monitor = cfg.phy.pdcch.operatorControl.connected_monitoring;
+    sixgr.phy.pdcch.ConnectedPDCCHConfiguration.validatePolicy(monitor);
+    validateattributes(monitor.period_slots,{'numeric'},{'scalar','integer','positive'});
+    validateattributes(monitor.offset_slots,{'numeric'}, ...
+        {'scalar','integer','nonnegative','<',monitor.period_slots});
+    validateattributes(monitor.duration_slots,{'numeric'}, ...
+        {'scalar','integer','>=',1,'<=',monitor.period_slots});
+    connectedCORESET = mod(slot0-double(monitor.offset_slots), ...
+        double(monitor.period_slots)) < double(monitor.duration_slots);
 end
 reserved = double(sixgr.util.structGet(reservation, ...
     'ReservedCarrierRE0',zeros(0,1)));
@@ -608,9 +674,19 @@ else
     encoded = sprintf('%.0f,',reserved(:));
     ssbDigest = sixgr.util.sha256Hex(uint8(unicode2native(encoded,'UTF-8')));
 end
+% A legal baseline need not have a selected catalog-row identifier. MATLAB
+% string(NaN) is <missing>, not a usable cache token. Keep that case explicit
+% rather than inventing TDRA index zero (which may be a real authored row).
+tdraKey = "baseline_configured_allocation";
+if isfinite(selectedTDRA)
+    tdraKey = "authored_index_"+string(selectedTDRA);
+end
 key = char("ssb="+ssbDigest+"|csirs="+string(double(csirsScheduled))+ ...
     "|trs="+string(double(trsScheduled))+ ...
-    "|csiim="+string(double(csiimScheduled)));
+    "|csiim="+string(double(csiimScheduled))+ ...
+    "|coreset="+string(double(connectedCORESET))+ ...
+    "|symbols="+string(mat2str(double(pdsch.SymbolAllocation)))+ ...
+    "|mapping="+string(pdsch.MappingType)+"|tdra="+tdraKey);
 end
 
 function rows = localRetargetPeriodicRows(template,slot0,channel)
@@ -667,6 +743,7 @@ for rowIndex = 1:numel(rows)
         string(row.symbol_index),string(row.port_index),string(row.re_count), ...
         string(row.cell_id),string(row.ue_id),string(row.layer_count), ...
         string(row.authority),string(row.resolver),string(row.grid_domain), ...
+        string(row.transform_precoded), ...
         string(row.grid_subcarrier_spacing_hz), ...
         string(row.grid_subcarrier_count),string(row.grid_symbol_count)];
     values(ismissing(values)) = "<missing>";
@@ -950,6 +1027,11 @@ end
 function rows=localResultRows(result,slot0,channel,cellID,layerCount,authority,resolver)
 parts={};labels=strings(0,1);
 for name=["Data","DMRS","PTRS","Resources"]
+    if name=="PTRS" && isfield(result,'TransformPrecoding') && result.TransformPrecoding
+        % DFT PT-RS occupies the transformed PUSCH region already counted
+        % by Data, not additional isolated frequency-domain pilot cells.
+        continue;
+    end
     if isfield(result,char(name)) && isstruct(result.(char(name))) && ...
             isfield(result.(char(name)),"Coordinates0Based") && ...
             ~isempty(result.(char(name)).Coordinates0Based)
@@ -965,6 +1047,9 @@ for i=1:numel(parts)
     rows=[rows;localRows(double(parts{i}),slot0,string(channel), ...
         labels(i),cellID,layerCount,string(authority),string(resolver), ...
         lower(string(channel))+"_slot_"+string(slot0))]; %#ok<AGROW>
+end
+if isfield(result,'TransformPrecoding')
+    for i=1:numel(rows), rows(i).transform_precoded=result.TransformPrecoding; end
 end
 if isfield(result,'GridDomain')
     for i=1:numel(rows)
@@ -1053,7 +1138,8 @@ row=struct("absolute_slot",NaN,"sfn",NaN,"slot_within_frame",NaN, ...
     "allocation_id","","occurrence_slots","","occurrence_count",NaN, ...
     "coordinate_precision","exact_contiguous_re_run", ...
     "evidence_scope","planned_config_not_runtime_observation", ...
-    "grid_domain","carrier_cp_ofdm", "grid_subcarrier_spacing_hz",NaN, ...
+    "grid_domain","carrier_cp_ofdm", "transform_precoded",false, ...
+    "grid_subcarrier_spacing_hz",NaN, ...
     "grid_subcarrier_count",NaN,"grid_symbol_count",NaN, ...
     "cp_start_sample",NaN,"useful_start_sample",NaN,"useful_end_sample_exclusive",NaN, ...
     "observation_sample_rate_hz",NaN,"frequency_first_hz",NaN,"frequency_last_hz",NaN, ...

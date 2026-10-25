@@ -103,7 +103,9 @@ for field=["NoiseOperatingMode","ConfiguredSNR_dB","AppliedAWGNSNR_dB", ...
         "NoiseVariance","SINR_dB","SINRSource","FailureReason"]
     row.(field)=result.(field);
 end
-writeAndCheck(fullfile(folder,'srs_returned_evidence.csv'),struct2table(row));
+% One original returned observation. Empty char failure text is a field of
+% that observation, not a zero-row column competing with numeric fields.
+writeAndCheck(fullfile(folder,'srs_returned_evidence.csv'),struct2table(row,'AsArray',true));
 fprintf('ABSOLUTE_NOISE_RX signal=SRS detected=%d H_available=%d strict=%d N0=%.17g draw=%.17g\n', ...
     result.DetectionSuccess,result.ChannelEstimateAvailable,result.StrictOk, ...
     result.ReferenceNoisePSD_mWPerHz,result.AbsoluteReferenceNoiseInjectedSampleVariance_mW);

@@ -6,6 +6,13 @@ if isa(scfg, "sixgr.lls6g.config.ScenarioConfig")
 else
     s = scfg;
 end
+% Direct struct callers have no inheritance provenance: contradictory
+% mirrors fail here. Loaded/sweep configs arrive already harmonized by the
+% last actual author, never by whichever allocator alias happens to win.
+s=sixgr.lls6g.config.PUSCHDMRSAuthority.apply(s);
+s=sixgr.lls6g.config.PUCCHPowerAuthority.apply(s);
+s=sixgr.lls6g.config.RSPeriodAuthority.apply(s);
+s=sixgr.lls6g.config.CSIReportPeriodAuthority.apply(s);
 catalog = sixgr.lls6g.config.loadParameterCatalog("scenario");
 
 cfg = sixgr.config.defaultConfig();
@@ -1735,39 +1742,10 @@ if ~ismember(reportTrigger, ["periodic","semi_persistent","aperiodic"])
     error("sixgr:lls6g:config:InvalidCSIReportTrigger", ...
         "csi_acquisition_and_reporting.report_trigger must be periodic, semi_persistent or aperiodic.");
 end
-reportPeriodSlots = double(localGetNested(s, ...
-    "csi_acquisition_and_reporting.csi_report_periodicity_slots", NaN));
-reportPeriodToken = string(localGetNested(s, ...
-    "csi_acquisition_and_reporting.report_periodicity", ""));
-if ~(isscalar(reportPeriodSlots) && isfinite(reportPeriodSlots) && ...
-        reportPeriodSlots >= 1 && reportPeriodSlots == round(reportPeriodSlots))
-    periodMatch = regexp(char(strtrim(reportPeriodToken)), ...
-        '^([0-9]+(?:\.[0-9]+)?)\s*ms$', 'tokens', 'once');
-    slotDurationMs = double(localGetNested(s, ...
-        "frame_timing.slot_duration_ms", NaN));
-    if ~isempty(periodMatch) && isscalar(slotDurationMs) && ...
-            isfinite(slotDurationMs) && slotDurationMs > 0
-        reportPeriodSlots = str2double(periodMatch{1}) / slotDurationMs;
-    end
-end
-if reportTrigger == "periodic" && ...
-        ~(isscalar(reportPeriodSlots) && isfinite(reportPeriodSlots) && ...
-        reportPeriodSlots >= 1 && reportPeriodSlots == round(reportPeriodSlots))
-    error("sixgr:lls6g:config:InvalidCSIReportPeriodicity", ...
-        ["Periodic CSI reporting requires an integer " + ...
-         "csi_report_periodicity_slots or an exact millisecond period " + ...
-         "resolvable against frame_timing.slot_duration_ms."]);
-end
-reportOffsetSlots = double(localGetNested(s, ...
-    "csi_acquisition_and_reporting.csi_report_offset_slots", ...
-    localGetNested(s, "reference_signals.csi_rs_offset_slots", 0)));
-if reportTrigger == "periodic" && ...
-        ~(isscalar(reportOffsetSlots) && isfinite(reportOffsetSlots) && ...
-        reportOffsetSlots >= 0 && reportOffsetSlots == round(reportOffsetSlots) && ...
-        reportOffsetSlots < reportPeriodSlots)
-    error("sixgr:lls6g:config:InvalidCSIReportOffset", ...
-        "Periodic CSI report offset must be an integer in [0, period-1].");
-end
+% Authored aliases have already been reconciled in their reporting UL-BWP
+% clock. Do not substitute frame duration or a CSI-RS pilot offset here.
+reportPeriodSlots = s.csi_acquisition_and_reporting.csi_report_periodicity_slots;
+reportOffsetSlots = s.csi_acquisition_and_reporting.csi_report_offset_slots;
 crcAttachedMode = logical(localRequireNested(s, "csi_acquisition_and_reporting.crc_attached_mode", ...
     "csi_acquisition_and_reporting.crc_attached_mode"));
 crcFreeMode = logical(localRequireNested(s, "csi_acquisition_and_reporting.crc_free_mode", ...
@@ -2111,11 +2089,11 @@ if ~any(powerAdjustmentMode == ["accumulated","absolute"])
     error("sixgr:lls6g:config:InvalidULPowerControlTPCMode", ...
         "rf_frontend.ul_power_control.tpc_mode must be accumulation/accumulated or absolute.");
 end
-maxPathlossMeasurementAgeSlots = double(localGetNested(s, ...
-    "rf_frontend.ul_power_control.max_pathloss_measurement_age_slots", inf));
-if ~(isscalar(maxPathlossMeasurementAgeSlots) && ...
-        (isinf(maxPathlossMeasurementAgeSlots) || ...
-        (isfinite(maxPathlossMeasurementAgeSlots) && maxPathlossMeasurementAgeSlots >= 0)))
+maxPathlossMeasurementAgeSlots = localGetNested(s, ...
+    "rf_frontend.ul_power_control.max_pathloss_measurement_age_slots", inf);
+if ~(isnumeric(maxPathlossMeasurementAgeSlots) && isreal(maxPathlossMeasurementAgeSlots) && ...
+        isscalar(maxPathlossMeasurementAgeSlots) && ~isnan(maxPathlossMeasurementAgeSlots) && ...
+        maxPathlossMeasurementAgeSlots >= 0)
     error("sixgr:lls6g:config:InvalidULPowerControlPathlossAge", ...
         "max_pathloss_measurement_age_slots must be nonnegative or inf.");
 end
@@ -2173,18 +2151,19 @@ cfg = sixgr.util.structSet(cfg, "powerAndRF.referenceTxPower_dBm", ...
 
 cfg.phy.srs.enable = logical(s.reference_signals.srs_enabled);
 cfg.phy.srs.nPorts = double(s.reference_signals.srs_ports);
-srsPeriodSlots = double(localGetNested(s, "reference_signals.srs_periodicity_slots", ...
-    localGetNested(s, "control_gating.srs_period_slots", NaN)));
-if ~(isfinite(srsPeriodSlots) && srsPeriodSlots >= 1)
-    srsPeriodicityMs = double(localGetNested(s, "reference_signals.srs_periodicity_ms", NaN));
-    slotDurationMs = max(eps, double(runTiming.TotalTime_ms) / max(double(runTiming.TotalSlots), 1));
-    if isfinite(srsPeriodicityMs) && srsPeriodicityMs > 0
-        srsPeriodSlots = max(1, round(srsPeriodicityMs / slotDurationMs));
-    else
-        srsPeriodSlots = 4;
+[srsPeriodSlots,srsPeriodSource] = sixgr.lls6g.config.resolveCarrierPeriodSlots(s, ...
+    ["reference_signals.srs_periodicity_slots","control_gating.srs_period_slots"], ...
+    "reference_signals.srs_periodicity_ms");
+if isnan(srsPeriodSlots)
+    % An absent disabled/aperiodic calendar is not an integer NaN or the
+    % inherited core default. Enabled periodic resources are checked below.
+    if isfield(cfg.phy.srs,'period_slots')
+        cfg.phy.srs=rmfield(cfg.phy.srs,'period_slots');
     end
+else
+    cfg = sixgr.util.structSet(cfg, "phy.srs.period_slots", srsPeriodSlots);
 end
-cfg = sixgr.util.structSet(cfg, "phy.srs.period_slots", max(1, round(double(srsPeriodSlots))));
+cfg = sixgr.util.structSet(cfg, "phy.srs.periodSource", srsPeriodSource);
 cfg = sixgr.util.structSet(cfg, "phy.srs.maxUEsPerSlot", max(1, round(double(localGetNested(s, ...
     "reference_signals.srs_max_ues_per_slot", localGetNested(s, "control_gating.srs_max_ues_per_slot", 1))))));
 cfg = sixgr.util.structSet(cfg, "phy.srs.schedulingPolicy", char(string(localGetNested(s, ...
@@ -3085,7 +3064,13 @@ end
 
 cfg = sixgr.config.normalizeConfig(cfg);
 [cfg, ~, frameEngine] = sixgr.config.validateConfig(cfg);
+if ~isempty(fieldnames(frameEngine.PRACHTiming))
+    % Validate original declarations too: ordered scalar binding above may
+    % otherwise hide a contradictory lower-priority phy.prach.period_slots.
+    sixgr.phy.frame.validatePRACHPeriodAliases(s,frameEngine.PRACHTiming);
+end
 cfg = localApplyFrameStructureEngine(cfg, frameEngine);
+cfg = sixgr.lls6g.config.CSIReportPeriodAuthority.bind(cfg,s);
 if isfield(cfg.phy.pusch, 'priorityIndex') && ...
         logical(sixgr.util.structGet(cfg, 'phy.pusch.enable', false)) && ...
         logical(sixgr.util.structGet(cfg, 'phy.srs.enable', false))
@@ -3108,6 +3093,7 @@ end
 % strict validation have completed.  Legacy aliases remain compatibility
 % views, while contradictory YAML authorities now fail before execution.
 cfg = sixgr.config.installRuntimeOperatingAuthority(cfg, s);
+cfg = localBindPUCCHPowerInstallation(cfg);
 experimentalUL=sixgr.phy.research.resolveExperimentalMCSTable(cfg.phy.pusch.mcsTable);
 if ~isempty(experimentalUL)
     assert(string(s.meta.research_class)==experimentalUL.ResearchClass && ...
@@ -3172,6 +3158,39 @@ if string(cfg.run.noiseOperatingMode)=="absolute_reference_esn0"
     [~,~,cfg.run.absoluteReferenceNoise]=sixgr.link.resolveAbsoluteReferenceNoise( ...
         cfg,"DL",double(cfg.phy.waveform.sampleRate_Hz),'Freeze',true);
 end
+end
+
+function cfg=localBindPUCCHPowerInstallation(cfg)
+% Classify the actual installed producer after final operating authority.
+% The untouched resolved scenario retains the original authored source label.
+section=sixgr.util.structGet(cfg,'validation.pucch_resources',struct());
+if ~isfield(section,'power_control'), return; end
+p=section.power_control;
+assert(isstruct(p)&&isscalar(p), ...
+    'sixgr:lls6g:config:InvalidPUCCHPowerValue', ...
+    'pucch_resources.power_control must be a scalar structure.');
+physical=logical(cfg.phy.pucch.enable)&& ...
+    logical(sixgr.util.structGet(section,'enabled',false))&& ...
+    ~sixgr.rf.isNormalizedFixedSNRPowerReference(cfg);
+if physical&&isfield(p,'alpha')&&p.alpha~=1
+    error('sixgr:lls6g:config:UnsupportedPUCCHAlpha', ...
+        ['Physical PUCCH uses coefficient 1 for pathloss. Configured alpha=%g is unsupported; ' ...
+        'this PUCCH path does not implement fractional PUSCH power control.'],p.alpha);
+end
+% A YAML source name cannot establish a received command. The current typed
+% producer uses only the configured numeric g; retain the declaration apart.
+declared=sixgr.util.structGet(p,'tpc_command_source',"");
+assert((ischar(declared)&&(isrow(declared)||isempty(declared)))|| ...
+    (isstring(declared)&&isscalar(declared)&&~ismissing(declared)), ...
+    'sixgr:lls6g:config:InvalidPUCCHPowerValue', ...
+    'pucch_resources.power_control.tpc_command_source must be scalar text.');
+p.configured_tpc_command_source=declared;
+p.tpc_command_source='configured_static_pucch_adjustment';
+p.received_tpc_state_applied=false;
+p.physical_power_terms_applied=physical;
+section.power_control=p;
+cfg=sixgr.util.structSet(cfg,'validation.pucch_resources',section);
+cfg=sixgr.util.structSet(cfg,'lls6g.pucch_resources',section);
 end
 
 function cfg = localApplyScenarioAuditExtensions(cfg, s)
@@ -3438,6 +3457,23 @@ end
 cfg = localApplyValidationRunClass(cfg, s);
 
 cfg = localApplyConfigDrivenPHYRuntimeSurfaces(cfg, s);
+sixgr.phy.mimo.validatePeriodicPUCCHCSITiming(cfg);
+% Validate after the auxiliary YAML surfaces have resolved the final SRS
+% resource type. Aperiodic triggers are not periodic-SRS authorization.
+if logical(cfg.phy.srs.enable)
+    srsType=lower(strtrim(string(sixgr.util.structGet(cfg,'phy.srs.resourceType','periodic'))));
+    assert(isscalar(srsType) && any(srsType==["periodic","aperiodic","semi-persistent","semipersistent"]), ...
+        'sixgr:phy:srs:InvalidResourceType','Unknown final SRS resource type.');
+    if srsType~="aperiodic"
+        sixgr.phy.srs.validateSRSPeriodOffset(sixgr.util.structGet(cfg,'phy.srs.period_slots',NaN), ...
+            sixgr.util.structGet(cfg,'phy.srs.period_offset',NaN));
+        if srsType=="periodic"
+            sixgr.phy.srs.validateSRSOccasionCoordinates(cfg.phy.srs.period_slots, ...
+                cfg.phy.srs.period_offset,sixgr.util.structGet(cfg,'phy.srs.slotNumbers',[]), ...
+                sixgr.util.structGet(cfg,'phy.srs.slotWithinPeriod1Based',[]));
+        end
+    end
+end
 cfg = localBindCSISelectionQualityDomain(cfg, s);
 end
 
@@ -4053,7 +4089,6 @@ scalarPairs = {
     "dmrs_additional_position", "dmrs.additionalPositions"
     "dmrs_type_a_position", "dmrs.typeAPosition"
     "dmrs_num_cdm_groups_without_data", "dmrs.numCDMGroupsWithoutData"
-    "dmrs_port_set", "dmrs.portSet"
     "dmrs_nid_nscid", "dmrs.NIDNSCID"
     "dmrs_nscid", "dmrs.NSCID"
     "dmrs_nrs_id", "dmrs.NRSID"
@@ -4623,6 +4658,7 @@ end
 rfFrontend = localGetNested(s, "rf_frontend", struct());
 if isstruct(rfFrontend) && ~isempty(fieldnames(rfFrontend))
     cfg = sixgr.util.structSet(cfg, "rf.frontend", rfFrontend);
+    sixgr.phy.refsig.pathlossReferenceLifetime(cfg); % Reject unknown policy at YAML binding.
     agcProfile=localGetNested(rfFrontend,"receiver.agc.stream_profile",struct());
     if isstruct(agcProfile) && isfield(agcProfile,'overload_guard')
         sixgr.rf.runtime.AGCState.validateOverloadGuard(agcProfile.overload_guard);
@@ -4907,13 +4943,9 @@ if ~enabled
         end
         reportQuantity = string(localGetNested(report, ...
             "report_quantity",""));
-        if activePorts == 1
-            if activeResources > 1
-                reportQuantity = "CRI-CQI";
-            else
-                reportQuantity = "CQI";
-            end
-        end
+        % One port removes spatial bits, not the authored report quantity.
+        % In particular cri-RI-CQI retains implicit RI=1; CQI/CRI-CQI are
+        % legacy inspection aliases, not qualified NR wire quantities.
         reportRequest = struct( ...
             "ReportConfigID",string(localGetNested(report, ...
                 "report_config_id","")), ...
@@ -4947,6 +4979,7 @@ if ~enabled
                 "number_of_beams",min(4,activePorts))), ...
             "PhaseAlphabetSize",double(localGetNested(report, ...
                 "phase_alphabet_size",4)));
+        reportRequest = localBindCodebookSubset(reportRequest,s);
         epoch = double(reportRequest.Epoch);
         if strlength(strtrim(reportRequest.ReportConfigID)) == 0 || ...
                 ~(isscalar(epoch) && isfinite(epoch) && epoch >= 0 && ...
@@ -4957,7 +4990,8 @@ if ~enabled
         end
         % Constructor validation proves the report payload is serializable
         % before any waveform or scheduler state is created.
-        sixgr.phy.mimo.CSIReportConfiguration(reportRequest,epoch);
+        wire=sixgr.phy.mimo.CSIReportConfiguration(reportRequest,epoch);
+        if reportEnabled, wire.assertQualifiedWireLayout(); end
         cfg = sixgr.util.structSet(cfg, ...
             "phy.csi.reportConfiguration",reportRequest);
         cfg = sixgr.util.structSet(cfg, ...
@@ -5021,6 +5055,7 @@ reportRequest = struct( ...
     "NumSubbands",double(localGetNested(report,"num_subbands",1)), ...
     "NumberOfBeams",double(localGetNested(report,"number_of_beams",1)), ...
     "PhaseAlphabetSize",double(localGetNested(report,"phase_alphabet_size",4)));
+reportRequest = localBindCodebookSubset(reportRequest,s);
 cfg = sixgr.util.structSet(cfg,"phy.csi.reportConfiguration",reportRequest);
 cfg = sixgr.util.structSet(cfg,"phy.csi.reportConfigurationEpoch",reportRequest.Epoch);
 
@@ -5059,10 +5094,49 @@ if ~ismember(receiver,["MMSE","IRC","ZF"])
     error("sixgr:mimo:InvalidReceiver", ...
         "Phase-07 receiver must be MMSE, IRC or ZF.");
 end
-sixgr.phy.mimo.CSIReportConfiguration(reportRequest,reportRequest.Epoch);
+wire=sixgr.phy.mimo.CSIReportConfiguration(reportRequest,reportRequest.Epoch);
+if logical(sixgr.util.structGet(cfg,"phy.csi.reportCSI",false))
+    wire.assertQualifiedWireLayout();
+end
 if direction == "DL"
     cfg = sixgr.util.structSet(cfg,"phy.pdsch.numPorts",ports);
     cfg = sixgr.util.structSet(cfg,"phy.pdsch.normalizePrecodingMatrix",false);
+end
+end
+
+function request = localBindCodebookSubset(request,s)
+% Bind the documented YAML string to the SAME typed request consumed by
+% the native selector, tuple codec and scheduled precoder enumerator.
+raw=localGetNested(s,"mimo.codebook_subset_restriction","");
+if ~((ischar(raw)&&(isrow(raw)||isequal(size(raw),[0 0]))) || ...
+        (isstring(raw)&&isscalar(raw)&&~ismissing(raw)))
+    error('sixgr:mimo:InvalidCodebookSubsetRestriction', ...
+        'mimo.codebook_subset_restriction must be an a0-first binary string or unrestricted.');
+end
+token=char(string(raw));
+if isempty(token)||strcmpi(token,'unrestricted')
+    return;
+end
+if any(token~='0'&token~='1')
+    error('sixgr:mimo:InvalidCodebookSubsetRestriction', ...
+        'mimo.codebook_subset_restriction must contain only binary digits, with a0 first.');
+end
+kind=lower(regexprep(string(request.CodebookType),'[^a-zA-Z0-9]',''));
+if ~ismember(kind,["typeisinglepanel","type1singlepanel"])||request.Ports<=2
+    error('sixgr:mimo:UnsupportedCodebookSubsetRestriction', ...
+        'Nonempty YAML subset bitmaps require the implemented >2-port Type-I single-panel consumers.');
+end
+count=request.N1*request.N2*request.O1*request.O2;
+if numel(token)~=count||~any(token=='1')
+    error('sixgr:mimo:InvalidCodebookSubsetRestriction', ...
+        'mimo.codebook_subset_restriction requires %g bits and at least one enabled beam.',count);
+end
+request.CodebookSubsetRestriction=double(token-'0');
+for rank=reshape(request.AllowedRanks,1,[])
+    candidate=request; candidate.Rank=rank;
+    % Uses the actual supported geometry/rank/restriction contract; never
+    % invent candidates or renumber their original PMI indices.
+    sixgr.phy.mimo.TypeISinglePanelCodebook.enumerate(candidate);
 end
 end
 
@@ -5549,27 +5623,10 @@ else
 end
 end
 
-function slots = localResolvePeriodSlotsFromMsOrSlots(s, runTiming, slotPaths, msPaths, defaultSlots)
-slots = NaN;
-for i = 1:numel(slotPaths)
-    candidate = localNumericScalarOrNaN(localGetNested(s, slotPaths(i), NaN));
-    if isfinite(candidate) && candidate > 0
-        slots = max(1, round(double(candidate)));
-        return;
-    end
-end
-slotDurationMs = max(eps, double(runTiming.TotalTime_ms) / max(double(runTiming.TotalSlots), 1));
-for i = 1:numel(msPaths)
-    candidateMs = localNumericScalarOrNaN(localGetNested(s, msPaths(i), NaN));
-    if isfinite(candidateMs) && candidateMs > 0
-        slots = max(1, round(double(candidateMs) / slotDurationMs));
-        return;
-    end
-end
-candidate = localNumericScalarOrNaN(defaultSlots);
-if isfinite(candidate) && candidate > 0
-    slots = max(1, round(double(candidate)));
-end
+function slots = localResolvePeriodSlotsFromMsOrSlots(s, ~, slotPaths, msPaths, defaultSlots)
+% SSB/TRS/PRACH use carrier-slot calendars. A simulation horizon is not
+% a physical clock, and fractional periods cannot be rounded into validity.
+slots = sixgr.lls6g.config.resolveCarrierPeriodSlots(s,slotPaths,msPaths,defaultSlots);
 end
 
 function v = localFirstValue(x)
@@ -6711,6 +6768,33 @@ end
 % This authored map contains resource IDs, not CRI ordinals. Validate
 % membership without sorting the configured resource/precoder/TCI lists.
 sixgr.phy.refsig.resolveCSIResourceIdentity(cfg, ssbMap, "resource_id");
+timing = sixgr.phy.frame.SSBTimingResolver.resolveFromConfig(cfg);
+burst = sixgr.phy.ia.SSBBurstPlan.fromConfig(cfg,timing);
+activeSSB = reshape(double(burst.ActiveSSBIndices0Based),1,[]);
+assert(numel(activeSSB)==numel(ssbMap), ...
+    'sixgr:lls6g:config:InvalidSSBToCSIResourceMap', ...
+    'The SSB-to-CSI map is ordered by the actual active burst bitmap, not candidate index or Lmax.');
+spatialPolicy = string(localGetNested(section, ...
+    'ssb_initial_csi_spatial_policy','explicit_association'));
+assert(isscalar(spatialPolicy) && any(spatialPolicy== ...
+    ["explicit_association","contains_ssb_precoder"]), ...
+    'sixgr:lls6g:config:InvalidSSBToCSISpatialPolicy', ...
+    'Declare explicit_association or contains_ssb_precoder.');
+if spatialPolicy=="contains_ssb_precoder"
+    for k=1:numel(activeSSB)
+        selection=sixgr.phy.ia.SSBBurstPlan.selectedPrecoderFromConfig(cfg,activeSSB(k));
+        [~,cri]=sixgr.phy.refsig.resolveCSIResourceIdentity(cfg,ssbMap(k),"resource_id");
+        B=double(cfg.phy.csirs.precoderMatrices(:,:,cri+1));
+        w=double(selection.MatrixRow).'; % TX row convention, not conjugate transpose.
+        assert(size(B,1)==numel(w) && norm(w)>0 && ...
+            norm(w-B*(pinv(B)*w))/norm(w)<=1e-10, ...
+            'sixgr:lls6g:config:SSBInitialCSISpatialMismatch', ...
+            'SSB %d physical precoder is not contained in its configured initial CSI resource %d.', ...
+            activeSSB(k),ssbMap(k));
+    end
+end
+cfg = sixgr.util.structSet(cfg,"phy.beamManagement.activeSSBIndices0Based",activeSSB);
+cfg = sixgr.util.structSet(cfg,"phy.beamManagement.ssbInitialCSISpatialPolicy",spatialPolicy);
 if ~(isvector(tciStates) && numel(tciStates)==nCSI && ...
         all(isfinite(tciStates)) && all(tciStates==fix(tciStates)) && ...
         all(tciStates>=0) && all(tciStates<=127) && ...

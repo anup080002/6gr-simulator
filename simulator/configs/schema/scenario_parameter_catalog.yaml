@@ -350,11 +350,16 @@ sections:
       srs_periodicity_ms:
         required: false
         type: number
-        allowed_numeric_values: [5, 10, 20, 40, 80, 160]
+        # This is a duration, not a fixed millisecond enumeration. After
+        # inheritance resolves carrier SCS, exact slots must belong to the
+        # ordinary SRS base-IE period set validated by the native owner.
+        min_exclusive: 0
       srs_periodicity_slots:
         required: false
         type: integer
-        min: 1
+        # Ordinary SRS base IE, TS 38.331 V18.8.0 6.3.2. Positioning
+        # extensions need their own explicitly supported resource profile.
+        allowed_numeric_values: [1, 2, 4, 5, 8, 10, 16, 20, 32, 40, 64, 80, 160, 320, 640, 1280, 2560]
       trs_periodicity_slots:
         required: false
         type: integer
@@ -1089,6 +1094,12 @@ sections:
         allowed_values: [inherit_ul_waveform, candidate_msg3_waveform]
       min_detection_trials: {required: true, type: integer, min: 1}
       configuration_index: {required: true, type: integer, min: 0}
+      # Assertions on the resolved PRACH-table/TDD repetition, not independent timers.
+      # All declared aliases must agree with the native occasion resolver.
+      prach_periodicity_slots: {required: false, type: integer, min: 1}
+      periodicity_slots: {required: false, type: integer, min: 1}
+      prach_periodicity_ms: {required: false, type: number, min_exclusive: 0}
+      periodicity_ms: {required: false, type: number, min_exclusive: 0}
       subcarrier_spacing_khz:
         required: true
         type: number

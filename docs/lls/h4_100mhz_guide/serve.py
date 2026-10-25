@@ -1,18 +1,21 @@
 """Read-only, loopback-only guide and allow-listed source viewer. No MATLAB launch."""
 from __future__ import annotations
 import argparse
+import base64
 import hashlib
 import json
+import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlparse, quote
 import yaml
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
 STATIC = {"/": ("index.html", "text/html"), "/index.html": ("index.html", "text/html"),
           "/guide.css": ("guide.css", "text/css"), "/guide.js": ("guide.js", "text/javascript"),
-          "/chapters.js": ("chapters.js", "text/javascript")}
+          "/chapters.js": ("chapters.js", "text/javascript"),
+          "/implementation.js": ("implementation.js", "text/javascript")}
 ALLOWED = {"+sixgr", "simulator", "tests", "docs"}
 TOP = {"run_6g_phy_lls_single.m", "run_6g_phy_lls_matrix.m", "run_sixgr.m",
        "setup6GRSimToolkit.m", "README.md", "scripts/publish_lls_live_csv_plots.py"}
@@ -125,15 +128,37 @@ def scenario_payload() -> dict:
     return {"scope": "current_yaml_inventory_not_execution_qualification", "entries": entries}
 
 
+def issue_ledger_payload():
+    """Serve only the existing ledger; never expose logs/results or arbitrary HTML."""
+    text = (HERE.parent / 'lls_gap_status_20261023.html').read_text(encoding='utf-8-sig')
+    def link(match):
+        path, label = match.groups()
+        try:
+            source_path(path)
+        except (ValueError, FileNotFoundError):
+            return '<span>' + label + ' (local evidence; not served here)</span>'
+        return '<a href="/raw?path=' + quote(path, safe='') + '">' + label + '</a>'
+    text = re.sub(r'<a href="\.\./\.\./([^"<>]+)">([\s\S]*?)</a>', link, text)
+    # The file:// ledger keeps its existing inline filter/style. Authorize only
+    # these exact blocks by hash, not unsafe-inline or arbitrary HTML sources.
+    hashes = {}
+    for tag in ('script', 'style'):
+        hashes[tag] = ' '.join("'sha256-" + base64.b64encode(
+            hashlib.sha256(block.encode('utf-8')).digest()).decode('ascii') + "'"
+            for block in re.findall(r'<' + tag + r'>([\s\S]*?)</' + tag + '>', text))
+    return text.encode('utf-8'), hashes
+
+
 class Handler(BaseHTTPRequestHandler):
-    def send_bytes(self, status: int, data: bytes, kind: str):
+    def send_bytes(self, status: int, data: bytes, kind: str, inline_hashes=None):
         self.send_response(status)
         self.send_header("Content-Type", kind + "; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
-        self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'")
+        hashes = inline_hashes or {}
+        self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self' " + hashes.get('script', '') + "; style-src 'self' " + hashes.get('style', '') + "; img-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'")
         self.end_headers()
         self.wfile.write(data)
 
@@ -143,6 +168,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_bytes(403, b"Loopback host required", "text/plain")
         parsed = urlparse(self.path)
         try:
+            if parsed.path == '/issues.html':
+                data, hashes = issue_ledger_payload()
+                return self.send_bytes(200, data, 'text/html', hashes)
             if parsed.path in STATIC:
                 name, kind = STATIC[parsed.path]
                 return self.send_bytes(200, (HERE / name).read_bytes(), kind)

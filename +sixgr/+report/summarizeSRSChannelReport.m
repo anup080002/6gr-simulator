@@ -7,7 +7,9 @@ arguments
     T table
 end
 for field=["NMSE_dB","ChannelNMSEReferenceAvailable","ChannelNMSEThreshold_dB"]
-    if ismember(field,string(T.Properties.VariableNames))
+    % Empty struct-derived startup variables may be 0-by-0. Preserve the
+    % unavailable/zero-count schema below without inventing observations.
+    if height(T)>0 && ismember(field,string(T.Properties.VariableNames))
         values=T.(field);
         assert(size(values,2)==1,'sixgr:report:InvalidSRSMeasurementColumn', ...
             '%s must retain one scalar per original trial.',field);

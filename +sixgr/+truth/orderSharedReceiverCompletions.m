@@ -6,7 +6,7 @@ function items=orderSharedReceiverCompletions(items)
 % after the earlier SRS expires. Do not depend on registration order.
 if isempty(items), return; end
 kinds=string({items.Kind});
-tx=ismember(kinds,["DataTX","PUCCHTX"]);
+tx=ismember(kinds,["DataTX","PUCCHTX","CellSIB1TX","CellSSBTX"]);
 srs=kinds=="SRS";
 pusch=kinds=="PUSCH";
 power=kinds=="BindSRSPower";

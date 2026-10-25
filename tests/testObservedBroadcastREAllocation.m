@@ -4,8 +4,9 @@ setup6GRSimToolkit('Verbose',false);
 for scenario=["lls_causal_tdd_connected_feedback_fixture.yaml","lls_causal_access_to_data_wiring.yaml"]
     s=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs','scenarios',scenario));
     cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
-    p=sixgr.link.prepareCellSearchBroadcast(cfg,true);
-    carrier=p.Tx.Carrier; base=20;
+    base=20;
+    p=sixgr.link.prepareCellSearchBroadcast(cfg,true,'RuntimeSlot',base);
+    carrier=p.Tx.Carrier;
     first=sixgr.phy.frame.slotStartSample(carrier,base,p.SampleRateHz);
     observation=localObservation(p,first,true);
     T=sixgr.truth.buildObservedBroadcastREAllocation(p,observation,1);
@@ -19,8 +20,8 @@ for scenario=["lls_causal_tdd_connected_feedback_fixture.yaml","lls_causal_acces
         numel(unique(ssb.ssb_index0))==numel(p.Tx.SSBBurstPlan.ActiveSSBIndices0Based));
     assert(sum(ssb.re_count)==nnz(p.Tx.SSBWaveInfo.SSBComposite.TransmitPortResourceGrid));
     assert(sum(si.re_count)==nnz(p.Tx.SIB1Grid)*nnz(p.Tx.SIB1SpatialMapping.PrecoderMatrix));
-    assert(all(si.absolute_slot==base+p.Tx.SIB1AbsoluteSlot));
-    assert(all(T.sfn==floor(T.absolute_slot/(10*carrier.SlotsPerSubframe))));
+    assert(all(si.absolute_slot==p.Tx.SIB1AbsoluteSlot));
+    assert(all(T.sfn==mod(floor(T.absolute_slot/(10*carrier.SlotsPerSubframe)),1024)));
     replay=sixgr.truth.deduplicateObservedREAllocation([T;T]);
     assert(height(replay)==height(T),'Same cell broadcast must not duplicate per receiving UE.');
     % Independently demodulate the actual per-beam precoded SSB waveform.
@@ -35,9 +36,17 @@ for scenario=["lls_causal_tdd_connected_feedback_fixture.yaml","lls_causal_acces
     actual=actual(low+(1:240),1:size(grid,2),:);
     mismatch=norm(actual(:)-grid(:))/norm(grid(:));
     assert(mismatch<1e-10,'Retained spatial grid does not match the actual SSB waveform: %.15g',mismatch);
+    localEmittedExtentChecks(p,observation,T);
     localReject(@()sixgr.truth.buildObservedBroadcastREAllocation(p,localObservation(p,first,false),1), ...
         'sixgr:truth:BroadcastGridObservationMismatch');
     localReject(@()sixgr.truth.buildObservedBroadcastREAllocation(p,localObservation(p,first+1,true),1), ...
+        'sixgr:truth:BroadcastGridOriginMismatch');
+    % Moving the same bytes into a later frame is not a newly encoded MIB.
+    shifted=first+round(.01*p.SampleRateHz);
+    localReject(@()sixgr.truth.buildObservedBroadcastREAllocation(p,localObservation(p,shifted,true),1), ...
+        'sixgr:truth:BroadcastGridOriginMismatch');
+    wrong=p; wrong.BroadcastStartAbsoluteSlot=base+carrier.SlotsPerFrame;
+    localReject(@()sixgr.truth.buildObservedBroadcastREAllocation(wrong,observation,1), ...
         'sixgr:truth:BroadcastGridOriginMismatch');
     wrong=p; wrong.Tx.SSBInfo.SSBResourceOwnership.NCellID=carrier.NCellID+1;
     localReject(@()sixgr.truth.buildObservedBroadcastREAllocation(wrong,observation,1), ...
@@ -57,6 +66,37 @@ for scenario=["lls_causal_tdd_connected_feedback_fixture.yaml","lls_causal_acces
     fprintf('OBSERVED_BROADCAST_GRID_PASS: %s rows=%d exact waveform grid error=%.3g\n',scenario,height(T),mismatch);
 end
 ok=true;
+end
+
+function localEmittedExtentChecks(p,observation,original)
+% Copy-only metadata corruptions; never synthesize another TX execution.
+% A zero-padded grid tail is allowed but cannot publish additional REs.
+originalSampleHash=observation.sampleHash();
+bad=p; bad.Tx.SSBWaveform=bad.Tx.SSBWaveform(1:end-1,:);
+localReject(@()sixgr.truth.buildObservedBroadcastREAllocation(bad,observation,1), ...
+    'sixgr:truth:SSBNativeSampleClockMismatch');
+clear bad
+padded=p;
+grid=p.Tx.SSBWaveInfo.SSBComposite.TransmitPortResourceGrid;
+logical=p.Tx.SSBWaveInfo.ResourceGridSSBurst.ResourceGrid;
+last=size(grid,2)+14;
+padded.Tx.SSBWaveInfo.SSBComposite.TransmitPortResourceGrid(:,last,:)=0;
+padded.Tx.SSBWaveInfo.ResourceGridSSBurst.ResourceGrid(:,last)=0;
+allowed=sixgr.truth.buildObservedBroadcastREAllocation(padded,observation,1);
+columns=["absolute_slot","sfn","slot_within_frame","symbol_index", ...
+    "subcarrier_start","subcarrier_count","port_index","channel","component","re_count","allocation_id"];
+assert(isequaln(allowed(:,columns),original(:,columns)) && ...
+    observation.sampleHash()==originalSampleHash && ...
+    isequal(padded.Tx.SSBWaveform,p.Tx.SSBWaveform));
+% Change both retained grids coherently, so only the emitted extent rejects
+% this fictitious nonzero RE rather than the earlier logical-port join.
+padded.Tx.SSBWaveInfo.SSBComposite.TransmitPortResourceGrid(1,last,1)=1;
+padded.Tx.SSBWaveInfo.ResourceGridSSBurst.ResourceGrid(1,last)=1;
+localReject(@()sixgr.truth.buildObservedBroadcastREAllocation(padded,observation,1), ...
+    'sixgr:truth:SSBNativeSampleClockMismatch');
+assert(isequal(p.Tx.SSBWaveInfo.SSBComposite.TransmitPortResourceGrid,grid) && ...
+    isequal(p.Tx.SSBWaveInfo.ResourceGridSSBurst.ResourceGrid,logical));
+fprintf('SSB_EQUAL_SCS_EMITTED_EXTENT_PASS original_rows=%d zero_padding_no_new_RE=1 malformed_rejections=2\n',height(original));
 end
 
 function o=localObservation(p,first,complete)

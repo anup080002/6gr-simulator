@@ -272,7 +272,13 @@ methods(Static)
         state.MobilityEnabled = logical(sixgr.util.structGet(cfgMob, "scenario.mobility.enable", false));
         state.BeamUpdateSlots = max(1, round(double(sixgr.util.structGet(cfgMob, "system.beam.updatePeriod_slots", 4))));
         state.LargeScaleUpdateSlots = max(1, round(double(sixgr.util.structGet(cfgMob, "system.largeScaleUpdatePeriod_slots", 1))));
-        state.SRSSlotPeriod = max(1, round(double(sixgr.util.structGet(cfgMob, "phy.srs.period_slots", 4))));
+        state.SRSSlotPeriod = NaN; % Disabled/aperiodic is not a periodic calendar.
+        if logical(sixgr.util.structGet(cfgMob,"phy.srs.enable",false)) && ...
+                strcmpi(string(sixgr.util.structGet(cfgMob,"phy.srs.resourceType","periodic")),"periodic")
+            state.SRSSlotPeriod = sixgr.phy.srs.validateSRSPeriodOffset( ...
+                sixgr.util.structGet(cfgMob,"phy.srs.period_slots",NaN), ...
+                sixgr.util.structGet(cfgMob,"phy.srs.period_offset",NaN));
+        end
         state.TRSSlotPeriod = max(1, round(double(sixgr.util.structGet(cfgMob, "phy.trs.period_slots", 4))));
         % A reporting alias of the same calendar used by isActiveSSBOccasion;
         % never impose a hidden ten-slot minimum on configured SS/PBCH.
@@ -529,6 +535,9 @@ methods(Static)
             "run.snrSweepInitialAccessStatePolicy", "continuous_runtime"))));
         if accessPolicy == "independent_per_point"
             state=sixgr.truth.CoupledRadioIdentity.resetAccess(state);
+            state.PreconfiguredDLMeasurementInstallationByUE=cell(nUsers,1);
+            state.TRSMeasurementInstallationSHA256ByUE=strings(nUsers,1);
+            state.SharedQCLTimingReferences=cell(nUsers,1);
             state.CellAcquisitionState = repmat( ...
                 string(state.ControlGating.PBCHInitialState), nUsers, 1);
             state.AccessState = repmat( ...
@@ -601,7 +610,9 @@ methods(Static)
                 pucchTrace, "GrantExecutedFlag", false(height(pucchTrace), 1)));
             sourceSlot = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
                 pucchTrace, "SourceSlot", nan(height(pucchTrace), 1)));
-            cancelMask = ~executed & isfinite(sourceSlot) & ...
+            suppressed=logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
+                pucchTrace,'UETransmissionSuppressed',false(height(pucchTrace),1)));
+            cancelMask = ~executed & ~suppressed & isfinite(sourceSlot) & ...
                 sourceSlot < round(double(startSlot));
             pucchTrace = sixgr.truth.CoupledTruthRuntime.setLogicalColumn( ...
                 pucchTrace, "CanceledAtSweepBoundary", false(height(pucchTrace), 1));
@@ -663,8 +674,26 @@ methods(Static)
         [cfgU, state] = sixgr.truth.CoupledTruthRuntime.applyUserContextImpl(cfgIn, state, ueIdx, direction);
         references=sixgr.util.structGet(state,'SharedQCLTimingReferences',{});
         if string(direction)=="DL" && numel(references)>=ueIdx && ~isempty(references{ueIdx})
-            cfgU=sixgr.util.structSet(cfgU,'lls6g.userContext.QCLTimingReference',references{ueIdx});
+            [installed,~,receipt]=sixgr.truth.DLMeasurementInstallation.current(state,ueIdx,"TRS");
+            valid=installed;
+            if sixgr.truth.DLMeasurementInstallation.required(state)
+                valid=valid && string(sixgr.util.structGet(references{ueIdx}, ...
+                    'DLMeasurementInstallationSHA256',""))==string(sixgr.util.structGet(receipt,'SHA256',""));
+            end
+            if valid, cfgU=sixgr.util.structSet(cfgU,'lls6g.userContext.QCLTimingReference',references{ueIdx});
+            elseif isfield(cfgU.lls6g.userContext,'QCLTimingReference')
+                cfgU.lls6g.userContext=rmfield(cfgU.lls6g.userContext,'QCLTimingReference');
+            end
         end
+    end
+
+    function cfg = measurementConfigurationForUE(state,ueIdx)
+        % Static installed resource configuration and the SAME serving-cell
+        % sequence identity used by applyUserContext, without tracking/LA
+        % consumers (which themselves check measurement installation).
+        validateattributes(ueIdx,{'double'},{'scalar','integer','positive','<=',state.NumUsers});
+        cfg=sixgr.truth.CoupledTruthRuntime.applyRuntimeServingCellPHYIdentity( ...
+            state.CfgMobility,state,state.CurrentServingIdx(ueIdx));
     end
 
     function state = startSlot(state, cfg, direction, sweepIdx, sweepCount, absoluteFrame, totalFrames, snr_dB)
@@ -1101,7 +1130,8 @@ methods(Static)
         reports=sixgr.util.structGet(state,'PendingCSITable',table());
         for ci=1:height(reports)
             report=table2struct(reports(ci,:));
-            if report.Processed || report.RightCensored || string(report.Direction)~="DL" || ...
+            if report.Processed || report.RightCensored || ...
+                    sixgr.util.structGet(report,'UECSIPayloadRetired',false) || string(report.Direction)~="DL" || ...
                     string(report.CSIUCITransport)~="pucch"
                 continue;
             end
@@ -1115,8 +1145,10 @@ methods(Static)
         rows=sixgr.util.structGet(state,'PUCCHGrantTraceTable',table());
         if isempty(rows), return; end
         mask=~logical(rows.GrantExecutedFlag) & ~logical( ...
+            sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(rows,'UETransmissionSuppressed',false(height(rows),1))) & ~logical( ...
             sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(rows,'MultiplexedOnPUSCH',false(height(rows),1))) & ...
-            ~logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(rows,'RightCensored',false(height(rows),1)));
+            ~logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(rows,'RightCensored',false(height(rows),1))) & ...
+            ~ismember(string(rows.PUCCHGrantId),sixgr.truth.UEQueuedCSIAdmission.retiredGrantIDs(state));
         rows=rows(mask,:);
         groups=sixgr.truth.CoupledTruthRuntime.groupPUCCHRowsByPhysicalOccasion(rows);
         armed=sixgr.util.structGet(state,'SharedArmedPUCCHOccasions',strings(0,1));
@@ -1227,6 +1259,7 @@ methods(Static)
     end
 
     function state=refreshPeriodicCSIReportsRuntime(state)
+        state=sixgr.truth.UEQueuedCSIAdmission.reconcile(state);
         % Configured occasions are independent of PDSCH execution. Missing
         % eligible CSI leaves a configured obligation, never invented UCI.
         sixgr.truth.CoupledTruthRuntime.assertRuntimeExecutionView(state);
@@ -1283,6 +1316,8 @@ methods(Static)
                         for mi=reshape(indices,1,[])
                             candidate=retained(mi,:);
                             [available,usable,clocked]=sixgr.truth.csirsMeasurementAvailability(candidate,shared);
+                            [installed,~]=sixgr.truth.DLMeasurementInstallation.eligible(state,ue,candidate,"CSI-RS");
+                            usable=usable && installed;
                             usable=usable && available<=state.CurrentSlot && ...
                                 ~sixgr.truth.isCSIReportingMeasurementGap(cfg,double(candidate.Slot));
                             if clocked
@@ -1308,11 +1343,13 @@ methods(Static)
                         existing=find(string(reports.ReportIdentity)==string(obligation.ObligationID));
                         assert(numel(existing)<=1,'sixgr:truth:DuplicateCSIReportObligation', ...
                             'One installed periodic occasion has at most one UE report.');
+                        retired=~isempty(existing) && sixgr.truth.CoupledTruthRuntime.rowLogical( ...
+                            reports(existing,:),'UECSIPayloadRetired',false);
                         frozen=~isempty(existing) && (reports.Processed(existing) || ...
                             reports.RightCensored(existing) || ...
-                            string(reports.CSIUCITransport(existing))~="pucch" || ...
-                            reports.CSIUCIMultiplexedOnPUSCH(existing));
-                        unchanged=~isempty(existing) && reports.SourceSlot(existing)>=selected.Slot;
+                            (~retired && (string(reports.CSIUCITransport(existing))~="pucch" || ...
+                            reports.CSIUCIMultiplexedOnPUSCH(existing))));
+                        unchanged=~isempty(existing) && ~retired && reports.SourceSlot(existing)>=selected.Slot;
                         if ~frozen && ~unchanged
                             state=sixgr.truth.CoupledTruthRuntime.enqueueCSIReport( ...
                                 state,ue,'DL',selected,cfg,selected,table2struct(obligation));
@@ -1445,6 +1482,7 @@ methods(Static)
 
     function state=prepareSharedPUCCHFeedbackRuntime(state,item)
         slot=item.Context.Slot; ue=item.UE;
+        state=sixgr.truth.UEQueuedCSIAdmission.reconcile(state);
         % Resolve pending feedback immediately before actual IQ preparation.
         % A future UL calendar is not itself an emitted PUSCH.
         pending=sixgr.util.structGet(state,'SharedPendingULGrants',repmat(struct(),0,1));
@@ -1457,17 +1495,21 @@ methods(Static)
         rows=state.PUCCHGrantTraceTable;
         mask=double(rows.UEIndex)==ue & double(rows.ScheduledAbsoluteSlot)==slot & ...
             ~logical(rows.GrantExecutedFlag) & ~logical( ...
+            sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(rows,'UETransmissionSuppressed',false(height(rows),1))) & ~logical( ...
             sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(rows,'MultiplexedOnPUSCH',false(height(rows),1)));
         rows=rows(mask,:);
         if ~isempty(rows)
             rows=rows(sixgr.truth.CoupledTruthRuntime.sharedPUCCHOccasionKey(rows)==item.Context.Key,:);
         end
+        retiredIDs=sixgr.truth.UEQueuedCSIAdmission.retiredGrantIDs(state);
+        rows=rows(~ismember(string(rows.PUCCHGrantId),retiredIDs),:);
         if isempty(rows)
             % Keep the actual registered captures, but do not publish a
             % standalone PUCCH trial when these bits now belong to PUSCH.
             % Empty rows alone do not establish that transfer (e.g. missed
             % DCI or a lost/late producer). Require explicit matching lineage.
             allRows=state.PUCCHGrantTraceTable;
+            allRows=allRows(~ismember(string(allRows.PUCCHGrantId),retiredIDs),:);
             keys=sixgr.truth.CoupledTruthRuntime.sharedPUCCHOccasionKey(allRows);
             if any(keys==item.Context.Key)
                 proof=sixgr.truth.validatePUCCHObservationTransfer(allRows,item.Context.Key);
@@ -1484,7 +1526,12 @@ methods(Static)
                     carrier=sixgr.phy.grid.makeCarrier(cfg);
                     cfg.lls6g.userContext.RuntimeSlotStartTime_s=sixgr.phy.frame.slotStartSample( ...
                         carrier,slot-1,state.SharedWaveformStream.SampleRateHz)/state.SharedWaveformStream.SampleRateHz;
-                    prepared=sixgr.truth.prepareConfiguredSRTransmission(state,cfg,hypothesis);
+                    [prepared,admission]=sixgr.truth.prepareConfiguredSRTransmission(state,cfg,hypothesis);
+                    if ~isempty(admission) && ~admission.PreparationAdmitted
+                        state=sixgr.truth.CoupledTruthRuntime.deferSharedPUCCHPowerRuntime( ...
+                            state,item,cfg,hypothesis,rows,admission);
+                        return;
+                    end
                     if isempty(prepared)
                         state.SharedWaveformStream.bindPUCCHReceiveOnly(item.Context.ObservationID,cfg,hypothesis);
                     else
@@ -1534,7 +1581,10 @@ methods(Static)
             transport=string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
                 reports,'CSIUCITransport',repmat("pucch",height(reports),1)));
             csiIndex=find(double(reports.UEIndex)==ue & double(reports.DueSlot)==slot & ...
-                upper(string(reports.Direction))=="DL" & ~logical(reports.Processed) & transport=="pucch");
+                upper(string(reports.Direction))=="DL" & ~logical(reports.Processed) & ...
+                ~logical(reports.RightCensored) & ...
+                ~logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
+                    reports,'UECSIPayloadRetired',false(height(reports),1))) & transport=="pucch");
             assert(numel(csiIndex)<=1,'sixgr:truth:MultipleCSIReportsOnOnePUCCHOccasion', ...
                 'One physical PUCCH needs one ordered CSI report configuration.');
             if ~isempty(csiIndex), csi=table2struct(reports(csiIndex,:)); end
@@ -1571,6 +1621,15 @@ methods(Static)
                 'sixgr:truth:CSITransportOwnershipConflict', ...
                 'A CSI PUCCH producer cannot override an overlapping scheduled PUSCH transport.');
         end
+        [admitted,cfg,admission]=sixgr.truth.resolveSharedPUCCHPowerAdmission(state,cfg,ue,slot);
+        if ~admitted
+            assert(isfield(execution,'GNBReception'),'sixgr:truth:PUCCHPowerAdmissionReceiver', ...
+                'An untransmitted PUCCH still requires its independent configured gNB receive occasion.');
+            state=sixgr.truth.CoupledTruthRuntime.deferSharedPUCCHPowerRuntime( ...
+                state,item,cfg,execution.GNBReception,rows,admission);
+            return;
+        end
+        execution.Config=cfg;
         [state,prepared]=sixgr.truth.CoupledTruthRuntime.observePUCCHFeedback( ...
             state,rows,csi,execution);
         prepared.ObservationID=item.Context.ObservationID;
@@ -1590,6 +1649,141 @@ methods(Static)
                 reports,'CSIUCITransport',csiIndex,"pucch_bound");
             state.PendingCSITable=reports;
         end
+    end
+
+    function state=deferSharedPUCCHPowerRuntime(state,item,cfg,hypothesis,rows,admission)
+        % This closes only the original UE preparation occasion. It does not
+        % decide DTX/CRC/ACK, apply HARQ, remove a gNB reservation, or retime a
+        % pending CSI payload. The actual receiver still observes this window.
+        owner=state.SharedWaveformStream; id=string(item.Context.ObservationID);
+        hit=find(string({owner.Pending.ID})==id);
+        assert(isscalar(hit) && owner.Pending(hit).Kind=="PUCCH" && ...
+            owner.Pending(hit).Context.AwaitingPreparation && ~isfield(owner.Pending(hit).Context,'Prepared') && ...
+            owner.Pending(hit).UE==item.UE && owner.Pending(hit).Context.Slot==item.Context.Slot && ...
+            owner.Pending(hit).Context.Key==item.Context.Key && height(admission)==1 && ...
+            islogical(admission.PreparationAdmitted) && ~admission.PreparationAdmitted && ...
+            admission.UEIndex==item.UE && admission.PUCCHResourceSlot==item.Context.Slot && ...
+            admission.ServingCell==state.CurrentServingIdx(item.UE), ...
+            'sixgr:truth:PUCCHPowerAdmissionBinding','Defer only one original unprepared UE observation.');
+        original=owner.Pending(hit);
+        [admitted,~,originalDecision]=sixgr.truth.resolveSharedPUCCHPowerAdmission( ...
+            state,cfg,item.UE,item.Context.Slot);
+        assert(~admitted && isequaln(originalDecision,admission), ...
+            'sixgr:truth:PUCCHPowerAdmissionBinding','Retain the exact original causal power decision.');
+        identity=hypothesis.Mapping; if isempty(identity), identity=hypothesis; end
+        assert(identity.UEIndex==item.UE && identity.TargetSlot==item.Context.Slot && ...
+            hypothesis.Assignment.Data.ObservationID==id, ...
+            'sixgr:truth:PUCCHPowerAdmissionReceiver','Preserve the independent original receiver identity.');
+        audit=sixgr.util.structGet(state,'SharedPUCCHPowerAdmissionTable',table());
+        assert(isempty(audit) || ~any(string(audit.ObservationID)==id), ...
+            'sixgr:truth:DuplicatePUCCHPowerAdmission','Close an untransmitted occasion once.');
+        trace=state.PUCCHGrantTraceTable;
+        grantIDs=strings(0,1);
+        if ~isempty(rows)
+            grantIDs=string(rows.PUCCHGrantId);
+            assert(numel(unique(grantIDs))==numel(grantIDs) && all(strlength(grantIDs)>0) && ...
+                all(rows.UEIndex==item.UE & rows.ScheduledAbsoluteSlot==item.Context.Slot) && ...
+                all(sixgr.truth.CoupledTruthRuntime.sharedPUCCHOccasionKey(rows)==item.Context.Key), ...
+                'sixgr:truth:PUCCHPowerAdmissionBinding','Close only this original occasion''s grant rows.');
+        end
+        mask=false(height(trace),1);
+        if ~isempty(trace), mask=ismember(string(trace.PUCCHGrantId),grantIDs); end
+        assert(nnz(mask)==numel(grantIDs) && (isempty(grantIDs) || ...
+            (~any(trace.GrantExecutedFlag(mask)) && ~any(trace.MultiplexedOnPUSCH(mask)))), ...
+            'sixgr:truth:PUCCHPowerAdmissionBinding','An emitted or transferred payload cannot be power-deferred.');
+        if ~isempty(rows)
+            [found,positions]=ismember(grantIDs,string(trace.PUCCHGrantId));
+            assert(all(found) && isequaln(rows,trace(positions,rows.Properties.VariableNames)), ...
+                'sixgr:truth:PUCCHPowerAdmissionBinding','Do not substitute copied grant metadata at deferral.');
+        end
+        pending=state.PendingFeedbackTable;
+        feedbackMask=false(height(pending),1);
+        if ~isempty(pending), feedbackMask=ismember(string(pending.PUCCHGrantId),grantIDs); end
+        assert(isempty(pending) || ~any(pending.Processed(feedbackMask)), ...
+            'sixgr:truth:PUCCHPowerAdmissionBinding','Do not close already processed UE feedback twice.');
+        reports=state.PendingCSITable;
+        reportIDs=strings(0,1); reportMask=false(height(reports),1);
+        if ~isempty(reports)
+            reportMask=ismember("PUCCH-CSI-"+string(reports.ReportIdentity),grantIDs);
+            assert(all(reports.UEIndex(reportMask)==item.UE & reports.DueSlot(reportMask)==item.Context.Slot) && ...
+                ~any(reports.Processed(reportMask)) && ...
+                all(string(reports.CSIUCITransport(reportMask))=="pucch"), ...
+                'sixgr:truth:PUCCHPowerAdmissionBinding','Only the original unbound CSI payload may expire without transmission.');
+            reportIDs=string(reports.ReportIdentity(reportMask));
+        end
+        disposition="closed_untransmitted_missing_measured_power_reference";
+        if any(mask)
+            if ~ismember('UETransmissionSuppressed',trace.Properties.VariableNames)
+                trace.UETransmissionSuppressed=false(height(trace),1);
+            end
+            assert(islogical(trace.UETransmissionSuppressed) && size(trace.UETransmissionSuppressed,2)==1, ...
+                'sixgr:truth:PUCCHPowerAdmissionBinding','Preserve scalar logical producer dispositions.');
+            trace.UETransmissionSuppressed(mask)=true;
+        end
+        trace=sixgr.truth.CoupledTruthRuntime.setStringValueAt(trace,'UEProducerDisposition',find(mask),disposition);
+        trace=sixgr.truth.CoupledTruthRuntime.setStringValueAt(trace,'PowerAdmissionObservationID',find(mask),id);
+        trace=sixgr.truth.CoupledTruthRuntime.setStringValueAt(trace,'PUCCHGrantState',find(mask),disposition);
+        trace=sixgr.truth.CoupledTruthRuntime.setStringValueAt(trace,'Status',find(mask),"NOT_TRANSMITTED");
+        if any(feedbackMask), pending.Processed(feedbackMask)=true; end % UE work terminal; gNB HARQ is untouched.
+        pending=sixgr.truth.CoupledTruthRuntime.setStringValueAt( ...
+            pending,'UEProducerDisposition',find(feedbackMask),disposition);
+        if any(reportMask), reports.Processed(reportMask)=true; end
+        reports=sixgr.truth.CoupledTruthRuntime.setStringValueAt( ...
+            reports,'UEProducerDisposition',find(reportMask),disposition);
+        reports=sixgr.truth.CoupledTruthRuntime.setStringValueAt( ...
+            reports,'DeliveryStatus',find(reportMask),"not_transmitted_missing_measured_power_reference");
+        % No DeliveredSlot, CSIUCIDecodeOk/CRC, UECSIPayloadRetired or received
+        % feedback field is rewritten. Future occasions can use fresh CSI.
+        admission.RNTI=double(hypothesis.Assignment.Data.RNTI);
+        admission.ComponentCarrier=double(cfg.phy.frame.DefaultIdentity.ScheduledCCID);
+        admission.ActiveULBWP=double(cfg.phy.frame.DefaultIdentity.ULBWPID);
+        admission.BaseStationID=admission.ServingCell;
+        admission.SweepPointIndex=double(state.CurrentSweepPointIndex);
+        % Freeze reporting dimensions at the original preparation decision,
+        % never recover them from mutable grants at receiver completion.
+        if any(mask)
+            if ~ismember('SweepPointIndex',trace.Properties.VariableNames)
+                trace.SweepPointIndex=NaN(height(trace),1);
+            end
+            missing=mask & isnan(trace.SweepPointIndex);
+            trace.SweepPointIndex(missing)=admission.SweepPointIndex;
+            for name=["RNTI","BaseStationID","ComponentCarrier","ActiveULBWP","SweepPointIndex"]
+                assert(isnumeric(trace.(name)) && isreal(trace.(name)) && ...
+                    all(trace.(name)(mask)==admission.(name)), ...
+                    'sixgr:truth:PUCCHPowerAdmissionBinding','Original grant dimensions must match the admitted occasion.');
+            end
+            for name=["RunUUID","ConfigHash"]
+                if ismember(name,string(trace.Properties.VariableNames))
+                    values=unique(string(trace.(name)(mask)));
+                    assert(isscalar(values),'sixgr:truth:PUCCHPowerAdmissionBinding', ...
+                        'One original occasion cannot combine different run/configuration identities.');
+                    admission.(name)=values;
+                end
+            end
+        end
+        admission.PhysicalOccasionID=string(item.Context.Key);
+        admission.ObservationID=id;
+        admission.DecisionSample=owner.Events.NextSampleIndex;
+        admission.ClockEpoch=owner.Physical.ConfigurationEpoch;
+        admission.SampleRateHz=owner.SampleRateHz;
+        admission.PUCCHGrantIDsJSON=string(jsonencode(cellstr(grantIDs)));
+        admission.CSIReportIdentitiesJSON=string(jsonencode(cellstr(reportIDs)));
+        admission.SelectedGNBTransport=string(hypothesis.SelectedTransport);
+        admission.UETransmissionPrepared=false;
+        admission.UEProducerDisposition=disposition;
+        audit=sixgr.truth.CoupledTruthRuntime.appendCompatTable(audit,admission);
+        % Validate all value-state changes before the sole handle mutation.
+        if hypothesis.SelectedTransport=="PUSCH"
+            owner.bindUnselectedPUCCHObservation(id,cfg,hypothesis);
+        else
+            assert(hypothesis.SelectedTransport=="PUCCH", ...
+                'sixgr:truth:PUCCHPowerAdmissionReceiver','Do not invent an alternative gNB receiver.');
+            owner.bindPUCCHReceiveOnly(id,cfg,hypothesis);
+        end
+        assert(isequaln(owner.Pending(hit).Planes,original.Planes), ...
+            'sixgr:truth:PUCCHPowerAdmissionBinding','Keep the original armed observation samples.');
+        state.PUCCHGrantTraceTable=trace; state.PendingFeedbackTable=pending;
+        state.PendingCSITable=reports; state.SharedPUCCHPowerAdmissionTable=audit;
     end
 
     function state=completeSharedPUCCHFeedbackRuntime(state,item)
@@ -1816,6 +2010,7 @@ methods(Static)
             'EvidenceClass',"actual_shared_receiver_observation_no_PUCCH_transmission_claim");
         if rx.CRCApplicable, trial.CRCPass=double(rx.CRCPassed); end
         trial=sixgr.util.mergeStruct(trial,sixgr.link.pucchReceiverStageEvidence(rx,h.Assignment));
+        trial=sixgr.truth.CoupledTruthRuntime.bindPUCCHPowerAdmissionCompletion(state,item,trial,post);
         state.ControlTrials.PUCCH=sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
             state.ControlTrials.PUCCH,struct2table(trial,'AsArray',true));
         evidence=sixgr.util.structGet(state,'SharedGNBUCIReceptions',{});
@@ -1946,6 +2141,7 @@ methods(Static)
             if rx.CRCApplicable, trial.CRCPass=double(rx.CRCPassed); end
             trial.ObservationCompletionTime_s=post.EndSampleExclusive/post.SampleRateHz;
             trial=sixgr.util.mergeStruct(trial,sixgr.link.pucchReceiverStageEvidence(rx,h.Assignment));
+            trial=sixgr.truth.CoupledTruthRuntime.bindPUCCHPowerAdmissionCompletion(state,item,trial,post);
             state.ControlTrials.PUCCH=sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
                 state.ControlTrials.PUCCH,struct2table(trial,'AsArray',true));
         end
@@ -2079,6 +2275,9 @@ methods(Static)
             'SRReceiverDisposition',disposition,'SuccessFlag',prepared && contentMatch==1, ...
             'ExecutionBackend',"pucch_shared_gnb_SR_reception",'ApproximationMode',"none");
         trial=sixgr.util.mergeStruct(trial,sixgr.link.pucchReceiverStageEvidence(rx,h.Assignment));
+        if ~prepared
+            trial=sixgr.truth.CoupledTruthRuntime.bindPUCCHPowerAdmissionCompletion(state,item,trial,post);
+        end
         trialTable=struct2table(trial,'AsArray',true);
         if prepared
             trialTable=sixgr.truth.bindSharedTransmitOccupancy(trialTable,state,item);
@@ -2413,6 +2612,67 @@ methods(Static)
 end
 
 methods(Static, Access=private)
+    function trial=bindPUCCHPowerAdmissionCompletion(state,item,trial,post)
+        % This join runs only after the actual receiver has read the complete
+        % original capture. Admission is not receiver evidence by itself.
+        audit=sixgr.util.structGet(state,'SharedPUCCHPowerAdmissionTable',table());
+        if isempty(audit), return; end
+        id=string(item.Context.ObservationID);
+        hit=find(string(audit.ObservationID)==id);
+        if isempty(hit), return; end
+        assert(isscalar(hit),'sixgr:truth:PUCCHPowerAdmissionCompletion', ...
+            'One actual receiver observation has one original UE admission decision.');
+        a=audit(hit,:); post.readComplete();
+        assert(item.Kind=="PUCCHReceiveOnly" && ~isfield(item.Context,'Prepared') && ...
+            ~item.Context.AwaitingPreparation && a.SelectedGNBTransport=="PUCCH" && ...
+            a.UEIndex==item.UE && a.PUCCHResourceSlot==item.Context.Slot && ...
+            a.PhysicalOccasionID==string(item.Context.Key) && ...
+            a.ServingCell==trial.ServingCell && a.RNTI==trial.RNTI && ...
+            a.ComponentCarrier==item.Context.Config.phy.frame.DefaultIdentity.ScheduledCCID && ...
+            a.ActiveULBWP==item.Context.Config.phy.frame.DefaultIdentity.ULBWPID && ...
+            a.ClockEpoch==state.SharedWaveformStream.Physical.ConfigurationEpoch && a.SampleRateHz==post.SampleRateHz && ...
+            a.DecisionSample<=post.EndSampleExclusive && ...
+            post.EndSampleExclusive==state.SharedWaveformStream.Events.NextSampleIndex && ...
+            trial.ReceiverOnlyAssignment==1 && trial.PUCCHTransmissionPrepared==0 && ...
+            trial.ObservationStartSample==post.StartSample && ...
+            trial.ObservationEndSampleExclusive==post.EndSampleExclusive, ...
+            'sixgr:truth:PUCCHPowerAdmissionCompletion', ...
+            'Bind the frozen no-TX decision only to its actual complete receiver observation.');
+        % Finalization belongs to this actual completed capture, not to a
+        % later CSV annotation or to the UE admission decision. Failed/DTX
+        % decoding still completes an available receiver observation.
+        for name=["FinalizedFlag","ControlObservationAvailable"]
+            if isfield(trial,name)
+                assert(islogical(trial.(name)) && isscalar(trial.(name)) && trial.(name), ...
+                    'sixgr:truth:PUCCHPowerAdmissionCompletion', ...
+                    'Do not overwrite contradictory receiver completion evidence.');
+            end
+            trial.(name)=true;
+        end
+        grants=string(jsondecode(a.PUCCHGrantIDsJSON));
+        trial.PowerAdmissionObservationID=id;
+        trial.LogicalPUCCHGrantIdSet=strjoin(reshape(grants,1,[]),"|");
+        trial.UEProducerDisposition=a.UEProducerDisposition;
+        for name=["BaseStationID","ComponentCarrier","ActiveULBWP","SweepPointIndex","RunUUID","ConfigHash"]
+            if ~ismember(name,string(a.Properties.VariableNames)), continue; end
+            if isfield(trial,name)
+                value=trial.(name); expected=a.(name);
+                if isnumeric(expected)
+                    assert(isnumeric(value) && isreal(value) && isscalar(value) && ...
+                        (isnan(value) || isequaln(value,expected)), ...
+                        'sixgr:truth:PUCCHPowerAdmissionCompletion','Do not overwrite a mismatching received identity.');
+                else
+                    assert((ischar(value)||isstring(value)) && isscalar(string(value)) && ...
+                        (strlength(string(value))==0 || isequal(string(value),expected)), ...
+                        'sixgr:truth:PUCCHPowerAdmissionCompletion','Do not overwrite a mismatching received identity.');
+                end
+            end
+            trial.(name)=a.(name);
+        end
+        % Do not change DTX, decoded bits, CRC, ACK or transmitted-success
+        % flags, including a real noise/interference false-positive result.
+    end
+
     function mode = noiseOperatingModeFromConfig(cfgOrState)
         mode = "";
         cfg = cfgOrState;
@@ -4090,6 +4350,15 @@ methods(Static, Access=private)
             csiReportT,'PreserveSchema',true,'RoundTripNumericText',true);
         sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, "csi_feedback_reports.csv"), ...
             csiReportT,'PreserveSchema',true,'RoundTripNumericText',true);
+        % Local producer-policy audit, not a received CSI/CRC result. Keep
+        % superseded original payloads even after fresh queue replacement.
+        retiredCSI=sixgr.truth.UEQueuedCSIAdmission.auditTable(state);
+        if ~isempty(retiredCSI)
+            for folder=[string(layout.ControlCSVDir),string(layout.AirInterfaceCSVDir)]
+                sixgr.util.csvWriteTable(fullfile(folder,"ue_csi_payload_retirements.csv"),retiredCSI, ...
+                    'PreserveSchema',true,'RoundTripNumericText',true);
+            end
+        end
         csiObligations=sixgr.util.structGet(state,'CSIReportObligationTable',table());
         receivedCSI=sixgr.util.structGet(state,'SharedGNBCSIReportTable',table());
         receivedSR=sixgr.util.structGet(state,'SharedGNBSRReceptionTable',table());
@@ -4132,6 +4401,7 @@ methods(Static, Access=private)
             sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, ...
                 "unselected_pucch_capture_audit.csv"),unselected,'PreserveSchema',true);
         end
+        sixgr.truth.exportPUCCHPowerAdmissionDiagnostics(state,runFolder);
         if ~isempty(receiveOnly)
             sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, ...
                 "rejected_ul_receive_only_audit.csv"),receiveOnly,'PreserveSchema',true);
@@ -4885,6 +5155,7 @@ methods(Static, Access=private)
 
     function state = processDueFeedback(state)
         sixgr.truth.CoupledTruthRuntime.assertRuntimeExecutionView(state);
+        state=sixgr.truth.UEQueuedCSIAdmission.reconcile(state);
         currentSlot = double(sixgr.util.structGet(state, "CurrentSlot", NaN));
         lastProcessedSlot = double(sixgr.util.structGet(state, "LastDueFeedbackProcessedSlot", NaN));
         if ~(isfinite(currentSlot) && isfinite(lastProcessedSlot) && ...
@@ -4913,7 +5184,9 @@ methods(Static, Access=private)
                     grantTrace, "RightCensored", false(height(grantTrace), 1)));
                 multiplexedOnPUSCH = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
                     grantTrace, "MultiplexedOnPUSCH", false(height(grantTrace), 1)));
-                dueGrantMask = ~logical(grantTrace.GrantExecutedFlag) & ~canceled & ...
+                suppressed=logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
+                    grantTrace,'UETransmissionSuppressed',false(height(grantTrace),1)));
+                dueGrantMask = ~logical(grantTrace.GrantExecutedFlag) & ~suppressed & ~canceled & ...
                     ~rightCensored & ~multiplexedOnPUSCH & ...
                     abs(double(grantTrace.ScheduledAbsoluteSlot) - double(state.CurrentSlot)) < 1e-9;
             end
@@ -4983,6 +5256,8 @@ methods(Static, Access=private)
         csiRightCensored = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
             state.PendingCSITable, "RightCensored", false(height(state.PendingCSITable), 1)));
         dueCSIMask = ~logical(state.PendingCSITable.Processed) & ~csiRightCensored & ...
+            ~logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
+                state.PendingCSITable,'UECSIPayloadRetired',false(height(state.PendingCSITable),1))) & ...
             double(state.PendingCSITable.DueSlot) <= double(state.CurrentSlot);
         if ~any(dueCSIMask)
             return;
@@ -6928,7 +7203,8 @@ methods(Static, Access=private)
         end
         oldCellState = string(sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "CellAcquisitionState", ueIdx, "not_attempted"));
         oldAccessState = string(sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "AccessState", ueIdx, "not_attempted"));
-        ok = sixgr.truth.CoupledTruthRuntime.trialPassed(trialT);
+        accepted=sixgr.truth.pbchAcquisitionAccepted(trialT);
+        ok=~isempty(accepted) && accepted(end);
         slotIdx = double(sixgr.truth.CoupledTruthRuntime.rowValue(trialT(end, :), "Slot", state.CurrentSlot));
         deliverySlot = sixgr.truth.BroadcastResultDelivery.deliverySlot(state,trialT);
         servingCell = double(sixgr.truth.CoupledTruthRuntime.numericStateAt(state, "CurrentServingIdx", ueIdx, NaN));
@@ -6968,8 +7244,7 @@ methods(Static, Access=private)
             end
             for measurementOrdinal = 1:height(trialT)
                 measurementRow = trialT(measurementOrdinal, :);
-                measurementValid = logical(sixgr.truth.CoupledTruthRuntime.rowValue( ...
-                    measurementRow, "CRCPass", false)) && ...
+                measurementValid = sixgr.truth.pbchAcquisitionAccepted(measurementRow) && ...
                     isfinite(sixgr.truth.CoupledTruthRuntime.rowFirstFinite( ...
                     measurementRow, ["SS_RSRP_dBm","SS_RSRP_dB_re_UnitOccupiedRE_Es"], NaN));
                 state = sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementImpl( ...
@@ -6996,7 +7271,7 @@ methods(Static, Access=private)
             "CellID", servingCell, ...
             "OldState", oldCellState, ...
             "NewState", sixgr.truth.CoupledTruthRuntime.ternaryString(ok, "PBCH_DECODED", "PBCH_FAILED"), ...
-            "TransitionReason", sixgr.truth.CoupledTruthRuntime.ternaryString(ok, "pbch_crc_pass", "pbch_decode_failed"), ...
+            "TransitionReason", sixgr.truth.CoupledTruthRuntime.ternaryString(ok, "pbch_crc_and_received_mib_identity_accepted", "pbch_mib_identity_not_accepted"), ...
             "SourceFunction", "sixgr.truth.CoupledTruthRuntime.applyPBCHTrialImpl", ...
             "SourceFile", "+sixgr/+truth/CoupledTruthRuntime.m", ...
             "Procedure", "INITIAL_ACCESS", ...
@@ -7619,7 +7894,8 @@ methods(Static, Access=private)
                 "TimingEstimateUsed","AppliedTimingCorrection_samples", ...
                 "TimingEstimateStatus","TimingEstimateApplicationPolicy", ...
                 "TRSAppliedTimingResourceCount","TRSExpectedTimingResourceCount", ...
-                "TRSAppliedTimingEvidenceJSON"]
+                "TRSAppliedTimingEvidenceJSON", ...
+                "ReferenceConfigurationEpoch","SSBPowerReferenceCaptureFilterConfigHash"]
             if ismember(field,rowNames)
                 value=row.(field);
                 if field=="ChannelNMSEReferenceIncludesRFImpairments"
@@ -8329,6 +8605,17 @@ methods(Static, Access=private)
         end
         availableSlot = sixgr.truth.TRSResultDelivery.deliverySlot(state,trialT);
         ueIdx = sixgr.truth.TRSReceiverState.owner(state,trialT(end,:));
+        [installed,~]=sixgr.truth.DLMeasurementInstallation.eligible(state,ueIdx,trialT(end,:),"TRS");
+        if ~installed
+            % Preserve receiver diagnostics in the delivery caller, but do
+            % not select a receiver owner or alter prior authorized state.
+            state=sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementImpl( ...
+                state,"TRS","UE",ueIdx,trialT(end,:), ...
+                "ProducerSlot",double(trialT.Slot(end)),"AvailableSlot",availableSlot, ...
+                "Valid",false,"Direction","DL","SourceSignal","TRS", ...
+                "MeasurementSource","CoupledTruthRuntime.applyTRSTrial.diagnostic_without_configuration_authority");
+            return;
+        end
         state = sixgr.truth.TRSReceiverState.forUE(state,ueIdx);
         state = sixgr.truth.CoupledTruthRuntime.ensureReceiverTrackingStateImpl(state);
         row = trialT(end, :);
@@ -8361,6 +8648,11 @@ methods(Static, Access=private)
         end
         state = sixgr.truth.CoupledTruthRuntime.updateReceiverTrackingFromTRSImpl(state, servingCell, row, ok);
         state = sixgr.truth.TRSReceiverState.commit(state,ueIdx);
+        if sixgr.truth.DLMeasurementInstallation.required(state)
+            bindings=sixgr.util.structGet(state,'TRSMeasurementInstallationSHA256ByUE',strings(state.NumUsers,1));
+            bindings(ueIdx)=string(row.DLMeasurementInstallationSHA256);
+            state.TRSMeasurementInstallationSHA256ByUE=bindings;
+        end
         state = sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementImpl( ...
             state, "TRS", "UE", ueIdx, row, ...
             "ProducerSlot", slotIdx, "AvailableSlot", availableSlot, ...
@@ -8387,7 +8679,8 @@ methods(Static, Access=private)
                 "Periodic serving-SSB tracking requires prior PBCH acquisition for UE %d.", ...
                 round(double(ueIdx)));
         end
-        ok = sixgr.truth.CoupledTruthRuntime.trialPassed(trialT);
+        accepted=sixgr.truth.pbchAcquisitionAccepted(trialT);
+        ok=accepted(end);
         slotIdx = double(sixgr.truth.CoupledTruthRuntime.rowValue( ...
             trialT(end,:),"Slot",state.CurrentSlot));
         deliverySlot = sixgr.truth.BroadcastResultDelivery.deliverySlot(state,trialT);
@@ -8438,8 +8731,7 @@ methods(Static, Access=private)
         end
         for measurementOrdinal = 1:height(trialT)
             measurementRow = trialT(measurementOrdinal,:);
-            measurementValid = logical(sixgr.truth.CoupledTruthRuntime.rowValue( ...
-                measurementRow,"CRCPass",false)) && ...
+            measurementValid = accepted(measurementOrdinal) && ...
                 isfinite(sixgr.truth.CoupledTruthRuntime.rowFirstFinite( ...
                 measurementRow,["SS_RSRP_dBm","SS_RSRP_dB_re_UnitOccupiedRE_Es"],NaN));
             state = sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementImpl( ...
@@ -8491,6 +8783,8 @@ methods(Static, Access=private)
             (ismember('RuntimeTransportMode',row.Properties.VariableNames) && ...
             string(row.RuntimeTransportMode)=="shared_physical_stream_CSIRS_received_completion");
         [availableSlot,usable]=sixgr.truth.csirsMeasurementAvailability(row,shared);
+        [installed,~]=sixgr.truth.DLMeasurementInstallation.eligible(state,ueIdx,row,"CSI-RS");
+        usable=usable && installed;
         state.ControlTrials.CSIRS = ...
             sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
             sixgr.util.structGet(state.ControlTrials, "CSIRS", table()), row);
@@ -8677,6 +8971,14 @@ methods(Static, Access=private)
         traceRow.QCLAccuracy = double(qclAccuracy);
         traceRow.DetectionMetric = double(detectionMetric);
         traceRow.SourceArtifact = "air_interface/csv/trs_trials.csv";
+        for field=["DLMeasurementConfigurationFamily","DLMeasurementConfigurationSHA256", ...
+                "DLMeasurementNCellID","DLMeasurementInstallationSHA256", ...
+                "DLMeasurementAuthorityRequired","DLMeasurementAuthorityEligible", ...
+                "DLMeasurementAuthorityStatus","DLMeasurementAuthoritySource"]
+            if ismember(field,string(row.Properties.VariableNames))
+                traceRow.(field)=row.(field);
+            end
+        end
         state.ReceiverTrackingTraceTable = sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
             sixgr.util.structGet(state, "ReceiverTrackingTraceTable", table()), ...
             struct2table(traceRow, "AsArray", true));
@@ -8759,9 +9061,11 @@ methods(Static)
         end
         ssbMap = double(sixgr.util.structGet(state.CfgMobility, ...
             "phy.beamManagement.ssbToInitialCSIResourceIDs", []));
-        ssbOrdinal = round(double(selectedSSBIndex)) + 1;
+        activeSSB = double(sixgr.util.structGet(state.CfgMobility, ...
+            "phy.beamManagement.activeSSBIndices0Based", []));
+        ssbOrdinal = find(activeSSB==double(selectedSSBIndex));
         if ~(isfinite(selectedSSBIndex) && selectedSSBIndex == fix(selectedSSBIndex) && ...
-                ssbOrdinal >= 1 && ssbOrdinal <= numel(ssbMap))
+                isscalar(ssbOrdinal) && numel(activeSSB)==numel(ssbMap))
             error("sixgr:truth:MeasuredSSBOutsideBeamMap", ...
                 "The measured SSB index cannot be mapped to an installed initial CSI/data beam.");
         end
@@ -11343,6 +11647,9 @@ methods(Static, Access=private)
             shared=isa(owner,'sixgr.truth.CoupledWaveformStream');
             [availableSlot,measuredCSIRSAvailable,clocked]= ...
                 sixgr.truth.csirsMeasurementAvailability(csiMeasurementRow,shared);
+            [installed,~]=sixgr.truth.DLMeasurementInstallation.eligible(state,ueIdx,csiMeasurementRow,"CSI-RS");
+            assert(installed,'sixgr:truth:CSIReportBeforeMeasurementInstallation', ...
+                'A report cannot consume a diagnostic pre-installation or mismatched CSI observation.');
             if measuredCSIRSAvailable
                 % UE knowledge and report transport have separate clocks.
                 % A future retained receiver row is not yet encodable CSI.
@@ -11542,6 +11849,7 @@ methods(Static, Access=private)
         if upper(string(direction)) == "DL"
             report = sixgr.truth.CoupledTruthRuntime. ...
                 attachTypedCSIUCIPayload(report, cfgExecuted);
+            report=sixgr.truth.UEQueuedCSIAdmission.stamp(state,report,csiMeasurementRow);
             report.DeliveryStatus = "pending_receiver_decoded_csi_uci";
         end
         if ~measuredCSIRSAvailable
@@ -11570,14 +11878,39 @@ methods(Static, Access=private)
                 state.PendingCSITable, struct2table(report, "AsArray", true));
         else
             assert(isscalar(replaceIndex),'sixgr:truth:DuplicateCSIReportObligation','One pending report per occasion.');
+            retired=sixgr.truth.CoupledTruthRuntime.rowLogical( ...
+                state.PendingCSITable(replaceIndex,:),'UECSIPayloadRetired',false);
+            assert(~sixgr.truth.UEQueuedCSIAdmission.waveformBound( ...
+                state,table2struct(state.PendingCSITable(replaceIndex,:))), ...
+                'sixgr:truth:EncodedCSITransportRebinding','A fresh measurement cannot rewrite original prepared UCI.');
             state.PendingCSITable=sixgr.truth.CoupledTruthRuntime.replaceCompatTableRow( ...
                 state.PendingCSITable,replaceIndex,struct2table(report,'AsArray',true));
             trace=state.PUCCHGrantTraceTable;
             hit=find(string(trace.PUCCHGrantId)=="PUCCH-CSI-"+string(report.ReportIdentity));
             if ~isempty(hit)
                 assert(isscalar(hit) && ~trace.GrantExecutedFlag(hit) && ...
-                    trace.UCIBitCount(hit)==report.CSIUCIBitCount, ...
+                    (retired || trace.UCIBitCount(hit)==report.CSIUCIBitCount), ...
                     'sixgr:truth:ChangedCSIResourceAfterBinding','A refreshed measurement cannot change an executed or differently sized CSI grant.');
+                if retired
+                    % A reservation may have been serialized for PUSCH but
+                    % never encoded. Restore only the same physical PUCCH
+                    % reservation; no emitted IQ or received outcome changes.
+                    [~,~,replacement]=sixgr.truth.CoupledTruthRuntime.prepareDLCSIReportAssignment( ...
+                        state,report,double(report.DueSlot));
+                    for field=["PUCCHResourceId","PUCCHPRBStart","PUCCHPRBCount", ...
+                            "PUCCHSymbolStart","PUCCHNumSymbols","ResolvedFormat"]
+                        same=isequaln(trace.(field)(hit,:),replacement.(field));
+                        if field=="PUCCHResourceId"
+                            same=isequal(string(trace.(field)(hit,:)),string(replacement.(field)));
+                        end
+                        assert(same, ...
+                            'sixgr:truth:ChangedCSIResourceAfterBinding', ...
+                            'Fresh local CSI cannot replace an already reserved physical resource.');
+                    end
+                    trace.UCIBitCount(hit)=report.CSIUCIBitCount;
+                    trace.MultiplexedOnPUSCH(hit)=false;
+                    trace=sixgr.truth.CoupledTruthRuntime.setStringValueAt(trace,'PUSCHGrantContextId',hit,"");
+                end
                 trace.SourceSlot(hit)=report.SourceSlot;
                 state.PUCCHGrantTraceTable=trace;
             end
@@ -13558,6 +13891,8 @@ methods(Static, Access=private)
     end
 
     function tf = trsEligibleForServingCell(state, servingCell, ueIdx)
+        [authorized,~]=sixgr.truth.DLMeasurementInstallation.trackingCurrent(state,ueIdx);
+        if ~authorized, tf=false; return; end
         state = sixgr.truth.TRSReceiverState.forUE(state,ueIdx);
         tf = false;
         servingCell = round(double(servingCell));
@@ -13629,6 +13964,17 @@ methods(Static, Access=private)
             lastSuccess = double(sixgr.truth.CoupledTruthRuntime.numericServingStateAt(state, "LastSuccessfulTRSSlotByCell", servingCell, NaN));
             lastDoppler = double(sixgr.truth.CoupledTruthRuntime.numericServingStateAt(state, "LastEstimatedTRSDopplerHzByCell", servingCell, NaN));
         end
+        [authorized,authorityStatus]=sixgr.truth.DLMeasurementInstallation.trackingCurrent(state,ueIdx);
+        if ~authorized
+            % Retain raw historical tracking state for diagnostics, but do
+            % not apply it under a different/uninstalled configuration.
+            trackingEligible=false; trsProcessed=false;
+            timingEstimateAvailable=false; timingEstimateSamples=NaN;
+            cfoEstimateAvailable=false; estimatedCFOHz=NaN;
+            estimatedOscillatorCFOHz=NaN; estimatedCommonFrequencyHz=NaN;
+            physicalDopplerHz=NaN; lastDoppler=NaN;
+            validity="configuration_not_authorized";
+        end
         if trsEnabled
             if trsProcessed
                 if strlength(strtrim(receiverConsumerType)) == 0
@@ -13656,6 +14002,10 @@ methods(Static, Access=private)
             influencedDecision = false;
             receiverStatus = "inactive";
             receiverBlocker = "";
+        end
+        if trsEnabled && ~authorized
+            receiverStatus="diagnostic_history_without_current_configuration_authority";
+            receiverBlocker=authorityStatus;
         end
         ctx = struct( ...
             "TRSGatingActive", logical(trsGatingActive), ...
@@ -15477,6 +15827,7 @@ methods(Static, Access=private)
         executed = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "GrantExecutedFlag", false(n, 1)));
         canceled = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "CanceledAtSweepBoundary", false(n, 1)));
         rightCensored = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "RightCensored", false(n, 1)));
+        suppressed = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "UETransmissionSuppressed", false(n, 1)));
         standaloneDecodeOk = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "PUCCHDecodeOk", false(n, 1)));
         multiplexed = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "MultiplexedOnPUSCH", false(n, 1)));
         runtimeStateUpdated = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "RuntimeStateUpdated", false(n, 1)));
@@ -15507,6 +15858,9 @@ methods(Static, Access=private)
         status(blank & crashed) = "CRASH";
         status(canceled) = "CANCELED";
         status(rightCensored) = "RIGHT_CENSORED";
+        assert(~any(suppressed & (observed | canceled | rightCensored)), ...
+            'sixgr:truth:PUCCHPowerAdmissionPublication','A UE power deferral is neither emitted UCI nor an unknown/censored occasion.');
+        status(suppressed) = "NOT_TRANSMITTED";
         T.Status = status;
 
         classification = repmat("active_integrated", n, 1);
@@ -15517,6 +15871,8 @@ methods(Static, Access=private)
         materialization(canceled) = "active_scheduled_feedback_canceled_at_independent_snr_boundary";
         materialization(rightCensored) = "active_scheduled_feedback_right_censored_at_finite_horizon";
         materialization(executed & crashed) = "active_waveform_feedback_execution_crashed";
+        classification(suppressed)="active_integrated";
+        materialization(suppressed)="UE_preparation_blocked_no_PUCCH_transmission";
 
         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "SignalFamily", "PUCCH", true);
         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "SourceClassification", classification, true);
@@ -15527,6 +15883,7 @@ methods(Static, Access=private)
         gatingEffect = repmat("harq_feedback_resource_grant_and_state_update_when_due", n, 1);
         gatingEffect(isCSI) = "csi_report_decode_and_link_adaptation_update_when_due";
         gatingEffect(observed & staleFeedback) = "stale_feedback_ignored_no_harq_or_adaptation_update";
+        gatingEffect(suppressed)="UE_no_transmission_disposition_gNB_receive_obligation_preserved";
         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "ControlGatingEffect", gatingEffect, true);
         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "RuntimeStateConsumer", "pending_feedback_due_slot", false);
         if any(observed)
@@ -15538,6 +15895,8 @@ methods(Static, Access=private)
             consumer(observed & staleFeedback) = "HARQEntity.stale_feedback_guard";
             T.RuntimeStateConsumer = consumer;
         end
+        T=sixgr.truth.CoupledTruthRuntime.setStringValueAt(T,'RuntimeStateConsumer',find(suppressed), ...
+            "UE_PUCCH_preparation_admission_not_receiver");
         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "RuntimeConsumer", string(T.RuntimeStateConsumer), true);
         T = sixgr.truth.CoupledTruthRuntime.setLogicalColumn(T, "DecodeSuccess", decodeOk);
         T = sixgr.truth.CoupledTruthRuntime.setLogicalColumn(T, "SuccessFlag", observed & decodeOk & ~scoringFailure & status == "PASS");
@@ -15549,11 +15908,12 @@ methods(Static, Access=private)
         valueRole(isCSI) = "explicit_pucch_csi_report_grant_and_decoded_runtime_state";
         valueRole(transferred) = "explicit_pucch_grant_transferred_to_same_waveform_pusch_uci";
         valueRole(transferred & isCSI) = "explicit_csi_report_transferred_to_same_waveform_pusch_uci";
+        valueRole(suppressed)="UE_producer_closed_without_transmission_not_receiver_outcome";
         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "ValueSource", valueSource, true);
         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "ValueRole", valueRole, true);
         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "ValueStatus", "available_runtime_grant_state", false);
         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "ValueDefinition", "canonical PUCCH grant/resource row; waveform decode fields become available only after the feedback due slot is processed", false);
-        T = sixgr.truth.CoupledTruthRuntime.setLogicalColumn(T, "FinalizedFlag", observed | canceled | rightCensored);
+        T = sixgr.truth.CoupledTruthRuntime.setLogicalColumn(T, "FinalizedFlag", observed | canceled | rightCensored | suppressed);
         T = sixgr.truth.CoupledTruthRuntime.setLogicalColumn(T, "PlaceholderFlag", false(n, 1));
         T = sixgr.truth.CoupledTruthRuntime.setLogicalColumn(T, "FallbackFlag", false(n, 1));
         naReason = repmat("", n, 1);
@@ -15561,6 +15921,7 @@ methods(Static, Access=private)
         naReason(~observed & ~canceled & ~rightCensored) = "feedback_due_slot_not_reached_in_this_bounded_run";
         naReason(canceled) = "independent_snr_point_boundary_harq_state_reset";
         naReason(rightCensored) = "finite_horizon_right_censor_no_waveform_claim";
+        naReason(suppressed)="no_PUCCH_transmission_missing_measured_power_reference";
         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "NAReason", naReason, true);
         T = sixgr.truth.CoupledTruthRuntime.applyRuntimeMetadataColumns(T, meta, "PUCCH");
         T = sixgr.truth.CoupledTruthRuntime.fillBlankCategoricalColumns(T, "pucch_grant_trace");
@@ -16092,6 +16453,7 @@ methods(Static, Access=private)
     end
 
     function [dueUEs, dueRNTIs, dueSourceSlots, dueGrantIds, dueEvidenceSources] = collectPUCCHDueIdentityImpl(state, dueSlot)
+        state=sixgr.truth.UEQueuedCSIAdmission.reconcile(state);
         dueUEs = [];
         dueRNTIs = [];
         dueSourceSlots = [];
@@ -16145,7 +16507,8 @@ methods(Static, Access=private)
                 reportDirection = upper(strtrim(string( ...
                     sixgr.truth.CoupledTruthRuntime.rowValue( ...
                     row, "Direction", ""))));
-                if reportDirection ~= "DL"
+                if reportDirection ~= "DL" || ...
+                        sixgr.truth.CoupledTruthRuntime.rowLogical(row,'UECSIPayloadRetired',false)
                     continue;
                 end
                 rowDueSlot = double(sixgr.truth.CoupledTruthRuntime.rowValue( ...
@@ -16170,6 +16533,10 @@ methods(Static, Access=private)
         end
 
         pucchGrants = sixgr.util.structGet(state, "PUCCHGrantTraceTable", table());
+        if ~isempty(pucchGrants)
+            pucchGrants=pucchGrants(~ismember(string(pucchGrants.PUCCHGrantId), ...
+                sixgr.truth.UEQueuedCSIAdmission.retiredGrantIDs(state)),:);
+        end
         if istable(pucchGrants) && ~isempty(pucchGrants)
             for ri = 1:height(pucchGrants)
                 row = pucchGrants(ri, :);
@@ -16179,6 +16546,7 @@ methods(Static, Access=private)
                     continue;
                 end
                 if logical(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "GrantExecutedFlag", false)) || ...
+                        logical(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "UETransmissionSuppressed", false)) || ...
                         logical(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "CanceledAtSweepBoundary", false)) || ...
                         logical(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "RightCensored", false))
                     continue;
@@ -16233,6 +16601,7 @@ methods(Static, Access=private)
                 'New overlapping PUCCH UCI cannot be transferred after PUSCH encoding; retain and resolve the actual physical obligation.');
         end
         if all(encoded), return; end
+        state=sixgr.truth.UEQueuedCSIAdmission.reconcile(state);
         % A retransmitted UL HARQ grant can inherit the GrantSnapshot from
         % its previous transmission.  UCI-on-PUSCH reservation fields are
         % occasion-local runtime state and must never be replayed with that
@@ -16248,6 +16617,8 @@ methods(Static, Access=private)
         if istable(pendingCSI) && ~isempty(pendingCSI)
             csiMask = upper(strtrim(string(pendingCSI.Direction))) == "DL" & ...
                 ~logical(pendingCSI.Processed) & ...
+                ~logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
+                    pendingCSI,'UECSIPayloadRetired',false(height(pendingCSI),1))) & ...
                 ~logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
                 pendingCSI, "RightCensored", false(height(pendingCSI), 1))) & ...
                 abs(double(pendingCSI.DueSlot) - double(dueSlot)) < 1e-9;
@@ -16667,6 +17038,8 @@ methods(Static, Access=private)
                 if bindingValid
                     csiMask = string(pendingCSI.ReportIdentity) == csiReportIdentity & ...
                         ~logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
+                            pendingCSI,'UECSIPayloadRetired',false(height(pendingCSI),1))) & ...
+                        ~logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
                         pendingCSI, "Processed", false(height(pendingCSI), 1))) & ...
                         ~logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
                         pendingCSI, "RightCensored", false(height(pendingCSI), 1)));
@@ -16807,6 +17180,12 @@ methods(Static, Access=private)
                 csiReportIdentity & ~processed & ~censored;
             if any(releaseMask)
                 for ci=reshape(find(releaseMask),1,[])
+                    if sixgr.truth.CoupledTruthRuntime.rowLogical(pendingCSI(ci,:), ...
+                            'UECSIPayloadRetired',false)
+                        % Retired local payload is neither reserialized nor
+                        % rebound. The old reservation remains audit/RX scope.
+                        releaseMask(ci)=false; continue;
+                    end
                     converted=sixgr.truth.CoupledTruthRuntime.reencodeCSIReportTransport( ...
                         table2struct(pendingCSI(ci,:)),state.CfgMobility,"PUCCH");
                     converted=struct2table(converted,'AsArray',true);
@@ -17352,14 +17731,9 @@ methods(Static, Access=private)
         if ~isempty(hit)
             original=table2struct(pending(hit,:));
             report.UEReferenceRecordJSON=string(jsonencode(original));
-            audit=report;
-            % These two reference tokens serve only existing TX scoring.
-            % Neither participates in schema, presence, decode or publication.
-            audit.CSIPart1BitsToken=original.CSIPart1BitsToken;
-            audit.CSIPart2BitsToken=original.CSIPart2BitsToken;
-            audit.CSIPart1BitCount=original.CSIPart1BitCount;
-            audit.CSIPart2BitCount=original.CSIPart2BitCount;
-            audit.CSIUCIBitCount=original.CSIUCIBitCount;
+            % Receiver publication remains independent. Only the private
+            % pending ledger retains original payload/admission ownership.
+            audit=sixgr.truth.joinCSIProducerCompletionAudit(original,report);
             state.PendingCSITable=sixgr.truth.CoupledTruthRuntime.replaceCompatTableRow( ...
                 pending,hit,struct2table(audit,'AsArray',true));
             if report.CSIUCIChannel=="PUSCH"
@@ -17631,6 +18005,7 @@ methods(Static, Access=private)
                     continue;
                 end
                 if logical(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "GrantExecutedFlag", false)) || ...
+                        logical(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "UETransmissionSuppressed", false)) || ...
                         logical(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "CanceledAtSweepBoundary", false)) || ...
                         logical(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "RightCensored", false))
                     continue;
@@ -18028,7 +18403,9 @@ methods(Static, Access=private)
                 traceT, "CanceledAtSweepBoundary", false(height(traceT), 1)));
             sourceSlot = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
                 traceT, "SourceSlot", nan(height(traceT), 1)));
-            mask = ~executed & ~transferred & ~canceled & ~logical(traceT.RightCensored);
+            suppressed=logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
+                traceT,'UETransmissionSuppressed',false(height(traceT),1)));
+            mask = ~executed & ~transferred & ~canceled & ~suppressed & ~logical(traceT.RightCensored);
             if isSweepBoundary
                 % Sweep-boundary PUCCH grants use the existing explicit
                 % cancellation fields below resetIndependentSweepPointLinkState.
@@ -18131,6 +18508,7 @@ methods(Static, Access=private)
             "PUSCHUCITransmissionSlot",NaN,"PUSCHUCIDeliverySlot",NaN, ...
             "PUCCHGrantState", "scheduled_pending_execution", ...
             "GrantScheduledFlag", false, "GrantExecutedFlag", false, ...
+            "UETransmissionSuppressed", false, "UEProducerDisposition", "", "PowerAdmissionObservationID", "", ...
             "MultiplexedOnPUSCH", false, "PUSCHGrantContextId", "", ...
             "MultiplexedBitIndex", NaN, "PUSCHUCIDecodeOk", false, ...
             "CanceledAtSweepBoundary", false, "CancellationSweepPoint", NaN, ...
@@ -18358,6 +18736,9 @@ methods(Static, Access=private)
 
     function [cfgU,connected,feedbackT,reportConfig,part1,part2] = prepareDLCSIReportAssignment(state,report,dueSlot)
         % Pure scheduling/serialization; no waveform, channel or RF execution.
+        [admitted,~]=sixgr.truth.UEQueuedCSIAdmission.eligible(state,report);
+        assert(admitted,'sixgr:truth:RetiredUECSIPayload', ...
+            'New transport preparation requires the original current UE measurement installation.');
         ueIdx = max(1, round(double(report.UEIndex)));
         cfgU = state.CfgMobility;
         [cfgU, ~] = sixgr.truth.CoupledTruthRuntime. ...
@@ -18632,6 +19013,8 @@ methods(Static, Access=private)
             "ObservationEndSampleExclusive", NaN, "ObservationSampleRateHz", NaN, ...
             "DecodedCSIFieldsJSON", "", ...
             "CSIMeasurementID", "", "CSIMeasurementDigest", "", ...
+            "UECSIMeasurementInstallationSHA256", "", "UECSIMeasurementConfigurationSHA256", "", ...
+            "UECSIPayloadRetired", false, "UECSIPayloadAdmissionStatus", "not_bound", ...
             "CSIReferenceSlot", NaN, ...
             "SourceSlotAuthority", "", ...
             "SourceSignal", "", "MeasurementSource", "", "ReportIdentity", "", ...
@@ -18945,6 +19328,10 @@ methods(Static, Access=private)
 
     function row = emptyReceiverTrackingTraceRow()
         row = struct( ...
+            "DLMeasurementConfigurationFamily","","DLMeasurementConfigurationSHA256","", ...
+            "DLMeasurementNCellID",NaN,"DLMeasurementInstallationSHA256","", ...
+            "DLMeasurementAuthorityRequired",NaN,"DLMeasurementAuthorityEligible",NaN, ...
+            "DLMeasurementAuthorityStatus","","DLMeasurementAuthoritySource","", ...
             "UEIndex", NaN, "ServingCell", NaN, "SourceSignal", "", "TRSProcessed", false, ...
             "TRSReceiverConsumerType", "", "TRSReceiverIntegrationStatus", "", "TRSReceiverIntegrationBlocker", "", ...
             "TRSTrackingStateBefore", "", "TRSTrackingStateAfter", "", ...

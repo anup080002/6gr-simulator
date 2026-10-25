@@ -285,11 +285,14 @@ request=cfg.phy.csi.reportConfiguration;
 values=struct('RI',request.Rank,'PMI',0,'CRI',0,'CQI_CW0',7,'LI',0);
 codec=sixgr.phy.mimo.CSIReportConfiguration(request,request.Epoch);
 encoded=codec.build(values);
-for omit=[false true]
+for mode=["selected","omitted","not_requested"]
+    omit=mode=="omitted"; noCSI=mode=="not_requested";
     part1=encoded.Part1Bits;
     if omit, part1=int8(ones(20,1)); end
+    part2=encoded.Part2Bits;
+    if noCSI, part1=int8.empty(0,1); part2=int8.empty(0,1); end
     planned=sixgr.phy.pucch.PUCCHConfigBuilder.planCombined( ...
-        cfg,ue,int8([1;0;1;0]),part1,encoded.Part2Bits,frame);
+        cfg,ue,int8([1;0;1;0]),part1,part2,frame);
     bound=sixgr.phy.pucch.PUCCHConfigBuilder.materialize(cfg,planned);
     trial=sixgr.link.runPUCCHWaveformTrial(cfg,'Carrier',carrier, ...
         'Assignment',bound.Assignment,'Report',bound.Report, ...
@@ -310,9 +313,17 @@ for omit=[false true]
     % shared-runtime timestamp or an assertion of physical RX completion.
     r.AvailableAtSample=max(prepared.EndSampleExclusive,prepared.ReceiveEndSampleExclusive);
     r=withReceived(r,request,values);
+    originalReceived=r;
     r.CSIDeliveryAuditJSON=sixgr.truth.buildCSIDeliveryAudit(r,prepared,receipt,request);
-    if omit
+    assert(isequaln(rmfield(r,'CSIDeliveryAuditJSON'),rmfield(originalReceived,'CSIDeliveryAuditJSON')), ...
+        'Private TX audit must not rewrite the independent receiver outcome.');
+    if omit || noCSI
         assert(r.CSIDeliveryAuditJSON=="" && ~score(r).EmissionVerified);
+        if noCSI
+            assert(isempty(prepared.Tx.Assignment.Data.CSISelection.RequestedReportIDs) && ...
+                isempty(prepared.Tx.Report.Data.CSIReports) && ...
+                ~any(startsWith(string(prepared.Tx.Serialization.Layout.FieldName),"CSI_")));
+        end
     else
         assert(score(r).EmissionVerified && score(r).BitErrorCount==0 && ~score(r).PopulationScopeComplete);
         wrong=receipt; wrong.Identity.TransmissionID="wrong";

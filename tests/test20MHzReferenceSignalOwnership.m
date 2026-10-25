@@ -1,15 +1,19 @@
-function ok=test20MHzReferenceSignalOwnership()
+function ok=test20MHzReferenceSignalOwnership(configPath)
 % Actual NR index generation over the selected run's whole resource calendar.
 % Allocation verification only: not received performance or full-run acceptance.
 setup6GRSimToolkit('Verbose',false);
-s=sixgr.lls6g.config.loadScenarioConfig( ...
-    'simulator/configs/scenarios/lls_tdd_n40_20mhz_64txru_4rx_cdlc100_impaired.yaml');
+if nargin==0
+    configPath='simulator/configs/scenarios/lls_tdd_n40_20mhz_64txru_4rx_cdlc100_impaired.yaml';
+end
+s=sixgr.lls6g.config.loadScenarioConfig(configPath);
 cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
+totalSlots=double(cfg.run.totalSlots);
+validateattributes(totalSlots,{'numeric'},{'scalar','integer','positive','finite'});
 frame=sixgr.phy.FrameStructureEngine(cfg,'FrameCoreOnly',true);
 trs=sixgr.phy.trs.buildTRSConfigFromScenario(cfg);
 srs=sixgr.phy.srs.buildSRSConfigFromScenario(cfg);
 totals=zeros(1,5); dlChecks=0; ulChecks=0;
-for slot0=0:59
+for slot0=0:totalSlots-1
     current=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,slot0+1);
     carrier=sixgr.phy.grid.makeCarrier(current);
     K=12*double(carrier.NSizeGrid); plane=K*double(carrier.SymbolsPerSlot);
@@ -74,8 +78,8 @@ for slot0=0:59
     end
 end
 assert(all(totals>0) && dlChecks>0 && ulChecks>0,'Audit missed an enabled reference family.');
-fprintf('20MHZ_REFERENCE_OWNERSHIP_PASS slots=60 ssb=%d csi=%d trs=%d csiim=%d srs=%d dl_allocations=%d ul_allocations=%d\n', ...
-    totals,dlChecks,ulChecks);
+fprintf('20MHZ_REFERENCE_OWNERSHIP_PASS slots=%d ssb=%d csi=%d trs=%d csiim=%d srs=%d dl_allocations=%d ul_allocations=%d\n', ...
+    totalSlots,totals,dlChecks,ulChecks);
 ok=true;
 end
 

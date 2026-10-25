@@ -1,0 +1,21 @@
+inherits:
+  - ./lls_retained_ssb_pucch_recovery.yaml
+meta:
+  scenario_id: lls_missing_selected_ssb_pucch_recovery
+  research_class: optional_research_experiment
+  description: >
+    Actual beam-0 SSB/SIB1 acquisition leaves configured PUCCH beam-1 power
+    unmeasured. The original slot-10 HARQ/CSI occasion is withheld but its
+    gNB receiver runs. A new original burst supplies beam-1 measurements;
+    the distinct slot-15 periodic CSI/SR obligation can then transmit.
+    RA/TAG and dedicated configuration remain declared component inputs.
+initial_access:
+  ssb:
+    periodicity_ms: 10
+reference_signals:
+  ssb_periodicity_ms: 10
+random_access:
+  ssb_periodicity_ms: 10
+pucch_resources:
+  spatial_relations:
+    reference_signal_id: 1

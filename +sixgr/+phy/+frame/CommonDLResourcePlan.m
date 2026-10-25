@@ -7,6 +7,10 @@ classdef CommonDLResourcePlan
         Carrier
         SIB1Slot0 = []
         BroadcastPeriodSlots = []
+        SIB1PeriodSlots = []
+        SSBPeriodSlots = []
+        SIB1SSBIndex = []
+        SIB1FirstSymbol = []
         SIB1PDSCH
         SIB1PDCCH
         SIB1AdditionalPlans = {}
@@ -34,22 +38,64 @@ classdef CommonDLResourcePlan
                 indices=sixgr.phy.broadcast.resolveSIB1TransmitSSBIndices(origin);
                 origin.phy.ssb.runtimeSSBIndex=indices(1);
                 origin.phy.sib1.transmissionScope="selected_ssb_occasion";
-                [obj.SIB1PDCCH,siCfg,siCarrier,~,obj.SIB1Slot0] = ...
+                [obj.SIB1PDCCH,siCfg,siCarrier,resolution,obj.SIB1Slot0] = ...
                     sixgr.phy.broadcast.resolveSIB1ControlOccasion(obj.Carrier,origin);
                 obj.SIB1PDSCH = sixgr.phy.broadcast.configuredSIB1Allocation(siCarrier,siCfg);
+                obj.SIB1SSBIndex=indices(1);
+                obj.SIB1FirstSymbol=double(resolution.SelectedMonitoringOccasion.FirstSymbol);
+                obj.SIB1PeriodSlots=double(resolution.SelectedMonitoringOccasion.PeriodSlots);
+                assert(resolution.MultiplexingPattern==1 && ...
+                    ~resolution.Context.SharedSpectrum && ...
+                    any(resolution.Context.PDCCHSCSKHz==[15 30]) && ...
+                    obj.SIB1PeriodSlots==2*double(obj.Carrier.SlotsPerFrame), ...
+                    'sixgr:phy:broadcast:UnsupportedSIB1TransmissionCalendar', ...
+                    'Common SI ownership requires the supported non-shared FR1 pattern-1 calendar.');
                 for ordinal=2:numel(indices)
                     child=origin;
                     child.phy.ssb.runtimeSSBIndex=indices(ordinal);
                     obj.SIB1AdditionalPlans{end+1}=sixgr.phy.frame.CommonDLResourcePlan(child);
                 end
                 timing = sixgr.phy.frame.SSBTimingResolver.resolveFromConfig(cfg);
-                obj.BroadcastPeriodSlots = double(timing.PeriodicityMs)*obj.Carrier.SlotsPerSubframe;
-                validateattributes(obj.BroadcastPeriodSlots,{'numeric'}, ...
+                obj.SSBPeriodSlots = double(timing.PeriodicityMs)*obj.Carrier.SlotsPerSubframe;
+                validateattributes(obj.SSBPeriodSlots,{'numeric'}, ...
                     {'scalar','finite','integer','positive'});
+                % Compatibility name consumed by the planned RE exporter:
+                % this is the SI recurrence, NOT the SS/PBCH burst period.
+                obj.BroadcastPeriodSlots=obj.SIB1PeriodSlots;
                 % Keep the absolute Type-0 offset. It may lie beyond the
                 % first SSB period; reducing it modulo the period would
                 % reserve a SIB1 transmission that has not started yet.
             end
+        end
+
+        function rows=sib1TransmissionOccasions(obj,firstSlot0,endSlot0)
+            % Configured TX subset, not the full two-slot monitoring set and
+            % not evidence of emitted/received samples. Half-open horizon.
+            for value={firstSlot0,endSlot0}
+                v=value{1};
+                assert(isnumeric(v) && isreal(v) && isscalar(v) && isfinite(v) && ...
+                    v>=0 && v==fix(v) && v<flintmax/160, ...
+                    'sixgr:phy:frame:InvalidSIB1CalendarWindow', ...
+                    'Use exact nonnegative numeric absolute slot boundaries.');
+            end
+            assert(endSlot0>=firstSlot0,'sixgr:phy:frame:InvalidSIB1CalendarWindow', ...
+                'The SI calendar window must be half-open [first,end), end >= first.');
+            rows=table(zeros(0,1),zeros(0,1),zeros(0,1),zeros(0,1),zeros(0,1),zeros(0,1), ...
+                'VariableNames',{'SSBIndex','AbsoluteSlot','FirstConfiguredAbsoluteSlot', ...
+                'PeriodSlots','RecurrenceIndex0Based','FirstSymbol'});
+            if ~isempty(obj.SIB1Slot0) && endSlot0>firstSlot0
+                k=max(0,ceil((double(firstSlot0)-obj.SIB1Slot0)/obj.SIB1PeriodSlots));
+                first=obj.SIB1Slot0+k*obj.SIB1PeriodSlots;
+                slots=(first:obj.SIB1PeriodSlots:double(endSlot0)-1).';
+                n=numel(slots);
+                rows=table(repmat(obj.SIB1SSBIndex,n,1),slots,repmat(obj.SIB1Slot0,n,1), ...
+                    repmat(obj.SIB1PeriodSlots,n,1),(k:k+n-1).',repmat(obj.SIB1FirstSymbol,n,1), ...
+                    'VariableNames',rows.Properties.VariableNames);
+            end
+            for ordinal=1:numel(obj.SIB1AdditionalPlans)
+                rows=[rows;obj.SIB1AdditionalPlans{ordinal}.sib1TransmissionOccasions(firstSlot0,endSlot0)]; %#ok<AGROW>
+            end
+            rows=sortrows(rows,{'AbsoluteSlot','SSBIndex'});
         end
 
         function obj = prepareSlot(obj,slot0)
@@ -169,6 +215,8 @@ classdef CommonDLResourcePlan
                 obj.SIB1AdditionalPlans{ordinal}.validateSIB1References();
             end
             obj.validateSIB1TRS();
+            obj.validateSIB1SSB();
+            obj.validateSIB1BeamCollisions();
             if isempty(obj.SIB1Slot0) || ...
                     ~logical(sixgr.util.structGet(obj.Config,'phy.csirs.enable',false))
                 return;
@@ -189,6 +237,55 @@ classdef CommonDLResourcePlan
                     ['Configured SIB1/Type0 and CSI-RS overlap on %d carrier REs in absolute slot0 %d. ' ...
                     'Correct reference_signals.csi_rs_offset_slots or the authored reference allocation; ' ...
                     'common SI cannot inherit dedicated CSI-RS puncturing.'],numel(collision),slot0);
+            end
+        end
+
+        function validateSIB1SSB(obj)
+            for ordinal=1:numel(obj.SIB1AdditionalPlans)
+                obj.SIB1AdditionalPlans{ordinal}.validateSIB1SSB();
+            end
+            if isempty(obj.SIB1Slot0), return; end
+            % Native index support only. No encoding, sample generation or
+            % reception is performed by this configured collision proof.
+            timing=sixgr.phy.frame.SSBTimingResolver.resolveFromConfig(obj.Config);
+            burst=sixgr.phy.ia.SSBBurstPlan.fromConfig(obj.Config,timing);
+            sourcePeriod=double(timing.PeriodicityMs)*(double(timing.SSBSubcarrierSpacingKHz)/15)*14;
+            starts=mod(double(timing.CandidateStartSymbols(double(burst.ActiveSSBIndices0Based)+1)),sourcePeriod);
+            indices=unique(double([nrPSSIndices();nrSSSIndices(); ...
+                nrPBCHIndices(obj.Carrier.NCellID);nrPBCHDMRSIndices(obj.Carrier.NCellID)]));
+            native=false(240,max(starts)+4);
+            for first=reshape(starts,1,[])
+                native(indices+240*first)=true;
+            end
+            info=struct('SSBTiming',timing,'SSBGridValidation',timing.GridRelationship);
+            support=sixgr.phy.broadcast.mixedSSBGridOccupancy(double(native),info,obj.Carrier);
+            cycle=lcm(obj.SIB1PeriodSlots,obj.SSBPeriodSlots);
+            for slot=obj.SIB1Slot0:obj.SIB1PeriodSlots:obj.SIB1Slot0+cycle-1
+                carrier=obj.carrierAt(slot);
+                first=mod(slot,obj.SSBPeriodSlots)*double(carrier.SymbolsPerSlot);
+                columns=first+(1:double(carrier.SymbolsPerSlot));
+                ssb=false(12*carrier.NSizeGrid,carrier.SymbolsPerSlot);
+                valid=columns<=size(support,2);
+                ssb(:,valid)=support(:,columns(valid));
+                re=obj.sib1NativeRE(slot);
+                assert(~any(ssb(re+1)), 'sixgr:phy:frame:SIB1SSBCollision', ...
+                    'Configured SI/Type0 overlaps native SS/PBCH support at absolute slot %d.',slot);
+            end
+        end
+
+        function validateSIB1BeamCollisions(obj)
+            plans=[{obj},obj.SIB1AdditionalPlans];
+            for a=1:numel(plans)
+                for b=a+1:numel(plans)
+                    left=plans{a}; right=plans{b};
+                    assert(left.SIB1PeriodSlots==right.SIB1PeriodSlots, ...
+                        'sixgr:phy:frame:SIB1BeamCalendarMismatch','Cell SI associations must use one native Type-0 period.');
+                    if mod(left.SIB1Slot0-right.SIB1Slot0,left.SIB1PeriodSlots)~=0, continue; end
+                    slot=max(left.SIB1Slot0,right.SIB1Slot0);
+                    assert(isempty(intersect(left.sib1NativeRE(slot),right.sib1NativeRE(slot))), ...
+                        'sixgr:phy:broadcast:SIB1BeamResourceCollision', ...
+                        'Distinct configured SI beam codewords collide at recurring slot %d.',slot);
+                end
             end
         end
 
@@ -221,6 +318,14 @@ classdef CommonDLResourcePlan
         end
     end
     methods (Access=private)
+        function re=sib1NativeRE(obj,slot0)
+            carrier=obj.carrierAt(slot0);
+            data=nrPDSCHIndices(carrier,obj.SIB1PDSCH);
+            pilots=nrPDSCHDMRSIndices(carrier,obj.SIB1PDSCH);
+            [control,~,controlPilots]=nrPDCCHResources(carrier,obj.SIB1PDCCH);
+            re=unique(mod(double([data(:);pilots(:);control(:);controlPilots(:)])-1, ...
+                12*carrier.NSizeGrid*carrier.SymbolsPerSlot));
+        end
         function carrier = carrierAt(obj,slot0)
             validateattributes(slot0,{'numeric'},{'scalar','real','finite','integer','nonnegative'});
             carrier = obj.Carrier;

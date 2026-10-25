@@ -52,6 +52,7 @@ timing = sixgr.phy.frame.PRACHOccasionResolver.resolve( ...
     "CommonDirection", common, ...
     "ResolvedDirection", resolved);
 
+sixgr.phy.frame.validatePRACHPeriodAliases(cfg,timing);
 rows = timing.Occasions;
 perPeriod = height(rows);
 if perPeriod < 1

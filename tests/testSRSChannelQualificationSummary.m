@@ -63,6 +63,18 @@ summary=sixgr.truth.summarizeSRSChannelQualification(T);
 assert(summary.AllTrialsQualified && summary.NMSE_dB==-Inf);
 summary=sixgr.truth.summarizeSRSChannelQualification(table());
 assert(~summary.MeasurementAvailable && ~summary.AnyQualifiedTrial && isnan(summary.NMSE_dB));
+startup=sixgr.truth.SharedDataCompletionRuntime.emptyLinkTrialTable(0);
+originalStartup=startup;
+emptySummary=sixgr.truth.summarizeSRSChannelQualification(startup);
+assert(isequaln(summary,emptySummary)&&isequaln(startup,originalStartup), ...
+    'An empty original runtime schema has no measured or qualified SRS trials.');
+badStatus=T; badStatus.Status=strings(height(T),0);
+try
+    sixgr.truth.summarizeSRSChannelQualification(badStatus);
+    error('test:MissingSRSStatusGuard','A populated row must not have a zero-width status.');
+catch cause
+    assert(string(cause.identifier)=="sixgr:truth:InvalidSRSStatusColumn");
+end
 fprintf('SRS_QUALIFICATION_SUMMARY_PASS independent_reference_required=1 composite_diagnostic_qualified=0\n');
 ok=true;
 end

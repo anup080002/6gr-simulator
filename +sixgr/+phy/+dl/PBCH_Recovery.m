@@ -59,30 +59,31 @@ Nr = size(rxGrid, 3);
 % Get NCellID and Lmax
 % -----------------------------
 if isstruct(sync) && isfield(sync, 'NCellID')
-    ncellid = double(sync.NCellID);
+    rawCellID=sync.NCellID;
+    assert(isnumeric(rawCellID)&&isreal(rawCellID)&&isscalar(rawCellID)&& ...
+        isfinite(rawCellID)&&rawCellID==fix(rawCellID)&&rawCellID>=0&&rawCellID<=1007, ...
+        'sixgr:phy:ia:InvalidCellID','PBCH NCellID must be a numeric integer 0..1007.');
+    ncellid = double(rawCellID);
 else
     error('sync must contain NCellID.');
 end
 
 Lmax = [];
 if isstruct(sync) && isfield(sync, 'Lmax')
-    Lmax = double(sync.Lmax);
+    Lmax = sync.Lmax;
 end
 if isempty(Lmax)
     Lmax = sixgr.util.structGet(cfg, 'phy.ssb.Lmax', 8);
-    Lmax = double(Lmax);
 end
-if ~any(Lmax == [4, 8, 64])
+if ~(isnumeric(Lmax)&&isreal(Lmax)&&isscalar(Lmax)&&any(Lmax == [4, 8, 64]))
     error("sixgr:phy:ia:InvalidLmax", ...
-        "PBCH recovery requires Lmax 4, 8, or 64; got %g.", Lmax);
+        "PBCH recovery requires numeric Lmax 4, 8, or 64.");
 end
+Lmax=double(Lmax);
 
-% PBCH DM-RS only supports ibar_SSB in [0..7]
-if Lmax == 4
-    ibarCandidates = 0:3;
-else
-    ibarCandidates = 0:7;
-end
+% TS 38.211 7.4.1.4.1: Lmax=4 uses iBar=iSSB+4*n_hf.
+% Search both half-frame hypotheses; the received BCH must agree with it.
+ibarCandidates = 0:7;
 singleDMRSSelection=strcmpi(string(opt.CandidateSelection), ...
     "dmrs_metric_then_single_decode");
 if ~singleDMRSSelection&&~strcmpi(string(opt.CandidateSelection),"crc_aided_legacy")
@@ -159,13 +160,8 @@ for k = 1:numel(ibarCandidates)
     refGrid(dmrsInd) = nrPBCHDMRS(ncellid, ibar);
     refGrid(sssInd)  = nrSSS(ncellid);
 
-    try
-        [hest, nVar] = nrChannelEstimate(rxGrid, refGrid, ...
-            'AveragingWindow', opt.AveragingWindow);
-    catch
-        % Some versions return 3 outputs; accept that too
-        [hest, nVar] = nrChannelEstimate(rxGrid, refGrid);
-    end
+    [hest, nVar] = nrChannelEstimate(rxGrid, refGrid, ...
+        'AveragingWindow', opt.AveragingWindow);
 
     nVarUse = max(double(nVar), double(opt.NoiseVarFloor));
 
@@ -198,7 +194,9 @@ for k = 1:numel(ibarCandidates)
     info.PerCandidate(k).ErrFlag = errFlag;
     info.PerCandidate(k).msbidxoffset = msbidxoffset;
 
-    if errFlag == 0 || singleDMRSSelection
+    identityConsistent = localHalfFrameIdentity(Lmax,ibar,nHalfFrame);
+    info.PerCandidate(k).IdentityConsistent = identityConsistent;
+    if (errFlag == 0 && identityConsistent) || singleDMRSSelection
         selectedFound = true;
         selected.ibar = ibar;
         selected.v = v;
@@ -230,12 +228,8 @@ if ~selectedFound
     refGrid(dmrsInd) = nrPBCHDMRS(ncellid, ibar);
     refGrid(sssInd)  = nrSSS(ncellid);
 
-    try
-        [hest, nVar] = nrChannelEstimate(rxGrid, refGrid, ...
-            'AveragingWindow', opt.AveragingWindow);
-    catch
-        [hest, nVar] = nrChannelEstimate(rxGrid, refGrid);
-    end
+    [hest, nVar] = nrChannelEstimate(rxGrid, refGrid, ...
+        'AveragingWindow', opt.AveragingWindow);
     nVarUse = max(double(nVar), double(opt.NoiseVarFloor));
 
     pbchRx = nrExtractResources(pbchInd, rxGrid);
@@ -255,6 +249,7 @@ if ~selectedFound
     [scrblk, errFlag, trblk, sfn4lsb, nHalfFrame, msbidxoffset] = ...
         nrBCHDecode(pbchBits, double(opt.PolarListLength), double(Lmax), ncellid);
 
+    info.PolarDecodesAttempted = info.PolarDecodesAttempted + 1;
     selected.ibar = ibar;
     selected.v = v;
     selected.metric = bestMetric;
@@ -271,24 +266,23 @@ if ~selectedFound
 end
 
 % -----------------------------
-% Derive SSBIndex and k_SSB (matches MathWorks example logic)
+% Derive SSB index. The full kSSB is assembled from decoded MIB below.
 % -----------------------------
 ssbIndex = selected.v;
-k_SSB = 0;
 
 if Lmax == 64
     msb = localBitsToInt(selected.msbidxoffset);
     ssbIndex = ssbIndex + msb * 8;
-    k_SSB = 0;
-else
-    k_SSB = double(selected.msbidxoffset) * 16;
 end
 
 % -----------------------------
 % Pack outputs
 % -----------------------------
 pb = struct();
-pb.Ok = logical(selected.errFlag == 0);
+pb.BCHCRCValid = logical(selected.errFlag == 0);
+pb.CandidateIdentityConsistent = localHalfFrameIdentity( ...
+    Lmax,selected.ibar,selected.nHalfFrame);
+pb.Ok = pb.BCHCRCValid && pb.CandidateIdentityConsistent;
 pb.ErrFlag = selected.errFlag;
 pb.NCellID = ncellid;
 
@@ -296,7 +290,6 @@ pb.iBar_SSB = selected.ibar;
 pb.v = selected.v;
 pb.SSBIndex = double(ssbIndex);
 
-pb.k_SSB = double(k_SSB);
 pb.msbidxoffset = selected.msbidxoffset;
 
 pb.SFN4LSB = selected.sfn4lsb;
@@ -341,7 +334,14 @@ pb.MIBIntraFreqReselectionBit = double(sixgr.util.structGet(mib, "IntraFreqResel
 pb.MIBSFN4LSBValue = localBitsToInt(selected.sfn4lsb);
 pb.MIBSFN4LSBBitString = localBitsToString(selected.sfn4lsb);
 pb.MIBHalfFrameBit = localFirstBitScalar(selected.nHalfFrame);
-pb.MIBKSSBSubcarrierOffset = double(k_SSB);
+kssbEvidence=sixgr.phy.broadcast.resolveDecodedKSSB( ...
+    sixgr.util.structGet(mib,"SSBSubcarrierOffset",NaN), ...
+    selected.msbidxoffset,Lmax,pb.Ok);
+for field=string(fieldnames(kssbEvidence)).'
+    pb.(field)=kssbEvidence.(field);
+end
+% v2 corrects both formerly ambiguous/high-only offset fields to full kSSB.
+pb.k_SSB=pb.DecodedKSSB;
 pb.MIBSSBIndex = double(ssbIndex);
 evidence = sixgr.util.structGet(selected, "evidence", struct());
 pb.ChannelEstimateAvailable = logical(sixgr.util.structGet(evidence, "ChannelEstimateAvailable", false));
@@ -414,6 +414,14 @@ end
 end
 
 % -------------------------------------------------------------------------
+function valid=localHalfFrameIdentity(Lmax,ibar,halfFrame)
+valid=(isnumeric(halfFrame)||islogical(halfFrame))&&isreal(halfFrame)&& ...
+    isscalar(halfFrame)&&any(halfFrame==[0 1]);
+if valid && Lmax==4
+    valid=floor(double(ibar)/4)==double(halfFrame);
+end
+end
+
 function evidence = localPBCHReceiverEvidence( ...
         hest, pbchHest, pbchEq, csi, dmrsInd, nVarUse, nVarEstimator)
 evidence = struct( ...

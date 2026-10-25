@@ -4878,6 +4878,8 @@ def _filesystem_artifact_kind_and_mime(path: Path) -> tuple[str, str] | None:
         return "table_csv", "text/csv"
     if suffix == ".json":
         return "json", "application/json"
+    if suffix in {".yaml", ".yml"}:
+        return "yaml", "application/x-yaml"
     if suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}:
         return "image", f"image/{'jpeg' if suffix in {'.jpg', '.jpeg'} else suffix[1:]}"
     if suffix == ".svg":
@@ -6806,6 +6808,50 @@ def build_derived_parameter_bindings_from_config(config_payload: dict[str, Any])
             }
         )
     return rows
+
+
+def build_run_resolved_input_download(run_id: int, fmt: str) -> tuple[bytes, str, str]:
+    """Return immutable run input bytes, not a draft or evidence wrapper.
+
+    The sidecar binds persisted bytes, not hardware execution or successful
+    replay on another machine. External dependencies still need that machine's
+    compatible code/catalogs. Never regenerate missing snapshots here.
+    """
+    fmt = str(fmt or "yaml").strip().lower()
+    if fmt not in {"yaml", "json"}:
+        raise ValueError("Resolved input format must be yaml or json.")
+    run_row = fetch_run(int(run_id))
+    if run_row is None:
+        raise KeyError(f"Run {run_id} was not found.")
+    artifacts = merge_db_and_filesystem_artifacts(fetch_artifacts(int(run_id)), run_row)
+
+    def original_bytes(logical_path: str) -> bytes:
+        art = find_artifact_by_logical_path(artifacts, logical_path)
+        if art is None:
+            raise ValueError(f"Original resolved input unavailable: {logical_path}")
+        if art.get("run_id") is not None and int(art["run_id"]) != int(run_id):
+            raise ValueError("Resolved input artifact belongs to a different run.")
+        # Avoid the preview cache: validate the bytes fetched for this request,
+        # including filesystem-backed artifacts changed since an earlier read.
+        reader = getattr(fetch_artifact_bytes, "__wrapped__", fetch_artifact_bytes)
+        raw = reader(int(art["artifact_id"]))
+        if not isinstance(raw, bytes) or not raw:
+            raise ValueError(f"Original resolved input is empty: {logical_path}")
+        return raw
+
+    identity = json.loads(original_bytes("meta/scenario_config_identity.json").decode("utf-8"))
+    if not isinstance(identity, dict) or identity.get("SchemaVersion") != "sixgr_resolved_config_identity/v1":
+        raise ValueError("Unsupported resolved input identity schema.")
+    hash_field = "ResolvedYAMLSHA256" if fmt == "yaml" else "ResolvedJSONSHA256"
+    expected = identity.get(hash_field)
+    if not isinstance(expected, str) or re.fullmatch(r"[0-9A-Fa-f]{64}", expected) is None:
+        raise ValueError(f"Original resolved input identity lacks {hash_field}.")
+    raw = original_bytes(f"meta/scenario_config_resolved.{fmt}")
+    if hashlib.sha256(raw).hexdigest() != expected.lower():
+        raise ValueError("Original resolved input SHA256 mismatch; download rejected.")
+    stem = safe_token(str(run_row.get("run_tag") or f"run_{run_id}")) or f"run_{run_id}"
+    content_type = "text/yaml; charset=utf-8" if fmt == "yaml" else "application/json; charset=utf-8"
+    return raw, content_type, f"{stem}_resolved_input.{fmt}"
 
 
 def build_run_config_download(run_id: int, fmt: str) -> tuple[bytes, str, str]:
@@ -11776,6 +11822,21 @@ CONTROL_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("Status", "Status"),
     ],
 }
+
+
+# Original runtime authority is separate from successful diagnostic reception.
+# Missing historical fields remain absent; a finite measurement is not a grant.
+for _dl_measurement_kind in ("csirs_trials", "trs_trials"):
+    CONTROL_TRIAL_PREVIEW_COLUMNS[_dl_measurement_kind].extend([
+        ("DLMeasurementConfigurationFamily", "DL measurement configuration family"),
+        ("DLMeasurementConfigurationSHA256", "DL measurement configuration SHA"),
+        ("DLMeasurementNCellID", "DL measurement configured cell ID"),
+        ("DLMeasurementInstallationSHA256", "DL measurement installation SHA"),
+        ("DLMeasurementAuthorityRequired", "Operational authority required"),
+        ("DLMeasurementAuthorityEligible", "Operational authority eligible"),
+        ("DLMeasurementAuthorityStatus", "Operational authority status"),
+        ("DLMeasurementAuthoritySource", "Operational authority source"),
+    ])
 
 
 RX_RF_MEASUREMENT_PREVIEW_COLUMNS = [
@@ -22154,7 +22215,7 @@ return `<article class="ue-status-card ${esc(ue.health || '')}"><div class="tool
   function runActions(r, next) {
     const id = esc(r.run_id);
     const deleteDisabled = isActiveRun(r) ? ' disabled title="Stop or finish this run before deleting it."' : '';
-    return `<div class="toolbar" style="margin:0"><a class="button-link primary" href="/plots?run_id=${id}">Results</a><a class="button-link" href="/realtime?run_id=${id}">Live</a><details class="action-menu"><summary class="button-link">More</summary><div class="action-menu-body"><a class="button-link" href="/tables?run_id=${id}">Tables</a><a class="button-link" href="/outputs?run_id=${id}">Files</a><a class="button-link" href="/analytics?run_id=${id}">Analytics</a><a class="button-link" href="/run-config/download?run_id=${id}&format=yaml">Download YAML</a><button type="button" data-compare-baseline="${id}">Use as baseline</button><button type="button" data-compare-candidate="${id}">Use as candidate</button><form method="post" action="/admin/delete-run" onsubmit="return confirm('Delete run ${id} and every stored output file? This cannot be undone.');"><input type="hidden" name="run_id" value="${id}"><input type="hidden" name="next" value="${esc(next)}"><button type="submit" class="danger"${deleteDisabled}>Delete run</button></form></div></details></div>`;
+    return `<div class="toolbar" style="margin:0"><a class="button-link primary" href="/plots?run_id=${id}">Results</a><a class="button-link" href="/realtime?run_id=${id}">Live</a><details class="action-menu"><summary class="button-link">More</summary><div class="action-menu-body"><a class="button-link" href="/tables?run_id=${id}">Tables</a><a class="button-link" href="/outputs?run_id=${id}">Files</a><a class="button-link" href="/analytics?run_id=${id}">Analytics</a><a class="button-link" href="/run-config/download?run_id=${id}&format=yaml">Download config evidence YAML</a><a class="button-link" href="/run-config/resolved-input?run_id=${id}&format=yaml">Original resolved input YAML</a><button type="button" data-compare-baseline="${id}">Use as baseline</button><button type="button" data-compare-candidate="${id}">Use as candidate</button><form method="post" action="/admin/delete-run" onsubmit="return confirm('Delete run ${id} and every stored output file? This cannot be undone.');"><input type="hidden" name="run_id" value="${id}"><input type="hidden" name="next" value="${esc(next)}"><button type="submit" class="danger"${deleteDisabled}>Delete run</button></form></div></details></div>`;
   }
   function runsTable(runList, empty, next, scrollKey) {
     const runRows = (runList || []).map(r => {
@@ -22404,7 +22465,7 @@ return `<article class="ue-status-card ${esc(ue.health || '')}"><div class="tool
           <label class="upload-dropzone" for="scenarioFileInput"><span><strong>Upload a YAML configuration</strong>Choose a .yaml or .yml file to load it into this workspace.</span></label>
           <div class="toolbar" style="margin-top:10px">
             <a class="button-link" data-page="scenario" href="/scenario">Edit parameters</a>
-            <a class="button-link" href="/scenario/download?scenario=${encodeURIComponent(root.scenario || '')}&format=yaml">Download YAML</a>
+            <a class="button-link" href="/scenario/download?scenario=${encodeURIComponent(root.scenario || '')}&format=yaml">Download source YAML (inheritance required)</a>
           </div>
         </section>
         <section class="panel">
@@ -22614,7 +22675,7 @@ return `<article class="ue-status-card ${esc(ue.health || '')}"><div class="tool
       <section class="panel">
         <h3>${esc(active.page)}</h3>
         <p class="subtle">${esc(active.requirement || '')}</p>
-        ${active.page === 'Configure' ? `<div class="grid two"><div>${objectTable({SourceYAMLSHA256:bindingRow.SourceYAMLSHA256 || 'unavailable',EffectiveYAMLSHA256:bindingRow.EffectiveYAMLSHA256 || 'unavailable',ResolvedYAMLSHA256:bindingRow.ResolvedYAMLSHA256 || 'unavailable',ExecutedYAMLSHA256:bindingRow.ExecutedYAMLSHA256 || 'unavailable',HashesMatch:bindingRow.HashesMatch ?? 'unavailable',DiffStatus:bindingRow.HashesMatch === true || String(bindingRow.HashesMatch).toLowerCase() === 'true' ? 'resolved and executed YAML are byte-identical' : 'resolved/executed YAML differ or are unavailable',WebGUIAuthMode:bindingRow.WebGUIAuthMode || 'unavailable',WebGUISecured:bindingRow.WebGUISecured ?? 'unavailable'}, 'Configuration binding is unavailable.')}</div><div><div class="toolbar"><a class="button-link" href="/scenario?scenario=${encodeURIComponent(root.scenario || '')}">Source configuration</a><a class="button-link" href="/scenario/download?scenario=${encodeURIComponent(root.scenario || '')}&format=yaml">Download source YAML</a><a class="button-link" href="${runId ? `/run-config/download?run_id=${encodeURIComponent(runId)}&format=yaml` : '#'}">Download executed config</a>${evidenceButton(configBinding)}</div></div></div>` : ''}
+        ${active.page === 'Configure' ? `<div class="grid two"><div>${objectTable({SourceYAMLSHA256:bindingRow.SourceYAMLSHA256 || 'unavailable',EffectiveYAMLSHA256:bindingRow.EffectiveYAMLSHA256 || 'unavailable',ResolvedYAMLSHA256:bindingRow.ResolvedYAMLSHA256 || 'unavailable',ExecutedYAMLSHA256:bindingRow.ExecutedYAMLSHA256 || 'unavailable',HashesMatch:bindingRow.HashesMatch ?? 'unavailable',DiffStatus:bindingRow.HashesMatch === true || String(bindingRow.HashesMatch).toLowerCase() === 'true' ? 'resolved and executed YAML are byte-identical' : 'resolved/executed YAML differ or are unavailable',WebGUIAuthMode:bindingRow.WebGUIAuthMode || 'unavailable',WebGUISecured:bindingRow.WebGUISecured ?? 'unavailable'}, 'Configuration binding is unavailable.')}</div><div><div class="toolbar"><a class="button-link" href="/scenario?scenario=${encodeURIComponent(root.scenario || '')}">Source configuration</a><a class="button-link" href="/scenario/download?scenario=${encodeURIComponent(root.scenario || '')}&format=yaml">Download source YAML</a><a class="button-link" href="${runId ? `/run-config/download?run_id=${encodeURIComponent(runId)}&format=yaml` : '#'}">Download config evidence</a><a class="button-link" href="${runId ? `/run-config/resolved-input?run_id=${encodeURIComponent(runId)}&format=yaml` : '#'}">Download original resolved input YAML</a>${evidenceButton(configBinding)}</div></div></div>` : ''}
         ${active.page === 'Overview' ? `<div class="grid three"><div class="tile"><h4>31 subcases</h4>${evidenceButton(isReanalysis ? recomputedSubcases : subcases)}</div><div class="tile"><h4>163 components</h4>${evidenceButton(isReanalysis ? recomputedComponents : components)}</div><div class="tile"><h4>107 values / 387 rules</h4>${evidenceButton(isReanalysis ? recomputedValues : values)} ${evidenceButton(isReanalysis ? recomputedAcceptance : acceptance)}</div></div>${isReanalysis ? `<div class="tile" style="margin-top:12px"><h4>Original → recomputed PASS</h4><p class="subtle">Values ${esc((reanalysis.OriginalPassCounts || {}).Values ?? '—')} → ${esc((reanalysis.RecomputedPassCounts || {}).Values ?? '—')} · Components ${esc((reanalysis.OriginalPassCounts || {}).Components ?? '—')} → ${esc((reanalysis.RecomputedPassCounts || {}).Components ?? '—')} · Subcases ${esc((reanalysis.OriginalPassCounts || {}).Subcases ?? '—')} → ${esc((reanalysis.RecomputedPassCounts || {}).Subcases ?? '—')} · Acceptance ${esc((reanalysis.OriginalPassCounts || {}).Acceptance ?? '—')} → ${esc((reanalysis.RecomputedPassCounts || {}).Acceptance ?? '—')}</p></div>` : ''}` : ''}
         ${active.page === 'Validation' ? `<div class="toolbar">${evidenceButton(isReanalysis ? recomputedValues : values)}${evidenceButton(isReanalysis ? recomputedAcceptance : acceptance)}${evidenceButton(audit)}${evidenceButton(manifest)}</div>` : ''}
         <div style="margin-top:12px">${artifactTable(visible, `No persisted artifacts match ${active.page} for this run.`)}</div>
@@ -23273,7 +23334,7 @@ def build_phy_grid_page(run_id: int | None = None, message: str = "", user_profi
     <label>UE <select id="phyUeSelect"><option value="">Auto / broadcast</option></select></label>
     <label>Slots <input id="phySlotLimit" type="number" value="50" min="1" max="200" style="width:90px"></label>
     <button type="button" id="phyRefresh">Refresh Grid</button>
-    <a class="button-link" id="phyRunConfigDownload" href="#">Download Running Config</a>
+    <a class="button-link" id="phyRunConfigDownload" href="#">Download run config evidence</a>
     <a class="button-link secondary" id="phyTablesLink" href="/tables">Open Source Tables</a>
     <a class="button-link secondary" id="phyApiLink" href="#">Open Grid JSON</a>
   </div>
@@ -23576,19 +23637,21 @@ def build_scenario_io_page(message: str = "", user_profile: dict[str, Any] | Non
     )
     latest = quick_latest_run_id()
     latest_download = f"/run-config/download?run_id={latest}&format=yaml" if latest else "#"
+    latest_input = f"/run-config/resolved-input?run_id={latest}&format=yaml" if latest else "#"
     message_html = f'<section class="panel"><strong>{html.escape(message)}</strong></section>' if message else ""
     body = f"""
 {message_html}
 <section class="panel">
   <h2>Scenario Upload / Download</h2>
-  <p class="muted">Download a catalog scenario, download the exact config for a running/completed run, or upload a new YAML scenario into the catalog. Uploaded files must be YAML mappings and stay inside <code>simulator/configs/scenarios</code>.</p>
+  <p class="muted">Catalog source YAML still requires its inheritance files. Run config evidence is an audit wrapper, not a runnable scenario. Original resolved input downloads preserve saved bytes and validate the run's identity hash; they do not certify external dependencies or successful replay on another machine. Uploaded files must be YAML mappings and stay inside <code>simulator/configs/scenarios</code>.</p>
   <div class="toolbar">
     <form method="get" action="/scenario/download">
       <label>Catalog Scenario <select name="scenario">{options}</select></label>
-      <label>Format <select name="format"><option value="yaml">YAML</option><option value="json">Resolved JSON</option></select></label>
+      <label>Format <select name="format"><option value="yaml">Source YAML (inheritance required)</option><option value="json">Browser-resolved JSON (not executed input)</option></select></label>
       <button type="submit">Download Scenario</button>
     </form>
-    <a class="button-link" href="{html.escape(latest_download)}">Download Latest Run Config</a>
+    <a class="button-link" href="{html.escape(latest_download)}">Download latest run config evidence</a>
+    <a class="button-link" href="{html.escape(latest_input)}">Download original resolved input YAML</a>
   </div>
 </section>
 <section class="panel">
@@ -26595,6 +26658,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 payload, content_type, filename = build_run_config_download(
                     int(run_id),
                     params.get("format", ["yaml"])[0],
+                )
+                self.respond_bytes_download(payload, filename=filename, content_type=content_type)
+                return
+            if parsed.path == "/run-config/resolved-input":
+                run_id = parse_optional_int(params.get("run_id", [None])[0])
+                if run_id is None:
+                    raise ValueError("run_id is required to download original resolved input.")
+                payload, content_type, filename = build_run_resolved_input_download(
+                    int(run_id), params.get("format", ["yaml"])[0],
                 )
                 self.respond_bytes_download(payload, filename=filename, content_type=content_type)
                 return

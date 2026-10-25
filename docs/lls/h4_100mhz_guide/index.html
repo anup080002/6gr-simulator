@@ -2,22 +2,24 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="An implementation-linked field guide to SixGR's 4 GHz, 100 MHz TDD waveform link-level simulation.">
-  <title>SixGR Field Guide · 4 GHz / 100 MHz TDD</title>
+  <meta name="description" content="The single SixGR implementation guide: LLS fundamentals, ports, layers, algorithms, mathematics, YAML, measurements and standards references for H4 and n40 scenarios.">
+  <title>SixGR Field Guide · Implementation, Mathematics and Standards</title>
   <link rel="stylesheet" href="guide.css">
-  <script defer src="chapters.js"></script><script defer src="guide.js"></script>
+  <script defer src="chapters.js"></script><script defer src="implementation.js"></script><script defer src="guide.js"></script>
 </head>
 <body>
   <a class="skip" href="#content">Skip to chapter</a>
   <aside class="sidebar" id="sidebar">
     <a class="brand" href="#start"><span class="brand-mark">6G</span><span>SixGR<small>THE LINK-LEVEL FIELD GUIDE</small></span></a>
-    <label class="search-label" for="search">Find a concept, parameter or file</label>
-    <input id="search" type="search" placeholder="Search · e.g. rate matching" autocomplete="off">
-    <nav id="navigation" aria-label="Chapters"></nav>
+    <button id="close-menu" class="icon-btn" aria-label="Close topic menu">✕</button>
+    <label class="search-label" for="search">Search all topics and detailed chapters</label>
+    <input id="search" type="search" placeholder="Concept, parameter or file…" autocomplete="off" aria-describedby="nav-status">
+    <p id="nav-status" class="nav-status" role="status" aria-live="polite"></p>
+    <nav id="navigation" aria-label="Ordered guide topics"></nav>
     <div class="sidebar-foot">MAIN CODEBASE · LOCAL DOCUMENTATION<br><span>Illustrations are teaching models, not measured results.</span></div>
   </aside>
   <div class="workspace">
-    <header class="topbar"><button id="menu" class="icon-btn" aria-label="Toggle chapter menu" aria-expanded="false">☰</button><div class="breadcrumb">DOCUMENTATION <span>/</span> H4 WAVEFORM FAMILY</div><div class="top-actions"><button id="theme" aria-label="Switch color theme">◐ Theme</button><button id="print">Print chapter</button><a href="#configuration">YAML explorer ↗</a></div></header>
+    <header class="topbar"><button id="menu" class="icon-btn" aria-label="Toggle topic menu" aria-controls="sidebar" aria-expanded="false">☰</button><div class="breadcrumb" id="breadcrumb">SIXGR IMPLEMENTATION GUIDE</div><div class="top-actions"><button id="theme" aria-label="Switch color theme">◐ Theme</button><button id="print">Print chapter</button><a href="#configuration">YAML explorer ↗</a></div></header>
     <main id="content" tabindex="-1"></main>
     <footer id="chapter-footer"></footer>
   </div>

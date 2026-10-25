@@ -9,7 +9,7 @@ cfg = sixgr.lls6g.buildInternalConfig(scenario, tempname);
 baseline = localCheckTCIAuthority(cfg);
 renamed = scenario.toStruct();
 renamed.reference_signals.csi_rs_resource_ids = [17 5 33 9 41 13 57 21];
-renamed.mimo_and_beam_management.ssb_to_initial_csi_resource_ids = [17 33 41 57];
+renamed.mimo_and_beam_management.ssb_to_initial_csi_resource_ids = [17 5 33 9];
 renamedCfg = sixgr.lls6g.buildInternalConfig(renamed,tempname);
 relabelled = localCheckTCIAuthority(renamedCfg);
 assert(isequaln(baseline,relabelled), ...
@@ -28,8 +28,8 @@ grant = sixgr.link.resolveWaveformGrant(cfg, 'DL', 21);
 assert(grant.Valid && grant.PHYGrant.IsFrozen && ...
     double(grant.DCI.ContextData.ActiveTCIStateID) == 17);
 
-% SSB index 1 maps to initial CSI-RS ordinal 2 and therefore to the
-% installed H4 TCI state/codepoint 18/2.  Model the causal per-UE binding
+% A received CSI selection of ordinal 2 uses the installed H4 TCI
+% state/codepoint 18/2. Model the causal per-UE binding
 % produced by CoupledTruthRuntime.applyUserContext without consulting
 % transmitted data or decoded UE payload bits.
 activeCfg = cfg;

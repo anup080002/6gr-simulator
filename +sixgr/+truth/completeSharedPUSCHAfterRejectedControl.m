@@ -30,7 +30,7 @@ postIndex=find(endsWith(string({item.Planes.ReceiverID}),':post_rf'));
 assert(isscalar(postIndex),'sixgr:truth:IncompletePUSCHReceiveOnlyPlanes','Require one actual post-RF receive window.');
 binding=sixgr.truth.puschUCIObservationBinding(grant,item.Planes(postIndex).Observation);
 [context,mapping]=sixgr.truth.buildSharedPUSCHUCIReceiveContext(state,cfg,grant,binding.ObservationID,csi,report);
-selection=struct(); producer=struct();
+selection=struct(); producer=struct(); withheld=struct();
 if ~isempty(mapping)
     [selection,producer]=owner.readUnselectedPUCCHForPUSCH(grant);
     assert(selection.HARQMappingDigest==mapping.Digest && ...
@@ -41,6 +41,27 @@ if ~isempty(mapping)
     if isempty(book.Events)
         assert(isempty(fieldnames(producer)),'sixgr:truth:RejectedULExistingPUCCHProducerOwnershipRequired', ...
             'Do not invent a PUCCH producer without received UE events.');
+    elseif isempty(fieldnames(producer))
+        % A received HARQ event is not proof that UE power preparation was
+        % possible. Admit only the original explicitly withheld occasion;
+        % an unexplained missing producer still fails before RX/state writes.
+        id=selection.PUCCHObservationID;
+        assert(strlength(selection.PUCCHTransmissionID)==0 && ...
+            ~any(arrayfun(@(r)r.Identity.ObservationID==id,owner.PUCCHTransmissions)), ...
+            'sixgr:truth:PowerWithheldPUCCHTXConflict','A power-withheld occasion cannot have executed UE samples.');
+        txLedger=sixgr.util.structGet(state,'SharedPUCCHTXLedger',{});
+        assert(~any(cellfun(@(r)r.Identity.ObservationID==id,txLedger)), ...
+            'sixgr:truth:PowerWithheldPUCCHTXConflict','An executed MAC TX receipt cannot be suppressed retroactively.');
+        clock=struct('ConfigurationEpoch',owner.Physical.ConfigurationEpoch, ...
+            'UCIConfigurationEpoch',binding.ConfigurationEpoch,'SampleRateHz',owner.SampleRateHz, ...
+            'AvailableAtSample',owner.Events.NextSampleIndex, ...
+            'ComponentCarrier',cfg.phy.frame.DefaultIdentity.ScheduledCCID, ...
+            'ActiveULBWP',cfg.phy.frame.DefaultIdentity.ULBWPID, ...
+            'ReceiverID',string(item.Planes(postIndex).ReceiverID), ...
+            'GNBControlObservationID',transmission.ObservationID);
+        withheld=sixgr.truth.bindPowerWithheldPUCCHForPUSCH( ...
+            sixgr.util.structGet(state,'SharedPUCCHPowerAdmissionTable',table()), ...
+            state.PUCCHGrantTraceTable,selection,grant,book,clock);
     else
         assert(isfield(producer,'UEHARQCodebook') && producer.UEHARQCodebook.Digest==book.Digest, ...
             'sixgr:truth:RejectedULExistingPUCCHProducerOwnershipRequired', ...
@@ -75,6 +96,7 @@ if ~isempty(fieldnames(producer))
     nextProducer=sixgr.truth.stageUnselectedPUCCHProducerDisposition(state,selection,producer,mapping,dispositions);
 end
 result.TransportSelection=selection;
+result.PowerWithheldPUCCHBinding=withheld;
 result.DLHARQFeedbackAppliedCount=0;
 if ~isempty(dispositions), result.DLHARQFeedbackAppliedCount=nnz(~[dispositions.StaleFeedbackIgnored]); end
 result.HARQStateCommitted=result.DLHARQFeedbackAppliedCount>0;
@@ -126,8 +148,33 @@ row=struct('ObservationID',string(observationID),'ControlKey',window.ControlKey,
     'ULHARQReceiverStateCommitted',true,'ULHARQSchedulerStateCommitted',true, ...
     'ULHARQSchedulerOutcome',schedulerEvent.Outcome, ...
     'Disposition',result.Disposition,'Source',result.Source);
+% Separate original UE preparation from the independently executed PUSCH
+% receiver. Neither a positive CRC nor UCI acceptance proves a UE waveform.
+row.PowerAdmissionObservationID=""; row.LogicalPUCCHGrantIdSet="";
+row.UEProducerDisposition=""; row.UEReceivedCodebookDigest="";
+row.PhysicalOccasionID=""; row.SelectedGNBTransport="";
+row.BaseStationID=NaN; row.ComponentCarrier=NaN; row.ActiveULBWP=NaN;
+row.SweepPointIndex=NaN; row.AdmissionDecisionSample=NaN; row.ClockEpoch=NaN;
+row.RunUUID=""; row.ConfigHash="";
+row.ReceivedUCIObservationID=result.Binding.ObservationID;
+row.ReceiverClockEpoch=owner.Physical.ConfigurationEpoch;
+row.ReceiverInvocationCompleted=1; % Numeric tri-state permits NaN for historical unavailable metadata.
+if ~isempty(fieldnames(withheld))
+    a=withheld.Admission;
+    row.PowerAdmissionObservationID=withheld.ObservationID;
+    row.LogicalPUCCHGrantIdSet=withheld.LogicalPUCCHGrantIdSet;
+    row.UEReceivedCodebookDigest=withheld.UEReceivedCodebookDigest;
+    for field=["UEProducerDisposition","PhysicalOccasionID","SelectedGNBTransport", ...
+            "BaseStationID","ComponentCarrier","ActiveULBWP","SweepPointIndex","ClockEpoch"]
+        row.(field)=a.(field);
+    end
+    row.AdmissionDecisionSample=a.DecisionSample;
+    for field=["RunUUID","ConfigHash"]
+        if ismember(field,string(a.Properties.VariableNames)), row.(field)=a.(field); end
+    end
+end
 previous=sixgr.util.structGet(state,'SharedRejectedULReceiveAuditTable',table());
-next=[previous;struct2table(row,'AsArray',true)];
+next=sixgr.truth.appendRejectedULReceiveAudit(previous,row);
 % No UL trial, BER/BLER denominator, grant TBS, goodput or UE producer is
 % manufactured. DL feedback comes only from the actual independent receiver.
 if ~isempty(mapping)

@@ -2,7 +2,7 @@ function scfg = loadScenarioConfig(configPath)
 %LOADSCENARIOCONFIG Resolve layered config inheritance into ScenarioConfig.
 
 configPath = localResolvePath(configPath);
-[resolved, chain, leafAuthority, energyAuthority, ldpcIterationAuthority, ldpcPolicyAuthority] = localResolveConfigTree(configPath, strings(0,1));
+[resolved, chain, leafAuthority, energyAuthority, ldpcIterationAuthority, ldpcPolicyAuthority, puschDMRSAuthority, pucchPowerAuthority, rsPeriodAuthority, csiReportPeriodAuthority] = localResolveConfigTree(configPath, strings(0,1));
 % Preserve last-writer authority across legacy/modern alias pairs.  The
 % merged tree alone cannot distinguish a child-authored value from an
 % inherited alias, so an inherited nested true could otherwise reverse a
@@ -11,7 +11,10 @@ resolved = sixgr.lls6g.config.normalizeScenarioAliases(resolved, ...
     "SourceFiles", chain, "ConfigPath", configPath, ...
     "Authority", leafAuthority, "EnergyAuthority", energyAuthority, ...
     "LDPCIterationAuthority",ldpcIterationAuthority, ...
-    "LDPCPolicyAuthority",ldpcPolicyAuthority);
+    "LDPCPolicyAuthority",ldpcPolicyAuthority, ...
+    "PUSCHDMRSAuthority",puschDMRSAuthority, ...
+    "PUCCHPowerAuthority",pucchPowerAuthority,"RSPeriodAuthority",rsPeriodAuthority, ...
+    "CSIReportPeriodAuthority",csiReportPeriodAuthority);
 sixgr.lls6g.config.validateScenarioConfig(resolved, ...
     "Kind", "scenario", "AllowPartial", false, "Context", configPath);
 cfgHash = sixgr.lls6g.config.hashResolvedScenario(resolved);
@@ -22,7 +25,7 @@ scfg = sixgr.lls6g.config.ScenarioConfig(resolved, ...
     "Kind", "scenario");
 end
 
-function [merged, chain, authority, energyAuthority, ldpcIterationAuthority, ldpcPolicyAuthority] = localResolveConfigTree(configPath, chain)
+function [merged, chain, authority, energyAuthority, ldpcIterationAuthority, ldpcPolicyAuthority, puschDMRSAuthority, pucchPowerAuthority, rsPeriodAuthority, csiReportPeriodAuthority] = localResolveConfigTree(configPath, chain)
 raw = sixgr.lls6g.config.readConfigFile(configPath);
 sixgr.lls6g.config.validateScenarioConfig(raw, ...
     "Kind", "scenario", "AllowPartial", true, "Context", configPath);
@@ -37,15 +40,27 @@ parentAuthority = struct();
 energyAuthority = struct();
 ldpcIterationAuthority = struct();
 ldpcPolicyAuthority = struct();
+puschDMRSAuthority = struct();
+pucchPowerAuthority = struct();
+rsPeriodAuthority = struct();
+csiReportPeriodAuthority = struct();
 for i = 1:numel(inherits)
     parentPath = localResolveRelativeConfig(configPath, inherits(i));
-    [parentCfg, chain, parentAuthority, parentEnergyAuthority, parentLDPCIterationAuthority, parentLDPCPolicyAuthority] = localResolveConfigTree(parentPath, chain);
+    [parentCfg, chain, parentAuthority, parentEnergyAuthority, parentLDPCIterationAuthority, parentLDPCPolicyAuthority, parentPUSCHDMRSAuthority, parentPUCCHPowerAuthority, parentRSPeriodAuthority, parentCSIReportPeriodAuthority] = localResolveConfigTree(parentPath, chain);
     merged = sixgr.util.mergeStruct(merged, parentCfg);
     energyAuthority = sixgr.lls6g.config.mergeEnergyOperatingAuthority(energyAuthority,parentEnergyAuthority);
     ldpcIterationAuthority = sixgr.lls6g.config.mergeLDPCIterationAuthority( ...
         ldpcIterationAuthority,parentLDPCIterationAuthority);
     ldpcPolicyAuthority = sixgr.lls6g.config.mergeLDPCPolicyAuthority( ...
         ldpcPolicyAuthority,parentLDPCPolicyAuthority);
+    puschDMRSAuthority = sixgr.lls6g.config.PUSCHDMRSAuthority.merge( ...
+        puschDMRSAuthority,parentPUSCHDMRSAuthority);
+    pucchPowerAuthority = sixgr.lls6g.config.PUCCHPowerAuthority.merge( ...
+        pucchPowerAuthority,parentPUCCHPowerAuthority);
+    rsPeriodAuthority = sixgr.lls6g.config.RSPeriodAuthority.merge( ...
+        rsPeriodAuthority,parentRSPeriodAuthority);
+    csiReportPeriodAuthority = sixgr.lls6g.config.CSIReportPeriodAuthority.merge( ...
+        csiReportPeriodAuthority,parentCSIReportPeriodAuthority);
 end
 
 if isfield(raw, "inherits")
@@ -55,6 +70,10 @@ merged = sixgr.util.mergeStruct(merged, raw);
 energyAuthority = sixgr.lls6g.config.mergeEnergyOperatingAuthority(energyAuthority,raw);
 ldpcIterationAuthority = sixgr.lls6g.config.mergeLDPCIterationAuthority(ldpcIterationAuthority,raw);
 ldpcPolicyAuthority = sixgr.lls6g.config.mergeLDPCPolicyAuthority(ldpcPolicyAuthority,raw);
+puschDMRSAuthority = sixgr.lls6g.config.PUSCHDMRSAuthority.merge(puschDMRSAuthority,raw);
+pucchPowerAuthority = sixgr.lls6g.config.PUCCHPowerAuthority.merge(pucchPowerAuthority,raw);
+rsPeriodAuthority = sixgr.lls6g.config.RSPeriodAuthority.merge(rsPeriodAuthority,raw);
+csiReportPeriodAuthority = sixgr.lls6g.config.CSIReportPeriodAuthority.merge(csiReportPeriodAuthority,raw);
 authority = raw;
 if numel(inherits)==1 && localOperationalOnly(raw)
     % A checkpoint-only wrapper is not a new scientific author. Retain its

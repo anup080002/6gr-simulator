@@ -115,6 +115,8 @@ bad=dl; bad.NMSE_dB(2)=-3;
 reject(@()sixgr.report.summarizeChannelNMSEReport(bad,"DL"),'sixgr:report:NMSEEnergyClosure');
 bad=dl; bad.NMSE_dB=[bad.NMSE_dB bad.NMSE_dB];
 reject(@()sixgr.report.summarizeChannelNMSEReport(bad,"DL"),'sixgr:report:NMSEColumnShape');
+bad=dl; bad.NMSE_dB=zeros(height(bad),0);
+reject(@()sixgr.report.summarizeChannelNMSEReport(bad,"DL"),'sixgr:report:NMSEColumnShape');
 bad=ul; bad.NMSEScoringAvailable=double(bad.NMSEScoringAvailable); bad.NMSEScoringAvailable(1)=2;
 reject(@()sixgr.report.summarizeChannelNMSEReport(bad,"UL"),'sixgr:report:NMSEAuthorityValue');
 text=dl; text.NMSE_dB=cellstr(string(text.NMSE_dB));
@@ -124,6 +126,20 @@ inactive=dl; inactive.ChannelNMSEComparedComplexValues=zeros(3,1); inactive.NMSE
 [s,~]=sixgr.report.summarizeChannelNMSEReport(inactive,"DL"); assert(same(s.MeanNMSE_dB,meanDB));
 [s,o]=sixgr.report.summarizeChannelNMSEReport(table(),"TRS");
 assert(isempty(s)&&isempty(o)&&isstring(s.ReferencePlane)&&islogical(o.MeasurementAvailable));
+% Exact startup producer, not a populated fixture sliced to zero rows.
+% struct2table(empty trial structs) can leave NMSE_dB as 0-by-0. Startup
+% publication must not require an observation or fabricate one to proceed.
+startup=sixgr.truth.SharedDataCompletionRuntime.emptyLinkTrialTable(0);
+startupCSI=sixgr.truth.emptyCSIRSTrialTable();
+startupOriginal=startup; startupCSIOriginal=startupCSI;
+assert(height(startup)==0 && ismember('NMSE_dB',startup.Properties.VariableNames));
+for signal=["DL","UL","TRS","CSI-RS"]
+    source=startup; if signal=="CSI-RS", source=startupCSI; end
+    [emptySummary,emptyAudit]=sixgr.report.summarizeChannelNMSEReport(source,signal);
+    assert(isequaln(emptySummary,s)&&isequaln(emptyAudit,o), ...
+        'No-observation runtime inputs must retain typed empty summary and audit schemas.');
+end
+assert(isequaln(startup,startupOriginal)&&isequaln(startupCSI,startupCSIOriginal));
 
 result=struct('Scope',"declared_report_contract_fixtures_no_PHY_no_archive_reaudit", ...
     'EvidenceRoot',"",'ExporterExercised',false,'PHYExecutions',0);
@@ -134,6 +150,17 @@ if runExporters
     cfg=sixgr.lls6g.buildInternalConfig(scfg,root);
     % No executed lifecycle is manufactured for these declared row fixtures.
     cfg.run.runTag=''; cfg.run.executionID=''; cfg.meta.configHash='';
+    % Exercise the actual live caller before any connected data/CSI rows.
+    % Keep this startup publication separate from all populated evidence.
+    startupRaw=struct('DL',startup,'UL',startup,'SRS',table(),'TRS',table(),'CSIRS',startupCSI);
+    startupRawOriginal=startupRaw;
+    startupLive=sixgr.truth.exportLLSLiveDerivedTables(cfg,fullfile(root,'startup_no_observations'),startupRaw);
+    assert(isempty(startupLive.ChannelNMSEPopulationSummary)&&isempty(startupLive.ChannelNMSESourceAudit));
+    assert(isequaln(startupLive.ChannelNMSEPopulationSummary,s)&&isequaln(startupLive.ChannelNMSESourceAudit,o));
+    assert(isempty(sixgr.util.csvReadTable(startupLive.ChannelNMSEPopulationSummaryPath,'TextType','string')));
+    assert(isempty(sixgr.util.csvReadTable(startupLive.ChannelNMSESourceAuditPath,'TextType','string')));
+    assert(isequaln(startupRaw,startupRawOriginal), ...
+        'Live startup publication must not mutate original empty trial tables.');
     layout=sixgr.report.resultLayout(root); sixgr.util.ensureFolder(layout.AirInterfaceCSVDir);
     % Exact-zero and close-but-distinct operating points reach the actual
     % publication entry points in the same bounded export, not only the helper.

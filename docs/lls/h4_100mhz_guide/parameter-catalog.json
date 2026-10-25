@@ -448,7 +448,8 @@
           "type": "string",
           "allowed_values": [
             "receiver_noise_figure_thermal_noise",
-            "standalone_awgn_snr_argument"
+            "standalone_awgn_snr_argument",
+            "absolute_reference_esn0"
           ]
         },
         "min_duration_s": {
@@ -492,6 +493,12 @@
           "required": true,
           "type": "integer",
           "min": 0
+        },
+        "absolute_reference_esn0": {
+          "required": false,
+          "type": "struct",
+          "nested_rule": "absolute_reference_noise_policy",
+          "requirement_class": "IMPLEMENTATION_POLICY"
         }
       }
     },
@@ -1398,19 +1405,30 @@
         "srs_periodicity_ms": {
           "required": false,
           "type": "number",
-          "allowed_numeric_values": [
-            5,
-            10,
-            20,
-            40,
-            80,
-            160
-          ]
+          "min_exclusive": 0
         },
         "srs_periodicity_slots": {
           "required": false,
           "type": "integer",
-          "min": 1
+          "allowed_numeric_values": [
+            1,
+            2,
+            4,
+            5,
+            8,
+            10,
+            16,
+            20,
+            32,
+            40,
+            64,
+            80,
+            160,
+            320,
+            640,
+            1280,
+            2560
+          ]
         },
         "trs_periodicity_slots": {
           "required": false,
@@ -2359,7 +2377,9 @@
         },
         "codebook_subset_restriction": {
           "required": false,
-          "type": "string"
+          "type": "string",
+          "pattern": "^(unrestricted|[01]*|UNRESTRICTED)$",
+          "description": "Empty/unrestricted or a0-first binary bitmap for the active supported Type-I single-panel codebook; length N1*N2*O1*O2. Nonempty masks require more than two ports and the implemented rank domain."
         },
         "type2_codebook_oversampling_factor_O1": {
           "required": false,
@@ -2595,11 +2615,19 @@
         },
         "ldpc_algorithm": {
           "required": false,
-          "type": "string"
+          "type": "string",
+          "allowed_values": [
+            "Belief propagation",
+            "Layered belief propagation",
+            "Normalized min-sum",
+            "Offset min-sum"
+          ]
         },
         "ldpc_scaling_factor": {
           "required": false,
-          "type": "number"
+          "type": "number",
+          "min_exclusive": 0,
+          "max": 1
         },
         "ldpc_early_termination": {
           "required": false,
@@ -2627,11 +2655,16 @@
         },
         "ldpc_schedule_type": {
           "required": false,
-          "type": "string"
+          "type": "string",
+          "allowed_values": [
+            "flooding",
+            "layered"
+          ]
         },
         "ldpc_min_sum_offset": {
           "required": false,
-          "type": "number"
+          "type": "number",
+          "min": 0
         },
         "polar_reliability_sequence_source": {
           "required": false,
@@ -4595,6 +4628,26 @@
           "required": true,
           "type": "integer",
           "min": 0
+        },
+        "prach_periodicity_slots": {
+          "required": false,
+          "type": "integer",
+          "min": 1
+        },
+        "periodicity_slots": {
+          "required": false,
+          "type": "integer",
+          "min": 1
+        },
+        "prach_periodicity_ms": {
+          "required": false,
+          "type": "number",
+          "min_exclusive": 0
+        },
+        "periodicity_ms": {
+          "required": false,
+          "type": "number",
+          "min_exclusive": 0
         },
         "subcarrier_spacing_khz": {
           "required": true,
@@ -7868,6 +7921,30 @@
           "required": true,
           "type": "string"
         },
+        "bs_reference": {
+          "required": false,
+          "type": "struct"
+        },
+        "tx_spatial_power_enabled": {
+          "required": false,
+          "type": "boolean"
+        },
+        "modeled_radiated_power": {
+          "required": false,
+          "type": "struct"
+        },
+        "tx_linear_reference": {
+          "required": false,
+          "type": "struct",
+          "nested_rule": "tx_linear_reference_policy",
+          "default": {
+            "enabled": false,
+            "model": "fixed_first_order_pa_identity_dac",
+            "classification": "optional_research_experiment"
+          },
+          "requirement_class": "IMPLEMENTATION_POLICY",
+          "description": "Opt-in same-execution fixed-linear TX model reference; not nonlinear per-port truth or standardized power accuracy."
+        },
         "bs_noise_figure_db": {
           "required": false,
           "type": "number",
@@ -9919,6 +9996,14 @@
           "min": 0,
           "integer": true
         },
+        "ssb_initial_csi_spatial_policy": {
+          "required": false,
+          "type": "string",
+          "enum": [
+            "explicit_association",
+            "contains_ssb_precoder"
+          ]
+        },
         "csi_rs_resource_to_tci_state_ids": {
           "required": false,
           "type": "number_list",
@@ -10167,6 +10252,11 @@
             "analog_feedback_relaxed",
             "custom_lab_assumption"
           ]
+        },
+        "report_calendar_authority": {
+          "required": false,
+          "type": "struct",
+          "description": "Versioned resolved CSI-report declaration provenance. Validated against authored units, resolved aliases and the reporting UL-BWP clock; not received RRC evidence."
         },
         "dl_csi_mode": {
           "required": false,
@@ -11309,6 +11399,12 @@
         "baseline_diff_policy": {
           "required": true,
           "type": "string"
+        },
+        "csi_selection_quality": {
+          "required": false,
+          "type": "struct",
+          "nested_rule": "kpi_csi_selection_quality",
+          "notes": "Private post-reception fixed-CRI nominal-channel study; never receiver/scheduler input or NR optimality/BLER qualification. Units and physical reference plane must come from actual execution."
         }
       }
     },
@@ -15778,6 +15874,11 @@
           "type": "integer",
           "min": 1
         },
+        "periodicity_ms": {
+          "required": false,
+          "type": "number",
+          "min": 0
+        },
         "period_offset": {
           "required": false,
           "type": "integer",
@@ -16038,6 +16139,72 @@
         }
       }
     },
+    "kpi_csi_selection_quality": {
+      "parameters": {
+        "enabled": {
+          "required": true,
+          "type": "boolean"
+        },
+        "objective": {
+          "required": true,
+          "type": "string",
+          "allowed_values": [
+            "mean_support_sum_log2_one_plus_linear_mmse_sinr"
+          ]
+        },
+        "receiver": {
+          "required": true,
+          "type": "string",
+          "allowed_values": [
+            "linear_mmse"
+          ]
+        },
+        "power_normalization": {
+          "required": true,
+          "type": "string",
+          "allowed_values": [
+            "unit_physical_chain_grid_coefficient_power"
+          ]
+        },
+        "power_factor": {
+          "required": true,
+          "type": "number",
+          "min": 1,
+          "max": 1
+        },
+        "support": {
+          "required": true,
+          "type": "string",
+          "allowed_values": [
+            "selected_resource_pilot_union"
+          ]
+        },
+        "research_class": {
+          "required": true,
+          "type": "string",
+          "allowed_values": [
+            "optional_research_experiment"
+          ]
+        },
+        "classification": {
+          "required": true,
+          "type": "string",
+          "allowed_values": [
+            "IMPLEMENTATION_POLICY"
+          ]
+        },
+        "tie_absolute_tolerance": {
+          "required": true,
+          "type": "number",
+          "min": 0
+        },
+        "physical_power_tolerance": {
+          "required": true,
+          "type": "number",
+          "min": 0
+        }
+      }
+    },
     "sweeps_fixed_link_calibration": {
       "parameters": {
         "enabled": {
@@ -16214,6 +16381,28 @@
         "notes": {
           "required": true,
           "type": "string"
+        }
+      }
+    },
+    "tx_linear_reference_policy": {
+      "parameters": {
+        "enabled": {
+          "required": true,
+          "type": "boolean"
+        },
+        "model": {
+          "required": true,
+          "type": "string",
+          "allowed_values": [
+            "fixed_first_order_pa_identity_dac"
+          ]
+        },
+        "classification": {
+          "required": true,
+          "type": "string",
+          "allowed_values": [
+            "optional_research_experiment"
+          ]
         }
       }
     },
@@ -16420,6 +16609,55 @@
           "min_items": 1,
           "min": 0,
           "integer": true
+        }
+      }
+    },
+    "absolute_reference_noise_policy": {
+      "parameters": {
+        "reference_policy": {
+          "required": true,
+          "type": "string",
+          "allowed_values": [
+            "nominal_full_bwp_unity_array"
+          ]
+        },
+        "reference_pathloss_scenario": {
+          "required": true,
+          "type": "string",
+          "allowed_values": [
+            "UMa"
+          ]
+        },
+        "reference_bs_position_m": {
+          "required": true,
+          "type": "number_list",
+          "min_items": 3,
+          "max_items": 3
+        },
+        "reference_ue_position_m": {
+          "required": true,
+          "type": "number_list",
+          "min_items": 3,
+          "max_items": 3
+        },
+        "reference_los": {
+          "required": true,
+          "type": "boolean"
+        },
+        "nominal_dl_tx_power_dbm": {
+          "required": true,
+          "type": "number"
+        },
+        "nominal_ul_tx_power_dbm": {
+          "required": true,
+          "type": "number"
+        },
+        "classification": {
+          "required": true,
+          "type": "string",
+          "allowed_values": [
+            "optional_research_experiment"
+          ]
         }
       }
     },

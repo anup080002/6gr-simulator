@@ -185,6 +185,7 @@ classdef PRACHOccasionResolver
                     "phy.prach.frequencyStart", 0)};
             result = sixgr.phy.frame.PRACHOccasionResolver.resolve( ...
                 args{:}, varargin{:});
+            sixgr.phy.frame.validatePRACHPeriodAliases(cfg,result);
         end
     end
 end

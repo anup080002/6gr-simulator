@@ -1,4 +1,4 @@
-function out = completeCellSearchBroadcast(prepared, observation, out, options, tStart)
+function [out, mibContexts] = completeCellSearchBroadcast(prepared, observation, out, options, tStart)
 %COMPLETECELLSEARCHBROADCAST Decode already received samples without TX/channel execution.
 % The dispatcher owns reception. This function never pads an incomplete
 % capture, regenerates a broadcast, or advances a runtime channel.
@@ -26,6 +26,29 @@ end
 cfg = prepared.Config;
 receiverCfg = prepared.ReceiverConfig;
 tx = prepared.Tx;
+% Receiver scope follows the frozen emitted content, not a mutable enable
+% flag or a later configured SI schedule. Legacy composite preparations
+% remain composite; missing SI is never interpreted as an SSB-only request.
+recoveryScope=string(sixgr.util.structGet(prepared,'Content',"SSB_MIB_SIB1"));
+assert(isscalar(recoveryScope) && any(recoveryScope==["SSB_MIB_SIB1","SSB_MIB"]), ...
+    'sixgr:link:BroadcastContentMismatch','Unknown frozen broadcast content.');
+ssbOnly=recoveryScope=="SSB_MIB";
+if ssbOnly
+    assert(isfield(tx,'Content') && isequal(string(tx.Content),recoveryScope) && ...
+        isequal(sixgr.util.structGet(tx,'WaveformContent',""),"ssb_mib_only") && ...
+        isequal(sixgr.util.structGet(prepared,'WaveformContent',""),"ssb_mib_only") && ...
+        isequal(sixgr.util.structGet(tx,'SIB1EmissionIncluded',true),false) && ...
+        isfield(tx,'SIB1Transmissions') && isstruct(tx.SIB1Transmissions) && isempty(tx.SIB1Transmissions), ...
+        'sixgr:link:BroadcastContentMismatch','SSB-only completion requires original explicit SSB-only preparation.');
+elseif isfield(tx,'Content')
+    assert(isequal(string(tx.Content),recoveryScope) && ...
+        isequal(sixgr.util.structGet(tx,'WaveformContent',""),"ssb_mib_sib1_composite") && ...
+        isequal(sixgr.util.structGet(prepared,'WaveformContent',""),"ssb_mib_sib1_composite"), ...
+        'sixgr:link:BroadcastContentMismatch','Preparation and transmitted content disagree.');
+elseif isfield(tx,'WaveformContent')
+    assert(isequal(tx.WaveformContent,"ssb_mib_sib1_composite"), ...
+        'sixgr:link:BroadcastContentMismatch','Legacy preparation is not an implicit SSB-only request.');
+end
 runtimeTxWaveform = prepared.TransmitSamples;
 physicalObservation=sixgr.util.structGet(options,'PhysicalMeasurementObservation',[]);
 transmitObservation=sixgr.util.structGet(options,'TransmitObservation',[]);
@@ -67,6 +90,7 @@ if isempty(candidateIndices)
     candidateIndices = NaN; % Original blind receiver, no candidate hint.
 end
 candidateOutputs = cell(1, numel(candidateIndices));
+mibContexts = cell(1, numel(candidateIndices));
 for candidateOrdinal = 1:numel(candidateIndices)
 out = observationOut;
 % The monitored window exists even when PSS/PBCH detection fails. Keep its
@@ -81,8 +105,9 @@ if isfinite(candidateIndices(candidateOrdinal))
     receiverArgs = {"CandidateSSBIndex", ...
         candidateIndices(candidateOrdinal)};
 end
-rec = sixgr.phy.broadcast.recoverSIB1FromWaveform( ...
-    observation, receiverCfg, receiverArgs{:},'PhysicalMeasurementObservation',physicalObservation);
+[rec, mibContexts{candidateOrdinal}] = sixgr.phy.broadcast.recoverSIB1FromWaveform( ...
+    observation, receiverCfg, receiverArgs{:},'PhysicalMeasurementObservation',physicalObservation, ...
+    'RecoveryScope',recoveryScope);
 powerScore=sixgr.truth.scoreSharedSSBPower(rec, ...
     sixgr.util.structGet(options,'DesiredReferenceObservation',[]), ...
     sixgr.util.structGet(options,'DesiredReferenceEvidence',struct()),physicalObservation, ...
@@ -163,12 +188,21 @@ if logical(sixgr.util.structGet(rec,'SSPowerReferenceNormalized',false))
 else
     rec=sixgr.link.normalizeReceivedSSBPowerReference(rec,cfg);
 end
-rec = sixgr.phy.broadcast.attachSIB1ValidationComparison(tx, rec);
+if ~ssbOnly
+    rec = sixgr.phy.broadcast.attachSIB1ValidationComparison(tx, rec);
+end
 out.ComputeLatency_ms = 1e3 * toc(tStart);
 out.ProcedureDelay_ms = NaN;
 out.AirInterfaceObservation_ms = 1e3 * (observation.EndSampleExclusive - observation.StartSample) / observation.SampleRateHz;
 out.AcquisitionTime_ms = out.AirInterfaceObservation_ms;
 out.Ok = logical(rec.StrictOk);
+out.RecoveryScope=recoveryScope;
+if ssbOnly
+    % A successful BCH observation is not a decoded SIB1. Keep the
+    % combined StrictOk false and retain the explicit not-attempted status.
+    out.Ok=isequal(rec.SSBMIBComplete,true) && ...
+        isequal(rec.PBCHStrictReceiverEvidenceOk,true);
+end
 out.Status = string(sixgr.util.structGet(rec, "Status", "FAIL"));
 out.FailureReason = string(sixgr.util.structGet(rec, "FailureReason", ""));
 out.Crash = logical(rec.Crash);
@@ -190,15 +224,25 @@ out.EqualizationAttempted = logical(sixgr.util.structGet(rec, "EqualizationAttem
 out.DecodeAttempted = logical(sixgr.util.structGet(rec, "DecodeAttempted", false));
 out.LLRAvailable = logical(sixgr.util.structGet(rec, "LLRAvailable", false));
 out.LLRFinite = logical(sixgr.util.structGet(rec, "LLRFinite", false));
-out.BLER = double(~out.Ok);
-if string(rec.SIB1ObservationStatus)=="incomplete_capture"
-    % Acquisition is not complete, but there was no SI receive trial whose
-    % block error could be counted. PBCH's actual CRC remains in out.PBCH.
-    out.BLER=NaN;
-end
+% A combined acquisition verdict is not a BCH decoder outcome. Later SI
+% failure or an unobserved SI window cannot turn a completed BCH into an
+% error, nor erase its original CRC. This is one block, not a qualified curve.
+bchOutcome=sixgr.link.broadcastBCHBlockOutcome(rec);
+out.BLER=bchOutcome.BlockError;
+out.BLERScope="BCH_original_completed_block";
+out.BLEREligibleTrialCount=double(bchOutcome.Eligible);
+out.BLERErrorCount=bchOutcome.BlockError;
+out.BLERSource=bchOutcome.Source;
+out.BLERStatus=bchOutcome.Status;
 out.Sync = struct("NCellID", double(rec.NCellID), "TimingOffset", double(rec.TimingOffset), ...
     "FreqOffset_Hz", double(rec.FrequencyOffsetHz));
-out.PBCH = struct("Ok", logical(rec.BCHCrcPass), "ErrFlag", double(~logical(rec.BCHCrcPass)), ...
+% CRC success alone does not admit a decoded MIB whose original PBCH
+% candidate identity was rejected. Missing historical identity is unknown.
+pbchAccepted=isequal(sixgr.util.structGet(rec,"BCHCrcPass",false),true) && ...
+    isequal(sixgr.util.structGet(rec,"BCHCRCValid",false),true) && ...
+    isequal(sixgr.util.structGet(rec,"MIBDecoded",false),true) && ...
+    isequal(sixgr.util.structGet(rec,"CandidateIdentityConsistent",false),true);
+out.PBCH = struct("Ok", pbchAccepted, "ErrFlag", bchOutcome.BlockError, ...
     "NCellID", double(rec.NCellID), "SSBIndex", double(rec.SSBIndex), ...
     "ChannelEstimateAvailable", logical(sixgr.util.structGet(rec, "ChannelEstimateAvailable", false)), ...
     "BCHTransportBlockNumBits", double(sixgr.util.structGet(rec, "BCHTransportBlockNumBits", NaN)), ...
@@ -270,7 +314,15 @@ out.PBCH = struct("Ok", logical(rec.BCHCrcPass), "ErrFlag", double(~logical(rec.
     "PostEqualizationNoiseVariance", double(sixgr.util.structGet(rec, "PostEqualizationNoiseVariance", NaN)), ...
     "PostEqualizationNoiseVarianceDomain", string(sixgr.util.structGet(rec, "PostEqualizationNoiseVarianceDomain", "")), ...
     "PostEqualizationNoiseVarianceSource", string(sixgr.util.structGet(rec, "PostEqualizationNoiseVarianceSource", "")), ...
-    "StrictReceiverEvidenceOk", logical(sixgr.util.structGet(rec, "StrictReceiverEvidenceOk", false)));
+    "StrictReceiverEvidenceOk", logical(sixgr.util.structGet(rec, "PBCHStrictReceiverEvidenceOk", false)));
+% Copy original decoded-kSSB operands, not values inferred from configured
+% geometry or a historical high-bit-only field. Missing authority stays unknown.
+out.PBCH.KSSBContractVersion=sixgr.util.structGet(rec,"KSSBContractVersion","");
+for field=["Lmax","MIBKSSBLow4","PBCHKSSBMSB","PBCHKSSBHighContribution", ...
+        "KSSBHighBitApplicable","DecodedKSSB","k_SSB", ...
+        "BCHCRCValid","CandidateIdentityConsistent"]
+    out.PBCH.(field)=sixgr.util.structGet(rec,field,NaN);
+end
 out.SIB1 = rec;
 powerEvidence=sixgr.link.ssbPowerReferenceEvidence(rec);
 for field=string(fieldnames(powerEvidence)).'
@@ -410,6 +462,7 @@ out.PostEqualizationNoiseVariance = double(sixgr.util.structGet(rec, "PostEquali
 out.PostEqualizationNoiseVarianceDomain = string(sixgr.util.structGet(rec, "PostEqualizationNoiseVarianceDomain", ""));
 out.PostEqualizationNoiseVarianceSource = string(sixgr.util.structGet(rec, "PostEqualizationNoiseVarianceSource", ""));
 out.StrictReceiverEvidenceOk = logical(sixgr.util.structGet(rec, "StrictReceiverEvidenceOk", false));
+out.PBCHStrictReceiverEvidenceOk = logical(sixgr.util.structGet(rec, "PBCHStrictReceiverEvidenceOk", false));
 out.SIB1PDSCHChannelEstimateAvailable = logical(sixgr.util.structGet(rec, "SIB1PDSCHChannelEstimateAvailable", false));
 out.SIB1PDSCHEqualizationAvailable = logical(sixgr.util.structGet(rec, "SIB1PDSCHEqualizationAvailable", false));
 out.SIB1PDSCHReceiverHestSINR_dB = double(sixgr.util.structGet(rec, "SIB1PDSCHReceiverHestSINR_dB", NaN));
@@ -472,6 +525,10 @@ out.TimingEstimateStatus = string(sixgr.util.structGet( ...
 out.Notes = "Strict SIB1 waveform path: " + string(rec.Status) + ...
     "; DCI=" + string(rec.DCIPayloadHex) + ...
     "; SIB1TreeEqual=" + string(logical(rec.SIB1TreeEqual));
+if ssbOnly
+    out.Notes="Original SSB/MIB-only reception: "+string(rec.Status)+ ...
+        "; SIB1 reception not attempted; no SI success or failure inferred";
+end
 candidateOutputs{candidateOrdinal} = out;
 end
 out = candidateOutputs{1};

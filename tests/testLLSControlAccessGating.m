@@ -134,6 +134,9 @@ assert(logical(stateBlocked.SchedulingEligibility(1)) == false, ...
     "SchedulingEligibility must stay false before PBCH/PRACH succeed.");
 
 pbchPass = localControlTrial("PASS", double(state.CurrentSlot), double(state.CurrentFrame));
+% Explicit received-result fixture; generic PASS cannot authorize MIB state.
+pbchPass.BCHCRCValid=true; pbchPass.MIBDecoded=true;
+pbchPass.CandidateIdentityConsistent=true; pbchPass.SSBIdentityVerified=true;
 state = sixgr.truth.CoupledTruthRuntime.applyPBCHTrial(state, 1, pbchPass);
 assert(string(state.CellAcquisitionState(1)) == "acquired", ...
     "PBCH pass must move the UE into acquired state.");

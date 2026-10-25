@@ -8,6 +8,14 @@ sixgr.util.ensureFolder(folder);
 source=table([1;1;1],[46;46;46],[2;2;3],[7;7;9], ...
     'VariableNames',{'SFN','Slot','UEIndex','ResourceID'});
 source.Frame=[2;2;2];
+source.DLMeasurementConfigurationFamily=repmat("CSI-RS",3,1);
+source.DLMeasurementConfigurationSHA256=repmat(string(repmat('a',1,64)),3,1);
+source.DLMeasurementNCellID=[1;2;3];
+source.DLMeasurementInstallationSHA256=["";string(repmat('b',1,64));""];
+source.DLMeasurementAuthorityRequired=[true;true;false];
+source.DLMeasurementAuthorityEligible=[false;true;true];
+source.DLMeasurementAuthorityStatus=["declared_diagnostic_only";"declared_installed";"standalone_preconfigured_boundary_not_shared_acquisition"];
+source.DLMeasurementAuthoritySource=repmat("declared_publication_fixture_not_runtime_proof",3,1);
 source.RunID=["declared_a";"declared_b";"declared_b"];
 source.ReceiverID=["ue2";"ue2";"ue3"];
 source.ReceiverWindowID=["declared_window_a";"declared_window_b";"declared_window_c"];
@@ -134,6 +142,16 @@ published=project(imported);
 output=fullfile(folder,'csi_rs_runtime_event_table.csv');
 sixgr.util.csvWriteTable(output,published,'PreserveSchema',true,'RoundTripNumericText',true);
 roundtrip=sixgr.util.csvReadTable(output,'TextType','string');
+authorityFields=string(source.Properties.VariableNames);
+authorityFields=authorityFields(startsWith(authorityFields,"DLMeasurement"));
+for name=authorityFields
+    assert(isequaln(published.(name),imported.(name)));
+    if isnumeric(source.(name))||islogical(source.(name))
+        assert(isequaln(double(roundtrip.(name)),double(source.(name))));
+    else
+        assert(isequal(string(roundtrip.(name)),string(source.(name))));
+    end
+end
 for name=["ReferenceSINRMeasurementJSON","CSIRSEmittedPowerComparisonEvidenceJSON", ...
         "CSIRSEmittedPowerComparisonEvidenceSHA256","CSIRSEmittedSINRComparisonEvidenceJSON", ...
         "CSIRSEmittedSINRComparisonEvidenceSHA256",prefix+"EvidenceJSON",prefix+"EvidenceSHA256", ...
@@ -168,7 +186,27 @@ minimal=source(:,{'SFN','Slot','UEIndex','ResourceID'});
 legacy=project(minimal); legacyNames=string(legacy.Properties.VariableNames);
 assert(~any(startsWith(legacyNames,"CSIRSEmittedPowerComparison") | ...
     startsWith(legacyNames,"CSIRSEmittedSINRComparison") | ...
-    startsWith(legacyNames,"CSIRSLinearPortModelComparison") | legacyNames=="ReferenceSINRMeasurementJSON"));
+    startsWith(legacyNames,"CSIRSLinearPortModelComparison") | ...
+    startsWith(legacyNames,"DLMeasurement") | legacyNames=="ReferenceSINRMeasurementJSON"));
+% The tracking-table adapter must preserve an upstream binding if present,
+% but must not manufacture one when an older trace lacks it.
+trs=source; trs.DLMeasurementConfigurationFamily(:)="TRS";
+trsSnapshot=trs;
+for input={trs,minimal}
+    current=input{1};
+    tables=sixgr.truth.buildLLSPublicOutputTables(struct('trs_receiver_tracking_table',current), ...
+        sixgr.truth.llsOutputContract(), ...
+        struct('logical_run_id',"declared_TRS_authority_projection",'run_id',1));
+    projected=tables.trs_receiver_tracking_public_table;
+    for name=authorityFields
+        if ismember(name,string(current.Properties.VariableNames))
+            assert(isequaln(projected.(name),current.(name)));
+        else
+            assert(~ismember(name,string(projected.Properties.VariableNames)));
+        end
+    end
+end
+assert(isequaln(trs,trsSnapshot));
 assert(isempty(project(source([],:))));
 assert(isequaln(source,snapshot)&&isequaln(rng,randomBefore)&& ...
     originalHash==string(sixgr.util.sha256File(original)));

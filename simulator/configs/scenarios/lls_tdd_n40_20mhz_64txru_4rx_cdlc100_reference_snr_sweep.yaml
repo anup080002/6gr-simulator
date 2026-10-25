@@ -1,13 +1,30 @@
 inherits:
   - ./lls_tdd_n40_20mhz_64txru_4rx_cdlc100_impaired.yaml
 
+# Calendar authority is YAML inheritance, not constants in the runner:
+# - h4_100_common_connected.yaml: SSB=20 ms; SRS=5 slots/offset 4;
+#   pucch_resources.scheduling_request_resources: SR=5 slots/offset 3.
+# - lls_tdd_4ghz_20mhz_64txru_4rx_cdlc100_impaired.yaml: CSI-RS,
+#   CSI-IM and CSI report periods=10 slots; CSI report offset=8.
+# - immediate n40 parent: TRS=20 slots/10 ms, CSI-RS/CSI-IM offset=5,
+#   TRS pair offset=6 (TS 38.214 5.1.6.1.1 tracking-specific period),
+#   5-ms CSI period labels (10 slots at 30 kHz), per-resource symbols/widths.
+# - connected_monitoring YAML: PDCCH period=1 slot/offset 0/duration=1.
+# Type-0 occasions derive from configured MIB/SCS/SSB index; PRACH occasions
+# derive from configuration index 157, B4/SCS and the duplex configuration.
+# Current composite-broadcast implementation repeats SIB1 with the SSB
+# burst period; independent SI repetition is not implemented by a new alias.
+# PDSCH/PUSCH are grant driven. Their YAML TDRA/K0/K2 lists, not a fabricated
+# periodic-data field, constrain the legal allocations. DM-RS/PT-RS follow
+# the actual grant and their YAML mapping configuration.
+
 meta:
   scenario_id: lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep
   description: >
     Six independent n40 2.350 GHz, 20 MHz, 30 kHz absolute-power connected
     executions at nominal receive-reference Es/N0 30, 20, 10, 0, -10 and -20 dB,
     in that descending order.
-    Each child executes 60 slots (30 ms), including physical initial access,
+    Each child executes 100 slots (50 ms), including physical initial access,
     retaining the parent's UMa NLOS attenuation, CDL-C/100 ns fading,
     64-TXRU gNB/four-chain UE, physical RF operators, absolute sqrt(mW)
     samples, UL power control/PHR, measured RSRP/SINR, received CSI/SRS
@@ -31,10 +48,10 @@ meta:
 # noise reference and owns the sequential independent children.
 run_control:
   runtime_checkpoint_enable: false
-  total_slots: 60
-  total_time_ms: 30
-  measurement_slots: 60
-  measurement_time_ms: 30
+  total_slots: 100
+  total_time_ms: 50
+  measurement_slots: 100
+  measurement_time_ms: 50
 
 simulation:
   link_direction: both
@@ -57,10 +74,16 @@ simulation:
   # Fresh access/channel/RF/traffic/beam/LA/HARQ owners at each point.
   random_seed: 20260927
   deterministic_mode: true
-  n_frames: 3
-  n_slots: 60
-  n_subframes: 30
-  min_duration_s: 0.03
+  n_frames: 5
+  n_slots: 100
+  n_subframes: 50
+  min_duration_s: 0.05
+
+random_access:
+  # Match the declared campaign horizon. These bound standalone PRACH
+  # diagnostics; connected RA occasions remain event/calendar driven.
+  num_slots: 100
+  num_subframes: 50
 
 sweeps_and_matrix:
   snr_sweep:

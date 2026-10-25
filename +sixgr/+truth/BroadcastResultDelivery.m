@@ -4,7 +4,9 @@ classdef BroadcastResultDelivery
 % queuing an eagerly computed result does not make eager channel execution
 % causal. The sample composer/receiver dispatcher must still own that clock.
     methods(Static)
-        function state=enqueue(state,ueIdx,trial,recovery,trackingOnly)
+        function state=enqueue(state,ueIdx,trial,recovery,trackingOnly,mibBinding,timingBindings)
+            if nargin<6, mibBinding=[]; end
+            if nargin<7, timingBindings={}; end
             validateattributes(ueIdx,{'numeric'},{'scalar','integer','positive', ...
                 '<=',state.NumUsers});
             validateattributes(trackingOnly,{'logical'},{'scalar'});
@@ -36,6 +38,27 @@ classdef BroadcastResultDelivery
             fs=double(trial.ObservationSampleRateHz(1));
             completion=double(trial.ObservationCompletionTime_s(1));
             sourceSlot=double(trial.Slot(1));
+            if ~isempty(mibBinding)
+                sixgr.truth.ReceivedMIBDelivery.validate(mibBinding,false);
+                assert(mibBinding.UEIndex==ueIdx && mibBinding.CaptureStartSample==first && ...
+                    mibBinding.CaptureEndSampleExclusive==last && mibBinding.SampleRateHz==fs, ...
+                    'sixgr:truth:ReceivedMIBDeliveryMismatch', ...
+                    'Retain the original candidate context from this UE and received window.');
+            end
+            assert(iscell(timingBindings),'sixgr:truth:InvalidReceivedSSBTiming', ...
+                'Original per-candidate timing bindings must be a cell array.');
+            indexes=zeros(1,numel(timingBindings));
+            for k=1:numel(timingBindings)
+                r=timingBindings{k}; sixgr.truth.ReceivedSSBTimingDelivery.validate(r,false);
+                b=r.OriginalBCHBinding;
+                assert(b.UEIndex==ueIdx && b.CaptureStartSample==first && ...
+                    b.CaptureEndSampleExclusive==last && b.SampleRateHz==fs, ...
+                    'sixgr:truth:ReceivedSSBTimingCandidateMismatch', ...
+                    'Per-beam timing must come from this original UE and received broadcast window.');
+                indexes(k)=r.SSBIndex;
+            end
+            assert(numel(unique(indexes))==numel(indexes), ...
+                'sixgr:truth:ReceivedSSBTimingCandidateMismatch','Do not enqueue two clocks for one decoded candidate.');
             validateattributes(state.SlotDuration_s,{'numeric'}, ...
                 {'scalar','finite','positive'});
             if first<0||first~=fix(first)||last<=first||last~=fix(last)|| ...
@@ -54,7 +77,8 @@ classdef BroadcastResultDelivery
             end
             item=struct("UEIndex",double(ueIdx),"Trial",trial, ...
                 "Recovery",recovery,"TrackingOnly",trackingOnly, ...
-                "CompletionTime_s",completion);
+                "CompletionTime_s",completion,"MIBBinding",mibBinding, ...
+                "TimingBindings",{timingBindings});
             state.PendingBroadcastResults=[pending;item];
         end
 
@@ -135,6 +159,23 @@ classdef BroadcastResultDelivery
         function items=pending(state)
             if isfield(state,"PendingBroadcastResults")
                 items=state.PendingBroadcastResults;
+                if ~isfield(items,'MIBBinding')
+                    % Historical queues contain no retained MIB authority.
+                    if isempty(items)
+                        items=sixgr.truth.BroadcastResultDelivery.empty();
+                    else
+                        [items.MIBBinding]=deal([]);
+                    end
+                end
+                if ~isfield(items,'TimingBindings')
+                    % Historical observations have no per-beam timing
+                    % authority; never reconstruct it from exported offsets.
+                    if isempty(items)
+                        items=sixgr.truth.BroadcastResultDelivery.empty();
+                    else
+                        [items.TimingBindings]=deal({});
+                    end
+                end
             else
                 items=sixgr.truth.BroadcastResultDelivery.empty();
             end
@@ -142,7 +183,7 @@ classdef BroadcastResultDelivery
         function items=empty()
             items=repmat(struct("UEIndex",[],"Trial",table(), ...
                 "Recovery",struct(),"TrackingOnly",false, ...
-                "CompletionTime_s",[]),0,1);
+                "CompletionTime_s",[],"MIBBinding",[],"TimingBindings",{{}}),0,1);
         end
     end
 end

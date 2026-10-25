@@ -4,10 +4,16 @@ function [usable,status] = qclTimingSchedulingEligibility(state,ueIndex)
 policy=sixgr.util.structGet(state.CfgMobility,'phy.pdsch.qclTCI',struct());
 usable=true; status="not_required";
 if ~logical(sixgr.util.structGet(policy,'enabled',false)), return; end
+[installed,status,receipt]=sixgr.truth.DLMeasurementInstallation.current(state,ueIndex,"TRS");
+if ~installed, usable=false; return; end
 usable=false; status="missing_received_qcl_timing_reference";
 references=sixgr.util.structGet(state,'SharedQCLTimingReferences',{});
 if numel(references)<ueIndex || isempty(references{ueIndex}), return; end
 source=references{ueIndex};
+if sixgr.truth.DLMeasurementInstallation.required(state) && ...
+        string(sixgr.util.structGet(source,'DLMeasurementInstallationSHA256',""))~=receipt.SHA256
+    usable=false; status="qcl_reference_before_current_measurement_installation"; return;
+end
 fields={'UEIndex','ServingCellIndex','SourceResourceID','ConfigurationEpoch', ...
     'SourceSlot0','AvailableAtSample','SampleRateHz','Source'};
 assert(isstruct(source) && isscalar(source) && all(isfield(source,fields)), ...

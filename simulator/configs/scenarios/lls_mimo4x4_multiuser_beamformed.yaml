@@ -78,7 +78,7 @@
       },
       "pucch": {
         "p0_dbm": -80,
-        "alpha": 0.8,
+        "alpha": 1.0,
         "delta_tf_db": 0,
         "pcmax_dbm": 23
       },

@@ -637,12 +637,12 @@ canonical_control:
     srs_ports: 4
     trs_ports: 1
     trs_scrambling_id: 1
-    # One explicit NZP-CSI-RS/TRS occasion every 20 slots (10 ms at 30 kHz).
+    # One explicit NZP-CSI-RS/TRS occasion every 40 slots (20 ms at 30 kHz).
     # Multiple authored occasions give the tracking receiver real time-separated
     # phase observations; the strict waveform path must not invent slot indices.
     trs:
       enabled: true
-      # Periodic zero-based resources: [1,2], [21,22], ... at 30 kHz.
+      # Periodic zero-based resources: [1,2], [41,42], ... at 30 kHz.
       # An explicit slot_numbers list is frame-local, not an absolute run timeline.
       slot_numbers: []
       period_offset: 1
@@ -660,15 +660,12 @@ canonical_control:
       frequency_tolerance_hz: 50
       channel_nmse_threshold_db: -8
     srs_periodicity_ms: 10
-    # NR periodic SRS offset is zero-based. Offset 4 binds the strict
-    # waveform resource to the first authored one-based occasion (slot 5);
-    # remaining occasions are retained for multi-UE runtime scheduling.
+    # One native periodic resource: 10 ms = 20 slots at 30 kHz, offset 4.
+    # The one-based selector may select that occasion, not add other phases.
+    # Multi-UE multiplexing shares the same valid occasion (slots 5, 25, ...).
     period_offset: 4
     srs_slot_within_period:
     - 5
-    - 10
-    - 15
-    - 20
     srs_max_ues_per_slot: 2
     srs_scheduling_policy: multiplex_due_users
     num_rb: 273
@@ -678,7 +675,8 @@ canonical_control:
     coverage_requirement: full_carrier
     full_carrier_sounding_required: true
     full_carrier_coverage_tolerance_rb: 1
-    trs_periodicity_ms: 10
+    # TS 38.214 5.1.6.1.1: 273-RB trs-Info cannot use the 10-ms period.
+    trs_periodicity_ms: 20
     rsla_strict:
       enabled: true
       strict: true
@@ -2469,7 +2467,7 @@ rf_frontend:
     tpc_mode: accumulation
     state_epoch_required: true
     pusch: {p0_dbm: -80, p0_ue_db: 0, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
-    pucch: {p0_dbm: -80, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
+    pucch: {p0_dbm: -80, alpha: 1.0, delta_tf_db: 0, pcmax_dbm: 23}
     srs: {p0_dbm: -80, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
     prach: {p0_dbm: -100, alpha: 1.0, delta_tf_db: 0, pcmax_dbm: 23}
 pucch_resources:
@@ -2986,7 +2984,8 @@ csi_acquisition_and_reporting:
   delta_mcs_policy: ack_nack_olla
   dmrs_port_selection_policy: scheduled_port_set
   report_trigger: periodic
-  report_periodicity: 5ms
+  # Slot authority below is 5 UL-BWP slots (2.5 ms at the configured 30 kHz).
+  # The resolved millisecond mirror is generated, not independently authored.
   report_payload_mode: compressed
   compression_mode: none
   sscc_mode: false

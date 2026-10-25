@@ -1,0 +1,13 @@
+function mode=pathlossReferenceLifetime(cfg)
+% UE pathloss-filter lifetime policy, not a standardized NR expiry timer.
+% Legacy finite-age studies remain explicit; retained mode also requires the
+% original decoded-power/capture lifecycle owner in the shared PHY runtime.
+mode=sixgr.util.structGet(cfg, ...
+    'rf.frontend.ul_power_control.pathloss_reference_lifetime','configured_age_limit');
+assert((ischar(mode) && isrow(mode)) || (isstring(mode) && isscalar(mode)), ...
+    'sixgr:refsig:InvalidPathlossReferenceLifetime','Declare a scalar pathloss-reference lifetime policy.');
+mode=string(mode);
+assert(any(mode==["configured_age_limit","retained_filtered_reference"]), ...
+    'sixgr:refsig:InvalidPathlossReferenceLifetime', ...
+    'Use retained_filtered_reference or explicitly labelled configured_age_limit research policy.');
+end

@@ -109,8 +109,18 @@ buffered=sixgr.phy.broadcast.recoverSIB1FromWaveform(observation,receiverCfg, ..
     "CandidateSSBIndex",indices(1));
 direct=sixgr.phy.broadcast.recoverSIB1FromWaveform(actualRx,receiverCfg, ...
     "CandidateSSBIndex",indices(1));
-assert(isequaln(buffered,direct) && buffered.BCHCrcPass, ...
+% A raw array has no global capture epoch. Preserve that distinction while
+% requiring identical actual detector, decoder and measurement evidence.
+clockFields={'SIB1CaptureStartSample','SIB1RadioFrameClock','Type0FrameNumberSource'};
+assert(isequaln(rmfield(buffered,clockFields),rmfield(direct,clockFields)) && buffered.BCHCrcPass, ...
     "Buffering must preserve actual receiver results exactly.");
+assert(buffered.SIB1CaptureStartSample==observation.StartSample && isnan(direct.SIB1CaptureStartSample));
+if buffered.Type0FrameNumberSource~="not_resolved"
+    assert(buffered.Type0FrameNumberSource=="received_BCH_SFN_bound_to_capture_epoch" && ...
+        direct.Type0FrameNumberSource=="received_BCH_SFN" && ...
+        buffered.SIB1RadioFrameClock=="received_BCH_SFN_on_zero_SFN_shared_sample_epoch" && ...
+        direct.SIB1RadioFrameClock=="decoded_SFN_cycle_without_global_capture_epoch");
+end
 % Completion must use received samples only, never regenerate or re-channel
 % the prepared broadcast. Compare all decoder results, not only CRC flags.
 profile clear;
@@ -128,7 +138,15 @@ assert(~any(contains(completionNames,"generateSSB_MIB_SIB1_Waveform") | ...
 localAssertCalls(completionStats,"recoverSIB1FromWaveform",numel(indices));
 for k=1:numel(indices)
     assert(isequaln(completed.CandidateResults{k}.PBCH,out.CandidateResults{k}.PBCH));
-    assert(isequaln(completed.CandidateResults{k}.SIB1,out.CandidateResults{k}.SIB1));
+    actualSI=completed.CandidateResults{k}.SIB1; originalSI=out.CandidateResults{k}.SIB1;
+    names=string(fieldnames(actualSI)); changed=strings(0,1);
+    for name=names.'
+        if ~isfield(originalSI,name) || ~isequaln(actualSI.(name),originalSI.(name))
+            changed(end+1,1)=name; %#ok<AGROW>
+        end
+    end
+    assert(isequaln(actualSI,originalSI), ...
+        'Repeated original received SI differs in fields: %s',strjoin(changed,', '));
     recovered=completed.CandidateResults{k}.SIB1;
     if recovered.BCHCrcPass && recovered.MIBDecoded
         reference=sixgr.phy.frame.receivedDLTimingReference(prepared.ReceiverConfig, ...

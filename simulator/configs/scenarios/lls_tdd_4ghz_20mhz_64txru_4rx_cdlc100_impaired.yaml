@@ -101,11 +101,13 @@ reference_signals:
     expected_num_rb: 106
     expected_bandwidth_coverage_percent: 98.11320754716981
     full_carrier_coverage_tolerance_rb: 2
-  trs_periodicity_slots: 10
+  # Keep all 106 RBs; bandwidth >52 RBs requires more than 10 ms.
+  trs_periodicity_slots: 20
+  trs_periodicity_ms: 20
   trs:
     num_rb: 106
-    periodicity: '10'
-    periodicity_slots: 10
+    periodicity: '20'
+    periodicity_slots: 20
     period_offset: 2
 
 csi_acquisition_and_reporting:

@@ -60,6 +60,8 @@ for g=1:numel(groups)
     base.SelectionPolicy=""; base.SelectionEvidenceRole=""; base.ScoreAxis="";
     base.BeamIndexConvention=""; base.TieCount=NaN; base.TiePolicy="";
     base.ObservedCandidateRowCount=NaN; base.UnscoredCandidateCount=NaN;
+    base.SourceRowIndex=NaN; base.SelectionPopulationID="";
+    base.SelectionPopulationJSON=""; base.DiscreteValueRole="";
     if selectedSSB
         % This is a measured strongest-SS-RSRP comparison, not evidence that
         % the access receiver selected/decoded this candidate. Do not compare
@@ -96,6 +98,25 @@ for g=1:numel(groups)
         for j=1:numel(specs)
             name=findName(vars,specs(j).Columns);
             if name=="", continue; end
+            if ismember(string(specs(j).Metric),["DataSelectedBeamIndex","DataBestBeamIndex", ...
+                    "SelectedBeamIndex","BestBeamIndex","PMI","CRI","TPMI"])
+                % Multiple grants/receivers can share the coarse legacy
+                % scope. A mean of their beam IDs is not a selected beam.
+                observations=sixgr.report.collectCSISelectionObservations(sourceT,name,string(traceSource));
+                observations=observations(ismember(observations.SourceRowIndex,indices),:);
+                for q=1:height(observations)
+                    observation=observations(q,:); originalIndex=observation.SourceRowIndex;
+                    row=quality(base,sourceT(originalIndex,:)); row.Metric=string(specs(j).Metric);
+                    row.MeanValue=observation.ValueNumeric;
+                    row.P05Value=NaN; row.P95Value=NaN; row.SampleCount=1;
+                    row.SourceRowIndex=originalIndex;
+                    row.SelectionPopulationID=observation.PopulationID;
+                    row.SelectionPopulationJSON=observation.PopulationJSON;
+                    row.DiscreteValueRole="original_single_selection_legacy_MeanValue_carrier_no_arithmetic";
+                    rows=append(rows,row);
+                end
+                continue;
+            end
             values=numeric(sample,name); values=values(isfinite(values));
             if isempty(values), continue; end
             row=base; row.Metric=string(specs(j).Metric);

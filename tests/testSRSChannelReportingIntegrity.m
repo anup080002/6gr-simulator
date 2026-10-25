@@ -45,8 +45,15 @@ bad=T; bad.ChannelNMSEReferenceAvailable(1)=2;
 reject(@()sixgr.report.summarizeSRSChannelReport(bad),'sixgr:truth:InvalidSRSReferenceAuthority');
 bad=T; bad.NMSE_dB=[T.NMSE_dB T.NMSE_dB];
 reject(@()sixgr.report.summarizeSRSChannelReport(bad),'sixgr:report:InvalidSRSMeasurementColumn');
+bad=T; bad.NMSE_dB=zeros(height(T),0);
+reject(@()sixgr.report.summarizeSRSChannelReport(bad),'sixgr:report:InvalidSRSMeasurementColumn');
 [q,qd]=sixgr.report.summarizeSRSChannelReport(table());
 assert(~q.MeasurementAvailable&&q.MeasuredTrials==0&&isnan(q.NMSE_dB)&&qd.SourceTrialCount==0);
+startup=sixgr.truth.SharedDataCompletionRuntime.emptyLinkTrialTable(0);
+originalStartup=startup;
+[emptyStats,emptyDiagnostics]=sixgr.report.summarizeSRSChannelReport(startup);
+assert(isequaln(emptyStats,q)&&isequaln(emptyDiagnostics,qd)&&isequaln(startup,originalStartup), ...
+    'Original empty runtime schema must retain unavailable measurements and zero diagnostic counts.');
 assert(isequal(savedRNG,rng),'Pure report statistics must not consume RNG draws.');
 result=struct('ExporterExercised',false,'EvidenceRoot',"",'PHYExecutions',0);
 if runExporter

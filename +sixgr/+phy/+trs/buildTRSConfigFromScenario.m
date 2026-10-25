@@ -60,6 +60,7 @@ else
     slotNumbers = rawSlotNumbers;
 end
 slotNumbers = unique(slotNumbers, "stable");
+configuredSlotNumbers = slotNumbers;
 runtimeWindow = struct();
 if ~isempty(opt.RuntimeSlot)
     runtimeWindow = sixgr.truth.resolveTRSObservationWindow(cfg,opt.RuntimeSlot);
@@ -82,9 +83,11 @@ subcarrierLocation = max(0, round(double(sixgr.util.structGet(cfg, "phy.trs.subc
     sixgr.util.structGet(cfg, "lls6g.reference_signals.trs.subcarrier_location", 0)))));
 rbOffset = max(0, round(double(sixgr.util.structGet(cfg, "phy.trs.rbOffset", ...
     sixgr.util.structGet(cfg, "lls6g.reference_signals.trs.rb_offset", 0)))));
-numRB = round(double(sixgr.util.structGet(cfg, "phy.trs.numRB", ...
-    sixgr.util.structGet(cfg, "lls6g.reference_signals.trs.num_rb", nSizeGrid - rbOffset))));
-numRB = max(1, min(numRB, nSizeGrid - rbOffset));
+numRB = sixgr.util.structGet(cfg, "phy.trs.numRB", ...
+    sixgr.util.structGet(cfg, "lls6g.reference_signals.trs.num_rb", nSizeGrid - rbOffset));
+validateattributes(numRB,{'numeric'},{'real','scalar','finite','integer','positive','<=',nSizeGrid-rbOffset}, ...
+    mfilename,'phy.trs.numRB');
+numRB = double(numRB);
 scramblingID = max(0, round(double(sixgr.util.structGet(cfg, "phy.trs.scramblingID", ...
     sixgr.util.structGet(cfg, "lls6g.reference_signals.trs.scrambling_id", nCellID)))));
 
@@ -108,8 +111,28 @@ if ~isempty(fieldnames(runtimeWindow))
     strictCfg.RuntimeObservationWindow = runtimeWindow;
 end
 strictCfg.SlotNumbers = double(slotNumbers);
-strictCfg.NZPCSIRSResourceIDs = double(sixgr.util.structGet(cfg, ...
-    "lls6g.reference_signals.trs.resource_ids",[]));
+strictCfg.ConfiguredSlotNumbers = double(configuredSlotNumbers);
+configuredResourceIDs = sixgr.util.structGet(cfg, ...
+    "lls6g.reference_signals.trs.resource_ids",[]);
+if ~isempty(configuredResourceIDs)
+    validateattributes(configuredResourceIDs,{'numeric'}, ...
+        {'real','vector','finite','integer','>=',0,'<=',191});
+    assert(numel(configuredResourceIDs)==numel(configuredSlotNumbers)*numel(symbolLocation) && ...
+        numel(unique(configuredResourceIDs))==numel(configuredResourceIDs), ...
+        'sixgr:qcl:InvalidTRSResourceIDs', ...
+        'Declare one distinct original NZP-CSI-RS ID per configured tracking resource.');
+end
+strictCfg.ConfiguredNZPCSIRSResourceIDs = reshape(double(configuredResourceIDs),1,[]);
+strictCfg.NZPCSIRSResourceIDs = strictCfg.ConfiguredNZPCSIRSResourceIDs;
+if ~isempty(configuredResourceIDs) && ~isempty(fieldnames(runtimeWindow)) && ...
+        runtimeWindow.Authority=="explicit_slot_numbers"
+    % The window selects an original resource set, not newly numbered RSs.
+    % Keep the full installed identity list for audit; generate only the
+    % selected set's original identities alongside its selected slots.
+    count=numel(slotNumbers)*numel(symbolLocation);
+    first=runtimeWindow.ResourceSetIndex0Based*count+1;
+    strictCfg.NZPCSIRSResourceIDs = strictCfg.ConfiguredNZPCSIRSResourceIDs(first:first+count-1);
+end
 strictCfg.BurstLengthSlots = double(sixgr.util.structGet(cfg,"phy.trs.burstLengthSlots",numel(slotNumbers)));
 strictCfg.SlotAuthority = slotAuthority;
 strictCfg.PeriodSlots = double(sixgr.util.structGet(cfg, "phy.trs.period_slots", NaN));
@@ -156,6 +179,7 @@ strictCfg.ToolboxResources = resourceSet.Resources;
 strictCfg.NumCSIRSPorts = double(resourceSet.CSIRS.NumCSIRSPorts);
 strictCfg.CDMType = string(resourceSet.CSIRS.CDMType);
 strictCfg.Density = string(resourceSet.CSIRS.Density);
+strictCfg.PeriodicityValidation = sixgr.phy.trs.validateTRSPeriodicity(strictCfg);
 strictCfg.ConfigHash = sixgr.phy.trs.hashTRSConfig(strictCfg);
 strictCfg.StrictValidation = sixgr.phy.trs.validateTRSConfigStrict(strictCfg);
 strictCfg.ConfigExport = rmfield(strictCfg, intersect(fieldnames(strictCfg), ...

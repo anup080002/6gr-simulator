@@ -53,6 +53,7 @@ artifacts.DataBeamSelectionStatsPath = fullfile(layout.ReportCSVDir, "live_data_
 artifacts.BeamP2RefinementStatsPath = fullfile(layout.ReportCSVDir, "live_beam_p2_refinement_stats.csv");
 artifacts.BeamProcedureStatsPath = fullfile(layout.ReportCSVDir, "live_beam_management_procedure_stats.csv");
 artifacts.CSIFeedbackStatsPath = fullfile(layout.ReportCSVDir, "live_csi_feedback_stats.csv");
+artifacts.CSISelectionObservationsPath = fullfile(layout.ReportCSVDir, "live_csi_selection_observations.csv");
 artifacts.CSIRSStatsPath = fullfile(layout.ReportCSVDir, "live_csirs_stats.csv");
 artifacts.LinkAdaptationInputPath = fullfile(layout.ReportCSVDir, "live_link_adaptation_input_table.csv");
 artifacts.SymbolThroughputPath = fullfile(layout.ReportCSVDir, "live_symbol_throughput_table.csv");
@@ -88,6 +89,11 @@ channelT = localAppendIndependentNMSEStats(channelT,nmseSummary);
 rankT = localBuildRankStatsTable(dlT, ulT);
 [beamT, beamP1T, beamP2T, dataBeamT] = localBuildBeamStatsTable(dlT, ulT, pbchT, runFolder);
 csiT = localBuildCSIStatsTable(dlT, ulT);
+selectionT=[ ...
+    sixgr.report.collectCSISelectionObservations(dlT,["PMI","CRI","RankIndicator","RankEstimate","Layers","WidebandCQI"],localRuntimeTrialSource(dlT,"DL",true)); ...
+    sixgr.report.collectCSISelectionObservations(ulT,["PMI","CRI","RankIndicator","RankEstimate","Layers","WidebandCQI"],localRuntimeTrialSource(ulT,"UL",true)); ...
+    sixgr.report.collectCSISelectionObservations(csirsRuntimeT,["PMI","CRI","RI","CQI"],"air_interface/csv/csi_rs_trials.csv"); ...
+    sixgr.report.collectCSISelectionObservations(srsT,["PMI","EstimatedTPMI","TPMI","RankEstimate","EstimatedRI","WidebandCQI","CQI"],"air_interface/csv/srs_trials.csv")];
 csirsT = localBuildCSIRSStatsTable(csirsRuntimeT, srsT, trsT);
 csirsT = localBindIndependentReferenceSummary(csirsT,nmseSummary);
 csirsT = sixgr.truth.canonicalizeLLSLiveSignalChainTable("csirs_stats", csirsT);
@@ -169,6 +175,7 @@ sixgr.util.csvWriteTable(artifacts.DataBeamSelectionStatsPath, dataBeamT, "Prese
 sixgr.util.csvWriteTable(artifacts.BeamP2RefinementStatsPath, beamP2T, "PreserveSchema", true);
 sixgr.util.csvWriteTable(artifacts.BeamProcedureStatsPath, beamT, "PreserveSchema", true);
 sixgr.util.csvWriteTable(artifacts.CSIFeedbackStatsPath, csiT);
+sixgr.util.csvWriteTable(artifacts.CSISelectionObservationsPath,selectionT,"PreserveSchema",true,"RoundTripNumericText",true);
 sixgr.util.csvWriteTable(artifacts.CSIRSStatsPath, csirsT, 'PreserveSchema', true);
 % Pending/undelivered feedback has deliberately empty applied-grant fields.
 % Retain that declared schema so a bootstrap-only run cannot hide the
@@ -201,6 +208,7 @@ artifacts.DataBeamSelectionStats = dataBeamT;
 artifacts.BeamP2RefinementStats = beamP2T;
 artifacts.BeamProcedureStats = beamT;
 artifacts.CSIFeedbackStats = csiT;
+artifacts.CSISelectionObservations = selectionT;
 artifacts.CSIRSStats = csirsT;
 artifacts.LinkAdaptationInput = linkAdaptationT;
 artifacts.SymbolThroughput = symbolThroughputT;
@@ -854,8 +862,8 @@ end
 
 function T = localBuildCSIStatsTable(dlT, ulT)
 parts = { ...
-    localAggregateByDirectionAndSNR(dlT, "DL", ["WidebandCQI","CQIDerivedMCS","CQIDerivedTargetCodeRate","CSIPayloadBitLength","PMI","CRI","RankIndicator"], localRuntimeTrialSource(dlT, "DL", false)), ...
-    localAggregateByDirectionAndSNR(ulT, "UL", ["WidebandCQI","CQIDerivedMCS","CQIDerivedTargetCodeRate","CSIPayloadBitLength","PMI","CRI","RankIndicator"], localRuntimeTrialSource(ulT, "UL", false))};
+    localAggregateByDirectionAndSNR(dlT, "DL", ["WidebandCQI","CQIDerivedMCS","CQIDerivedTargetCodeRate","CSIPayloadBitLength","RankIndicator"], localRuntimeTrialSource(dlT, "DL", false)), ...
+    localAggregateByDirectionAndSNR(ulT, "UL", ["WidebandCQI","CQIDerivedMCS","CQIDerivedTargetCodeRate","CSIPayloadBitLength","RankIndicator"], localRuntimeTrialSource(ulT, "UL", false))};
 T = localVertcat(parts);
 if isempty(T)
     T = localEmptySummaryTable();
@@ -1081,8 +1089,8 @@ if istable(csirsRuntimeT) && ~isempty(csirsRuntimeT)
             "MeanNMSE_dB", NaN, ... % Bound below from compatible producer-contract populations.
             "MeanPilotResidualNMSE_dB", localMean(csirsRuntimeT, "PilotResidualNMSE_dB", mask), ...
             "MeanWidebandCQI", localMean(csirsRuntimeT, "CQI", mask), ...
-            "MeanPMI", localMean(csirsRuntimeT, "PMI", mask), ...
-            "MeanCRI", localMean(csirsRuntimeT, "CRI", mask), ...
+            "MeanPMI", NaN, ... % Identifiers are retained in the observation artifact, never averaged.
+            "MeanCRI", NaN, ...
             "MeanCSIPayloadBitLength", localMean(csirsRuntimeT, "CSIPayloadBitLength", mask), ...
             "SampleCount", double(nnz(mask)), ...
             "Notes", "Aggregated only from received CSI-RS RE extraction, CSI-RS channel estimation, and immutable measured-state CSI feedback rows.");
@@ -1115,7 +1123,7 @@ if istable(srsT) && ~isempty(srsT)
             "MeanNMSE_dB", stats.NMSE_dB, ...
             "MeanPilotResidualNMSE_dB", NaN, ...
             "MeanWidebandCQI", localMeanFirstExisting(srsT(mask,:), ["WidebandCQI","CQI"]), ...
-            "MeanPMI", localMeanFirstExisting(srsT(mask,:), ["PMI","EstimatedTPMI","TPMI"]), ...
+            "MeanPMI", NaN, ... % PMI and TPMI remain distinct original fields.
             "MeanCRI", NaN, "MeanCSIPayloadBitLength", NaN, ...
             "SampleCount", double(nnz(mask)), ...
             "Notes", "SRS source-row summary; SampleCount counts all source rows, NMSESampleCount only independent-reference measurements. NMSE uses mean linear normalized error; qualification additionally requires the original finite threshold and PASS. No independent-trial or confidence-interval claim.");
@@ -1138,6 +1146,11 @@ T = localInitializeSRSNMSEMetadata(T);
 for k = 1:numel(srsRows)
     T = localSetSRSNMSEMetadata(T, srsRows(k), srsStatistics{k});
 end
+% Retain legacy columns for readers, but not their scientifically invalid
+% identifier arithmetic. The replacement contains every original selection.
+T.MeanPMIStatus=repmat("not_applicable_discrete_identity_mean_removed",height(T),1);
+T.MeanCRIStatus=repmat("not_applicable_discrete_identity_mean_removed",height(T),1);
+T.SelectionObservationsSource=repmat("reports/csv/live_csi_selection_observations.csv",height(T),1);
 end
 
 function T = localBuildUserPerformanceTable(dlSummary, ulSummary, dlRaw, ulRaw, harqTimelineT)

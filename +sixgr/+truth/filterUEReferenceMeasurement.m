@@ -22,6 +22,17 @@ pointStart=sixgr.util.structGet(state,'SweepPointStartSlot',1);
 validateattributes(pointStart,{'numeric'},{'scalar','integer','positive','finite'});
 key=char("ue_"+string(measurement.TargetId)+"_cell_"+string(cellId)+ ...
     "_ssb_"+string(measurement.ResourceId)+"_start_"+string(pointStart)+"_"+extractBefore(hash,17));
+if sixgr.phy.refsig.pathlossReferenceLifetime(cfg)=="retained_filtered_reference"
+    [eligible,context]=sixgr.truth.SSBPowerReferenceLifecycle.filterContext(state,measurement);
+    measurement.SSBPowerReferenceLifecycleStatus=char(context.Status);
+    measurement.SSBPowerReferenceContextSHA256=char(context.ContextSHA256);
+    measurement.SSBPowerReferenceGenerationSHA256=char(context.GenerationSHA256);
+    measurement.SSBPowerReferenceClockDomain=char(context.ClockDomain);
+    if ~eligible, return; end % Preserve raw evidence; do not contaminate the filter.
+    % MATLAB field names are bounded: hash the complete, unambiguous key.
+    key=char("ssb_"+extractBefore(string(sixgr.util.sha256Hex( ...
+        [key '|' char(context.GenerationSHA256)])),57));
+end
 if ~isfield(state,'UEReferenceRSRPFilters'), state.UEReferenceRSRPFilters=struct(); end
 if isfield(state.UEReferenceRSRPFilters,key)
     filter=state.UEReferenceRSRPFilters.(key);
@@ -38,5 +49,7 @@ measurement.UERSRPFilterEffectiveAlpha=filter.EffectiveAlpha;
 measurement.UERSRPFilterUpdateCount=filter.UpdateCount;
 measurement.UERSRPFilterSource=char(source);
 measurement.UERSRPFilterConfigHash=char(hash);
-measurement.ReferenceConfigurationEpoch=epoch;
+if sixgr.phy.refsig.pathlossReferenceLifetime(cfg)=="configured_age_limit"
+    measurement.ReferenceConfigurationEpoch=epoch;
+end
 end

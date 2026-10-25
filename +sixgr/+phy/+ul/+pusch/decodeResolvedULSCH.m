@@ -89,12 +89,12 @@ for cw=1:count
     evidence{cw}=e;
 end
 parityCells=cell(1,count);
-for cw=1:count, parityCells{cw}=sixgr.util.structGet(evidence{cw},'FinalParityChecks',[]); end
-stage="initial_decode";
-if any(cellfun(@(e) logical(sixgr.util.structGet(e,'HARQCombining.Applied',false)),evidence))
-    stage="harq_combined_decode";
+stages=strings(1,count);
+for cw=1:count
+    parityCells{cw}=sixgr.util.structGet(evidence{cw},'FinalParityChecks',[]);
+    stages(cw)=sixgr.util.structGet(evidence{cw},'LDPCParityEvidence.Stage',"");
 end
-parityEvidence=sixgr.phy.phycode.summarizeLDPCParity(parityCells,stage);
+parityEvidence=sixgr.phy.phycode.summarizeLDPCParity(parityCells,stages);
 result=struct('LDPCParityEvidence',parityEvidence,'TransportBlocks',{blocks},'MappingResolved',resolved, ...
     'DecodeAttempted',attempted,'CRCAvailable',attempted, ...
     'CRCPass',crcPass,'CRCError',crcError,'CodewordEvidence',{evidence}, ...

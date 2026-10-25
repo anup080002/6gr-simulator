@@ -1,20 +1,20 @@
 {
   "scope": "configuration_snapshot_not_simulation_result",
   "scenario": "simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_adaptation.yaml",
-  "created": "2026-10-22 14:04:32",
+  "created": "2026-10-25 06:06:54",
   "matlab": "26.1.0.3312084 (R2026a) Update 4",
   "sources": [
     {
       "path": "simulator/configs/defaults/top_level_required_sections_01.yaml",
-      "sha256": "7d040f889c0ac874f043b3a841c348459897262eb7fe72d88148d4699b74314d"
+      "sha256": "969773adc37a4e2b89b53db9ef8ea529186cfbe5571533d92251a80f6a896d43"
     },
     {
       "path": "simulator/configs/defaults/top_level_required_sections_02.yaml",
-      "sha256": "5fe3aba15556ea2813e0074e723f9037b824fa1aefd8c7bfc9f3d225787d95f1"
+      "sha256": "fdea492bfe499a4683a8601937788fa63e92ca53d214822d48a576b3c2c62300"
     },
     {
       "path": "simulator/configs/defaults/top_level_required_sections_03.yaml",
-      "sha256": "b8fca5ca4c93fd9bc737e58cf3a9d484c16fde21b1e1e18f286846f718d6c320"
+      "sha256": "a778ff6340397f9721489a56912cca54bcf00681fb6c323d40a6f80b622a7f92"
     },
     {
       "path": "simulator/configs/defaults/processing_chains.yaml",
@@ -89,8 +89,12 @@
       "sha256": "c815c6549b41a847296c020c5089259558d9a64db18494f448588a5714e8828a"
     },
     {
+      "path": "simulator/configs/control/connected_single_port_tdd.yaml",
+      "sha256": "30b599fe386614ae9384b4acd11c5cd74211c1a82e2539ff4f69f163fa623ac5"
+    },
+    {
       "path": "simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd.yaml",
-      "sha256": "8053ff70996a3c626c537e78ff6d6c9e7b65209891f5a39a882fb15ca37b33f5"
+      "sha256": "fa0f8581d5cae1793ea771c7b1fe0155ec9a1cf56af1743aaf4c6110ce42f165"
     },
     {
       "path": "simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd_short.yaml",
@@ -118,7 +122,7 @@
     },
     {
       "path": "simulator/configs/scenarios/h4_100_common_connected.yaml",
-      "sha256": "73506d4ce58d3f7b258971cf039a830f73c5617c2d7c64f20497b3f16931671e"
+      "sha256": "cba67f61e49ef9ec6e17ebce88751919f162dcc59d9a4171d3594002ac18483c"
     },
     {
       "path": "simulator/configs/channels/ran1_4ghz_f2_cdlc100.yaml",
@@ -258,6 +262,7 @@
         "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\simulator\\configs\\scenarios\\lls_700mhz_20mhz_3bs_30ue_tdlc_browser_coupled.yaml",
         "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\simulator\\configs\\scenarios\\lls_6g_4ghz_100mhz_19site_3sector_100ue_uma.yaml",
         "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\simulator\\configs\\impairments\\causal_rf_stream.yaml",
+        "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\simulator\\configs\\control\\connected_single_port_tdd.yaml",
         "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\simulator\\configs\\scenarios\\lls_causal_access_to_data_wiring_tdd.yaml",
         "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\simulator\\configs\\scenarios\\lls_causal_access_to_data_wiring_tdd_short.yaml",
         "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\simulator\\configs\\scenarios\\lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml",
@@ -298,6 +303,7 @@
           "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\simulator\\configs\\scenarios\\lls_700mhz_20mhz_3bs_30ue_tdlc_browser_coupled.yaml",
           "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\simulator\\configs\\scenarios\\lls_6g_4ghz_100mhz_19site_3sector_100ue_uma.yaml",
           "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\simulator\\configs\\impairments\\causal_rf_stream.yaml",
+          "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\simulator\\configs\\control\\connected_single_port_tdd.yaml",
           "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\simulator\\configs\\scenarios\\lls_causal_access_to_data_wiring_tdd.yaml",
           "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\simulator\\configs\\scenarios\\lls_causal_access_to_data_wiring_tdd_short.yaml",
           "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\simulator\\configs\\scenarios\\lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml",
@@ -597,6 +603,14 @@
       "ue_panel_center_spacing_vertical_lambda": 1
     },
     "power_and_rf_frontend": {
+      "modeled_radiated_power": {
+        "enabled": false
+      },
+      "tx_linear_reference": {
+        "enabled": false,
+        "model": "fixed_first_order_pa_identity_dac",
+        "classification": "optional_research_experiment"
+      },
       "bs_tx_power_dbm": 30,
       "ue_tx_power_dbm": 23,
       "ue_noise_figure_db": 7,
@@ -1202,7 +1216,7 @@
         "baseline_or_candidate_tag": "baseline_benchmark",
         "time_density": "configured",
         "frequency_density": "configured",
-        "periodicity": "20",
+        "periodicity": "20ms",
         "aperiodic_trigger": "none",
         "semi_persistent_flag": false,
         "num_ports": 1,
@@ -1235,7 +1249,7 @@
           102,
           103
         ],
-        "periodicity_slots": 20,
+        "periodicity_slots": 40,
         "period_offset": 6,
         "subcarrier_location": 0,
         "rb_offset": 0,
@@ -1511,13 +1525,13 @@
       "ptrs_time_density": 2,
       "ptrs_frequency_density": 2,
       "ptrs_re_offset": "00",
-      "srs_periodicity_slots": 5,
-      "srs_slot_within_period": 5,
-      "trs_periodicity_slots": 20,
       "pdsch_dmrs_max_length": 1,
-      "pusch_dmrs_num_cdm_groups_without_data": 2,
       "pusch_dmrs_config_type": 1,
       "pusch_dmrs_max_length": 1,
+      "pusch_dmrs_num_cdm_groups_without_data": 2,
+      "srs_periodicity_slots": 5,
+      "srs_slot_within_period": 5,
+      "trs_periodicity_slots": 40,
       "csi_rs_port_count": 4,
       "ssb_beam_count": 4,
       "ssb_periodicity_ms": 20,
@@ -1535,8 +1549,10 @@
         "period_slots": 20,
         "offset_slots": 5
       },
+      "trs_periodicity_ms": 20,
       "csi_report_periodicity_slots": 20,
       "csi_reporting_delay_slots": 4,
+      "csi_report_offset_slots": 18,
       "ssb_Lmax": 8
     },
     "pdcch": {
@@ -1641,12 +1657,6 @@
       "num_prb": 273,
       "start_symbol": 2,
       "num_symbols": 12,
-      "use_exact_flat_static_mimo_prg_estimator": false,
-      "num_antenna_ports": 4,
-      "pmi": 0,
-      "dmrs_residual_post_eq_sinr_bound_enabled": true,
-      "decision_directed_post_eq_sinr_bound_enabled": true,
-      "decoder_noise_variance_mode": "post_equalization",
       "dmrs_nscid": 0,
       "time_domain_allocations": [
         [
@@ -1661,7 +1671,13 @@
           8,
           0
         ]
-      ]
+      ],
+      "use_exact_flat_static_mimo_prg_estimator": false,
+      "num_antenna_ports": 4,
+      "pmi": 0,
+      "dmrs_residual_post_eq_sinr_bound_enabled": true,
+      "decision_directed_post_eq_sinr_bound_enabled": true,
+      "decoder_noise_variance_mode": "post_equalization"
     },
     "pusch": {
       "enabled": true,
@@ -1711,7 +1727,6 @@
       "num_symbols": 11,
       "num_layers": 1,
       "mcs_index": 4,
-      "decoder_noise_variance_mode": "pre_equalization",
       "dmrs_nscid": 0,
       "time_domain_allocations": [
         [
@@ -1727,7 +1742,19 @@
           4
         ]
       ],
-      "priority_index": 0
+      "decoder_noise_variance_mode": "pre_equalization",
+      "priority_index": 0,
+      "dmrs_configuration_type": 1,
+      "dmrs_length": 1,
+      "dmrs_additional_position": 2,
+      "dmrs_type_a_position": 2,
+      "dmrs_num_cdm_groups_without_data": 2,
+      "dmrs_port_set": [
+        0,
+        1,
+        2,
+        3
+      ]
     },
     "pucch": {
       "enabled": true,
@@ -1823,11 +1850,12 @@
       "runtime_state_machine_enabled": true,
       "require_received_tci_for_data": true,
       "tci_activation_authority": "decoded_pdcch_tci_codepoint",
+      "ssb_initial_csi_spatial_policy": "contains_ssb_precoder",
       "ssb_to_initial_csi_resource_ids": [
         0,
+        1,
         2,
-        4,
-        6
+        3
       ],
       "csi_rs_resource_to_tci_state_ids": [
         16,
@@ -1872,6 +1900,7 @@
       "dmrs_port_selection_policy": "baseline",
       "report_trigger": "periodic",
       "report_periodicity": "10ms",
+      "csi_report_offset_slots": 18,
       "report_payload_mode": "compressed",
       "compression_mode": "none",
       "sscc_mode": false,
@@ -1908,11 +1937,45 @@
       "downloadable_model_policy": "disabled",
       "report_overhead_policy": "baseline",
       "csi_report_periodicity_slots": 20,
-      "csi_report_offset_slots": 18,
       "target_bler": 0.1,
       "csi_reporting_delay_slots": 4,
       "dl_csi_mode": "PMI+CQI+RI+CRI",
-      "csi_report_type": "PMI+CQI+RI+CRI"
+      "csi_report_type": "PMI+CQI+RI+CRI",
+      "report_calendar_authority": {
+        "ContractVersion": "sixgr.config.CSIReportCalendar/v2",
+        "Declarations": {
+          "Period": [
+            {
+              "Path": "csi_acquisition_and_reporting.csi_report_periodicity_slots",
+              "Unit": "slots",
+              "Value": 20
+            },
+            {
+              "Path": "reference_signals.csi_report_periodicity_slots",
+              "Unit": "slots",
+              "Value": 20
+            },
+            {
+              "Path": "csi_acquisition_and_reporting.report_periodicity",
+              "Unit": "ms",
+              "Value": 10
+            }
+          ],
+          "Offset": {
+            "Path": "csi_acquisition_and_reporting.csi_report_offset_slots",
+            "Unit": "slots",
+            "Value": 18
+          }
+        },
+        "Clock": {
+          "CCID": 0,
+          "BWPID": 0,
+          "SCSKHz": 30
+        },
+        "PeriodSlots": 20,
+        "OffsetSlots": 18,
+        "SHA256": "e14c09b399add4a39808528afa410ff631cfe834bce469278b18ed3a5e6b4f9f"
+      }
     },
     "channel_coding": {
       "data_channel_family": "LDPC",
@@ -2344,7 +2407,19 @@
       "confidence_interval_policy": "95pct",
       "percentile_policy": "p50_p90_p99",
       "comparison_policy": "baseline_delta",
-      "baseline_diff_policy": "absolute_and_relative"
+      "baseline_diff_policy": "absolute_and_relative",
+      "csi_selection_quality": {
+        "enabled": false,
+        "objective": "mean_support_sum_log2_one_plus_linear_mmse_sinr",
+        "receiver": "linear_mmse",
+        "power_normalization": "unit_physical_chain_grid_coefficient_power",
+        "power_factor": 1,
+        "support": "selected_resource_pilot_union",
+        "research_class": "optional_research_experiment",
+        "classification": "IMPLEMENTATION_POLICY",
+        "tie_absolute_tolerance": 1E-10,
+        "physical_power_tolerance": 1E-10
+      }
     },
     "sweeps_and_matrix": {
       "snr_sweep": {
@@ -6030,9 +6105,13 @@
       "distribution_matching_before_coding": false,
       "shaping_retransmission_mode": "repeat_original",
       "packet_level_coding_enabled": false,
+      "ldpc_max_iterations": 8,
+      "ldpc_algorithm": "Normalized min-sum",
+      "ldpc_scaling_factor": 0.75,
+      "ldpc_min_sum_offset": 0.5,
+      "ldpc_early_termination": true,
       "dl_coding_scheme": "LDPC",
-      "control_coding_scheme": "Polar",
-      "ldpc_max_iterations": 8
+      "control_coding_scheme": "Polar"
     },
     "modulation": {
       "dl_modulation_order": 2,
@@ -6095,7 +6174,6 @@
       "stress_mode": "none",
       "pucch_enabled": true,
       "pucch_format": 2,
-      "coreset_frequency_resource_policy": "explicit_bitmap",
       "connected_monitoring": {
         "cce_reg_mapping": "noninterleaved",
         "reg_bundle_size": 6,
@@ -6131,6 +6209,20 @@
         "tci_present": true,
         "additional_dci_features": []
       },
+      "coreset_qcl_association": {
+        "configuration_epoch": 1,
+        "serving_cell_index": 0,
+        "component_carrier_index": 0,
+        "bwp_id": 0,
+        "coreset_id": 1,
+        "activation_absolute_slot0": 0,
+        "source_reference_signal": "SSB",
+        "source_reference_signal_id": 0,
+        "qcl_types": [
+          "A"
+        ],
+        "initialization_source": "lls_preconfigured_higher_layer_context"
+      },
       "dl_reference_signaling": {
         "dmrs_configuration_type": 1,
         "dmrs_max_length": 1,
@@ -6152,6 +6244,7 @@
         "transmission_scheme": "codebook",
         "full_power_mode": "not_configured"
       },
+      "coreset_frequency_resource_policy": "explicit_bitmap",
       "joint_pdcch_admission_policy": "ul_preschedule_first",
       "coreset_rb_start": 112,
       "coreset_rb_offset_r16_capability": true,
@@ -8411,7 +8504,8 @@
         "pcmax_dbm": 23,
         "pathloss_reference_rs_id": 1,
         "tpc_command_source": "decoded_tpc",
-        "require_measured_reference_rs": true
+        "require_measured_reference_rs": true,
+        "alpha": 1
       },
       "spatial_relations": {
         "id": 1,
@@ -8426,6 +8520,15 @@
         "selected_beam_id": 0,
         "applied_beam_id": 0
       },
+      "scheduling_request_resources": {
+        "scheduling_request_resource_id": 1,
+        "scheduling_request_id": 0,
+        "resource_id": 0,
+        "periodicity_slots": 5,
+        "offset_slots": 3,
+        "priority_index": 0,
+        "additional_periodicity_capability": true
+      },
       "format2": {
         "simultaneous_harq_ack_csi": true,
         "max_code_rate": 0.35
@@ -8435,15 +8538,6 @@
         "uci_on_pusch_enabled": true,
         "reserve_configured_pucch_prbs_from_pusch": true,
         "unsupported_overlap_policy": "reject_before_waveform"
-      },
-      "scheduling_request_resources": {
-        "scheduling_request_resource_id": 1,
-        "scheduling_request_id": 0,
-        "resource_id": 0,
-        "periodicity_slots": 5,
-        "offset_slots": 3,
-        "priority_index": 0,
-        "additional_periodicity_capability": true
       }
     },
     "rf_hardware": {
@@ -8574,7 +8668,7 @@
         },
         "pucch": {
           "p0_dbm": -80,
-          "alpha": 0.8,
+          "alpha": 1,
           "delta_tf_db": 0,
           "pcmax_dbm": 23
         },
@@ -8727,6 +8821,10 @@
       "pdsch": {
         "layer_count": 1,
         "rank": 1
+      },
+      "reference_signals": {
+        "csi_report_periodicity_slots": 20,
+        "csi_report_offset_slots": 18
       }
     },
     "random_access_evidence": {
@@ -8945,5 +9043,5 @@
     "SlotsPerFrame": 20
   },
   "source_root": "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main",
-  "scenario_hash": "2224ac25982878a6661b3448ef2adba2404967c05ecd59bd67344e9640bfce61"
+  "scenario_hash": "54119669a44a5549f0dfc6721e1a6aee275b88b4a13701a7a7d2b83102f9208e"
 }

@@ -57,9 +57,14 @@ diag.CombinedLDPCPolicyReceipt = policyReceipt;
 diag.CombinedFinalParityChecks = parity;
 parityCells = parity;
 if ~iscell(parityCells), parityCells = {parityCells}; end
-stage = "initial_decode";
-if logical(combineInfo.Applied), stage = "harq_combined_decode"; end
-diag.CombinedLDPCParityEvidence = sixgr.phy.phycode.summarizeLDPCParity(parityCells, stage);
+stages = repmat("initial_decode",1,numel(parityCells));
+applied = sixgr.util.structGet(combineInfo,"AppliedPerCodeword",combineInfo.Applied);
+assert(islogical(applied) && numel(applied)==numel(parityCells), ...
+    'sixgr:link:HARQParityStagePopulation', ...
+    'Original combining evidence must identify every decoded codeword.');
+stages(reshape(applied,1,[])) = "harq_combined_decode";
+stages(cellfun(@isempty,parityCells)) = "";
+diag.CombinedLDPCParityEvidence = sixgr.phy.phycode.summarizeLDPCParity(parityCells, stages);
 diag.MeasuredSINR_dB = localExtractSINR(rx);
 diag.Notes = "";
 end

@@ -21,6 +21,9 @@ end
 [~,decision]=sixgr.truth.bindSharedSSBPowerReference( ...
     cfg,state,ue,consumerSlot,configured.ReferenceSignalId,"SRS");
 reference.Status=string(decision.Status);
+reference.MaximumAgeSlots=double(decision.MaximumAgeSlots);
+reference.PathlossReferenceLifetime=string(decision.PathlossReferenceLifetime);
+reference.ReferenceLifecycleStatus=string(decision.ReferenceLifecycleStatus);
 if ~decision.ReferenceUsable, return; end
 reference.Pathloss_dB=double(decision.Pathloss_dB);
 reference.Source=string(decision.Source);

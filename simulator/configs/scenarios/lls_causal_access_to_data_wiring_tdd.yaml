@@ -1,6 +1,7 @@
 inherits:
   - ./lls_6g_4ghz_100mhz_19site_3sector_100ue_uma.yaml
   - ../impairments/causal_rf_stream.yaml
+  - ../control/connected_single_port_tdd.yaml
 
 meta:
   scenario_id: lls_causal_access_to_data_wiring_tdd
@@ -441,7 +442,7 @@ rf_frontend:
     tpc_mode: accumulation
     state_epoch_required: true
     pusch: {p0_dbm: -80, p0_ue_db: 0, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
-    pucch: {p0_dbm: -80, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
+    pucch: {p0_dbm: -80, alpha: 1.0, delta_tf_db: 0, pcmax_dbm: 23}
     srs: {p0_dbm: -80, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
     prach: {p0_dbm: -100, alpha: 1.0, delta_tf_db: 0, pcmax_dbm: 23}
 

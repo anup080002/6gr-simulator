@@ -382,7 +382,7 @@ rf_frontend:
     tpc_mode: accumulation
     state_epoch_required: true
     pusch: {p0_dbm: -80, p0_ue_db: 0, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
-    pucch: {p0_dbm: -80, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
+    pucch: {p0_dbm: -80, alpha: 1.0, delta_tf_db: 0, pcmax_dbm: 23}
     srs: {p0_dbm: -80, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
     prach: {p0_dbm: -100, alpha: 1.0, delta_tf_db: 0, pcmax_dbm: 23}
 waveform:
@@ -691,7 +691,9 @@ reference_signals:
   # authored values; no hardcoded phase offsets are permitted.
   srs_periodicity_slots: 4
   srs_slot_within_period: 4
-  trs_periodicity_slots: 4
+  # Explicit TRS slots [7,8] recur each 10-slot/10-ms frame at 15 kHz.
+  # Keep this mirror consistent with that actual two-slot resource set.
+  trs_periodicity_slots: 10
   csi_rs_periodicity_slots: 4
   # Absolute slot0 phase 2 overlaps the common SIB1/Type-0 occasion.
   # Phase 3 is disjoint from SSB/SI/TRS REs over the 20-slot calendar.
@@ -828,7 +830,8 @@ reference_signals:
     baseline_or_candidate_tag: "baseline_benchmark"
     time_density: "configured"
     frequency_density: "configured"
-    periodicity: "20ms"
+    # Four carrier slots at this scenario's 15-kHz SCS; same phase3 below.
+    periodicity: "4ms"
     aperiodic_trigger: "none"
     semi_persistent_flag: false
     num_ports: 2
@@ -909,7 +912,8 @@ reference_signals:
     baseline_or_candidate_tag: "baseline_benchmark"
     time_density: "configured"
     frequency_density: "configured"
-    periodicity: "20"
+    # Numeric-string SRS periodicity is milliseconds, not a second calendar.
+    periodicity: "4"
     aperiodic_trigger: "none"
     semi_persistent_flag: false
     num_ports: 2
@@ -1054,7 +1058,7 @@ reference_signals:
   dmrs_csi_tracking_enabled: false
   srs_ports: 2
   srs_sequence_family: "baseline_nr"
-  srs_periodicity_ms: 20
+  srs_periodicity_ms: 4
   channel_estimation_mode: "realistic_baseline"
   receiver_example: "mmse_irc"
   sgcs_reporting_enabled: true

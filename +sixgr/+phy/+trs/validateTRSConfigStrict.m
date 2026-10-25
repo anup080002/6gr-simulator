@@ -2,6 +2,11 @@ function validation = validateTRSConfigStrict(trsCfg)
 %VALIDATETRSCONFIGSTRICT Validate strict TRS/NZP-CSI-RS invariants.
 
 reasons = strings(0, 1);
+try
+    sixgr.phy.trs.validateTRSPeriodicity(trsCfg);
+catch cause
+    reasons(end+1,1) = "trs_periodicity_invalid:" + string(cause.identifier);
+end
 estimator=string(sixgr.util.structGet(trsCfg,'RuntimeChannelEstimator','nr_channel_estimate'));
 if ~isscalar(estimator) || ~any(estimator==["nr_channel_estimate","flat_static_awgn_ls"])
     reasons(end+1,1)="invalid_runtime_channel_estimator";

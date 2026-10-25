@@ -152,6 +152,9 @@ for scenario = scenarios
         'SelectedBeamFlag','SelectedSSBIndex','SelectedBeamIndex', ...
         'SelectionMetricValue_dB','SelectionSource'});
     tracking.ServingCell=1;
+    % Declared receiver-state fixture, not a newly executed BCH decoder.
+    tracking.BCHCRCValid=true; tracking.MIBDecoded=true;
+    tracking.CandidateIdentityConsistent=true; tracking.SSBIdentityVerified=true;
     tracking.ReferenceSignalTxEPRE_dBm=0;
     runtimeState = sixgr.truth.CoupledTruthRuntime. ...
         applyServingSSBTrackingTrial(runtimeState,1,tracking);
@@ -172,6 +175,7 @@ for scenario = scenarios
     missed.Slot(:) = 41;
     missed.Status(:) = "FAIL";
     missed.CRCPass(:) = false;
+    missed.BCHCRCValid(:) = false;
     runtimeState.CurrentSlot = 41;
     runtimeState = sixgr.truth.CoupledTruthRuntime. ...
         applyServingSSBTrackingTrial(runtimeState,1,missed);

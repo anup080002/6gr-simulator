@@ -84,6 +84,11 @@ methods(Static)
             row.(field)=powerEvidence.(field);
         end
         row.MeasurementClockEpoch=state.SharedWaveformStream.Physical.ConfigurationEpoch;
+        row.ReferenceConfigurationEpoch=sixgr.util.structGet(c.Config,'initial_access.configuration_epoch',NaN);
+        captureFilter=sixgr.rrc.resolvePreconnectionRSRPFilter(c.Config);
+        if ~isempty(fieldnames(captureFilter))
+            row.SSBPowerReferenceCaptureFilterConfigHash=string(captureFilter.ConfigHash);
+        end
         row.ResultCompletedAtSample=state.SharedWaveformStream.Events.NextSampleIndex;
         row.RecoveryScope=string(r.RecoveryScope);
         row.SIB1ReceptionAttempted=logical(r.SIB1ReceptionAttempted);

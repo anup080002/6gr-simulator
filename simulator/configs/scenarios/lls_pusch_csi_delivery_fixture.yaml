@@ -3,14 +3,25 @@ inherits:
 
 meta:
   scenario_id: lls_pusch_csi_delivery_fixture
-  description: Shared CSI-RS receiver publication and PUSCH feedback with deferred scheduler delivery.
-  purpose: Shared DL CSI source and UL transport; isolated coded DL HARQ source; prescribed access state; not integrated 12 dB qualification.
+  description: Shared post-SIB1 CSI-RS reception and configured periodic CSI on PUSCH with deferred receiver delivery.
+  purpose: Actual SSB/MIB/SIB1 and shared CSI/UCI transport; isolated coded DL HARQ sources; declared initial connected RA/TAG; not full access, RRC or integrated 12 dB qualification.
   research_class: optional_research_experiment
 
+# The component installs the initial connected RA/TAG context explicitly.
+# Actual received SIB1 still gates measurement installation; production n40
+# retains its required cold-access procedure.
+control_gating:
+  prach_required: false
+
+# Source slot 6 is the configured reference resource for report slot 10.
+# The actual slot-10 PUSCH receiver result is delivered at slot 11; neither
+# that delivery nor the report occasion is inferred from the AMC delay.
+csi_acquisition_and_reporting:
+  csi_report_periodicity_slots: 5
+  csi_report_offset_slots: 4
+
 link_adaptation:
-  # The actual CSI-RS producer is one-based slot 3 (absolute slot 2), the
-  # newest configured occasion before the slot-10 report's reference-resource
-  # boundary.  This component intentionally defers that received measurement
-  # seven slots so its UCI shares the scheduled slot-10 PUSCH.  Producer
-  # selection must never be inferred as `report slot - feedback delay`.
+  # Independent generic feedback-delay authority, deliberately different
+  # from the periodic CSI source-to-report interval. Metadata-only enqueue
+  # tests cover this delay; this waveform fixture covers periodic UCI.
   feedback_delay_slots: 7
