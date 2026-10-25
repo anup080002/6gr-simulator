@@ -101,6 +101,9 @@ else
 end
 
 freqEst = struct("Valid", false, "EstimateHz", NaN, "Estimator", "disabled");
+if enableFreq && ~detected
+    freqEst.Estimator = "unavailable_without_prach_detection";
+end
 if detected && enableFreq
     ref = sixgr.rach.generatePRACHWaveform(cfg, "Occasion", occasion, "PreambleIndex", idx);
     cpLen = localFirstCPLength(ref);
@@ -723,24 +726,26 @@ function aligned = localAlignWaveforms(rxWave, refWave, offsetSamples, cpLength)
 if nargin < 4 || isempty(cpLength) || ~isfinite(double(cpLength)) || double(cpLength) < 0
     cpLength = 0;
 end
-rx = localVector(rxWave);
+% Preserve independent antenna phases. The frequency estimator combines
+% per-branch lag products, not a coherent sum of uncalibrated antennas.
+rx = localMatrix(rxWave);
 ref = localVector(refWave);
 offsetSamples = max(0, round(double(offsetSamples)));
 cpLength = max(0, round(double(cpLength)));
 startIdx = offsetSamples + cpLength + 1;
-if startIdx > numel(rx)
+if startIdx > size(rx,1)
     aligned.RxAligned = complex([]);
     aligned.RefAligned = complex([]);
     return;
 end
-rx = rx(startIdx:end);
+rx = rx(startIdx:end,:);
 if cpLength + 1 <= numel(ref)
     ref = ref(cpLength + 1:end);
 else
     ref = complex([]);
 end
-L = min(numel(rx), numel(ref));
-aligned.RxAligned = rx(1:L);
+L = min(size(rx,1), numel(ref));
+aligned.RxAligned = rx(1:L,:);
 aligned.RefAligned = ref(1:L);
 end
 

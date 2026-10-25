@@ -4,9 +4,18 @@ function evidence=pucchReceiverStageEvidence(rx,assignment)
 % inputs. This function does not qualify a detection or claim TX success.
 mode=string(rx.ChannelEstimationMode);
 assert(isscalar(mode) && any(mode==["dmrs_per_resource_mmse_equalization", ...
-    "awgn_direct_resource_extraction","format0_noncoherent_sequence_detection"]), ...
+    "awgn_direct_resource_extraction","format0_noncoherent_sequence_detection", ...
+    "not_executed_timing_unavailable"]), ...
     'sixgr:link:UnknownPUCCHReceiverStage','Unrecognized executed PUCCH receiver mode.');
 estimated=mode=="dmrs_per_resource_mmse_equalization";
+unavailable=mode=="not_executed_timing_unavailable";
+if unavailable
+    assert(isequal(rx.DetectionAttempted,false) && isequal(rx.DecodeAttempted,false) && ...
+        isequal(rx.DTXDecisionAvailable,false) && ~rx.ReceiverUsable && ...
+        rx.DetectionOutcome=="unavailable" && isempty(rx.DecodedSequence1) && ...
+        isempty(rx.DecodedSequence2),'sixgr:link:InvalidUnavailablePUCCHStages', ...
+        'An unavailable receiver cannot claim executed detection or decoded bits.');
+end
 source="not_applicable_"+mode;
 if estimated, source="pucch_dmrs_per_resource_nrChannelEstimate"; end
 evidence=struct( ...
@@ -22,8 +31,12 @@ evidence=struct( ...
 % Stage readiness is NOT the same thing as having executed an estimator.
 % Noncoherent/direct extraction still requires its receiver and extraction
 % checks at the caller, but has no DM-RS equalizer prerequisite.
-evidence.ReceiverEstimationStagesReady=~estimated || ...
-    (evidence.ChannelEstimateAvailable && evidence.EqualizationAvailable);
+evidence.ReceiverEstimationStagesReady=~unavailable && (~estimated || ...
+    (evidence.ChannelEstimateAvailable && evidence.EqualizationAvailable));
+for name=["ReceiverExecutionStatus","ReceiverUnavailableReason","DecodeAttempted", ...
+        "DetectionAttempted","DTXDecisionAvailable","FeedbackDisposition"]
+    if isfield(rx,name), evidence.(name)=rx.(name); end
+end
 frequency=sixgr.link.controlFrequencyEvidence(rx);
 for name=string(fieldnames(frequency)).', evidence.(name)=frequency.(name); end
 if isfield(rx,'EVMApplicable') && isfield(rx,'EVMPercent')
@@ -38,6 +51,10 @@ if isfield(rx,'EVMApplicable') && isfield(rx,'EVMPercent')
         evidence.EVMValueStatus="NOT_APPLICABLE_SEQUENCE_DETECTION";
     elseif ~isfinite(rx.EVMPercent)
         evidence.EVMValueStatus="UNAVAILABLE_NO_FINITE_RECEIVER_SYMBOL_EVM";
+    end
+    if unavailable
+        evidence.EVMReferenceSource="not_executed_timing_unavailable";
+        evidence.EVMValueStatus="UNAVAILABLE_RECEIVER_NOT_EXECUTED";
     end
     for name=["EVMReferenceModulation","EVMSymbolCount","EVMErrorEnergy","EVMReferenceEnergy"]
         if isfield(rx,name), evidence.(name)=rx.(name); end
@@ -96,6 +113,7 @@ end
 if rx.NoncoherentSequenceDetection && isnan(rx.DecodeNoiseInterferenceVariance)
     evidence.DecodeNoiseVarianceDomain="not_consumed_noncoherent_sequence_detection";
 end
+if unavailable, evidence.DecodeNoiseVarianceDomain="not_consumed_receiver_unavailable"; end
 if nargin>1
     assert(string(rx.AssignmentDigest)==string(assignment.Digest), ...
         'sixgr:link:PUCCHReceiverEvidenceAssignmentMismatch', ...

@@ -23,6 +23,26 @@ T.RxRFEndpointMetadataJSON=repmat(string(jsonencode(rxMetadata)),n,1);
 T.TxRFEndpointMetadataAuditJSON=repmat(string(jsonencode(txAudit)),n,1);
 T.RxRFEndpointMetadataAuditJSON=repmat(string(jsonencode(rxAudit)),n,1);
 T.RFMetadataAppliedFlagScope=repmat(rxAudit.AppliedFlagScope,n,1);
+% Executed oscillator settings are endpoint-owned scoring metadata, not a
+% received CFO estimate or a net link-frequency residual. Keep both owners:
+% a boolean CFOApplied cannot supply a value, and unequal/time-varying
+% segments cannot be represented by one scalar. Never overwrite the
+% channel receiver's generic InjectedCFO_Hz/reference-plane contract here.
+for endpoint=["Tx","Rx"]
+    if endpoint=="Tx", metadata=txMetadata; audit=txAudit;
+    else, metadata=rxMetadata; audit=rxAudit; end
+    value=double(sixgr.util.structGet(metadata,"InjectedCFO_Hz",NaN));
+    status="unavailable_executed_endpoint_value";
+    if isscalar(value) && isfinite(value)
+        status="constant_across_covering_execution_segments";
+    elseif any(string(audit.TimeVaryingFields)=="InjectedCFO_Hz")
+        status="time_varying_see_endpoint_audit";
+    end
+    T.(endpoint+"RFInjectedCFO_Hz")=repmat(value,n,1);
+    T.(endpoint+"RFInjectedCFOStatus")=repmat(status,n,1);
+end
+T.RFInjectedCFOEvidenceRole=repmat( ...
+    "executed_endpoint_operator_parameter_not_receiver_estimate_or_net_link_CFO",n,1);
 % Metadata-only consumers (PBCH/CSI/control) need the same actual counts as
 % data consumers. Unknown/time-varying counts remain NaN, never default zero.
 for endpoint=["Tx","Rx"]

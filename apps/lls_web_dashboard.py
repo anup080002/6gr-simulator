@@ -50,7 +50,7 @@ import yaml
 import lls_output_contract as output_contract
 import sixgr_sls_dashboard as sls_dashboard
 import lls_contract_materializer as contract_materializer
-from lls_sweep_report import observe_sweep
+from lls_sweep_report import observe_sweep, _sch_acceptance, _sch_attempt_class, _sch_flag
 from lls_runtime_visualization_evidence import verified_runtime_visualizations
 from lls_waveform_quality import synchronization_search_fields
 from lls_contract_aliases import (
@@ -5024,6 +5024,74 @@ def _filesystem_run_folders() -> list[Path]:
     return folders
 
 
+def _observed_sweep_lifecycle(run_folder: Path) -> dict[str, Any]:
+    """Include an original failure checkpoint before parent recovery writes its summary."""
+    progress = observe_sweep(run_folder)
+    if not progress:
+        return progress
+    for point in progress.get("points", []):
+        failure = _runtime_failure_status(_read_first_csv_record(
+            Path(point["run_folder"]) / "reports/csv/runtime_failure_checkpoint.csv"))
+        if failure:
+            point.update(status="failed", error=failure["error_identifier"],
+                         execution_status=failure["stage"], current_slot=failure.get("failure_slot"))
+    points = progress.get("points", [])
+    progress.update(completed=sum(p["status"] in {"passed", "failed"} for p in points),
+                    passed=sum(p["status"] == "passed" for p in points),
+                    failed=sum(p["status"] == "failed" for p in points),
+                    ongoing=sum(p["status"] in {"initializing", "running", "finalizing"} for p in points),
+                    pending=sum(p["status"] == "pending" for p in points))
+    return progress
+
+
+def _sweep_child_runtime_status(run_folder: Path) -> dict[str, Any]:
+    """Interim parent lifecycle, not promotion of a child PHY result to the sweep."""
+    progress = _observed_sweep_lifecycle(run_folder)
+    children = []
+    for point in progress.get("points", []):
+        child = Path(point["run_folder"])
+        failure = _runtime_failure_status(_read_first_csv_record(child / "reports/csv/runtime_failure_checkpoint.csv")) or {}
+        stage_paths = [child / "reports/csv/live_stage_status.csv",
+                       child / "air_interface/reports/csv/live_stage_status.csv",
+                       child / "reports/csv/run_state.csv"]
+        has_stage = any(_read_first_csv_record(p) for p in stage_paths)
+        status = "failed" if failure else point["status"]
+        if has_stage and status in {"pending", "initializing"}:
+            status = "running"
+        children.append({"index": point["index"], "label": point["label"], "status": status,
+                         "error_identifier": failure.get("error_identifier", point.get("error", "")),
+                         "updated_utc": _max_mtime_utc(stage_paths + [child / "reports/csv/runtime_failure_checkpoint.csv"])})
+    executed = [p for p in children if p["status"] in {"running", "finalizing", "passed", "failed"}]
+    if not executed:
+        return {}  # Preserve the existing config-only preflight/staleness policy.
+    active = local_run_process_active({"run_tag": run_folder.name})
+    failures = [p for p in children if p["status"] == "failed"]
+    ongoing = [p for p in children if p["status"] in {"running", "finalizing"}]
+    if active:
+        status = "running"
+        stage = ("generic_sweep_child_execution" if ongoing else
+                 "generic_sweep_active_after_child_failure" if failures else "generic_sweep_finalization_or_transition")
+        reason = ("Matching sweep process is active; retained child failures remain visible. "
+                  "Activity after failure can be artifact recovery or transition, not proof of resumed PHY execution.")
+    elif failures:
+        status, stage = "failed", "generic_sweep_interrupted_after_child_failure"
+        reason = "Original child failure is retained and no matching sweep process is observed; remaining points are not completed."
+    else:
+        latest = max((p["updated_utc"] for p in executed if p["updated_utc"]), default="")
+        try:
+            stale = bool(latest) and datetime.fromisoformat(latest.replace("Z", "+00:00")) < datetime.now(timezone.utc) - timedelta(minutes=STALE_RUNNING_MINUTES)
+        except ValueError:
+            stale = False
+        status = "aborted_stale_no_run_process" if stale else "process_unobserved"
+        stage = "generic_sweep_unfinalized_without_process"
+        reason = "Child execution evidence exists, but no matching sweep process or terminal parent result is observed."
+    return {"status": status, "run_completion": status, "stage": stage, "current_stage": stage,
+            "status_authority": "original_sweep_child_lifecycle_and_run_process",
+            "result_ok": False if failures else None, "reason": reason,
+            "sweep_process_observed": active, "sweep_children": children,
+            "failed_child_count": len(failures), "parent_terminal_result_available": False}
+
+
 def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
     if not _windows_extended_path(run_folder).is_dir():
         return None
@@ -5500,6 +5568,15 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
                 "last_updated_utc": updated_utc,
             }
         )
+    parent_terminal = str(summary.get("RunCompletion") or manifest.get("RunCompletion") or "").lower() in {
+        "completed", "completed_with_failures", "failed", "interrupted", "aborted"}
+    parent_terminal = parent_terminal or _truthy_value(summary.get("RunCompleted")) is True or _truthy_value(manifest.get("RunCompleted")) is True
+    if generic_sweep_preflight and not (parent_terminal or runtime_failure or recovery or reanalysis):
+        child_status = _sweep_child_runtime_status(run_folder)
+        if child_status:
+            status_payload.update(child_status)
+            run_completion = child_status["status"]
+            updated_utc = max([updated_utc or ""] + [p["updated_utc"] for p in child_status["sweep_children"] if p["updated_utc"]])
     return {
         "run_id": run_id,
         "run_uuid": f"filesystem-{run_id}",
@@ -11531,6 +11608,10 @@ CONTROL_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("PSSDetectionSource", "PSS source"),
         ("SSSDetectionSource", "SSS source"),
         ("SS_RSRP_dBm", "SS-RSRP (dBm)"),
+        ("ReferenceSignalTxEPRE_dBm", "Original SSS TX EPRE (dBm)"),
+        ("MeasuredReferenceSignalPathloss_dB", "Measured RS effective loss (dB)"),
+        ("MeasuredReferenceSignalPathlossSource", "RS loss source"),
+        ("PathlossReferenceRS", "Pathloss reference RS"),
         ("SS_RSRP_dB_re_UnitOccupiedRE_Es", "SS-RSRP (dB re unit Es)"),
         ("SS_SINR_dB", "SS-SINR (dB)"),
         ("PowerReferencePlane", "Power reference plane"),
@@ -12308,8 +12389,9 @@ PROCEDURE_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("CanonicalSlot", "Runtime slot (1-based)"), ("StageName", "Stage"),
         ("EventName", "Event"), ("LifecycleState", "State"),
         ("StageStatus", "Status"), ("ProcedureStartSlot", "Start runtime slot (1-based)"),
-        ("ProcedureEndSlot", "End runtime slot (1-based)"), ("ProcedureDelay_ms", "Delay ms"),
-        ("CompleteFlag", "Complete"), ("PlaceholderFlag", "Placeholder"),
+        ("ProcedureEndSlot", "End runtime slot (1-based)"), ("ProcedureDelay_ms", "Inclusive access span (ms)"),
+        ("EventElapsed_ms", "Event-to-event elapsed (ms)"),
+        ("CompleteFlag", "Access completion event"), ("PlaceholderFlag", "Placeholder"),
         ("FallbackFlag", "Fallback"), ("SourceArtifact", "Source artifact"),
     ],
     "msg1_detection": [
@@ -12497,6 +12579,98 @@ def normalize_preview_value(value: Any) -> Any:
     return value
 
 
+def ssb_search_population_fields(row: dict[str, Any]) -> dict[str, Any]:
+    """Display original search membership; never infer it from decode success.
+
+    The digest is retained provenance, not independent execution authentication.
+    Incomplete/malformed or historical membership remains in the ordinary view.
+    """
+    fields = {
+        "RequestedSSBOccasionIndex": "Requested SSB candidate (0-based)",
+        "SSBRequestedCandidateTransmitted": "Candidate transmitted",
+        "BCHTransmittedBlockPopulationEligible": "Transmitted BCH population eligible",
+        "SSBReceiverSearchScope": "Receiver search scope",
+        "SSBReceiverSearchCandidateCount": "Receiver search candidate count",
+        "SSBAcquisitionWindowSHA256": "Acquisition window SHA256",
+        "DetectionAttempted": "Detection attempted",
+        "PSSDetected": "PSS detected",
+        "SSSDetected": "SSS detected",
+        "PSSDetectionDecisionAvailable": "PSS decision available",
+        "SSSDetectionDecisionAvailable": "SSS decision available",
+        "DecodeAttempted": "BCH decode attempted",
+        "BCHCRCValid": "Raw BCH CRC valid",
+        "MIBDecoded": "MIB decoded",
+        "CandidateIdentityConsistent": "Candidate identity consistent",
+        "PBCHStrictReceiverEvidenceOk": "Strict receiver evidence accepted",
+        "FalseAlarm": "Original false alarm",
+        "FalseAlarmStatus": "False alarm status",
+        "FalseAlarmSource": "False alarm source",
+        "FalseAlarmDefinition": "False alarm definition",
+        "MissedDetection": "Original missed detection",
+    }
+    result = {label: row[key] for key, label in fields.items() if key in row}
+
+    def number(value: Any) -> float | None:
+        if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+            return None
+        try:
+            parsed = float(value)
+        except (ValueError, TypeError, OverflowError):
+            return None
+        return parsed if math.isfinite(parsed) else None
+
+    requested = number(row.get("RequestedSSBOccasionIndex"))
+    member = number(row.get("SSBRequestedCandidateTransmitted"))
+    block = number(row.get("BCHTransmittedBlockPopulationEligible"))
+    scope = row.get("SSBReceiverSearchScope")
+    digest = row.get("SSBAcquisitionWindowSHA256")
+    known = (
+        requested is not None and requested >= 0 and requested.is_integer()
+        and member in (0, 1)
+        and scope == "all_receiver_case_lmax_candidates_not_TX_active_bitmap"
+        and isinstance(digest, str) and re.fullmatch(r"[0-9a-fA-F]{64}", digest) is not None
+    )
+    population = "unknown_or_legacy"
+    if known and member == 1:
+        population = "transmitted_candidate"
+    elif known and member == 0 and block == 0:
+        population = "quiet_search_candidate"
+    result["SSB search population"] = population
+    return result
+
+
+def rf_endpoint_cfo_preview(row: dict[str, Any]) -> dict[str, Any]:
+    """Same-row endpoint settings, never net CFO or a received estimate."""
+    out = {}
+    for endpoint in ("Tx", "Rx"):
+        label = endpoint.upper() + " RF injected CFO (Hz)"
+        status_label = endpoint.upper() + " RF CFO evidence"
+        field = endpoint + "RFInjectedCFO_Hz"
+        declared = row.get(field)
+        scalar = None if isinstance(declared, bool) else coerce_numeric(declared)
+        token = row.get(endpoint + "RFEndpointMetadataJSON")
+        metadata_value = None
+        if isinstance(token, str) and token.strip():
+            try:
+                metadata = json.loads(token)
+                value = metadata.get("InjectedCFO_Hz") if isinstance(metadata, dict) else None
+                if type(value) in (int, float) and math.isfinite(value):
+                    metadata_value = value
+                elif value is not None:
+                    out[status_label] = "unavailable_malformed_original_endpoint_CFO"
+                    continue
+            except (ValueError, TypeError):
+                out[status_label] = "unavailable_malformed_original_endpoint_metadata"
+                continue
+        if scalar is not None and metadata_value is not None and scalar != metadata_value:
+            out[status_label] = "unavailable_conflicting_original_endpoint_CFO"
+        elif scalar is not None or metadata_value is not None:
+            out[label] = scalar if scalar is not None else metadata_value
+            out[status_label] = str(row.get(endpoint + "RFInjectedCFOStatus") or
+                                    "original_same_row_endpoint_setting_not_net_or_measured_CFO")
+    return out
+
+
 def summarize_control_trial_preview_rows(control_key: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     from lls_waveform_quality import waveform_quality_fields, qualification_criteria_fields
     if not rows:
@@ -12520,6 +12694,9 @@ def summarize_control_trial_preview_rows(control_key: str, rows: list[dict[str, 
             curated[label] = normalized if normalized is not None else "N/A"
         curated.update(waveform_quality_fields(control_key, row))
         curated.update(qualification_criteria_fields(control_key, row))
+        curated.update(rf_endpoint_cfo_preview(row))
+        if control_key == "pbch_trials":
+            curated.update(ssb_search_population_fields(row))
         curated_rows.append(curated)
     return curated_rows
 
@@ -12558,6 +12735,10 @@ def summarize_procedure_preview_rows(procedure_key: str, rows: list[dict[str, An
         if procedure_key in {"csi_report", "received_csi_report"}:
             from lls_waveform_quality import csi_feedback_evidence_fields
             curated.update(csi_feedback_evidence_fields(row))
+        if procedure_key == "ssb_sweep":
+            curated.update(ssb_search_population_fields(row))
+        if procedure_key == "msg1_detection":
+            curated.update(rf_endpoint_cfo_preview(row))
         curated_rows.append(curated)
     return curated_rows
 
@@ -16729,6 +16910,432 @@ def latest_realtime_selected_ssb_by_ue(
     return selected
 
 
+def _pucch_original_observation_id(row: dict[str, Any]) -> str:
+    """Use the original post-receiver receipt alias; never derive an ID from a slot.
+
+    Hash/field consistency validates retained metadata, not independent RF attestation.
+    Historical canonical IDs remain supported without manufacturing a new receipt.
+    """
+    def text(key):
+        value = row.get(key, "")
+        return value.strip() if isinstance(value, str) and value.strip().lower() not in {"nan", "n/a"} else ""
+    canonical, alias = text("ObservationID"), text("PresenceObservationID")
+    raw = text("PresenceEvidenceJSON")
+    if not alias and not raw:
+        return canonical
+    def require(ok):
+        if not ok:
+            raise ValueError("invalid_original_PUCCH_observation_receipt")
+    def sha(value):
+        return isinstance(value, str) and re.fullmatch(r"[0-9a-fA-F]{64}", value) is not None
+    # Hash the exact producer bytes, not a parsed/re-serialized JSON document.
+    raw = row.get("PresenceEvidenceJSON", "")
+    require(isinstance(raw, str) and bool(raw) and bool(alias))
+    require(sha(text("PresenceEvidenceSHA256")) and hashlib.sha256(raw.encode("utf-8")).hexdigest() == text("PresenceEvidenceSHA256").lower())
+    try:
+        receipt = json.loads(raw)
+    except (ValueError, TypeError):
+        raise ValueError("invalid_original_PUCCH_observation_receipt") from None
+    require(isinstance(receipt, dict) and receipt.get("Schema") == "shared_PUCCH_presence_receipts/v1")
+    require(text("PresenceScoringSource") == "post_receiver_executed_components_and_link_contributions/v1")
+    require(receipt.get("ObservationID") == alias and (not canonical or canonical == alias))
+    require(not text("TransmitOccupancyObservationID") or text("TransmitOccupancyObservationID") == alias)
+    for inner, outer in (("PhysicalOccasionID", "PresencePhysicalOccasionID"),
+                         ("ReceiverAssignmentDigest", "PresenceReceiverAssignmentDigest"),
+                         ("ReceiverContextDigest", "PresenceReceiverContextDigest")):
+        require(bool(text(outer)) and receipt.get(inner) == text(outer))
+        if inner.endswith("Digest"):
+            require(sha(text(outer)))
+    for inner, outers in (("RXStartSample", ("PresenceRXStartSample", "ObservationStartSample")),
+                          ("RXEndSampleExclusive", ("PresenceRXEndSampleExclusive", "ObservationEndSampleExclusive")),
+                          ("SampleRateHz", ("PresenceSampleRateHz", "ObservationSampleRateHz")),
+                          ("ConfigurationEpoch", ("PresenceConfigurationEpoch",))):
+        value = receipt.get(inner)
+        require(type(value) in (int, float) and math.isfinite(value) and value >= 0 and value == int(value))
+        require(all(not isinstance(row.get(k), bool) and coerce_numeric(row.get(k)) == value for k in outers))
+    require(receipt["RXEndSampleExclusive"] > receipt["RXStartSample"] and receipt["SampleRateHz"] > 0)
+    require(sha(text("ReceiverObservationSHA256")) and
+            text("ReceiverObservationHashPlane") == "actual_receiver_input_before_synchronization" and
+            text("ReceiverObservationHashSerialization") == "WaveformHash.runtimeArray_class_dimensions_real_imag_double")
+    for original, alias_key in (("UEIndex", "PresenceUEIndex"), ("RNTI", "PresenceRNTI"), ("BaseStationID", "PresenceServingCell")):
+        a, b = row.get(original), row.get(alias_key)
+        require(not isinstance(a, bool) and not isinstance(b, bool) and coerce_numeric(a) is not None and coerce_numeric(a) == coerce_numeric(b))
+    if text("ServingCell"):
+        require(coerce_numeric(row["ServingCell"]) == coerce_numeric(row["PresenceServingCell"]))
+    return alias
+
+
+def build_realtime_error_statistics(sources: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+    """Descriptive original receiver populations; no synthetic terminal outcomes."""
+    audit = []
+    duplicates = 0
+
+    def text(row, key):
+        value = str(row.get(key, "") or "").strip()
+        return "" if value.lower() in {"nan", "n/a"} else value
+
+    def num(row, key):
+        value = row.get(key)
+        return None if isinstance(value, bool) else coerce_numeric(value)
+
+    def flag(row, key):
+        try:
+            return _sch_flag(row, key)
+        except ValueError:
+            return None
+
+    def scope(row, direction):
+        return (direction, num(row, "SweepPointIndex"),
+                num(row, "UEIndex") if num(row, "UEIndex") is not None else num(row, "UEID"),
+                num(row, "RNTI"))
+
+    def distinct(rows, identity, source):
+        nonlocal duplicates
+        seen, bad = {}, set()
+        for index, row in enumerate(rows, 1):
+            try:
+                key = identity(row)
+            except ValueError as error:
+                audit.append({"Source": source, "Source row": index, "Reason": str(error)})
+                continue
+            if key is None:
+                audit.append({"Source": source, "Source row": index, "Reason": "missing_original_identity"})
+                continue
+            if key in seen:
+                if seen[key] == row:
+                    duplicates += 1
+                else:
+                    bad.add(key)
+                    audit.append({"Source": source, "Source row": index, "Reason": "conflicting_duplicate_identity"})
+            else:
+                seen[key] = row
+        return [row for key, row in seen.items() if key not in bad]
+
+    def attempt_key(row, direction):
+        identity = text(row, "TransmissionAttemptID")
+        return (text(row, "RunID"), text(row, "ConfigHash"), scope(row, direction), identity) if identity else None
+
+    summaries, attempts = [], []
+    for direction, source in (("DL", "dl"), ("UL", "ul")):
+        rows = distinct(sources.get(source, []), lambda r: attempt_key(r, direction), source)
+        groups = {}
+        for row in rows:
+            key = (text(row, "RunID"), text(row, "ConfigHash"), scope(row, direction), num(row, "ConfiguredSNR_dB"))
+            groups.setdefault(key, []).append(row)
+        if not groups:
+            groups[("", "", (direction, None, None, None), None)] = []
+        for key, group in groups.items():
+            accepted, first, retry, unknown, pending, excluded = [], [], [], [], 0, 0
+            for row in group:
+                try:
+                    ok, reason = _sch_acceptance(row, direction)
+                    kind = _sch_attempt_class(row) if ok else "unknown"
+                except ValueError:
+                    ok, reason, kind = False, "malformed_or_contradictory_receiver_contract", "unknown"
+                if not ok:
+                    pending += int(flag(row, "FinalizedFlag") == 0 and flag(row, "Crash") != 1)
+                    excluded += 1
+                    audit.append({"Source": source, "Attempt ID": text(row, "TransmissionAttemptID"), "Reason": reason})
+                    continue
+                accepted.append(row)
+                {"first": first, "retry": retry, "unknown": unknown}[kind].append(row)
+            def failures(items):
+                return sum(flag(row, "CRCPass") == 0 for row in items)
+            out = {"Direction": direction, "Run ID": key[0], "Config hash": key[1],
+                   "Sweep point": key[2][1], "UE": key[2][2], "RNTI": key[2][3], "Configured SNR (dB)": key[3],
+                   "First TX errors": failures(first), "First TX completed": len(first),
+                   "First TX BLER": failures(first) / len(first) if first else None,
+                   "Attempt errors": failures(accepted), "Completed attempts": len(accepted),
+                   "All-attempt failure ratio": failures(accepted) / len(accepted) if accepted else None,
+                   "Completed retries": len(retry), "Unknown attempt class": len(unknown),
+                   "Unfinalized rows": pending, "Excluded rows": excluded,
+                   "Status": "observed_descriptive_population" if accepted else "unavailable_no_completed_SCH",
+                   "Source": "air_interface/csv/" + ("dl_pdsch_trials.csv" if direction == "DL" else "ul_pusch_trials.csv")}
+            summaries.append(out)
+            attempts.extend((row, out) for row in accepted)
+
+    feedback = distinct(sources.get("feedback", []),
+                        lambda r: (text(r, "ObservationID"), num(r, "BitIndex"), scope(r, text(r, "FeedbackForDirection")))
+                        if text(r, "ObservationID") and num(r, "BitIndex") is not None else None, "feedback")
+    packets = distinct(sources.get("packets", []),
+                       lambda r: (scope(r, text(r, "Direction")), text(r, "TBId"), text(r, "PHYGrantContextId"))
+                       if text(r, "TBId") and text(r, "PHYGrantContextId") else None, "packets")
+
+    def unambiguous_attempt(row, direction):
+        key = (scope(row, direction), text(row, "TransmissionAttemptID"), num(row, "Slot"), num(row, "HarqID"))
+        return (all(v is not None for v in key[0][1:]) and key[2] is not None and key[3] is not None and
+                sum((scope(r, owner["Direction"]), text(r, "TransmissionAttemptID"), num(r, "Slot"), num(r, "HarqID")) == key
+                    for r, owner in attempts) == 1)
+
+    for out in summaries:
+        own = [r for r, owner in attempts if owner is out]
+        counts = dict(ACK=0, NACK=0, DTX=0)
+        terminal_unavailable = 0
+        for row in own:
+            matches = [f for f in feedback if scope(f, text(f, "FeedbackForDirection")) == scope(row, out["Direction"])
+                       and text(f, "PHYGrantContextId") == text(row, "TransmissionAttemptID")
+                       and num(f, "SourceSlot") == num(row, "Slot") and num(f, "HarqID") == num(row, "HarqID")]
+            if len(matches) != 1:
+                continue
+            f = matches[0]
+            outcome = text(f, "FeedbackOutcome")
+            end, available, fs, bit = (num(f, k) for k in ("ObservationEndSampleExclusive", "AvailableAtSample", "ObservationSampleRateHz", "BitIndex"))
+            receiver_unavailable = (text(f, "ReceiverExecutionStatus").startswith("unavailable") or
+                                    text(f, "FeedbackDisposition").startswith("receiver_unavailable"))
+            valid = (out["Direction"] == "DL" and outcome in counts and unambiguous_attempt(row, out["Direction"]) and
+                     all(v is not None for v in scope(row, out["Direction"])[1:]) and
+                     num(f, "SourceSlot") is not None and num(f, "HarqID") is not None and
+                     None not in (end, available, fs, bit) and end >= 0 and available >= end and fs > 0 and bit >= 1 and bit == int(bit) and
+                     text(f, "UCITransport") in {"PUCCH", "PUSCH"} and
+                     flag(f, "ReceiverUsable") == int(outcome != "DTX") and flag(f, "ObservedAck") == int(outcome == "ACK") and
+                     flag(f, "HARQFeedbackApplied") in (0, 1) and flag(f, "StaleFeedbackIgnored") in (0, 1) and
+                     flag(f, "HARQFeedbackApplied") != flag(f, "StaleFeedbackIgnored"))
+            terminal_unavailable_contract = (outcome == "DTX" and
+                text(f, "ReceiverExecutionStatus") == "unavailable_before_synchronization" and
+                text(f, "FeedbackDisposition") == "receiver_unavailable_stale_ul_timing" and
+                text(f, "ReceiverUnavailableReason") == "stale_received_ul_timing" and
+                all(flag(f, k) == 0 for k in ("DetectionAttempted", "DecodeAttempted", "DTXDecisionAvailable")))
+            if valid and receiver_unavailable and terminal_unavailable_contract:
+                terminal_unavailable += 1
+                audit.append({"Source": "feedback", "Attempt ID": text(row, "TransmissionAttemptID"),
+                              "Reason": "terminal_receiver_unavailable_not_observed_DTX"})
+            elif valid and not receiver_unavailable:
+                counts[outcome] += 1
+            else:
+                audit.append({"Source": "feedback", "Attempt ID": text(row, "TransmissionAttemptID"),
+                              "Reason": "receiver_unavailable_not_observed_DTX" if receiver_unavailable else "invalid_received_feedback_contract"})
+        out.update({"Received ACK bits": counts["ACK"], "Received NACK bits": counts["NACK"],
+                    "Received DTX dispositions": counts["DTX"], "Received feedback dispositions": sum(counts.values()),
+                    "Terminal unavailable feedback dispositions": terminal_unavailable,
+                    "Feedback pending/unavailable": len(own) - sum(counts.values()) - terminal_unavailable if out["Direction"] == "DL" else None})
+        tb_groups = {}
+        for row in own:
+            tb = text(row, "TBId") or text(row, "LogicalTBID")
+            if tb:
+                tb_groups.setdefault(tb, []).append(row)
+        terminal = errors = 0
+        for tb, records in tb_groups.items():
+            joined = []
+            for row in records:
+                if not unambiguous_attempt(row, out["Direction"]):
+                    break
+                match = [p for p in packets if scope(p, text(p, "Direction")) == scope(row, out["Direction"])
+                         and text(p, "TBId") == tb and text(p, "PHYGrantContextId") == text(row, "TransmissionAttemptID")
+                         and num(p, "Slot") == num(row, "Slot")]
+                if len(match) != 1:
+                    break
+                p = match[0]
+                if not (text(p, "ProbeMode") == "canonical_slot_runtime_truth" and text(p, "Source") == "canonical_slot_runtime_harq_timeline" and
+                        text(p, "ApproximationMode") == "none" and flag(p, "CombinedDecodeOK") == flag(row, "CRCPass") and
+                        flag(p, "IsRetransmission") == flag(row, "IsRetransmission") and
+                        flag(p, "TransmitterLifecycleBound") == 1 and flag(p, "HARQPacketReceiverPopulationComplete") == 1 and
+                        num(p, "LifecycleAttemptCount") == len(records)):
+                    break
+                joined.append(p)
+            if len(joined) != len(records):
+                continue
+            joined.sort(key=lambda p: num(p, "Attempt") if num(p, "Attempt") is not None else -1)
+            complete = ([num(p, "Attempt") for p in joined] == list(range(1, len(records) + 1)) and
+                        flag(joined[0], "IsRetransmission") == 0 and
+                        [flag(p, "TransmitterTerminal") for p in joined] == [0] * (len(records) - 1) + [1] and
+                        text(joined[-1], "TransmitterTerminalReason") in {"observed_ack_release", "retry_limit_release"} and
+                        num(joined[-1], "TerminalAtSlot") is not None and num(joined[-1], "TerminalAtSlot") >= num(joined[-1], "Slot"))
+            if complete:
+                terminal += 1
+                errors += int(not any(flag(p, "CombinedDecodeOK") == 1 for p in joined))
+        unknown_tb = sum(not (text(r, "TBId") or text(r, "LogicalTBID")) for r in own)
+        unresolved = len(tb_groups) - terminal
+        out.update({"Observed TBs": len(tb_groups), "Qualified terminal TBs": terminal, "Terminal receiver failures": errors,
+                    "Open/censored TBs": unresolved, "Unknown TB identity attempts": unknown_tb,
+                    "Residual final-TB BLER": errors / terminal if terminal and not unresolved and not unknown_tb and not out["Excluded rows"]
+                    and not any(a["Source"] == out["Direction"].lower() for a in audit) else None})
+
+    def pucch_key(row):
+        identity = _pucch_original_observation_id(row)
+        cell = num(row, "BaseStationID") if num(row, "BaseStationID") is not None else num(row, "ServingCell")
+        return (text(row, "RunID"), text(row, "ConfigHash"), scope(row, "UL"), cell, identity) if identity else None
+    decisions = distinct(sources.get("pucch", []), pucch_key, "pucch")
+    observed = dtx = 0
+    for row in decisions:
+        outcome = text(row, "DetectionOutcome").lower()
+        valid = all(flag(row, k) == 1 for k in ("FinalizedFlag", "ControlObservationAvailable", "DetectionAttempted", "DetectionMetricValid"))
+        start, end, fs = (num(row, k) for k in ("ObservationStartSample", "ObservationEndSampleExclusive", "ObservationSampleRateHz"))
+        valid = valid and None not in (start, end, fs) and start >= 0 and end > start and fs > 0 and outcome in {"detected", "dtx"}
+        valid = valid and not text(row, "ReceiverExecutionStatus").startswith("unavailable") and flag(row, "DTXDecisionAvailable") != 0
+        valid = valid and all(flag(row, key) == int(outcome == "dtx") for key in ("DTXFlag", "ReceiverDTX")
+                              if text(row, key))
+        if valid:
+            observed += 1
+            dtx += int(outcome == "dtx")
+        else:
+            audit.append({"Source": "pucch", "Observation ID": text(row, "ObservationID"), "Reason": "unavailable_completed_receiver_detection"})
+    return {"sch": summaries, "control": [{"Population": "PUCCH physical receiver occasions (not logical HARQ bits)",
+             "DTX decisions": dtx, "Completed detector decisions": observed, "DTX fraction": dtx / observed if observed else None,
+             "Excluded rows": len(decisions) - observed, "Status": "observed" if observed else "unavailable_no_original_receiver_decisions"}],
+            "audit": audit, "identical_duplicates_removed": duplicates,
+            "scope": "Connected DL/UL only; RA Msg3 excluded. Descriptive counts, no independent-trial confidence interval. Missing, withheld and unattempted feedback is not DTX. Residual BLER requires every observed TB to have complete original receiver and terminal lifecycle evidence."}
+
+
+def load_realtime_error_statistics(artifacts: list[dict[str, Any]]) -> dict[str, Any]:
+    paths = {"dl": "air_interface/csv/dl_pdsch_trials.csv", "ul": "air_interface/csv/ul_pusch_trials.csv",
+             "feedback": "control/csv/gnb_harq_feedback_observations.csv", "packets": "harq/csv/harq_process_timeline.csv",
+             "pucch": "air_interface/csv/pucch_trials.csv"}
+    # Full original population, not a tail preview; one canonical owner per family.
+    return build_realtime_error_statistics({key: load_small_csv_rows(artifacts, path, max_rows=None) for key, path in paths.items()})
+
+
+def csi_projected_attenuation_preview(row: dict[str, Any], ids: list[Any]) -> dict[Any, dict[str, Any]]:
+    """Original diagnostic receipt only; no model pathloss or missing-TX proxy."""
+    absent = {"Projection status": "unavailable_original_projected_attenuation_receipt"}
+    token = row.get("CSIRSTransmitProjectedAttenuationJSON")
+    if not isinstance(token, str) or not token.strip():
+        return {resource: dict(absent) for resource in ids}
+    try:
+        digest = row.get("CSIRSTransmitProjectedAttenuationSHA256")
+        if not isinstance(digest, str) or hashlib.sha256(token.encode("utf-8")).hexdigest() != digest.lower():
+            raise ValueError("Original receipt hash mismatch")
+        receipt = json.loads(token)
+        scope = "post_TX_RF_to_pre_RX_RF_CDM_projected_effective_attenuation"
+        if (not isinstance(receipt, dict) or receipt.get("ContractVersion") != "sixgr.csirs.shared_projected_attenuation/v1"
+                or receipt.get("Scope") != scope
+                or any(receipt.get(key) is not False for key in (
+                    "ReceiverUsesReference", "UniqueNonlinearPortAttributionQualified",
+                    "StandardizedPathlossQualified", "IndependentAccuracyQualified"))):
+            raise ValueError("Unknown diagnostic contract")
+        if receipt.get("WaveformAmplitudeUnit") == "normalized_complex_baseband":
+            return {resource: {"Projection status": "unavailable_absolute_only_diagnostic_normalized_units"} for resource in ids}
+        if receipt.get("WaveformAmplitudeUnit") != "sqrt_mW":
+            raise ValueError("Unknown original power units")
+        original_ids = receipt.get("ResourceIDs")
+        if type(original_ids) in (int, float):
+            original_ids = [original_ids]  # MATLAB original scalar vector serialization.
+        if (not isinstance(original_ids, list) or original_ids != ids
+                or any(type(value) not in (int, float) for value in original_ids)):
+            raise ValueError("Original resource population mismatch")
+        for field, original in (("ReceiverWindowID", "ReceiverWindowID"),
+                                ("RXObservationSHA256", "PhysicalMeasurementObservationSHA256")):
+            if not row.get(original) or receipt.get(field) != row[original]:
+                raise ValueError("Original receiver identity mismatch")
+        resources_token = row.get("MeasurementPhysicalResourcesJSON")
+        if (not isinstance(resources_token, str) or not resources_token
+                or receipt.get("OriginalMeasurementResourcesSHA256") != hashlib.sha256(resources_token.encode("utf-8")).hexdigest()):
+            raise ValueError("Original measured resource receipt mismatch")
+        measured_resources = json.loads(resources_token)
+        if not isinstance(measured_resources, list) or len(measured_resources) != len(ids):
+            raise ValueError("Original branch population missing")
+        for field, original in (("RXStartSample", "ObservationStartSample"),
+                                ("RXEndSampleExclusive", "ObservationEndSampleExclusive"),
+                                ("SampleRateHz", "ObservationSampleRateHz")):
+            value = receipt.get(field)
+            if type(value) not in (int, float) or not math.isfinite(value) or coerce_numeric(row.get(original)) != value:
+                raise ValueError("Original observation clock mismatch")
+        resource_set = coerce_numeric(row.get("ResourceSetID"))
+        if resource_set is None or type(receipt.get("ResourceSetID")) not in (int, float) or receipt["ResourceSetID"] != resource_set:
+            raise ValueError("Original resource set mismatch")
+        parts = receipt.get("ResourceComparisons")
+        if not isinstance(parts, list) or len(parts) != len(ids):
+            raise ValueError("Incomplete original population")
+        powers = json.loads(row.get("MeasurementRSRPPerResource_dBm", ""))
+        if not isinstance(powers, list) or len(powers) != len(ids):
+            raise ValueError("Missing original absolute received population")
+        result = {}
+        for ordinal, (resource, part, original_power, measured) in enumerate(zip(ids, parts, powers, measured_resources)):
+            if (not isinstance(part, dict) or type(part.get("ResourceID")) not in (int, float)
+                    or part["ResourceID"] != resource or type(part.get("ResourceOrdinal0")) is not int
+                    or part["ResourceOrdinal0"] != ordinal or part.get("ResourceSetID") != resource_set
+                    or type(part.get("ReferencePort")) is not int or part["ReferencePort"] != 3000
+                    or type(part.get("Available")) is not bool):
+                raise ValueError("Original resource tuple mismatch")
+            projected = {"Projection status": part.get("Status"), "Projection scope": scope,
+                         "Projection receipt SHA256": digest, "Projected effective attenuation (dB)": None,
+                         "Projected TX power (dBm)": None, "Projection RX branch (1-based)": None}
+            if part["Available"]:
+                if (part.get("ContractVersion") != "sixgr.csirs.post_tx_rf_projected_attenuation/v1"
+                        or any(part.get(key) is not False for key in (
+                            "ReceiverUsesReference", "UniqueNonlinearPortAttributionQualified",
+                            "StandardizedPathlossQualified", "IndependentAccuracyQualified"))):
+                    raise ValueError("Unknown per-resource projection")
+                names = ("TransmitProjectedPower_dBm", "SelectedReceivedPower_dBm", "EffectiveAttenuation_dB",
+                         "TransmitProjectedPower_W", "SelectedReceivedPower_W", "SelectedReceiveColumn1")
+                if any(type(part.get(key)) not in (int, float) or not math.isfinite(part[key]) for key in names):
+                    raise ValueError("Malformed original diagnostic operands")
+                branch = part["SelectedReceiveColumn1"]
+                if (branch < 1 or branch != int(branch) or part["TransmitProjectedPower_W"] <= 0
+                        or part["SelectedReceivedPower_W"] <= 0 or type(original_power) not in (int, float)
+                        or not math.isfinite(original_power)
+                        or not math.isclose(part["SelectedReceivedPower_dBm"], original_power, abs_tol=1e-7, rel_tol=0)
+                        or not math.isclose(part["TransmitProjectedPower_dBm"], 10 * math.log10(part["TransmitProjectedPower_W"]) + 30, abs_tol=1e-9, rel_tol=0)
+                        or not math.isclose(part["SelectedReceivedPower_dBm"], 10 * math.log10(part["SelectedReceivedPower_W"]) + 30, abs_tol=1e-9, rel_tol=0)
+                        or not math.isclose(part["EffectiveAttenuation_dB"], part["TransmitProjectedPower_dBm"] - part["SelectedReceivedPower_dBm"], abs_tol=1e-9, rel_tol=0)):
+                    raise ValueError("Original power or attenuation arithmetic mismatch")
+                if (not isinstance(measured, dict) or measured.get("ResourceID") != resource
+                        or measured.get("PowerUnit") != "W_resource_grid" or measured.get("Available") is not True):
+                    raise ValueError("Original measured branch authority mismatch")
+                branch_powers = measured.get("RSRPPerAntenna_dBm")
+                if type(branch_powers) in (int, float):
+                    branch_powers = [branch_powers]
+                signed = (measured.get("SINR") or {}).get("DesiredPowerPerReceiveAntenna")
+                if type(signed) in (int, float):
+                    signed = [signed]
+                if (not isinstance(branch_powers, list) or not isinstance(signed, list)
+                        or len(branch_powers) != len(signed) or not 1 <= int(branch) <= len(signed)
+                        or any(value is not None and (type(value) not in (int, float) or not math.isfinite(value)) for value in branch_powers)
+                        or any(type(value) not in (int, float) or not math.isfinite(value) for value in signed)):
+                    raise ValueError("Original branch vector malformed")
+                valid = [(index, value) for index, value in enumerate(branch_powers) if value is not None]
+                if (not valid or max(valid, key=lambda entry: entry[1])[0] + 1 != branch
+                        or not math.isclose(branch_powers[int(branch) - 1], part["SelectedReceivedPower_dBm"], abs_tol=1e-9, rel_tol=0)
+                        or not math.isclose(signed[int(branch) - 1], part["SelectedReceivedPower_W"], rel_tol=1e-12, abs_tol=0)):
+                    raise ValueError("Projected ratio did not retain original selected receive branch")
+                projected.update({"Projected TX power (dBm)": part["TransmitProjectedPower_dBm"],
+                                  "Projected effective attenuation (dB)": part["EffectiveAttenuation_dB"],
+                                  "Projection RX branch (1-based)": branch})
+            result[resource] = projected
+        return result
+    except (TypeError, ValueError, KeyError, OverflowError):
+        return {resource: {"Projection status": "unavailable_malformed_original_projected_attenuation_receipt"} for resource in ids}
+
+
+def csi_resource_power_preview(row: dict[str, Any]) -> list[dict[str, Any]]:
+    """Display original resource-vector values, not reconstructed beam/pathloss metrics."""
+    fields = (("MeasurementRSRPPerResource_dBm", "dBm"),
+              ("MeasurementRSRPPerResource_dB_re_UnitOccupiedRE_Es", "dB re unit occupied-RE Es"))
+    populated = [(key, unit) for key, unit in fields
+                 if isinstance(row.get(key), str) and row[key].strip().startswith("[")]
+    if not populated:
+        return []
+    base = {"Slot": row.get("Slot"), "UE": first_present_value(row, ["UEID", "UEIndex", "UEId"], None),
+            "Cell": row.get("ServingCell"), "Selected resource ID": row.get("ResourceID"),
+            "Power reference plane": row.get("PowerReferencePlane"),
+            "Pathloss (dB)": None,
+            "Pathloss status": "unavailable_original_per_resource_TX_EPRE_not_published",
+            "Authority status": row.get("DLMeasurementAuthorityStatus"),
+            "Population SHA256": row.get("CSIObservationPopulationSHA256")}
+    try:
+        ids = json.loads(row.get("MeasurementResourceIDs", ""))
+        if (not isinstance(ids, list) or not ids or
+                any(type(v) not in (int, float) or not math.isfinite(v) or v < 0 or int(v) != v for v in ids) or
+                len(set(ids)) != len(ids)):
+            raise ValueError("Invalid original resource IDs")
+        projections = csi_projected_attenuation_preview(row, ids)
+        result = []
+        for key, unit in populated:
+            values = json.loads(row[key])
+            if not isinstance(values, list) or len(values) != len(ids):
+                raise ValueError("Resource/value cardinality mismatch")
+            for resource, value in zip(ids, values):
+                if value is not None and (type(value) not in (int, float) or not math.isfinite(value)):
+                    raise ValueError("Invalid original resource power")
+                result.append({**base, **projections.get(resource, {}), "Resource ID (0-based)": resource,
+                               "RSRP": value, "Power unit": unit, "Source field": key,
+                               "Original resource IDs": row["MeasurementResourceIDs"],
+                               "Original power vector": row[key],
+                               "Status": "original_resource_measurement" if value is not None else "unavailable_original_value"})
+        return result
+    except (ValueError, TypeError):
+        return [{**base, "Status": "unavailable_malformed_original_resource_population"}]
+
+
 def build_realtime_ue_status(
     metric_explorer: dict[str, Any],
     runtime_context: dict[str, Any],
@@ -16903,6 +17510,7 @@ def build_realtime_ue_status(
                 "csi_rsrq_denominator_dbm": _first_finite_float(csi.get("MeasurementRSRQDenominatorRSSI_dBm")),
                 "csi_rsrq_aggregation": str(csi.get("MeasurementRSRQAntennaAggregation") or ""),
                 "csi_recommended_ri": _first_finite_float(csi.get("RI")),
+                "csi_resource_power": csi_resource_power_preview(csi),
                 # Preserve multi-index PMI and per-codeword CQI, not only index 0.
                 "csi_recommended_pmi": normalize_preview_value(csi.get("PMI")),
                 "csi_recommended_cri": _first_finite_float(csi.get("CRI")),
@@ -18792,7 +19400,7 @@ def build_lite_live_payload(run_id: int) -> dict[str, Any]:
     rollup = artifact_rollup_from_artifacts(accepted_artifacts)
     artifact_version = artifact_content_version(recent_all_artifacts, run_row)
     register_artifact_content_version(run_id, artifact_version)
-    sweep_progress = observe_sweep(run_row.get("run_folder") or REPO_ROOT)
+    sweep_progress = _observed_sweep_lifecycle(run_row.get("run_folder") or REPO_ROOT)
     full_cache_version = f"{run_row.get('updated_utc')}|{run_row.get('status_text')}|{inserted_logs}|{artifact_version}|{json.dumps(sweep_progress, sort_keys=True)}"
     if inserted_logs == 0 and CACHED_PAYLOAD_VERSION.get(run_id) == full_cache_version and run_id in LIVE_PAYLOAD_CACHE:
         return condense_live_payload(LIVE_PAYLOAD_CACHE[run_id])
@@ -18935,7 +19543,7 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
         artifacts = merge_db_and_filesystem_artifacts(db_artifacts, run_row)
     artifact_version = artifact_content_version(artifacts, run_row)
     register_artifact_content_version(run_id, artifact_version)
-    sweep_progress = observe_sweep(run_row.get("run_folder") or REPO_ROOT)
+    sweep_progress = _observed_sweep_lifecycle(run_row.get("run_folder") or REPO_ROOT)
     cache_version = f"{run_row.get('updated_utc')}|{run_row.get('status_text')}|{inserted_logs}|{artifact_version}|{json.dumps(sweep_progress, sort_keys=True)}"
     if inserted_logs == 0 and CACHED_PAYLOAD_VERSION.get(run_id) == cache_version and run_id in LIVE_PAYLOAD_CACHE:
         cached_payload = LIVE_PAYLOAD_CACHE[run_id]
@@ -19002,6 +19610,7 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
             runtime_preview_artifacts(artifacts, runtime_context),
         ),
         "runtime_visualizations": [build_artifact_descriptor(item) for item in runtime_visualizations],
+        "error_statistics": load_realtime_error_statistics(artifacts),
         **load_realtime_ul_planning_sources(artifacts),
         "ue_status": build_realtime_ue_status(
             metric_explorer,
@@ -21594,6 +22203,13 @@ window.addEventListener('DOMContentLoaded', function () {
     const controlPreviews = runtime.control_trial_previews || {};
     const dataPreviews = runtime.data_trial_previews || {};
     const procedurePreviews = runtime.procedure_previews || {};
+    // Keep every raw preview row. Only explicit original quiet membership is
+    // separated; unknown legacy rows and transmitted failures remain visible.
+    const ssbBeamRows = (controlPreviews.pbch_trials || []).filter(row => row['SSB search population'] !== 'quiet_search_candidate');
+    const ssbQuietRows = (controlPreviews.pbch_trials || []).filter(row => row['SSB search population'] === 'quiet_search_candidate');
+    const ssbSweepRows = (procedurePreviews.ssb_sweep || []).filter(row => row['SSB search population'] !== 'quiet_search_candidate');
+    const csiResourcePowerRows = (dashboard.ue_status || []).flatMap(ue => ue.csi_resource_power || []);
+    const errorStats = dashboard.error_statistics || {};
     const selection = runtime.artifact_selection || {};
     const controlSelection = selection.raw_control_trials || {};
     const linkSelection = selection.raw_link_trials || {};
@@ -21602,7 +22218,7 @@ window.addEventListener('DOMContentLoaded', function () {
     const recent = values => (Array.isArray(values) ? values : []).slice(-8).reverse();
     const selectedPath = meta => String((meta || {}).selected_logical_path || '');
     const initialAccessRows = [
-      ...recent(controlPreviews.pbch_trials).map(row => ({Procedure:'SSB/PBCH',Frame:row.Frame,Slot:row.Slot,'Slot convention':'runtime source, 1-based',Endpoint:row.Cell,Outcome:row['CRC pass'],Status:row.Status})),
+      ...recent(ssbBeamRows).map(row => ({Procedure:'SSB/PBCH',Frame:row.Frame,Slot:row.Slot,'Slot convention':'runtime source, 1-based',Endpoint:row.Cell,Outcome:row['CRC pass'],Status:row.Status})),
       ...recent(procedurePreviews.msg1_detection).map(row => ({Procedure:'PRACH Msg1 observation (not completed RA)',Frame:row.Frame,Slot:row['Absolute slot (0-based)'],'Slot convention':'absolute, 0-based',Endpoint:row.UE,Outcome:row['Strongest detected preamble'],Status:row.Status})),
       ...recent(controlPreviews.prach_trials).map(row => ({Procedure:'Completed RA attempt summary',Frame:row.Frame,Slot:row.Slot,'Slot convention':'runtime source, 1-based',Endpoint:row.UE,Outcome:row.Metric,Status:row.Status})),
     ];
@@ -21651,7 +22267,7 @@ window.addEventListener('DOMContentLoaded', function () {
     const pdcchReceiverRows = recent(controlPreviews.pdcch_trials)
       .filter(row => row['Receiver evidence scope'] !== 'pretransmission_admission_no_receiver');
     const qualitySourceRows = [
-      ...recent(controlPreviews.pbch_trials).map(row => ['SSB/PBCH','DL',row]),
+      ...recent(ssbBeamRows).map(row => ['SSB/PBCH','DL',row]),
       ...recent(controlPreviews.prach_trials).map(row => ['PRACH','UL',row]),
       ...pdcchReceiverRows.map(row => ['PDCCH','DL',row]),
       ...recent(dataPreviews.dl_trials).map(row => ['PDSCH','DL',row]),
@@ -21711,7 +22327,7 @@ window.addEventListener('DOMContentLoaded', function () {
       'Receiver frequency evidence SHA256':row['Receiver frequency evidence SHA256'],
     });
     const dlSynchronizationRows = [
-      ...recent(controlPreviews.pbch_trials).map(row => ({
+      ...recent(ssbBeamRows).map(row => ({
         Stage:'SSB/PBCH acquisition',Slot:row.Slot,UE:row.UE,
         'Injected CFO (Hz)':row['Configured / injected CFO (Hz)'],
         'Estimated CFO (Hz)':row['Estimated CFO (Hz)'],
@@ -21787,12 +22403,22 @@ window.addEventListener('DOMContentLoaded', function () {
     ];
     const ulSynchronizationRows = [
       ...msg1Rows.map(row => ({Stage:'PRACH Msg1 (absolute slot 0-based)',Slot:row['Absolute slot (0-based)'],UE:row.UE,
+        'TX RF injected CFO (Hz)':row['TX RF injected CFO (Hz)'],'RX RF injected CFO (Hz)':row['RX RF injected CFO (Hz)'],
+        'TX RF CFO evidence':row['TX RF CFO evidence'],'RX RF CFO evidence':row['RX RF CFO evidence'],
         'Frequency estimate enabled':row['Frequency estimate enabled'],
         'Estimated CFO (Hz)':row['Detected frequency offset Hz'],
         'Estimate valid':row['Frequency estimate valid'],'Estimator / source':row['Frequency estimator'],
         'Raw timing (samples)':row['Raw timing samples'],'Propagation timing (samples)':row['Propagation timing samples'],
-        'Injected timing (samples)':row['Injected timing samples'],'Timing error (samples)':row['Timing error samples'],
+        'Scoring reference timing (samples)':row['Scoring reference timing (samples)'],
+        'Timing reference source':row['Timing reference source'],
+        'Timing sample rate (Hz)':row['Timing sample rate Hz'],'Timing error (samples)':row['Timing error samples'],
         'Proposed RAR TA command':row['RAR TA command'],'TA evidence role':row['TA role'],'Timing source':row['Timing source'],Status:row.Status})),
+      ...recent(controlPreviews.prach_trials).filter(row => row['TX RF CFO evidence'] || row['RX RF CFO evidence']).map(row => ({
+        Stage:'PRACH RF endpoint receipt (runtime slot 1-based)',Slot:row.Slot,UE:row.UE,
+        'TX RF injected CFO (Hz)':row['TX RF injected CFO (Hz)'],'RX RF injected CFO (Hz)':row['RX RF injected CFO (Hz)'],
+        'TX RF CFO evidence':row['TX RF CFO evidence'],'RX RF CFO evidence':row['RX RF CFO evidence'],
+        'Timing source':row['Timing source'],Status:row.Status,
+      })),
       ...recent(controlPreviews.srs_trials).map(row => ({Stage:'SRS tracking',Slot:row.Slot,UE:row.UE,
         'Injected CFO (Hz)':row['Injected CFO (Hz)'],'Estimated CFO (Hz)':row['Estimated CFO (Hz)'],
         'Estimate valid':row['CFO estimate availability'],'Raw timing (samples)':row['SRS receive timing (samples)'] ?? row['Timing estimate (samples)'],
@@ -21812,22 +22438,27 @@ window.addEventListener('DOMContentLoaded', function () {
         'Residual timing error (samples)':row['Residual timing error (samples)'],Status:row.Status})),
     ];
     const tableSpecs = [
-      {id:'ssb_sweep', title:'SSB beam sweep — actual per-beam reception and selection', columns:['UE','Source slot (1-based)','Delivery slot (1-based)','SSB index (0-based)','Containing common-carrier slot (0-based)','Containing common-carrier symbol (0-based)','Native SSB slot (0-based)','Native SSB symbol (0-based)','SSB SCS (kHz)','SSB CP start sample','SSB end sample (exclusive)','Aligned to common symbol boundary','Coordinate source (not timing estimate)','Configured beams','Executed beams','Observed candidates','Sweep coverage complete','Selected','Selected SSB index','SS-RSRP (dBm)','SS-RSRP (dB re unit Es)','Power reference plane','SS measurement source','SS measurement status','SS-SINR (dB)','PBCH CRC pass','Selection metric','Selection source','Physical TX elements','Receiver status'], rows:recent(procedurePreviews.ssb_sweep), sourcePath:selectedPath(procedureSelection.ssb_sweep)},
-      {id:'ssb_pbch', title:'SSB / PBCH synchronization', columns:['Frame','Slot','Cell','UE','Configured SNR (dB)','SSB index','Precoder row (1-based)','Selected beam','PSS detected','SSS detected','Recovered PCI','SSB identity verified','MIB decoded','CRC pass','Detection outcome','Status'], rows:recent(controlPreviews.pbch_trials), sourcePath:selectedPath(controlSelection.pbch_trials)},
-      {id:'ssb_sync_timing', title:'SSB measured timing / frequency synchronization', columns:['Slot','Cell','SSB index','PSS lags searched','SSB position (samples)','Observation sample rate (Hz)','Timing status','Configured / injected CFO (Hz)','Estimated CFO (Hz)','CFO estimate availability','CFO estimation error (Hz)','CFO source','CFO correction applied','Applied CFO correction (Hz)','CFO correction source','CFO correction sample origin','Oscillator-only residual CFO (Hz)','Oscillator-only residual status','PBCH post-correction common frequency (Hz)','PBCH residual measurement available','PBCH residual measurement status','PBCH residual source','PBCH residual evidence role','Independent residual capture','Injected timing offset (samples)','Detected SSB position before correction (samples)','Applied timing correction (samples)','Residual timing error (samples)','Timing correction policy','PSS source','SSS source'], rows:recent(controlPreviews.pbch_trials), sourcePath:selectedPath(controlSelection.pbch_trials)},
+      {id:'sch_bler_counts', title:'Connected DL / UL BLER — original receiver counts', columns:['Direction','Sweep point','UE','RNTI','Configured SNR (dB)','First TX errors','First TX completed','First TX BLER','Attempt errors','Completed attempts','All-attempt failure ratio','Completed retries','Unknown attempt class','Unfinalized rows','Excluded rows','Status'], rows:errorStats.sch || [], sourcePath:'air_interface/csv/dl_pdsch_trials.csv; air_interface/csv/ul_pusch_trials.csv; ' + (errorStats.scope || '')},
+      {id:'harq_feedback_counts', title:'HARQ received feedback and terminal TB outcomes — pending is not failure', columns:['Direction','Sweep point','UE','Received ACK bits','Received NACK bits','Received DTX dispositions','Received feedback dispositions','Terminal unavailable feedback dispositions','Feedback pending/unavailable','Observed TBs','Qualified terminal TBs','Terminal receiver failures','Open/censored TBs','Unknown TB identity attempts','Residual final-TB BLER'], rows:errorStats.sch || [], sourcePath:'control/csv/gnb_harq_feedback_observations.csv + harq/csv/harq_process_timeline.csv, exact connected attempt joins; terminal receiver-unavailable is neither measured DTX nor pending; transmitter ACK is not receiver CRC; RA Msg3 excluded'},
+      {id:'pucch_dtx_counts', title:'PUCCH DTX — actual completed receiver decisions only', columns:['Population','DTX decisions','Completed detector decisions','DTX fraction','Excluded rows','Status'], rows:errorStats.control || [], sourcePath:'air_interface/csv/pucch_trials.csv; physical occasions are not logical feedback-bit counts; no decision is inferred from missing or withheld TX'},
+      {id:'error_population_exclusions', title:'BLER / HARQ / DTX population exclusions', columns:['Source','Source row','Attempt ID','Observation ID','Reason'], rows:errorStats.audit || [], sourcePath:'Original artifacts retained; identical original identities deduplicated: ' + (errorStats.identical_duplicates_removed || 0)},
+      {id:'ssb_quiet_search', title:'SSB quiet search diagnostics — no transmitted candidate; not transmitted-block failures', columns:['Slot','Cell','UE','Requested SSB candidate (0-based)','SSB search population','Candidate transmitted','Transmitted BCH population eligible','Receiver search candidate count','Receiver search scope','Detection attempted','PSS decision available','PSS detected','SSS decision available','SSS detected','BCH decode attempted','Raw BCH CRC valid','MIB decoded','Candidate identity consistent','Strict receiver evidence accepted','Original false alarm','False alarm status','False alarm source','False alarm definition','Original missed detection','Detection outcome','Status','Acquisition window SHA256'], rows:recent(ssbQuietRows), sourcePath:selectedPath(controlSelection.pbch_trials)+'; original quiet-search outcomes, including any false detections/acceptances; not an independent false-alarm probability estimate'},
+      {id:'ssb_sweep', title:'SSB beam sweep — actual per-beam reception and selection', columns:['Requested SSB candidate (0-based)','SSB search population','Candidate transmitted','UE','Source slot (1-based)','Delivery slot (1-based)','SSB index (0-based)','Containing common-carrier slot (0-based)','Containing common-carrier symbol (0-based)','Native SSB slot (0-based)','Native SSB symbol (0-based)','SSB SCS (kHz)','SSB CP start sample','SSB end sample (exclusive)','Aligned to common symbol boundary','Coordinate source (not timing estimate)','Configured beams','Executed beams','Observed candidates','Sweep coverage complete','Selected','Selected SSB index','SS-RSRP (dBm)','SS-RSRP (dB re unit Es)','Power reference plane','SS measurement source','SS measurement status','SS-SINR (dB)','PBCH CRC pass','Selection metric','Selection source','Physical TX elements','Receiver status'], rows:recent(ssbSweepRows), sourcePath:selectedPath(procedureSelection.ssb_sweep)},
+      {id:'ssb_pbch', title:'SSB / PBCH synchronization', columns:['Requested SSB candidate (0-based)','SSB search population','Candidate transmitted','Frame','Slot','Cell','UE','Configured SNR (dB)','SSB index','Precoder row (1-based)','Selected beam','PSS detected','SSS detected','Recovered PCI','SSB identity verified','MIB decoded','CRC pass','Detection outcome','Status'], rows:recent(ssbBeamRows), sourcePath:selectedPath(controlSelection.pbch_trials)},
+      {id:'ssb_sync_timing', title:'SSB measured timing / frequency synchronization', columns:['Requested SSB candidate (0-based)','SSB search population','Candidate transmitted','Slot','Cell','SSB index','PSS lags searched','SSB position (samples)','Observation sample rate (Hz)','Timing status','Configured / injected CFO (Hz)','Estimated CFO (Hz)','CFO estimate availability','CFO estimation error (Hz)','CFO source','CFO correction applied','Applied CFO correction (Hz)','CFO correction source','CFO correction sample origin','Oscillator-only residual CFO (Hz)','Oscillator-only residual status','PBCH post-correction common frequency (Hz)','PBCH residual measurement available','PBCH residual measurement status','PBCH residual source','PBCH residual evidence role','Independent residual capture','Injected timing offset (samples)','Detected SSB position before correction (samples)','Applied timing correction (samples)','Residual timing error (samples)','Timing correction policy','PSS source','SSS source'], rows:recent(ssbBeamRows), sourcePath:selectedPath(controlSelection.pbch_trials)},
       {id:'dl_sync', title:'DL synchronization detection and applied compensation', columns:Array.from(new Set(['Stage','Slot','UE','Injected CFO (Hz)','Estimated CFO (Hz)','Applied CFO correction (Hz)','Post-correction measured frequency (Hz)','Timing estimate (samples)','Applied timing correction (samples)',...dlSynchronizationRows.flatMap(row => Object.keys(row))])), rows:dlSynchronizationRows, sourcePath:'received SSB/PBCH + TRS + PDCCH + PDSCH; same-observation consistency is not independent residual accuracy; simulation scoring errors remain separate'},
       {id:'ul_sync', title:'UL synchronization detection, timing advance and compensation', columns:Array.from(new Set(['Stage','Slot','UE','Frequency estimate enabled','Injected CFO (Hz)','Estimated CFO (Hz)','Estimate valid','Estimator / source','Raw timing (samples)','Propagation timing (samples)','Injected timing (samples)','Timing error (samples)','Applied timing correction (samples)','Proposed RAR TA command','TA evidence role','Timing source','Status',...ulSynchronizationRows.flatMap(row => Object.keys(row))])), rows:ulSynchronizationRows, sourcePath:'received PRACH + SRS + PUCCH + PUSCH; same-observation estimator consistency is not an independent residual measurement'},
-      {id:'ssb_measurements', title:'SSB receiver measurements', columns:['Slot','Cell','SSB index','Configured SNR (dB)','SS-RSRP (dBm)','SS-RSRP (dB re unit Es)','SS-SINR (dB)','EVM','NMSE dB','Power reference plane','SS measurement status'], rows:recent(controlPreviews.pbch_trials), sourcePath:selectedPath(controlSelection.pbch_trials)},
+      {id:'ssb_measurements', title:'SSB receiver measurements', columns:['Requested SSB candidate (0-based)','SSB search population','Candidate transmitted','Slot','Cell','SSB index','Configured SNR (dB)','SS-RSRP (dBm)','Original SSS TX EPRE (dBm)','Measured RS effective loss (dB)','Pathloss reference RS','RS loss source','SS-RSRP (dB re unit Es)','SS-SINR (dB)','EVM','NMSE dB','Power reference plane','SS measurement status'], rows:recent(ssbBeamRows), sourcePath:selectedPath(controlSelection.pbch_trials)},
       {id:'waveform_quality', title:'Waveform quality by physical channel', columns:['Channel','Direction','Slot','UE','Sweep point','Configured SNR (dB)','SSB index / observation','EVM rms','EVM percent','EVM applicable','EVM reference source','EVM status','NMSE dB','NMSE scoring available','NMSE reference source','NMSE reference plane','NMSE compared complex values','NMSE pilot resource count','NMSE qualification mode','NMSE reference includes RF impairments','NMSE reference used by receiver','Channel estimate applicable','Channel estimate available','Channel estimate source','Equalization applicable','Equalization available','Observation samples','Observation scope','Sample rate (Hz)','Waveform executed','Waveform hash','Waveform hash plane','Evidence notes','Status'], rows:waveformQualityRows, sourcePath:'exact per-channel receiver trial rows; compare NMSE only on the stated reference plane; RMS EVM × 100 is percent; decision-directed and received-pilot EVM are not RF-conformance measurements; sample intervals are [start,end)'},
       {id:'receiver_criteria', title:'Recorded receiver acceptance / qualification criteria', columns:['Channel','Slot','UE','PSS threshold','SSS threshold','Detection threshold','Detection threshold source','Minimum resource coverage','NMSE qualification limit (dB)','Decode acceptance','Receiver evidence usable','TRS runtime usable','Qualification passed','Detector qualification','Target false-alarm probability','Qualification criteria','Status'], rows:criteriaRows, sourcePath:'actual retained criteria; correlation/NMSE limits are receiver or project choices, not universal 3GPP limits; a target probability is not a measured probability; blank legacy thresholds require new producer evidence'},
       {id:'prach_rach', title:'Completed RA attempt summaries — individual Msg1 observations are shown separately', columns:['Frame','Slot','UE','Configured SNR (dB)','TX preamble (audit)','Detected preamble','Detection attempted','Preamble detected','Metric','Threshold','Peak/noise (dB)','Peaks above threshold','Missed detection','False alarm','False alarm definition','DTX','Qualification status','Status'], rows:recent(controlPreviews.prach_trials), sourcePath:selectedPath(controlSelection.prach_trials)},
       {id:'prach_timing', title:'PRACH timing / RAR timing advance', columns:['Slot','UE','Detected preamble','Raw timing (samples)','Propagation timing (samples)','PRACH sample rate (Hz)','Timing valid','Timing source','RAR TA command','TA NTA (Tc units)','TA (samples)','TA (us)','TA source','Msg3 TA applied','TA out of range'], rows:recent(controlPreviews.prach_trials), sourcePath:selectedPath(controlSelection.prach_trials)},
-      {id:'prach_identity', title:'PRACH Msg1 identity / beam / timing-frequency evidence', columns:['UE','Frame','Slot in frame (0-based)','Absolute slot (0-based)','Associated SSB beam','Associated SSB measurement dB','SSB/beam authority','Msg1 beam policy','Root sequence index (RSI)','TX preamble','Strongest detected preamble','Received preamble set','Received set available','Target preamble missed','False alarm','False alarm applicability','Detection population','Detection metric','Threshold','Frequency estimate enabled','Detected frequency offset Hz','Frequency estimate valid','Frequency estimator','Raw timing samples','Propagation timing samples','Injected timing samples','Timing error samples','Timing source','RAR TA command','TA role','Timing sample rate Hz','RA-RNTI','Status'], rows:msg1Rows, sourcePath:selectedPath(procedureSelection.msg1_detection)},
+      {id:'prach_identity', title:'PRACH Msg1 identity / beam / timing-frequency evidence', columns:['UE','Frame','Slot in frame (0-based)','Absolute slot (0-based)','Associated SSB beam','Associated SSB measurement dB','SSB/beam authority','Msg1 beam policy','Root sequence index (RSI)','TX preamble','Strongest detected preamble','Received preamble set','Received set available','Target preamble missed','False alarm','False alarm applicability','Detection population','Detection metric','Threshold','Frequency estimate enabled','Detected frequency offset Hz','Frequency estimate valid','Frequency estimator','Raw timing samples','Propagation timing samples','Scoring reference timing (samples)','Timing reference source','Timing error samples','Timing source','RAR TA command','TA role','Timing sample rate Hz','RA-RNTI','Status'], rows:msg1Rows, sourcePath:selectedPath(procedureSelection.msg1_detection)},
       {id:'ra_attempt', title:'Four-step RA received outcomes', columns:['UE','Attempt','TX preamble','Detected preamble','RA-RNTI','Temporary C-RNTI','Final C-RNTI','Msg2 RA-RNTI detected','Msg2 DCI CRC','Msg2 PDSCH CRC','Decoded RAR RAPID','RAR RAPID matches UE','Msg3 PUSCH CRC','Msg4 PDCCH CRC','Msg4 PDSCH CRC','RAR TA command','TA NTA (Tc units)','TA source','RA complete','Physical stage waveforms','Shared channel state','Runtime stages'], rows:raAttemptRows, sourcePath:selectedPath(procedureSelection.ra_attempt)},
       {id:'ra_stage_waveforms', title:'RA / RRC physical stage waveforms', columns:['UE','Stage','Runtime slot (1-based)','Absolute slot (0-based)','Prepared TX ports','Physical TX dimensions','Received RX dimensions','TX port-to-element mapping','TX beam','SSB association','Waveform used','Channel state used','Fading execution','TX RF status','TX RF stages','RX front-end status','RX RF stages'], rows:raStageRows, sourcePath:selectedPath(procedureSelection.ra_stage_waveforms)},
       ...raDiagnosticTables,
       {id:'ra_receiver_rf', title:'RA / RRC RF execution by receive window (not decode success)', columns:['UE','Attempt','Receive window','Direction','Runtime slot (1-based)','Configured SNR (dB)','TX endpoint','RX endpoint','Observation ID','Capture start sample','Capture end (exclusive)','Available at sample','TX DAC bits','TX DAC full scale','TX DAC clipping fraction','TX DAC clipping status','TX PA applied','RX CFO applied','RX timing error applied','RX IQ imbalance applied','RX phase noise applied','RX ADC bits','RX ADC clipping fraction','Applied-flag scope','Evidence scope'], rows:raRFRows, sourcePath:selectedPath(procedureSelection.ra_receiver_rf)},
-      {id:'rrc_attach', title:'RRC / UE attach lifecycle', columns:['Step','UE','RNTI','Cell','Frame','Runtime slot (1-based)','Stage','Event','State','Status','Start runtime slot (1-based)','End runtime slot (1-based)','Delay ms','Complete','Placeholder','Fallback','Source artifact'], rows:rrcRows, sourcePath:selectedPath(procedureSelection.initial_access_lifecycle)},
+      {id:'rrc_attach', title:'RRC / UE attach lifecycle', columns:['Step','UE','RNTI','Cell','Frame','Runtime slot (1-based)','Stage','Event','State','Status','Start runtime slot (1-based)','End runtime slot (1-based)','Inclusive access span (ms)','Event-to-event elapsed (ms)','Access completion event','Placeholder','Fallback','Source artifact'], rows:rrcRows, sourcePath:selectedPath(procedureSelection.initial_access_lifecycle)+'; access completion flag marks the terminal completion event, not each successful stage; inclusive access span is terminal-only, N/A earlier is expected; event elapsed is the original interval between events, not a measured per-stage duration; Placeholder/Fallback 0 means false'},
       {id:'rrc_receiver_evidence', title:'RRC message reception and bounded protocol state (not full-stack qualification)', columns:['Attempt','UE identity','Endpoint','Event #','Runtime slot (1-based)','Absolute slot (0-based)','Previous state','Event','Next state','Transaction ID','SRB1 installed before event','SRB1 installed after event','Receiver CRC applicable','Receiver CRC','CRC source','Message SHA256','Message evidence role','Timer','Failure reason','Protocol transition status','Status scope','Evidence scope','Full MAC/RRC standards qualified'], rows:rrcProtocolRows, sourcePath:selectedPath(procedureSelection.rrc_connection_events)},
       {id:'rrc_parameters', title:'RRC setup parameters decoded for the UE', columns:['UE','RNTI','Temporary C-RNTI','Final C-RNTI','RRC transaction ID','SRB1 LCID','RRC setup request decoded','RRC setup decoded','SRB1 installed','RRC setup-complete CRC','RRC setup-complete decoded','Decoded UE identity','RRC connected','RA complete'], rows:recent(controlPreviews.prach_trials), sourcePath:selectedPath(controlSelection.prach_trials)},
       {id:'initial_access', title:'Acquisition / Initial Access observations — not an attachment verdict', columns:['Procedure','Frame','Slot','Slot convention','Endpoint','Outcome','Status'], rows:initialAccessRows, sourcePath:'canonical PBCH + received Msg1 + completed RA attempt rows'},
@@ -21840,6 +22471,7 @@ window.addEventListener('DOMContentLoaded', function () {
       {id:'pdsch', title:'Connected-mode PDSCH / DL-SCH (RA Msg2/Msg4 are shown above)', columns:['Slot','UE','MCS','Modulation','MCS mode','MCS source','LA applied','Scheduler CQI used','LA MCS','Measured SINR dB','CRC pass'], rows:recent(dataPreviews.dl_trials), sourcePath:selectedPath(linkSelection.dl)},
       {id:'pusch', title:'Connected-mode PUSCH / UL-SCH (RA Msg3 is shown above)', columns:['Slot','UE','MCS','Modulation','MCS mode','MCS source','LA applied','Scheduler CQI used','LA MCS','Measured SINR dB','CRC pass'], rows:recent(dataPreviews.ul_trials), sourcePath:selectedPath(linkSelection.ul)},
       {id:'csi', title:'CSI / CSI-RS measurements and separate scheduling objective', columns:['Slot','UE','Cell','CSI-RSRP dBm','CSI-RSSI dBm','CSI-RSRP (dB re unit occupied-RE Es)','CSI-RSSI (dB re unit occupied-RE Es)','CSI-RSRQ dB','RSRP RX branch (1-based)','RSRQ RX branch (1-based)','RSRQ numerator RSRP dBm','RSRQ denominator RSSI dBm','RSRQ aggregation','Power unit','Power reference plane','CSI-SINR dB','SINR source','SINR plane','Rank/PMI objective dB','Objective source','Status'], rows:csiRows, sourcePath:'air_interface/csv/csi_rs_trials.csv'},
+      {id:'csi_resource_power', title:'CSI-RS resource power / projected effective attenuation — latest observation per UE', columns:['Slot','UE','Cell','Resource ID (0-based)','Selected resource ID','RSRP','Power unit','Power reference plane','Projected TX power (dBm)','Projected effective attenuation (dB)','Projection RX branch (1-based)','Projection status','Projection scope','Authority status','Source field','Status'], rows:csiResourcePowerRows, sourcePath:'air_interface/csv/csi_rs_trials.csv; original received resource and complete post-TX-RF CDM projection diagnostic; not UMa/model pathloss, isolated nonlinear-port loss, independent accuracy, or inferred SSB beam identity'},
       {id:'csi_recommendations', title:'Observed CSI recommendations — not delivered feedback or transmitted layers', columns:['Slot','UE','Recommended CRI','Recommended RI','Recommended PMI','Recommended CQI','DL authority required','DL authority eligible','Authority status','Authority source','Measurement status'], rows:csiRecommendationRows, sourcePath:'air_interface/csv/csi_rs_trials.csv'},
       {id:'sib1', title:'Independent SIB1 reception and installation — separate from PBCH', columns:['Observation ID','UE','Cell','Resource slot (0-based)','Delivery slot (1-based)','Capture start sample','Capture end sample (exclusive)','Sample rate (Hz)','Reception attempted','Observation complete','SI DCI CRC pass','SI DLSCH CRC pass','ASN1 decoded','Semantics valid','Installed','Delivery status','Received MIB generation','Raw RX SHA256','Decoder input SHA256','Status','Failure reason','Failure identifier'], rows:recent(controlPreviews.sib1_trials), sourcePath:selectedPath(controlSelection.sib1_trials)},
       {id:'csi_sync', title:'CSI-RS synchronization — independent pre/post-front-end planes', columns:['Slot','UE','Plane','Timing estimate (samples)','Timing applied (samples)','Search offsets (samples)','Timing hypotheses','Timing search scope','Demodulated samples','Estimated CFO (Hz)','Applied CFO (Hz)','CFO status','CFO estimator','Sample domain','Source'], rows:csiSyncRows, sourcePath:'air_interface/csv/csi_rs_trials.csv; offsets are relative to capture start; a one-hypothesis search is fixed alignment, not timing acquisition'},
@@ -21855,7 +22487,8 @@ window.addEventListener('DOMContentLoaded', function () {
       {id:'trs', title:'TRS scheduler usability / tracking / qualification', columns:['Slot','UE','Metric','Est Doppler Hz','Scheduler usable','Tracking state','Qualification pass','Status','Update'], rows:recent(controlPreviews.trs_trials), sourcePath:selectedPath(controlSelection.trs_trials)},
       {id:'traffic', title:'Traffic / Goodput', columns:['Slot','UE','Direction','Offered Mbps','Goodput Mbps','MCS','Rank / Layers','PRBs','Symbols'], rows:trafficRows, sourcePath:'executed PDSCH/PUSCH trials; symbols are zero-based inclusive allocation bounds, not all-data REs; control, DM-RS, other RS and TDD guard/UL resources are not PDSCH payload; rank/layers are transmitted values'},
     ];
-    const tableIndex = `<details class="measurement-index" open><summary>Measurement navigation — ${tableSpecs.filter(spec => spec.rows.length).length}/${tableSpecs.length} displayed views have rows</summary><p class="mini-note">Latest preview rows only, not total trial populations or qualification coverage. Multiple views may describe the same observation. Missing values are not zero or a failure; check the source and measurement status. CSI recommendations are not proof of delivered feedback or data adaptation.</p><div class="toolbar" style="flex-wrap:wrap">${tableSpecs.map(spec => `<a class="button-link" href="#measurement-${esc(spec.id)}">${esc(spec.title)} <span class="badge">${spec.rows.length ? `${spec.rows.length} preview rows` : 'No published rows'}</span></a>`).join('')}</div></details>`;
+    const fullPopulationViews = new Set(['sch_bler_counts','harq_feedback_counts','pucch_dtx_counts','error_population_exclusions']);
+    const tableIndex = `<details class="measurement-index" open><summary>Measurement navigation — ${tableSpecs.filter(spec => spec.rows.length).length}/${tableSpecs.length} displayed views have rows</summary><p class="mini-note">BLER/HARQ/DTX statistics use the complete currently published canonical records, with explicit numerators, denominators and exclusions—not a tail preview or independent-trial qualification. Logical HARQ-bit dispositions and physical PUCCH occasions are different populations. Other measurement tables show recent previews; multiple views may describe the same observation. Missing values are not zero or failure. CSI recommendations do not prove delivered feedback or data adaptation.</p><div class="toolbar" style="flex-wrap:wrap">${tableSpecs.map(spec => `<a class="button-link" href="#measurement-${esc(spec.id)}">${esc(spec.title)} <span class="badge">${spec.rows.length ? `${spec.rows.length} ${fullPopulationViews.has(spec.id) ? 'population/audit rows' : 'preview rows'}` : 'No published rows'}</span></a>`).join('')}</div></details>`;
     const channelTables = tableIndex + tableSpecs.map(spec => {
       const source = spec.sourcePath ? `<span class="source-link mono" title="${esc(spec.sourcePath)}">${esc(spec.sourcePath)}</span>` : '<span class="small">exact runtime table not published yet</span>';
       const body = spec.rows.length

@@ -1,0 +1,169 @@
+function out=projectCSIRSTransmitAttenuation(carrier,txGrid,nfft,reference,m,unit)
+% Original receiver CDM operator applied to COMPLETE actual post-TX-RF grid.
+% Diagnostic effective attenuation, NOT unique nonlinear port attribution,
+% propagation-model path loss, independent accuracy, or a receiver input.
+id='sixgr:refsig:CSIProjectedAttenuationOperands';
+out=struct('ContractVersion',"sixgr.csirs.post_tx_rf_projected_attenuation/v1", ...
+    'Available',false,'Status',"unavailable_original_CDM_operator", ...
+    'Source',"original_received_CDM_operator_on_complete_actual_post_TX_RF_grid", ...
+    'Scope',"post_TX_RF_to_pre_RX_RF_CDM_projected_effective_attenuation", ...
+    'UniqueNonlinearPortAttributionQualified',false,'IndependentAccuracyQualified',false, ...
+    'StandardizedPathlossQualified',false,'ReceiverUsesReference',false, ...
+    'SharedOwnerAuthenticatedByPrimitive',false,'OriginalRXGridRecomputed',false, ...
+    'TransmitProjectedPower_W',NaN,'TransmitProjectedPower_dBm',NaN, ...
+    'SelectedReceiveColumn1',NaN,'SelectedReceivedPower_W',NaN, ...
+    'SelectedReceivedPower_dBm',NaN,'EffectiveAttenuation_dB',NaN);
+assert(isstruct(m)&&isscalar(m),id,'Require one original measured resource.');
+assert(text(unit),id,'Amplitude units must be original scalar text.');
+if string(unit)=="normalized_complex_baseband"
+    out.Status="unavailable_absolute_only_diagnostic_normalized_units"; return;
+end
+assert(string(unit)=="sqrt_mW"&&isfield(m,'PowerUnit')&& ...
+    text(m.PowerUnit)&&string(m.PowerUnit)=="W_resource_grid",id,'Absolute original power units required.');
+if ~isfield(m,'SINR')||~isfield(m.SINR,'SignalPowerEstimation')|| ...
+        ~isfield(m.SINR.SignalPowerEstimation,'CDMProjectionReceipt'), return; end
+s=m.SINR; e=s.SignalPowerEstimation; c=e.CDMProjectionReceipt;
+required=["ContractVersion","Source","ProjectionConvention","WeightDefinition","PowerNormalization", ...
+    "CarrierIdentity","TileIndices1Based","ProjectionWeightsReal","ProjectionWeightsImag", ...
+    "ReceiveColumnCount","NormalizationPilotCount","TileCount","TileSize","ReferencePortNumber", ...
+    "ReferencePortCount","ReceiveColumnIndices0","InputGridSize","ReferenceGridSize", ...
+    "ReferenceGridClass","ReferenceUsedSupportSHA256","ArithmeticReferenceUsedSupportSHA256", ...
+    "ReferenceEnergyPerTile","UnitNoiseGainPerTile","ProjectedCoefficientsReal","ProjectedCoefficientsImag", ...
+    "DisturbancePowerPerBranch","WeightedSquaredCoefficientSumPerBranch","UnitNoiseBiasWeightedSum", ...
+    "UnitDisturbancePowerBias","RawPort3000PowerPerBranch","EstimatedNoiseBiasPerBranch", ...
+    "SignedPort3000PowerPerBranch","InputUsedSupportSHA256","CDMLengths","InputGridClass"];
+assert(isstruct(c)&&isscalar(c)&&text(e.CDMProjectionReceiptSHA256)&& ...
+    all(isfield(c,required))&& ...
+    string(e.CDMProjectionReceiptSHA256)==sixgr.util.sha256Hex(char(jsonencode(c))), ...
+    id,'Original CDM receipt hash changed.');
+for entry={ ...
+    {'ContractVersion','sixgr.csirs.original_cdm_projection/v1'}, ...
+    {'Source','original_practical_CDM_port3000_projection'}, ...
+    {'ProjectionConvention','weights_nonconjugating_transpose_times_received_tile'}, ...
+    {'WeightDefinition','conj_original_port3000_pilot_divided_by_original_tile_pilot_energy'}, ...
+    {'PowerNormalization','sum_tile_energy_times_abs_coefficient_squared_divided_by_original_pilot_count'}}
+    pair=entry{1}; assert(isfield(c,pair{1})&&text(c.(pair{1}))&&string(c.(pair{1}))==string(pair{2}),id,'Unsupported original operator contract.');
+end
+for name=["ClippedToNonnegative","IndependentReferenceAvailable","StandardizedAccuracyQualified", ...
+        "ReferenceUsedByReceiver","WaveformAmplitudeUnitBound","ResourceIdentityBound","OriginalSharedOwnerBound"]
+    assert(isfield(c,name)&&islogical(c.(name))&&isscalar(c.(name))&&~c.(name),id,'Original operator flags changed.');
+end
+source="received_CDM_despread_CSI_IM_noise_debiased_port3000_reference_RE_power";
+assert(text(s.Source)&&string(s.Source)==source&&text(m.RSRPSource)&&string(m.RSRPSource)==source&& ...
+    text(s.PowerUnit)&&string(s.PowerUnit)=="W_resource_grid",id,'Original measured source/unit aliases disagree.');
+assert(isfield(m,'Available')&&islogical(m.Available)&&isscalar(m.Available),id,'Original measurement availability must be logical.');
+K=12*double(carrier.NSizeGrid); L=double(carrier.SymbolsPerSlot);
+assert(grid(txGrid)&&grid(reference)&&size(txGrid,1)==K&&size(txGrid,2)==L&& ...
+    size(reference,1)==K&&size(reference,2)==L&&number(nfft)&&nfft>=K&&nfft==fix(nfft),id,'Original complete native grids and FFT size required.');
+for name=["NSizeGrid","NStartGrid","SubcarrierSpacing","NSlot","NFrame","SymbolsPerSlot"]
+    assert(number(c.CarrierIdentity.(name))&&c.CarrierIdentity.(name)==carrier.(name),id,'Original carrier identity changed.');
+end
+indices=c.TileIndices1Based; wr=c.ProjectionWeightsReal; wi=c.ProjectionWeightsImag;
+assert(array(indices)&&ismatrix(indices)&&~isempty(indices)&&all(indices==fix(indices),'all')&& ...
+    all(indices>=1&indices<=K*L,'all')&&numel(unique(indices(:)))==numel(indices)&& ...
+    array(wr)&&array(wi)&&isequal(size(indices),size(wr),size(wi)),id,'Require complete unique original tiles and numeric weights.');
+g=size(indices,2); N=numel(indices); nrx=m.NumReceiveAntennas;
+assert(number(nrx)&&nrx>=1&&nrx==fix(nrx)&&number(c.ReceiveColumnCount)&&c.ReceiveColumnCount==nrx&& ...
+    number(c.NormalizationPilotCount)&&c.NormalizationPilotCount==N&& ...
+    number(c.TileCount)&&c.TileCount==g&&number(c.TileSize)&&c.TileSize==size(indices,1)&& ...
+    number(c.ReferencePortNumber)&&c.ReferencePortNumber==3000&& ...
+    number(m.RSRPReferencePort)&&m.RSRPReferencePort==3000&& ...
+    number(s.ReferenceRECount)&&s.ReferenceRECount==N&&number(s.ReferencePort)&&s.ReferencePort==3000&& ...
+    number(c.ReferencePortCount)&&c.ReferencePortCount==size(reference,3),id,'Original population counts differ.');
+inputSize=[K L nrx]; if nrx==1, inputSize=[K L]; end
+assert(samevector(c.ReceiveColumnIndices0,0:nrx-1)&&samevector(c.InputGridSize,inputSize)&& ...
+    samevector(c.ReferenceGridSize,size(reference))&&text(c.ReferenceGridClass)&& ...
+    string(c.ReferenceGridClass)==string(class(reference))&&text(c.InputGridClass)&& ...
+    any(string(c.InputGridClass)==["single","double"])&&samevector(c.CDMLengths,s.CDMLengths)&& ...
+    numel(c.CDMLengths)==2&&all(c.CDMLengths>0)&&all(c.CDMLengths==fix(c.CDMLengths))&& ...
+    prod(c.CDMLengths)==size(indices,1),id,'Original dimension/branch/reference identity changed.');
+X=reshape(reference,K*L,[]); used=X(indices(:),:);
+assert(text(c.ReferenceUsedSupportSHA256)&&string(c.ReferenceUsedSupportSHA256)==hash(used)&& ...
+    text(c.ArithmeticReferenceUsedSupportSHA256)&&string(c.ArithmeticReferenceUsedSupportSHA256)==hash(double(used))&& ...
+    isequal(sort(double(indices(:))),find(X(:,1)~=0)),id,'Do not omit, replace or renumber original reference pilots.');
+energy=vec(c.ReferenceEnergyPerTile,g,id); gain=vec(c.UnitNoiseGainPerTile,g,id);
+weights=complex(double(wr),double(wi));
+yr=c.ProjectedCoefficientsReal; yi=c.ProjectedCoefficientsImag;
+assert(array(yr)&&array(yi)&&isequal(size(yr),[g nrx])&&isequal(size(yr),size(yi)),id,'Original RX coefficient shape/type changed.');
+rxCoeff=complex(double(yr),double(yi));
+% Scale only the COMPLETE required tile support, with every physical column.
+% This is not the preRF nonzero mask; no required support value is omitted.
+flatRaw=reshape(txGrid,K*L,[]);
+usedTX=flatRaw(indices(:),:)./cast(double(nfft)*sqrt(1000),'like',txGrid);
+projected=complex(zeros(g,size(flatRaw,2)));
+txSum=zeros(1,size(flatRaw,2)); rxSum=zeros(1,nrx); biasSum=0;
+for j=1:g
+    ix=double(indices(:,j)); pilot=double(X(ix,1));
+    near(energy(j),sum(abs(pilot).^2),N,id);
+    assert(energy(j)>0,id,'Original pilot energy must be positive.');
+    near(weights(:,j),conj(pilot)/energy(j),N,id);
+    near(gain(j),sum(abs(weights(:,j)).^2),N,id);
+    near(weights(:,j).'*double(X(ix,:)),[1 zeros(1,size(X,2)-1)],N,id);
+    tileRows=(j-1)*size(indices,1)+(1:size(indices,1));
+    projected(j,:)=weights(:,j).'*double(usedTX(tileRows,:));
+    txSum=txSum+energy(j)*abs(projected(j,:)).^2;
+    rxSum=rxSum+energy(j)*abs(rxCoeff(j,:)).^2;
+    biasSum=biasSum+energy(j)*gain(j);
+end
+raw=rxSum/N; disturbance=vec(c.DisturbancePowerPerBranch,nrx,id);
+assert(all(disturbance>=0),id,'Original measured disturbance cannot be negative.');
+bias=(biasSum/N)*disturbance; signed=raw-bias;
+near(vec(c.WeightedSquaredCoefficientSumPerBranch,nrx,id),rxSum,N,id);
+near(c.UnitNoiseBiasWeightedSum,biasSum,N,id);
+near(c.UnitDisturbancePowerBias,biasSum/N,N,id);
+for holder={c,e}
+    h=holder{1}; near(vec(h.RawPort3000PowerPerBranch,nrx,id),raw,N,id);
+    near(vec(h.EstimatedNoiseBiasPerBranch,nrx,id),bias,N,id);
+    near(vec(h.SignedPort3000PowerPerBranch,nrx,id),signed,N,id);
+end
+near(vec(s.DesiredPowerPerReceiveAntenna,nrx,id),signed,N,id);
+near(vec(s.NoiseInterferencePowerPerReceiveAntenna,nrx,id),disturbance,N,id);
+assert(isfield(s,'InterferenceMeasurement')&&isstruct(s.InterferenceMeasurement)&& ...
+    isscalar(s.InterferenceMeasurement)&&islogical(s.InterferenceMeasurement.Available)&& ...
+    isscalar(s.InterferenceMeasurement.Available)&&s.InterferenceMeasurement.Available&& ...
+    text(s.InterferenceMeasurement.Source)&& ...
+    string(s.InterferenceMeasurement.Source)=="configured_CSI_IM_received_RE_second_moment", ...
+    id,'Only the original dedicated observed CSI-IM disturbance supports this operator.');
+near(vec(s.InterferenceMeasurement.PowerPerReceiveAntenna,nrx,id),disturbance,N,id);
+logs=nan(1,nrx); positive=signed>0; logs(positive)=10*log10(signed(positive))+30;
+assert(isnumeric(m.RSRPPerAntenna_dBm)&&isreal(m.RSRPPerAntenna_dBm)&& ...
+    numel(m.RSRPPerAntenna_dBm)==nrx&&isequal(isnan(m.RSRPPerAntenna_dBm(:).'),isnan(logs)),id,'Original signed power log availability changed.');
+near(double(m.RSRPPerAntenna_dBm(positive)),logs(positive),N,id);
+out.OriginalCDMProjectionReceiptSHA256=string(e.CDMProjectionReceiptSHA256);
+out.OriginalReferenceSupportSHA256=hash(used);
+out.OriginalRXUsedSupportSHA256=string(c.InputUsedSupportSHA256);
+out.PhysicalTransmitColumnIndices0=0:size(txGrid,3)-1;
+out.TransmitSupportSHA256=hash(usedTX);
+out.AllPhysicalTransmitColumnsIncluded=true; out.PreRFZeroPositionsRetained=true;
+out.NormalizationPilotCount=N; out.TileCount=g; out.RawGridAmplitudeDivisor=double(nfft)*sqrt(1000);
+out.SignedReceivedPowerPerColumn_W=signed;
+out.TransmitProjectedPowerPerColumn_W=txSum/N;
+out.TransmitProjectedPower_W=sum(out.TransmitProjectedPowerPerColumn_W);
+if out.TransmitProjectedPower_W>0, out.TransmitProjectedPower_dBm=10*log10(out.TransmitProjectedPower_W)+30; end
+if any(positive)
+    [out.SelectedReceivedPower_dBm,out.SelectedReceiveColumn1]=max(logs,[],'omitnan');
+    out.SelectedReceivedPower_W=signed(out.SelectedReceiveColumn1);
+end
+out.Status="unavailable_nonpositive_original_projected_or_received_power";
+if ~m.Available
+    out.Status="unavailable_original_resource_measurement";
+elseif isfinite(out.TransmitProjectedPower_dBm)&&isfinite(out.SelectedReceivedPower_dBm)
+    out.EffectiveAttenuation_dB=out.TransmitProjectedPower_dBm-out.SelectedReceivedPower_dBm;
+    out.Available=true; out.Status="available_projected_effective_attenuation_not_isolated_port_pathloss";
+end
+end
+function tf=text(x), tf=(isstring(x)&&isscalar(x)&&~ismissing(x))||(ischar(x)&&isrow(x)); end
+function tf=array(x), tf=isnumeric(x)&&isreal(x)&&~issparse(x)&&all(isfinite(x),'all'); end
+function tf=number(x), tf=array(x)&&isscalar(x); end
+function tf=grid(x), tf=(isa(x,'double')||isa(x,'single'))&&~issparse(x)&&~isempty(x)&&ndims(x)<=3&&all(isfinite(x),'all'); end
+function tf=samevector(a,b), tf=array(a)&&isvector(a)&&isequal(double(a(:)),double(b(:))); end
+function v=vec(x,n,id)
+assert(array(x)&&isvector(x)&&numel(x)==n,id,'Original finite numeric vector required.'); v=double(x(:).');
+end
+function v=hash(x), v=sixgr.phy.waveform.WaveformHash.runtimeArray(x); end
+function near(a,b,n,id)
+assert(isnumeric(a)&&isnumeric(b)&&isequal(size(a),size(b))&&all(isfinite(a),'all')&&all(isfinite(b),'all'),id,'Original arithmetic operand type/shape changed.');
+if isempty(a), return; end
+scale=max(realmin('double'),max([abs(double(a(:)));abs(double(b(:)))]));
+assert(all(abs(double(a)-double(b))<=128*max(1,n)*eps(scale),'all'),id,'Original arithmetic operands disagree.');
+end

@@ -57,9 +57,13 @@ assert(ue.ULBufferBytes==10,'Only the 80 already-arrived bits belong in this que
 % Optional SRS still obeys required access. A future resource calendar may
 % not promote a provisional RAR into a completed RRC/access procedure.
 srsCfg=cfg;
-srsCfg.phy.srs.slotWithinPeriod1Based=1;
 srsPlan=plan;
-srsPlan.SRSSlotPeriod=1;
+% Keep the installed periodic resource intact: canonical slot 5 is its
+% configured period-5/offset-4 occasion. This test changes access knowledge,
+% not the resource calendar independently of the native SRS configuration.
+assert(srsPlan.SRSSlotPeriod==srsCfg.phy.srs.period_slots && ...
+    sixgr.truth.coupledSRSResourceOpportunity(srsCfg,5,1,srsPlan.NumUsers, ...
+        srsPlan.SRSSlotPeriod,srsCfg.phy.srs.schedulingPolicy,srsCfg.phy.srs.maxUEsPerSlot));
 srsPlan.LastSRSSlotByUE(:)=NaN;
 srsPlan.ControlGating.SRSRequired=false;
 srsPlan.ControlGating.PRACHRequired=true;
@@ -205,6 +209,66 @@ futurePlan.LastSuccessfulTRSSlotByCell(:)=25;
 [~,ue]=sixgr.truth.CoupledTruthRuntime.buildSchedulerUEStateRuntime(futurePlan,cfg,1,'UL',1);
 assert(~ue.Active && ue.AcceptedSRSCausalUsable, ...
     'Stale tracking at the PDCCH decision must still block the UL grant.');
+
+% Exact requested n40 tail, with its real installed K2/age policy. The
+% feedback values below remain explicitly declared delivery-boundary data:
+% this does not claim that slot-60 SRS or slot-65 PUSCH was received.
+n40Source=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs', ...
+    'scenarios','lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep.yaml'));
+n40Cfg=sixgr.lls6g.buildInternalConfig(n40Source,tempname);
+assert(n40Source.get('control_gating.srs_max_age_slots')==5 && ...
+    n40Source.get('control_gating.trs_max_age_slots')==20);
+tailGrant=struct('Direction','UL','Slot',60,'ControlAbsoluteSlot',60, ...
+    'SymbolAllocation',n40Cfg.phy.pusch.symbolAllocation, ...
+    'ControlSymbolAllocation',n40Cfg.phy.pdcch.symbolAllocation, ...
+    'TimingAdvanceTicks',0);
+tailTiming=sixgr.phy.frame.TimingRelationEngine.resolveProductionGrant(n40Cfg,tailGrant);
+assert(tailTiming.Valid && tailTiming.ControlAbsoluteSlot==60 && ...
+    tailTiming.DataAbsoluteSlot==64, ...
+    'Original n40 timing must map canonical control 61 to UL resource 65.');
+tail=boundary;
+tail.CurrentSlot=61; tail.CurrentCanonicalSlot=61; tail.LastTrafficFrameApplied=61;
+tail.LastSuccessfulTRSSlotByCell(:)=48;
+tail.LastSuccessfulSRSSlotByUE(:)=60;
+tail.ControlGating.SRSMaxAgeSlots=n40Source.get('control_gating.srs_max_age_slots');
+tail.ControlGating.TRSMaxAgeSlots=n40Source.get('control_gating.trs_max_age_slots');
+tailMeasurement=declaredSRS;
+tailMeasurement.MeasurementId="declared_n40_tail_source60";
+tailMeasurement.ProducerSlot=60; tailMeasurement.AvailableSlot=61;
+tail.ReferenceSignalMeasurementTable=struct2table(tailMeasurement,'AsArray',true);
+tailFeedback=feedback;
+tailFeedback.Slot=60; tailFeedback.SourceSlot=60;
+tailFeedback.DueSlot=61; tailFeedback.DeliveredSlot=61;
+tailFeedback.SpatialDecisionSourceSlot=60;
+tailFeedback.SpatialDecisionDeliveredSlot=61;
+tailFeedback.AcceptedSRSSpatialDecision=sixgr.truth.captureAcceptedSRSSpatialDecision( ...
+    tailMeasurement,rnti,tailMeasurement.RI,tailMeasurement.PMI);
+tail.LatestULFeedback(1)=tailFeedback;
+tailPlan=sixgr.truth.CoupledTruthRuntime.futureULPlanningView(tail,65);
+[~,tailUE]=sixgr.truth.CoupledTruthRuntime.buildSchedulerUEStateRuntime(tailPlan,cfg,1,'UL',1);
+assert(tailUE.Active && tailUE.AcceptedSRSCausalUsable && ...
+    tailUE.AcceptedSRSCausalAgeSlots==5 && tailUE.FeedbackKnownAtSlot==61 && ...
+    tailUE.SpatialDecisionSourceSlot==60 && tailUE.SpatialDecisionDeliveredSlot==61);
+futureTail=tailMeasurement;
+futureTail.MeasurementId="declared_future_source65";
+futureTail.ProducerSlot=65; futureTail.AvailableSlot=66;
+tailPlan.ReferenceSignalMeasurementTable=[tailPlan.ReferenceSignalMeasurementTable; ...
+    struct2table(futureTail,'AsArray',true)];
+selected=sixgr.truth.CoupledTruthRuntime.consumeReferenceSignalMeasurementRuntime( ...
+    tailPlan,'SRS','UE',1,65,tail.ControlGating.SRSMaxAgeSlots);
+assert(selected.Usable && selected.MeasurementId==tailMeasurement.MeasurementId && ...
+    selected.AgeSlots==5 && selected.KnownAtSlot==61, ...
+    'A future slot-65 pilot cannot displace the source known when control 61 was authored.');
+futureDecision=sixgr.truth.captureAcceptedSRSSpatialDecision( ...
+    futureTail,rnti,futureTail.RI,futureTail.PMI);
+unavailable=sixgr.truth.consumeAcceptedSRSSpatialDecision( ...
+    tailPlan,futureDecision,1,rnti,futureTail.RI,futureTail.PMI,cfg);
+assert(~unavailable.Usable && unavailable.Status=="future_measurement_not_available");
+tailPlan.ControlGating.SRSMaxAgeSlots=4;
+[~,expiredTail]=sixgr.truth.CoupledTruthRuntime.buildSchedulerUEStateRuntime(tailPlan,cfg,1,'UL',1);
+assert(~expiredTail.Active && ~expiredTail.AcceptedSRSCausalUsable, ...
+    'The exact tail must fail at age four; the test must not widen age to schedule it.');
+fprintf('N40_TAIL_UL_CLOCK_PASS source=60 decision=61 target=65 age=5 future65_rejected=1 waveform_execution=0\n');
 localReject(@()sixgr.truth.CoupledTruthRuntime.futureULPlanningView( ...
     state,2),'sixgr:truth:InvalidULPlanningOccasion');
 bad = state; bad.LastTrafficFrameApplied=5;

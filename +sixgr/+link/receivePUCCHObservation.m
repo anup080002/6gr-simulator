@@ -1,9 +1,13 @@
-function rx=receivePUCCHObservation(cfg,assignment,context,observation,prior)
+function rx=receivePUCCHObservation(cfg,assignment,context,observation,prior,varargin)
 % Receive actual PUCCH samples without preparing or inspecting a UE waveform.
 % ReceptionAssignment is the independent gNB hypothesis API. The legacy
 % TransmissionAssignment remains explicitly labelled as transmitter-coupled;
 % accepting it does not qualify an independent shared HARQ codebook.
 if nargin<5, prior=[]; end
+p=inputParser;
+addParameter(p,'TimingUnavailableAsOutcome',false,@(v)islogical(v)&&isscalar(v));
+parse(p,varargin{:});
+timingUnavailableAsOutcome=p.Results.TimingUnavailableAsOutcome;
 assert(isempty(prior) || (isa(prior,'sixgr.phy.sync.ReceivedULTimingReference') && isscalar(prior)), ...
     'sixgr:link:InvalidPUCCHTimingPrior','An optional timing prior must be an actual received UL reference.');
 receiverOnly=isa(assignment,'sixgr.phy.pucch.PUCCHReceptionAssignment');
@@ -73,10 +77,27 @@ if assignment.Format==0
         timing.PriorClockApplied=false;
         timing.PriorClockDisposition="not_used_current_configured_SR_sequence_acquisition";
     else
+        if isempty(prior) && timingUnavailableAsOutcome && receiverOnly
+            rx=sixgr.link.unavailablePUCCHTimingReception(cfg,assignment,context, ...
+                observation,prior,"missing_received_ul_timing",threshold,thresholdSource);
+            return;
+        end
         assert(isa(prior,'sixgr.phy.sync.ReceivedULTimingReference') && isscalar(prior), ...
             'sixgr:phy:pucch:PUCCHTimingReferenceRequired', ...
             'HARQ-bearing Format 0 requires an available retained measured gNB UL clock.');
-        [raw,timing]=prior.alignCompletedObservation(cfg,observation,slot0);
+        try
+            [raw,timing]=prior.alignCompletedObservation(cfg,observation,slot0);
+        catch cause
+            % Only the expected freshness failure is a reception outcome.
+            % Identity/TAG/future/coverage errors remain integrity failures.
+            if timingUnavailableAsOutcome && receiverOnly && ...
+                    strcmp(cause.identifier,'sixgr:phy:sync:StaleULTimingReference')
+                rx=sixgr.link.unavailablePUCCHTimingReception(cfg,assignment,context, ...
+                    observation,prior,"stale_received_ul_timing",threshold,thresholdSource);
+                return;
+            end
+            rethrow(cause);
+        end
     end
     args=[args {'NoiseVarianceMode','noncoherent_correlation'}];
 else

@@ -1,0 +1,59 @@
+function context=connectedRARTimingFromAttempt(state,ue,cfg,rar,rarDLSlot0,receivedAtSample,fs,attemptStartSlot)
+% Install initial TAG from the clock frozen before this actual RA attempt.
+% The caller must supply its accepted received MAC RAR. This adapter does
+% not decode RAR or turn a timing receipt into evidence of RAR reception.
+% Tracking may refresh after Msg1: never reselect its latest beam/clock here.
+validateattributes(ue,{'double'},{'scalar','real','finite','integer','positive'});
+validateattributes(attemptStartSlot,{'double'},{'scalar','real','finite','integer','positive'});
+validateattributes(receivedAtSample,{'double'},{'scalar','real','finite','integer','nonnegative'});
+validateattributes(fs,{'double'},{'scalar','real','finite','positive'});
+assert(ue<=state.NumUsers && isfield(cfg,'SharedRATimingBinding') && ...
+    isfield(cfg,'SharedULTimingContext'), ...
+    'sixgr:truth:RARAttemptTimingRequired','Retain the original selected timing frozen before Msg1.');
+receipt=cfg.SharedRATimingBinding;
+sixgr.truth.ReceivedSSBTimingDelivery.validate(receipt,true);
+b=receipt.OriginalBCHBinding;
+owner=state.SharedWaveformStream;
+assert(isa(owner,'sixgr.truth.CoupledWaveformStream') && isscalar(owner), ...
+    'sixgr:truth:RARAttemptTimingRequired','Use the original shared execution owner.');
+identity=owner.broadcastReceiveIdentity(ue);
+assert(b.UEIndex==ue && b.ServingCell==state.CurrentServingIdx(ue) && ...
+    sixgr.util.structGet(cfg,'lls6g.userContext.RuntimeServingCell',NaN)==b.ServingCell && ...
+    cfg.phy.carrier.NCellID==b.Context.Data.NCellID && ...
+    sixgr.util.structGet(cfg,'random_access.associated_ssb_index',NaN)==receipt.SSBIndex && ...
+    b.SampleRateHz==fs && fs==owner.SampleRateHz, ...
+    'sixgr:truth:RARAttemptTimingIdentityMismatch','Do not relabel an attempt clock across UE, cell, beam or sample rate.');
+for name=string(fieldnames(identity)).'
+    assert(isequaln(b.(name),identity.(name)), ...
+        'sixgr:truth:RARAttemptTimingIdentityMismatch','The original installed receive owner changed.');
+end
+b.Context.validate(cfg);
+[current,~,acquisition]=sixgr.truth.ReceivedMIBDelivery.current(state,ue);
+assert(current && receipt.AcquisitionGenerationID==acquisition.GenerationID, ...
+    'sixgr:truth:RARAttemptTimingGenerationMismatch','A pending attempt cannot adopt a new acquisition generation.');
+history=sixgr.util.structGet(state,'ReceivedSSBTimingByUE',{});
+assert(numel(history)>=ue && iscell(history{ue}) && ...
+    any(cellfun(@(r)isequaln(r,receipt),history{ue})), ...
+    'sixgr:truth:RARAttemptTimingRequired','Use the original delivered timing, not a replacement self-authored receipt.');
+common=state.UECommonCellConfigurationByUE{ue};
+recovery=state.DecodedSIB1RecoveryByUE{ue};
+assert(sixgr.util.structGet(recovery,'ReceivedMIBGenerationID',"")==acquisition.GenerationID && ...
+    sixgr.util.structGet(recovery,'SIB1RxTreeHash',"")==common.TreeHash && ...
+    isequaln(cfg.SharedULTimingContext.DLReference,receipt.ReceivedDLTimingReference) && ...
+    isequaln(cfg.SharedULTimingContext.Offset,common.ULTimingAdvanceOffset), ...
+    'sixgr:truth:RARAttemptTimingCommonMismatch','Keep the attempt clock and original received SIB1 offset in the same acquisition.');
+carrier=sixgr.phy.grid.makeCarrier(cfg);
+startSample=sixgr.phy.frame.slotStartSample(carrier,attemptStartSlot-1,fs);
+assert(receipt.DeliveredAvailableSample<=startSample && startSample<=receivedAtSample && ...
+    receivedAtSample<=owner.Events.NextSampleIndex, ...
+    'sixgr:truth:RARAttemptTimingNotAvailable','Timing must predate attempt preparation, and received RAR must already be complete.');
+% Only this local value changes. The installed common SI and retained MIB
+% remain original; they are not rewritten by selected-beam tracking.
+attemptCommon=common;
+attemptCommon.ReceivedDLTimingReference=receipt.ReceivedDLTimingReference;
+context=sixgr.mac.ra.connectedTimingFromRAR(cfg,attemptCommon,rar,rarDLSlot0,receivedAtSample,fs);
+context.ReceivedSSBTimingBinding=receipt;
+context.AcquisitionGenerationID=acquisition.GenerationID;
+context.RAAttemptStartSlot=attemptStartSlot;
+context.RAAttemptStartSample=startSample;
+end

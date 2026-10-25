@@ -676,7 +676,7 @@ try
         return;
     end
     localProgress(opt, "msg3_channel_start", "");
-    [msg3Wave, runtime, stageInfo] = localResolveStageRxWaveform("Msg3", "UL", msg3TA.Waveform, cfg, raCfg, msg3Tx, runtime);
+    [msg3Wave, runtime, stageInfo, msg3Observation] = localResolveStageRxWaveform("Msg3", "UL", msg3TA.Waveform, cfg, raCfg, msg3Tx, runtime);
     localProgress(opt, "msg3_channel_done", "");
     result = localAppendRuntimeStage(result, stageInfo, runtime);
     result=sixgr.phy.ra.appendObservedStageAllocation(result,msg3Tx,stageInfo);
@@ -688,6 +688,9 @@ try
         msg3Wave = localCorruptWaveformAtSNR(msg3Wave, -20);
     end
     cfgMsg3Rx = localApplyRuntimeReceiverSyncContext(cfg, runtime, "UL");
+    if ~isempty(msg3Observation) && faultMode~="msg3_pusch_corrupted"
+        msg3Wave=msg3Observation;
+    end
     localProgress(opt, "msg3_pusch_start", "");
     [msg3Rx, msg3Decoded] = sixgr.phy.ra.recoverMsg3PUSCH( ...
         msg3Wave, cfgMsg3Rx, raCfg, grantRx, msg3Tx);
@@ -860,7 +863,7 @@ try
                 setupCompleteTA.Waveform, setupCompleteTx, "UL");
             return;
         end
-        [setupCompleteWave, runtime, stageInfo] = ...
+        [setupCompleteWave, runtime, stageInfo, setupCompleteObservation] = ...
             localResolveStageRxWaveform( ...
             "RRCSetupComplete", "UL", ...
             setupCompleteTA.Waveform, cfg, raCfg, ...
@@ -874,6 +877,10 @@ try
             % decision instead of assigning a failed CRC or payload.
             setupCompleteWave = localCorruptWaveformAtSNR( ...
                 setupCompleteWave, -20);
+        end
+        if ~isempty(setupCompleteObservation) && ~any(faultMode==[ ...
+                "rrc_setup_complete_corrupted","rrc_setup_complete_crc_failure"])
+            setupCompleteWave=setupCompleteObservation;
         end
         [setupCompleteRx, setupCompleteDecoded] = ...
             sixgr.phy.ra.recoverRRCSetupComplete( ...
@@ -1612,7 +1619,8 @@ result.RuntimeStageRows = struct2table(localEmptyRuntimeStageRow(), "AsArray", t
 result.RuntimeStageRows = result.RuntimeStageRows([],:);
 end
 
-function [rxWave, runtime, row] = localResolveStageRxWaveform(stageName, direction, txWave, cfg, raCfg, txStruct, runtime)
+function [rxWave, runtime, row, observation] = localResolveStageRxWaveform(stageName, direction, txWave, cfg, raCfg, txStruct, runtime)
+observation=[];
 stageName = string(stageName);
 direction = upper(strtrim(string(direction)));
 row = localEmptyRuntimeStageRow();
@@ -1636,6 +1644,7 @@ if ~isempty(provided)
         % readComplete rejects a planned but incompletely received window.
         % No channel, TX, RF or noise operation belongs on this path.
         rxWave = provided.readComplete();
+        observation=provided;
         row.ObservationStartSample = provided.StartSample;
         row.ObservationEndSampleExclusive = provided.EndSampleExclusive;
         row.ObservationSampleRateHz = provided.SampleRateHz;
@@ -1664,6 +1673,7 @@ if ~isempty(provided)
                 'RA execution evidence must belong to the exact supplied post-RF observation.');
         end
         rxWave=receiver.readComplete();
+        observation=receiver;
         row=localApplySharedStageEvidence(row,physical,replay);
     elseif string(runtime.Mode)=="shared_physical_waveform_stream"
         error('sixgr:phy:ra:MissingSharedStageExecution', ...

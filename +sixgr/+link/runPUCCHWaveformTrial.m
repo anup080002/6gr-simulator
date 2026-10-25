@@ -191,7 +191,7 @@ try
     if received
         prior=sixgr.util.structGet(receivedContext,'ReceivedULTimingReference',[]);
         rx=sixgr.link.receivePUCCHObservation(cfgRuntime,receiverAssignment,context, ...
-            receivedContext.Observation,prior);
+            receivedContext.Observation,prior,'TimingUnavailableAsOutcome',true);
     else
         rxArgs = {"NoiseVariance",noiseVariance, ...
             "NoiseVarianceDomain","sample", ...
@@ -228,13 +228,19 @@ end
 % All slot-scoped diagnostics use the same received alignment as the FFT.
 % A capture's pre-guard is not part of the active PUCCH symbol interval.
 diagnosticWaveform=rxWaveform;
-if received && isfield(rx.ReceiveTiming,'DemodulatedSampleCount')
+receiverUnavailable=string(sixgr.util.structGet(rx,'ReceiverExecutionStatus',"executed"))== ...
+    "unavailable_before_synchronization";
+if received && ~receiverUnavailable && isfield(rx.ReceiveTiming,'DemodulatedSampleCount')
     sampleIndices=rx.ReceiveTiming.AppliedTimingCorrectionSamples+(1:rx.ReceiveTiming.DemodulatedSampleCount);
     diagnosticWaveform=rxWaveform(sampleIndices,:);
     if ~isempty(desiredWaveform), desiredWaveform=desiredWaveform(sampleIndices,:); end
 end
+if ~receiverUnavailable
 [signalPower,activeSymbolIndices]=localActiveOFDMMeanPower(desiredWaveform,tx);
 measuredNoisePower=localActiveOFDMMeanPower(injectedNoise,tx,activeSymbolIndices);
+else
+    signalPower=NaN; measuredNoisePower=NaN;
+end
 measuredInterferencePower=double(sixgr.util.structGet(replay,'InterferenceWaveformVariance',0));
 if received
     % Scalar variance metadata is not a measured isolated noise waveform.
@@ -252,6 +258,7 @@ trial.MeasuredInputSignalPower=signalPower;
 trial.MeasuredInputNoisePower=measuredNoisePower;
 trial.MeasuredInputInterferencePower=measuredInterferencePower;
 trial.MeasuredInputDisturbancePower=measuredDisturbancePower;
+if ~receiverUnavailable
 [estimatedCFO,cfoInfo]=sixgr.phy.rx.estimateCFOFromCyclicPrefix( ...
     diagnosticWaveform,tx.OFDMInfo,double(tx.OFDMInfo.SampleRate));
 if isfield(rx,'ReceiveFrequency') && ~isempty(fieldnames(rx.ReceiveFrequency))
@@ -262,13 +269,14 @@ if isfield(rx,'ReceiveFrequency') && ~isempty(fieldnames(rx.ReceiveFrequency))
 else
     trial.EstimatedCFO_Hz=double(estimatedCFO); trial.CFOEstimatorInfo=cfoInfo;
 end
+end
 
 serialized = tx.Serialization;
 reference = [serialized.Sequence1.Bits;serialized.Sequence2.Bits];
 decoded = [rx.DecodedSequence1;rx.DecodedSequence2];
 comparison = sixgr.link.compareUCIBitEvidence(reference,decoded);
 trial.ReceiverDTX = logical(rx.DTX);
-trial.CRCFailed = ~logical(rx.CRCPassed);
+trial.CRCFailed = logical(rx.CRCApplicable) && ~logical(rx.CRCPassed);
 trial.ContentMismatch = comparison.ContentMismatch;
 trial.BitErrors = comparison.BitErrors;
 trial.BitsCompared = comparison.BitsCompared;
@@ -518,8 +526,8 @@ trial.Ok = ~trial.ReceiverDTX && ~trial.CRCFailed && ...
 if ~opt.SignalPresent
     trial.Ok = rx.DTX;
 end
-trial.ResourceExtractionAttempted = true;
-trial.ResourceExtractionAvailable = true;
+trial.ResourceExtractionAttempted = logical(sixgr.util.structGet(rx,'ResourceExtractionAttempted',true));
+trial.ResourceExtractionAvailable = logical(rx.ResourceExtractionAvailable);
 % Stage flags above come from the executed canonical receiver, including
 % DM-RS estimation/MMSE on AWGN. Propagation policy cannot replace them.
 trial.PUCCHControlSINR_dB = rx.MeasuredSINR_dB;
@@ -545,6 +553,15 @@ trial.StrictReceiverEvidenceOk = logical(rx.ReceiverUsable) && ...
 trial.StrictOk = logical(trial.Ok) && trial.StrictReceiverEvidenceOk;
 trial.Status = localStatus(trial.Ok);
 trial.FailureReason = localFailure(trial);
+if receiverUnavailable
+    trial.Ok=false; trial.StrictOk=false; trial.Status="UNAVAILABLE";
+    trial.FailureReason=rx.ReceiverUnavailableReason;
+    trial.ReceiverDecodeFailed=false; trial.CRCFailed=false;
+    trial.ContentMismatch=false; trial.UCIContentMatch=false;
+    trial.BitErrors=NaN; trial.BitsCompared=0; trial.UCIBitErrorVector="";
+    trial.BitComparisonStatus="unavailable_receiver_not_executed";
+    trial.Notes="Completed actual PUCCH capture; receiver not executed because measured UL timing is unavailable.";
+end
 trial.ComputeLatency_ms = 1e3 .* toc(trialPipelineTic);
 end
 

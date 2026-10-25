@@ -186,7 +186,12 @@ d.reference_signals.csi_rs_resource_symbol_locations=[3 13];
 d.reference_signals.csi_rs_resource_subcarrier_locations=[0 0];
 d.reference_signals.csi_rs_resource_rb_offsets=[0 0];
 d.reference_signals.csi_rs_resource_num_rbs=[24 24];
-d.reference_signals.csi_rs_periodicity_slots=4;
+% This fixture explicitly authors a four-carrier-slot period over the loaded
+% scenario. Synchronize its inherited unit aliases through the production
+% layer-authority API; contradictory declarations in one layer still fail.
+periodLayer=struct('reference_signals',struct('csi_rs_periodicity_slots',4));
+periodAuthority=sixgr.lls6g.config.RSPeriodAuthority.merge(struct(),periodLayer);
+d=sixgr.lls6g.config.RSPeriodAuthority.apply(d,periodAuthority);
 d.reference_signals.csi_rs_offset_slots=1;
 spec=d.reference_signals.csi_rs_precoder_codebook;
 for name=string(fieldnames(spec)).'
@@ -203,6 +208,8 @@ fprintf('CSIIM_FIXTURE_PREBUILD ssb=%d pbch=%d sib1=%d trs=%d tracking=%d beam_s
     d.reference_signals.trs_enabled,d.reference_signals.tracking_rs_enabled,d.mimo.beam_sweep_enabled, ...
     d.mimo.qcl_tci.enabled,d.reference_signals.csi_rs_enabled,d.reference_signals.csi_rs_num_resources);
 cfg=sixgr.lls6g.buildInternalConfig(d,folder);
+assert(cfg.phy.csirs.period_slots==4&&cfg.phy.csirs.offset_slots==1, ...
+    'The explicit CSI fixture calendar must remain four carrier slots, offset one.');
 cfg=sixgr.truth.bindStandaloneSNRPoint(cfg,30); cfg.run.rootRunFolder=folder;
 assert(cfg.phy.csi.reportConfiguration.Ports==4&&cfg.phy.csi.reportConfiguration.NumCSIResources==2);
 typed=sixgr.phy.mimo.CSIReportConfiguration(cfg.phy.csi.reportConfiguration, ...

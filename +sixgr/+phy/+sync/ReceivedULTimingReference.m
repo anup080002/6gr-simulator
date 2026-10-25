@@ -11,16 +11,48 @@ classdef ReceivedULTimingReference
         ArrivalOffsetFromNominalSamples double
         AvailableAtSample double
         ObservationStartSample double
+        OriginEvidence struct = struct()
     end
     methods
         function obj=ReceivedULTimingReference(prepared,observation,timing,receiverCfg)
             isControl=isa(prepared,'sixgr.link.PreparedUplinkControlTransmission');
             isData=isa(prepared,'sixgr.link.PreparedDataTransmission');
             isPUCCH=isa(prepared,'sixgr.phy.pucch.PUCCHReceptionAssignment');
+            isRA=isstruct(prepared) && isscalar(prepared) && isfield(prepared,'ReceivedULTimingReceipt');
             assert(isscalar(prepared) && ((isControl && prepared.Channel=="SRS") || ...
-                (isData && prepared.Direction=="UL") || (isPUCCH && prepared.Format>=1)), ...
+                (isData && prepared.Direction=="UL") || (isPUCCH && prepared.Format>=1) || isRA), ...
                 'sixgr:phy:sync:ULTimingPilotRequired','Retain an actually received SRS, PUSCH DM-RS or PUCCH DM-RS clock.');
-            if isPUCCH
+            if isRA
+                assert(nargin==4 && isstruct(receiverCfg) && isscalar(receiverCfg), ...
+                    'sixgr:phy:sync:RATimingConfigurationRequired','Use the accepted RA receiver identity and received TAG.');
+                cfg=receiverCfg;
+                r=prepared.ReceivedULTimingReceipt;
+                assert(isstruct(r) && isscalar(r) && ...
+                    string(r.ContractVersion)=="received_RA_PUSCH_timing/v1" && ...
+                    any(string(r.Stage)==["Msg3","RRCSetupComplete"]) && ...
+                    isequal(prepared.Ok,true) && isequaln(timing,prepared.ReceiveTiming), ...
+                    'sixgr:phy:sync:InvalidRATimingReceipt','Only an accepted original RA PUSCH decode can supply this clock.');
+                assert(isa(observation,'sixgr.phy.waveform.WaveformObservationBuffer') && isscalar(observation), ...
+                    'sixgr:phy:sync:RATimingObservationRequired','Keep the original complete decoder input.');
+                raw=observation.readComplete();
+                carrier=sixgr.phy.grid.makeCarrier(cfg);
+                nativeInfo=nrOFDMInfo(carrier); fs=double(nativeInfo.SampleRate);
+                expected=localIdentity(cfg,fs);
+                for name=["RNTI","NCellID","SCSkHz","NSizeGrid","NStartGrid","CyclicPrefix","SampleRateHz"]
+                    assert(isequaln(r.(name),expected.(name)) || ...
+                        (name=="CyclicPrefix" && string(r.(name))==string(expected.(name))), ...
+                        'sixgr:phy:sync:ULTimingReferenceIdentityMismatch','Original RA %s cannot change at clock retention.',name);
+                end
+                validateattributes(r.AbsoluteSlot0,{'double'},{'scalar','real','finite','integer','nonnegative'});
+                nominal=sixgr.phy.frame.slotStartSample(carrier,r.AbsoluteSlot0,fs);
+                assert(r.NominalStartSample==nominal && r.SampleRateHz==observation.SampleRateHz && ...
+                    r.ObservationStartSample==observation.StartSample && ...
+                    r.AvailableAtSample==observation.EndSampleExclusive && ...
+                    r.InputSampleSHA256==sixgr.phy.waveform.WaveformHash.numeric(raw), ...
+                    'sixgr:phy:sync:RATimingObservationMismatch','Do not replace the original RA capture, clock or nominal slot.');
+                source=string(r.Stage)+"_PUSCH_DMRS";
+                obj.OriginEvidence=r;
+            elseif isPUCCH
                 % A gNB receive assignment, never a prepared UE waveform,
                 % owns PUCCH clock identity and nominal slot coordinates.
                 assert(nargin==4 && isstruct(receiverCfg) && isscalar(receiverCfg), ...
@@ -44,7 +76,7 @@ classdef ReceivedULTimingReference
             else
                 prepared.readObservation(observation,'receiver');
             end
-            if ~isPUCCH
+            if ~isPUCCH && ~isRA
                 cfg=prepared.ReceiverConfig; fs=prepared.SampleRateHz;
                 nominal=prepared.PhysicalTiming.NominalStartSample;
                 source="PUSCH_DMRS"; if isControl, source="SRS"; end

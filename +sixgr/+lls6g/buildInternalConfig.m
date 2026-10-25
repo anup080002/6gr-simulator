@@ -256,9 +256,17 @@ cfg.run.runtimeCheckpointResumeFrom = string(localGetNested(s, ...
 cfg.run.runtimeCheckpointRepairReason = string(localGetNested(s, ...
     "run_control.runtime_checkpoint_repair_reason", ""));
 if cfg.run.runtimeCheckpointEnabled || strlength(cfg.run.runtimeCheckpointResumeFrom)>0
-    assert(runnerProfile=="waveform_bundle" && executionModel=="slot_coupled_truth", ...
+    % The generic sweep only orchestrates independent waveform children.
+    % Creation policy is inherited by each child's normal configuration
+    % binding; a parent must never restore one child's state into all points.
+    checkpointSweep = runnerProfile=="generic_sweep" && ...
+        lower(string(localGetNested(s,"scenario.sweep.base_profile","")))=="waveform_bundle";
+    assert((runnerProfile=="waveform_bundle" || checkpointSweep) && executionModel=="slot_coupled_truth", ...
         'sixgr:checkpoint:UnsupportedRuntime', ...
-        'Runtime checkpoints require waveform_bundle / slot_coupled_truth.');
+        'Runtime checkpoints require waveform_bundle / slot_coupled_truth children or execution.');
+    assert(~checkpointSweep || strlength(cfg.run.runtimeCheckpointResumeFrom)==0, ...
+        'sixgr:checkpoint:SweepParentResumeUnsupported', ...
+        'Resume the individual saved waveform child, not the generic sweep parent.');
     assert(logical(localGetNested(s,'run_control.deterministic_mode',false)), ...
         'sixgr:checkpoint:DeterminismRequired', ...
         'Runtime checkpoint execution requires deterministic_mode=true.');
@@ -2307,6 +2315,13 @@ cfg = sixgr.util.structSet(cfg, "phy.trackingRS.enable", logical(s.reference_sig
 cfg = localInstallRSLAStrictConfig(cfg,s);
 
 cfg.random_access = s.random_access;
+association=sixgr.lls6g.config.resolveSSBPRACHAssociationConfig(s.random_access);
+% Validate the configured policy here; runtime revalidates the original
+% received partition rather than trusting this configured CB count.
+sixgr.mac.ra.resolveCBPreambleOffset(s.random_access,1,association.CBPreamblesPerSSB);
+cfg=sixgr.util.structSet(cfg,'rrc.sib1.ssb_per_rach_choice',association.Choice);
+cfg=sixgr.util.structSet(cfg,'rrc.sib1.cb_preambles_per_ssb',association.WireCBCount);
+cfg=sixgr.util.structSet(cfg,'phy.prach.nPreambles',association.TotalPreambles);
 cfg.phy.prach.enable = logical(s.random_access.enabled);
 cfg.phy.prach.preambleFormat = char(string(localGetNested(s, "random_access.prach_format", "")));
 cfg = sixgr.util.structSet(cfg, "phy.prach.preambleCount", double(s.random_access.preamble_count));

@@ -1,6 +1,6 @@
 {
   "scope": "effective_catalog_declared_options_not_runtime_qualification",
-  "created": "2026-10-25 06:06:54",
+  "created": "2026-10-25 19:02:50",
   "matlab": "26.1.0.3312084 (R2026a) Update 4",
   "sources": [
     {
@@ -9,7 +9,7 @@
     },
     {
       "path": "simulator/configs/schema/scenario_parameter_catalog.yaml",
-      "sha256": "e83e6b424bbbd94790d09d973bdce2a244bf4e881d5fef82ed85d37791de7fd9"
+      "sha256": "7842a47278279068708e3be140de563020f5bdf5f6238857cd1647807cc540f9"
     },
     {
       "path": "simulator/configs/schema/matrix_parameter_catalog.yaml",

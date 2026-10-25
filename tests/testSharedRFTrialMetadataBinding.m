@@ -30,6 +30,9 @@ for direction=["DL","UL"]
         {'Slot','CFOApplied','TimingOffsetApplied','ADCBits','DACBits'});
     T=sixgr.truth.bindSharedRFExecutionEvidence(T,planes);
     assert(T.CFOApplied==1 && T.TimingOffsetApplied==1 && T.ADCBits==12 && T.DACBits==12);
+    assert(T.TxRFInjectedCFO_Hz==0 && T.RxRFInjectedCFO_Hz==400);
+    assert(T.RxRFInjectedCFOStatus=="constant_across_covering_execution_segments");
+    assert(contains(T.RFInjectedCFOEvidenceRole,"not_receiver_estimate"));
     assert(T.ADCQuantizationExecuted==1 && T.DACQuantizationExecuted==1);
     assert(T.IQImbalanceApplied==1 && T.ConfiguredIQGainImbalance_dB==.5 && ...
         T.ConfiguredIQPhaseImbalance_deg==1);
@@ -51,6 +54,19 @@ for direction=["DL","UL"]
     control=sixgr.truth.bindSharedRFExecutionEvidence(control,planes,true);
     assert(all(control.IQImbalanceApplied==1) && all(control.DACFullScale==T.DACFullScale));
     assert(~ismember('TxRFOutputWaveformSHA256',control.Properties.VariableNames));
+    assert(all(control.TxRFInjectedCFO_Hz==0) && all(control.RxRFInjectedCFO_Hz==400));
+    % Deliberately incomplete/inconsistent receipts must not become zero or
+    % an average CFO. These are metadata-negative tests, not new RF runs.
+    missingFrequency=planes;
+    missingFrequency(3).Segments{2}.Execution.RX.Replay=rmfield(b.Replay,'InjectedCFO_Hz');
+    absent=sixgr.truth.bindSharedRFExecutionEvidence(control,missingFrequency,true);
+    assert(all(isnan(absent.RxRFInjectedCFO_Hz)) && ...
+        all(absent.RxRFInjectedCFOStatus=="unavailable_executed_endpoint_value"));
+    varied=planes;
+    varied(3).Segments{2}.Execution.RX.Replay.InjectedCFO_Hz=401;
+    mixed=sixgr.truth.bindSharedRFExecutionEvidence(control,varied,true);
+    assert(all(isnan(mixed.RxRFInjectedCFO_Hz)) && ...
+        all(mixed.RxRFInjectedCFOStatus=="time_varying_see_endpoint_audit"));
     missing=planes;
     missing(3).Segments{2}.Execution.RX.Replay=rmfield(b.Replay,'CFOApplied');
     missingT=sixgr.truth.bindSharedRFExecutionEvidence(T,missing);

@@ -15,6 +15,21 @@ ROOT = Path(__file__).resolve().parents[1]
 GUIDE = ROOT / 'docs/lls/h4_100mhz_guide'
 
 
+def test_uci_guide_separates_clock_age_and_protocol_missing_feedback():
+    chapters = (GUIDE / 'chapters.js').read_text(encoding='utf-8')
+    uci = chapters.split("C('uci',", 1)[1].split("C('referencesignals',", 1)[0]
+    for explanation in (
+        'Retained UL timing is not a new measurement',
+        'sourceAbsoluteSlot', 'not the NR timeAlignmentTimer',
+        'ReceivedULTimingReference.m', 'retainReceivedPUCCHTimingReference.m',
+        '43−39=4', '44−39=5', 'receiver-not-evaluated',
+        'does not create a measured waveform DTX',
+        'disjoint PRBs alone do not remove this condition',
+        'earlier symbol is not evidence that its receiver already completed',
+    ):
+        assert explanation in uci
+
+
 def test_access_chapter_distinguishes_measurement_authority_from_radio_execution():
     chapters = (GUIDE / 'chapters.js').read_text(encoding='utf-8')
     access = chapters.split("C('access',", 1)[1].split("C('prach',", 1)[0]
@@ -168,7 +183,11 @@ def test_current_gap_status_names_receipts_and_keeps_launch_blocked():
     ledger = (ROOT / 'docs/lls/lls_gap_status_20261023.html').read_text(encoding='utf-8')
     current = ledger.split('id="current-status-20261024"', 1)[1].split('</section>', 1)[0]
     assert 'NOT READY' in current
-    assert '100 slots per point' in current
+    assert '[20,0] dB, 65 slots (32.5 ms) per point' in current
+    assert 'n40_20mhz_twopoint_70slots_20261025_160351' in current
+    assert 'sixgr:phy:sync:StaleULTimingReference' in current
+    assert 'receiver-not-evaluated' in current
+    assert '399.013644942208' in current
     assert 'PUCCH measured-power admission' in current
     assert 'PUCCH-specific reference ownership' in current
     assert 'PUCCH non-transmission completion' in current
@@ -432,6 +451,22 @@ def test_curated_scenario_examples_exist():
     assert len(names) >= 25
     for name in names:
         assert (ROOT / 'simulator/configs/scenarios' / name).is_file(), name
+
+
+def test_n40_tail_and_checkpoint_documentation_matches_selected_yaml():
+    source = ROOT / 'simulator/configs/scenarios/lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep.yaml'
+    cfg = guide.yaml.safe_load(source.read_bytes())
+    control = cfg['run_control']
+    assert control['total_slots'] == 65 and control['total_time_ms'] == 32.5
+    assert control['runtime_checkpoint_enable']
+    assert control['checkpoint_first_slot'] == control['checkpoint_every_slots'] == 60
+    text = (GUIDE / 'implementation.js').read_text(encoding='utf-8')
+    assert '65 slots (32.5 ms) per point' in text
+    assert "CSI56's next report is69" in text
+    assert '65−60=5' in text
+    restart = (GUIDE / 'chapters.js').read_text(encoding='utf-8')
+    assert 'only60 within65 slots and restart at61' in restart
+    assert "Each generic-sweep child owns its own checkpoint" in restart
 
 
 def test_decision_map_paths_exist_in_installed_catalog():

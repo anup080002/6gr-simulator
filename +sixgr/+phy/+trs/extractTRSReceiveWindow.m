@@ -13,7 +13,7 @@ indices = double(resource.Indices(:));
 validateattributes(indices,{'numeric'},{'nonempty','finite','integer','positive','<=',K*L});
 requiredSymbols = max(floor((indices-1)/K))+1;
 firstSymbol = (double(resource.Slot)-double(tx.FirstSlot0Based))*L;
-lengths = double(tx.OFDM.SymbolLengths(:));
+lengths = double(tx.SymbolTimeline.SymbolLengths(:));
 scale = double(tx.SampleRateHz)/(double(tx.OFDM.Nfft)*double(carrier.SubcarrierSpacing)*1000);
 count = sum(lengths(firstSymbol+(1:requiredSymbols)))*scale;
 if ~isfinite(count) || abs(count-round(count))>1e-7

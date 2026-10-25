@@ -36,6 +36,28 @@ t.BCHTransmittedBlockPopulationEligible(1:8)=[1;1;0;0;0;0;0;0];
 t.SSBReceiverSearchScope(1:8)="all_receiver_case_lmax_candidates_not_TX_active_bitmap";
 t.SSBAcquisitionWindowSHA256(1:8)=string(repmat('b',1,64));
 t.SourceClassification=repmat("declared_population_fixture_not_PHY",n,1);
+% Actual canonical producer text-column convention: quiet/unmeasured window
+% vectors are unavailable sentinels, not malformed numeric measurements.
+t.SSBWindowReferenceRSRQPerReceiveAntenna_dB=repmat("NaN",n,1);
+t.SSBWindowReferenceRSRQPerReceiveAntenna_dB(1)="NaN|-10|-20";
+unavailable=sixgr.truth.fillBlankCategoricalColumns(table(strings(4,1), ...
+    'VariableNames',{'SSBWindowReferenceRSRQPerReceiveAntenna_dB'}),"pbch");
+assert(all(unavailable.SSBWindowReferenceRSRQPerReceiveAntenna_dB=="not_applicable_for_active_pbch_runtime"));
+t.SSBWindowReferenceRSRQPerReceiveAntenna_dB(5:8)=unavailable.SSBWindowReferenceRSRQPerReceiveAntenna_dB;
+t.SSBWindowReferenceRSRQScope=repmat("ssb_240_subcarrier_four_symbol_window_not_full_carrier_RSSI",n,1);
+t.SSBWindowReferenceRSRQNumRB=repmat(20,n,1);
+adjacentVectors=["SS_RSRPPerReceiveAntenna_dBm","SS_RSRPRawObservedPerReceiveAntenna_dBm", ...
+    "SSBWindowRSSIPerReceiveAntenna_dBm","SS_SINRPerReceiveAntenna_dB", ...
+    "SSSINRDesiredPowerPerReceiveAntenna_W","SSSINRNoiseInterferencePowerPerReceiveAntenna_W", ...
+    "SS_RSRPPerReceiveAntenna_dB_re_UnitOccupiedRE_Es", ...
+    "SS_RSRPRawObservedPerReceiveAntenna_dB_re_UnitOccupiedRE_Es", ...
+    "SSBWindowRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es", ...
+    "ReferenceSignalTxEPREPerAntenna_dB_re_UnitOccupiedRE_Es", ...
+    "SSSINRDesiredPowerPerReceiveAntenna_UnitOccupiedRE_Es", ...
+    "SSSINRNoiseInterferencePowerPerReceiveAntenna_UnitOccupiedRE_Es"];
+for name=adjacentVectors
+    t.(name)=repmat("NaN",n,1); t.(name)(1)="-7"; t.(name)(257)="1|NaN|-3";
+end
 % Complete positive detector decisions: two transmitted, two quiet, one
 % legacy observation with unknown transmission membership.
 for k=[1 2 6 7 9]
@@ -83,6 +105,17 @@ assert(~any(q.PopulationKnown) && isequal(q.DecodeEligible,p.DecodeEligible));
 path=fullfile(layout.AirInterfaceCSVDir,'pbch_trials.csv');
 sixgr.util.csvWriteTable(path,t,'PreserveSchema',true,'RoundTripNumericText',true);
 digest=string(sixgr.util.sha256File(path));
+% Exact production import, before report construction: singleton and sparse
+% late multi-branch tokens remain text, without loss of original branch NaN.
+read=sixgr.report.readPBCHMeasurementTrials(path);
+assert(isstring(read.SSBWindowReferenceRSRQPerReceiveAntenna_dB) && ...
+    read.SSBWindowReferenceRSRQPerReceiveAntenna_dB(1)=="NaN|-10|-20" && ...
+    all(read.SSBWindowReferenceRSRQPerReceiveAntenna_dB(5:8)=="not_applicable_for_active_pbch_runtime"));
+for name=adjacentVectors
+    assert(isstring(read.(name)) && read.(name)(1)=="-7" && read.(name)(257)=="1|NaN|-3", ...
+        'Original producer vector tokens changed at the CSV boundary.');
+end
+assert(digest==string(sixgr.util.sha256File(path)),'Read-only preflight changed source bytes.');
 % These are unjoined procedure outcomes, not a shared access lifecycle.
 prach=table(["PASS";"FAIL"],'VariableNames',{'Status'});
 sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir,'prach_trials.csv'),prach);
@@ -108,6 +141,14 @@ for candidate={out.CategoryRows,sixgr.util.csvReadTable(out.DetailCSV,'TextType'
     check(rows,"one_shot_ssb_detection_probability","SSB_receiver_detection",[1 2 3 5 6 7 9],[1 2 6 7 9],digest);
     check(rows,"one_shot_ssb_detection_probability","SSB_transmitted_detector",[1 2 3],[1 2],digest);
     check(rows,"one_shot_ssb_detection_probability","SSB_quiet_detector",[5 6 7],[6 7],digest);
+    check(rows,"miss_detection_probability","SSB_transmitted_miss_detection",[1 2 3],3,digest);
+    assert(~any(rows.MetricKey=="miss_detection_probability" & rows.Entity=="PBCH"), ...
+        'Generic FAIL/CRASH must not become PBCH missed-detection evidence.');
+    window=rows(rows.MetricKey=="ss_rsrq" & rows.Statistic=="mean",:);
+    assert(height(window)==2 && isequal(sort(window.ValueNumeric),[-20;-10]) && ...
+        sum(contains(window.Entity,"@RxBranch1Based=2"))==1 && ...
+        sum(contains(window.Entity,"@RxBranch1Based=3"))==1, ...
+        'Unavailable text must not become a branch measurement or renumber original NaN branches.');
     joint=rows(rows.MetricKey=="access_success_probability",:);
     assert(~isempty(joint) && all(isnan(joint.ValueNumeric)) && ...
         ~any(ismember(string(joint.Availability),["available","observed"])), ...
@@ -115,6 +156,28 @@ for candidate={out.CategoryRows,sixgr.util.csvReadTable(out.DetailCSV,'TextType'
 end
 assert(isequaln(t,original) && digest==string(sixgr.util.sha256File(path)), ...
     'Population summaries must not rewrite original outcomes, missing fields or source bytes.');
+% Late malformed populated tokens must still fail; test each in a distinct
+% child artifact folder, preserving the original positive CSV byte-for-byte.
+tokens=["not_applicable_for_active_pbch_runtime_typo","1||2"];
+for negativeIndex=1:numel(tokens)
+    token=tokens(negativeIndex);
+    badFolder=fullfile(folder,"negative_"+negativeIndex);
+    badLayout=sixgr.report.resultLayout(badFolder);
+    sixgr.util.ensureFolder(badLayout.AirInterfaceCSVDir);
+    bad=t; bad.SSBWindowReferenceRSRQPerReceiveAntenna_dB(257)=token;
+    sixgr.util.csvWriteTable(fullfile(badLayout.AirInterfaceCSVDir,'pbch_trials.csv'),bad, ...
+        'PreserveSchema',true,'RoundTripNumericText',true);
+    caught=false;
+    try
+        sixgr.truth.exportLLSReportingBundle(badFolder,scfg,cfg,struct('Ok',false),manifest, ...
+            struct('StartedUTC',"test",'ElapsedSeconds',1),struct());
+    catch exception
+        caught=string(exception.identifier)=="sixgr:report:InvalidSSBMeasurementVector";
+        if ~caught, rethrow(exception); end
+    end
+    assert(caught,'Malformed populated vectors must not be hidden as unavailable.');
+end
+assert(digest==string(sixgr.util.sha256File(path)),'Original source CSV changed during negative checks.');
 ok=true;
 end
 

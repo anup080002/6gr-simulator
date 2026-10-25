@@ -135,7 +135,7 @@ for stageIndex = 1:numel(stages)
     minimumRows = double(sixgr.util.structGet(spec, "measurement_min_rows", 1));
     [artifactExists, evidenceRows, finiteRows, measurementOk, ...
         successOk, truthOk, measurementDetails] = localMeasurementEvidence( ...
-        runFolder, artifact, measuredFields, minimumRows, spec);
+        runFolder, artifact, measuredFields, minimumRows, spec, cfg);
     row.MeasurementArtifact = artifact;
     row.ArtifactExists = artifactExists;
     row.EvidenceRows = evidenceRows;
@@ -377,7 +377,7 @@ else
 end
 end
 
-function [existsFlag, rowCount, finiteRows, measurementOk, successOk, truthOk, details] = localMeasurementEvidence(runFolder, relativePath, fields, minimumRows, spec)
+function [existsFlag, rowCount, finiteRows, measurementOk, successOk, truthOk, details] = localMeasurementEvidence(runFolder, relativePath, fields, minimumRows, spec, cfg)
 existsFlag = false;
 rowCount = 0;
 finiteRows = 0;
@@ -403,6 +403,15 @@ if rowCount < minimumRows
     return;
 end
 valid = true(rowCount,1);
+if relativePath=="air_interface/csv/sib1_received_trials.csv"
+    % Split SI has its own original receive/install receipt. It must not be
+    % reconstructed as a PBCH row or accepted from file presence alone.
+    [valid,contractOk,details]=localSIB1ReceptionRows(T,cfg);
+    if ~contractOk
+        measurementOk=false; successOk=false; truthOk=false;
+        return;
+    end
+end
 for field = fields(:).'
     if ~ismember(field, string(T.Properties.VariableNames))
         details = "measured_field_missing:" + field;
@@ -452,6 +461,92 @@ elseif ~truthOk
     details = "non_truth_measurement_markers_detected";
 else
     details = "success_rule_failed";
+end
+end
+
+function [valid,ok,details]=localSIB1ReceptionRows(T,cfg)
+% Retained-row consistency only. The original receiver/delivery owner, not
+% this CSV consumer, authenticates raw IQ and immutable MIB generation.
+valid=false(height(T),1); ok=false; details="";
+id='sixgr:truth:CausalSIB1Receipt';
+try
+    texts=["ObservationID","ReceivedMIBGenerationID","RawPostRFInputSHA256", ...
+        "DecoderInputSHA256","RecoverySHA256","PriorBCHContextSHA256", ...
+        "SIB1InputSampleSHA256","SIB1PayloadHashRx","SIB1RxTreeHash","DeliveryStatus"];
+    coords=["UEId","ServingCell","ResourceAbsoluteSlot0Based","DeliverySlot1Based", ...
+        "ObservationStartSample","ObservationEndSampleExclusive","ObservationSampleRateHz"];
+    flags=["Installed","Crash","SIB1ReceptionAttempted","SIB1ObservationComplete", ...
+        "DCICrcPass","DLSCHCrcPass","SIB1ASN1DecodeOk","SIB1SemanticValid", ...
+        "StrictOk","NewBCHReceptionAttempted"];
+    assert(all(ismember([texts,coords,flags],string(T.Properties.VariableNames))),id,'missing_original_SI_columns');
+    for name=texts
+        v=T.(name);
+        assert(isstring(v)&&isequal(size(v),[height(T),1]),id,'nontext_original_SI_identity');
+        % CSV empty optional hashes remain unavailable, never new authority.
+        v(ismissing(v))=""; T.(name)=v;
+    end
+    for name=coords
+        v=T.(name);
+        assert(isnumeric(v)&&isreal(v)&&isequal(size(v),[height(T),1])&& ...
+            all(isfinite(v)&v>=0&v<flintmax&v==fix(v)),id,'invalid_original_SI_clock');
+    end
+    for name=flags
+        v=T.(name);
+        assert((isnumeric(v)||islogical(v))&&isreal(v)&&isequal(size(v),[height(T),1])&& ...
+            all(isnan(v)|v==0|v==1),id,'invalid_original_SI_flag');
+    end
+    assert(all(strlength(T.ObservationID)>0)&&numel(unique(T.ObservationID))==height(T),id,'duplicate_or_missing_SI_observation');
+    assert(all(T.UEId>=1&T.ServingCell>=1&T.DeliverySlot1Based>=1& ...
+        T.ObservationSampleRateHz>0&T.ObservationEndSampleExclusive>T.ObservationStartSample),id,'invalid_original_SI_extent');
+    for name=["ReceivedMIBGenerationID","RawPostRFInputSHA256","DecoderInputSHA256", ...
+            "RecoverySHA256","PriorBCHContextSHA256"]
+        assert(all(~cellfun('isempty',regexp(cellstr(T.(name)),'^[0-9a-fA-F]{64}$','once'))),id,'missing_or_invalid_SI_hash');
+    end
+    assert(all(T.NewBCHReceptionAttempted==0),id,'SI_cannot_invent_new_BCH');
+    installed=T.Installed==1;
+    assert(all(isfinite(double(T.Installed)))&& ...
+        all(installed==(T.DeliveryStatus=="installed_original_received_SIB1")),id,'contradictory_SI_installation');
+    positive=T.DCICrcPass==1|T.DLSCHCrcPass==1|T.SIB1ASN1DecodeOk==1|T.SIB1SemanticValid==1|T.StrictOk==1;
+    assert(all(~positive|(T.SIB1ReceptionAttempted==1&T.SIB1ObservationComplete==1))&& ...
+        all(T.DLSCHCrcPass~=1|T.DCICrcPass==1)&&all(T.SIB1ASN1DecodeOk~=1|T.DLSCHCrcPass==1)&& ...
+        all(T.SIB1SemanticValid~=1|T.SIB1ASN1DecodeOk==1)&& ...
+        all(~installed|T.StrictOk==1)&&all(T.StrictOk~=1|(T.Crash==0&T.DCICrcPass==1&T.DLSCHCrcPass==1& ...
+            T.SIB1ASN1DecodeOk==1&T.SIB1SemanticValid==1)),id,'contradictory_SI_decode_stages');
+    for name=["SIB1InputSampleSHA256","SIB1PayloadHashRx","SIB1RxTreeHash"]
+        hashes=T.(name); present=strlength(hashes)>0;
+        assert(all(~present|~cellfun('isempty',regexp(cellstr(hashes),'^[0-9a-fA-F]{64}$','once')))&& ...
+            all(~installed|present),id,'missing_original_accepted_SI_hash');
+    end
+    assert(all(~installed|T.DecoderInputSHA256==T.SIB1InputSampleSHA256),id,'SI_decoder_input_hash_mismatch');
+    carrier=sixgr.util.structGet(cfg,'phy.carrier',struct());
+    assert(isfield(carrier,'SubcarrierSpacing')&&isfield(carrier,'CyclicPrefix'),id,'missing_original_carrier_clock');
+    origins=zeros(height(T),1);
+    for k=1:height(T)
+        fs=T.ObservationSampleRateHz(k); slot=T.ResourceAbsoluteSlot0Based(k);
+        start=sixgr.phy.frame.slotStartSample(carrier,slot,fs);
+        finish=sixgr.phy.frame.slotStartSample(carrier,slot+1,fs);
+        delivery=sixgr.phy.frame.slotStartSample(carrier,T.DeliverySlot1Based(k)-1,fs);
+        assert(T.ObservationEndSampleExclusive(k)-T.ObservationStartSample(k)==finish-start&& ...
+            T.ObservationEndSampleExclusive(k)<=delivery,id,'SI_capture_or_delivery_clock_mismatch');
+        origins(k)=T.ObservationStartSample(k)-start;
+    end
+    for generation=reshape(unique(T.ReceivedMIBGenerationID),1,[])
+        mask=T.ReceivedMIBGenerationID==generation;
+        assert(numel(unique(T.UEId(mask)))==1&&numel(unique(T.ServingCell(mask)))==1&& ...
+            numel(unique(T.ObservationSampleRateHz(mask)))==1&&numel(unique(origins(mask)))==1&& ...
+            numel(unique(T.PriorBCHContextSHA256(mask)))==1,id,'SI_original_MIB_generation_mismatch');
+    end
+    identity=T(:,{'ReceivedMIBGenerationID','UEId','ServingCell','ResourceAbsoluteSlot0Based', ...
+        'ObservationStartSample','ObservationEndSampleExclusive'});
+    assert(height(unique(identity))==height(T),id,'duplicate_original_SI_capture');
+    valid=T.SIB1ReceptionAttempted==1&T.SIB1ObservationComplete==1;
+    ok=true; details="original_SI_reception_installation_metadata_consistent_not_independent_IQ_authentication";
+catch err
+    if strcmp(err.identifier,id)||startsWith(string(err.identifier),"sixgr:phy:frame:")
+        details="invalid_original_SI_receipt:"+string(err.message);
+    else
+        rethrow(err);
+    end
 end
 end
 

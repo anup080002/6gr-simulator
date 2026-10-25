@@ -1860,6 +1860,7 @@ methods(Static)
                 'RNTI',mapping.RNTI,'TargetSlot',mapping.TargetSlot, ...
                 'DecodedBits',observed.DecodedBits,'DecodeOk',observed.DecodeOk, ...
                 'DTXFlag',observed.DTXFlag,'Transport',"PUCCH");
+            normalized=sixgr.truth.bindPUCCHFeedbackReceptionStatus(normalized,observed.Receiver);
             [state,dispositions]=sixgr.truth.CoupledTruthRuntime.commitScheduledHARQFeedbackRuntime( ...
                 state,c.Config,item.UE,c.Slot,normalized,post,c.ObservationID);
             % The gNB already applied all scheduled dispositions once,
@@ -1959,7 +1960,8 @@ methods(Static)
         prior=sixgr.truth.selectReceivedULTimingReference(state,item.UE,post.EndSampleExclusive,nominal);
         [receiver,gain]=sixgr.phy.rx.compensateReceivedAGC( ...
             post,item.Planes(postIndex).Segments,"gnb_"+mapping.LastGrant.ServingCell+"_rx");
-        rx=sixgr.link.receivePUCCHObservation(cfg,h.Assignment,h.Context,receiver,prior);
+        rx=sixgr.link.receivePUCCHObservation(cfg,h.Assignment,h.Context,receiver,prior, ...
+            'TimingUnavailableAsOutcome',true);
         rx.ReceiverGainCompensation=gain;
         state=sixgr.truth.retainReceivedPUCCHTimingReference( ...
             state,item.UE,cfg,h.Assignment,h.Context,receiver,rx);
@@ -1973,6 +1975,7 @@ methods(Static)
         normalized=struct('MappingDigest',mapping.Digest,'UEIndex',mapping.UEIndex, ...
             'RNTI',mapping.RNTI,'TargetSlot',mapping.TargetSlot,'DecodedBits',bits, ...
             'DecodeOk',logical(usable),'DTXFlag',logical(rx.DTX),'Transport',"PUCCH");
+        normalized=sixgr.truth.bindPUCCHFeedbackReceptionStatus(normalized,rx);
         if ~isempty(h.CSIReportConfiguration)
             actual=sixgr.truth.normalizeReceivedPUCCHCSI(rx,h.Context,h.CSIReportConfiguration);
             identity=struct('UEIndex',h.UEIndex,'RNTI',h.RNTI,'TargetSlot',h.TargetSlot, ...
@@ -19912,6 +19915,7 @@ methods(Static, Access=private)
             sixgr.util.structGet(trial,"ReceiverDTX",false)));
         observed.MissedFeedback = ~logical(observed.DecodeOk);
         observed.DecodedBits = decodedBits;
+        observed=sixgr.truth.bindPUCCHFeedbackReceptionStatus(observed,trial.Receiver);
         observed.CSIWireLayoutOk = logical(wireLayoutOk);
         observed.DecodedCSIPart1Bits = int8(decodedReport.CSIPart1Bits);
         observed.DecodedCSIPart2Bits = int8(decodedReport.CSIPart2Bits);
@@ -20486,6 +20490,9 @@ methods(Static, Access=private)
         detectionEvidence = activeOutcome | isfinite(crcPass) | isfinite(detectionMetric) | ...
             isfinite(correlationPeak) | isfinite(detectorPeak) | isfinite(detectedPreamble) | ...
             isfinite(preambleFromPeak) | isfinite(bitsCompared) | isfinite(bitErrors);
+        unavailableReceiver=string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
+            T,'ReceiverExecutionStatus',repmat("",n,1)))=="unavailable_before_synchronization";
+        detectionEvidence(unavailableReceiver)=false;
         detectionSignals = ["pbch","prach","pdcch","pucch"];
         if any(signalBase == detectionSignals)
             if ismember("DetectionAttempted", string(T.Properties.VariableNames))
@@ -20512,6 +20519,14 @@ methods(Static, Access=private)
         if signalBase ~= "pucch" && ismember("ReceiverUsable", string(T.Properties.VariableNames))
             T.ReceiverUsable = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "ReceiverUsable", false(n, 1)) | ...
                 (~crash & (isfinite(receiverSINR) | isfinite(measuredSINR))));
+        end
+        % A completed capture is not an executed detector/estimator. Do not
+        % promote configured noise or nonapplicable CRC metadata into one.
+        for name=["DetectionAttempted","DetectionUsable","MeasurementAttempted", ...
+                "MeasurementUsable","ReceiverUsable"]
+            if ismember(name,string(T.Properties.VariableNames))
+                T.(name)(unavailableReceiver)=false;
+            end
         end
 
         if signalBase == "pdcch"
@@ -20861,6 +20876,21 @@ methods(Static, Access=private)
                 traceT,'Status',idx,"OMITTED");
             traceT=sixgr.truth.CoupledTruthRuntime.setStringValueAt( ...
                 traceT,'UECSISelectionReason',idx,string(observed.UECSISelectionReason));
+        end
+        if string(sixgr.util.structGet(observed,'ReceiverExecutionStatus',""))== ...
+                "unavailable_before_synchronization"
+            for name=["ReceiverExecutionStatus","ReceiverUnavailableReason","FeedbackDisposition"]
+                traceT=sixgr.truth.CoupledTruthRuntime.setStringValueAt(traceT,name,idx,observed.(name));
+            end
+            for name=["DetectionAttempted","DecodeAttempted","DTXDecisionAvailable"]
+                if ~ismember(name,string(traceT.Properties.VariableNames))
+                    traceT.(name)=NaN(height(traceT),1);
+                end
+                traceT.(name)(idx)=double(observed.(name));
+            end
+            traceT=sixgr.truth.CoupledTruthRuntime.setStringValueAt(traceT,'Status',idx,"UNAVAILABLE");
+            traceT=sixgr.truth.CoupledTruthRuntime.setStringValueAt(traceT,'PUCCHGrantState',idx, ...
+                "completed_capture_receiver_unavailable_feedback_disposed");
         end
         state.PUCCHGrantTraceTable = traceT;
     end

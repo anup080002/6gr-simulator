@@ -1065,7 +1065,17 @@ sections:
         required: false
         type: string
         allowed_values: [long, short]
-      preamble_count: {required: true, type: integer, min: 1}
+      preamble_count: {required: true, type: integer, min: 1, max: 64}
+      ssb_per_rach_choice:
+        required: true
+        type: string
+        allowed_values: [oneEighth, oneFourth, oneHalf, one, two, four, eight, sixteen]
+      cb_preambles_per_ssb: {required: true, type: integer, min: 1, max: 64}
+      cb_preamble_selection_policy:
+        required: true
+        type: string
+        allowed_values: [deterministic_per_ue, fixed_partition_offset]
+      cb_preamble_offset: {required: true, type: integer, min: 0, max: 63}
       zero_correlation_zone: {required: true, type: integer, min: 0}
       detection_threshold: {required: true, type: number}
       detection_threshold_mode:
@@ -1081,7 +1091,7 @@ sections:
       ssb_ro_mapping_mode:
         required: false
         type: string
-        allowed_values: [one_to_one_baseline, unsymmetric_candidate]
+        allowed_values: [one_to_one_baseline, nr_configured_association, unsymmetric_candidate]
       ro_clustering_enabled: {required: false, type: boolean}
       parameterized_config_enabled: {required: false, type: boolean}
       beam_refinement_enabled: {required: false, type: boolean}

@@ -12,7 +12,7 @@ if nargin < 6 || ~isstruct(slotTrace)
 end
 if nargin < 7, publicationScope="full"; end
 assert(isscalar(string(publicationScope)) && ...
-    any(string(publicationScope)==["full","harq_observations"]), ...
+    any(string(publicationScope)==["full","harq_observations","antenna_observations"]), ...
     'sixgr:truth:LivePublicationScope','Unknown live publication scope.');
 
 artifacts = struct();
@@ -35,6 +35,20 @@ dlT = sixgr.util.structGet(rawTrials, "DL", table());
 ulT = sixgr.util.structGet(rawTrials, "UL", table());
 if string(publicationScope)=="harq_observations"
     artifacts=localPublishHARQObservations(layout,dlT,ulT,slotTrace);
+    return;
+end
+if string(publicationScope)=="antenna_observations"
+    % Refresh only measured trial projections at primary-CSV cadence. Static
+    % antenna configuration and expensive reports retain their own cadence.
+    trialT=localCombineDirectionalTrials(dlT,ulT);
+    artifacts.AntennaRuntimeEvidencePath=fullfile(layout.ReportCSVDir,"antenna_runtime_evidence.csv");
+    artifacts.ChannelArrayConsistencyPath=fullfile(layout.ReportCSVDir,"channel_array_consistency.csv");
+    artifacts.AntennaRuntimeEvidence=localBuildAntennaRuntimeEvidenceTable(trialT,cfg);
+    artifacts.ChannelArrayConsistency=localBuildChannelArrayConsistencyTable(trialT,cfg);
+    sixgr.util.csvWriteTable(artifacts.AntennaRuntimeEvidencePath, ...
+        artifacts.AntennaRuntimeEvidence,"PreserveSchema",true);
+    sixgr.util.csvWriteTable(artifacts.ChannelArrayConsistencyPath, ...
+        artifacts.ChannelArrayConsistency,"PreserveSchema",true);
     return;
 end
 srsT = sixgr.util.structGet(rawTrials, "SRS", table());

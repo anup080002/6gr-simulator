@@ -103,7 +103,8 @@ for k=1:numel(tx.GridSlots)
     ids=double(s.Indices(:)); symbols=floor((ids-1)/K);
     pair=unique(symbols); assert(numel(pair)==2);
     firstSymbol=(s.Slot-tx.FirstSlot0Based)*s.Carrier.SymbolsPerSlot;
-    lengths=double(tx.OFDM.SymbolLengths(:)); cp=double(tx.OFDM.CyclicPrefixLengths(:));
+    lengths=double(tx.SymbolTimeline.SymbolLengths(:));
+    cp=double(tx.SymbolTimeline.CyclicPrefixLengths(:));
     scale=tx.SampleRateHz/(tx.OFDM.Nfft*s.Carrier.SubcarrierSpacing*1000);
     count=round(sum(lengths(firstSymbol+(1:max(pair)+1)))*scale);
     first=tx.SlotTable.StartSample1Based(k)+delay;

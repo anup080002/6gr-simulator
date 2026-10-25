@@ -53,6 +53,17 @@ assert((isnumeric(bits)||islogical(bits)) && isreal(bits) && ...
     'sixgr:truth:InvalidReceivedHARQBit','Validate receiver bits before any conversion or state update.');
 lengthOK=numel(bits)==n;
 usable=decodeOK && ~dtx && lengthOK;
+unavailable=string(sixgr.util.structGet(observed,'ReceiverExecutionStatus',""))== ...
+    "unavailable_before_synchronization";
+if unavailable
+    assert(~decodeOK && ~dtx && isempty(bits) && ...
+        isequal(observed.DetectionAttempted,false) && isequal(observed.DecodeAttempted,false) && ...
+        isequal(observed.DTXDecisionAvailable,false) && ...
+        any(string(observed.FeedbackDisposition)==["receiver_unavailable_stale_ul_timing", ...
+        "receiver_unavailable_missing_ul_timing"]), ...
+        'sixgr:truth:InvalidUnavailableHARQReception', ...
+        'Missing feedback must not be presented as a detector decision or decoded bit.');
+end
 rows=records;
 for k=1:n
     outcome="DTX"; reason="receiver_feedback_unusable";
@@ -63,6 +74,8 @@ for k=1:n
         reason="receiver_reported_dtx";
     elseif decodeOK && ~lengthOK
         reason="receiver_vector_length_mismatch";
+    elseif unavailable
+        reason=string(observed.FeedbackDisposition);
     end
     rows(k).FeedbackOutcome=outcome;
     rows(k).FeedbackOutcomeReason=reason;
@@ -72,6 +85,10 @@ for k=1:n
     rows(k).MappingDigest=string(mapping.Digest);
     rows(k).UCITransport=transport;
     rows(k).AssociationRole="gNB_bit_identity_association_not_PHY_execution_proof";
+    for name=["ReceiverExecutionStatus","ReceiverUnavailableReason","FeedbackDisposition", ...
+            "DetectionAttempted","DecodeAttempted","DTXDecisionAvailable"]
+        if isfield(observed,name), rows(k).(name)=observed.(name); end
+    end
 end
 end
 

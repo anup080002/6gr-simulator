@@ -4,12 +4,151 @@
 
 ### Current execution and verification handoff
 
-The active integration attempt was launched as
+**Next configuration:** two independent `[20,0]` dB reference-Es/N0 points,
+**65 slots (32.5 ms) per point**, with a runtime checkpoint after completed
+**slot 60** (next slot 61). The selected YAML retains all channel/RF/feedback
+policies. The full sweep is stopped while affected handoff and checkpoint
+checks run. No slot-60 checkpoint exists until execution and its verified
+save finish. Pending receptions and HARQ are retained, not cleared at 60.
+
+The latest run `n40_20mhz_twopoint_70slots_20261025_160351` passed slot 44,
+then failed at slot 45 with `sixgr:phy:sync:StaleULTimingReference`.
+Its 20 dB child is <http://127.0.0.1:62906/realtime?run_id=9286843189>.
+MATLAB recovery PID 21096 was stopped with user approval; existing evidence
+remains under `E:\SixGRResults`. Three DL first transmissions passed CRC,
+two ACK bits were received, and no connected PUSCH trial completed.
+The valid slot-44 Format-0 reception reused SetupComplete timing at age four;
+it did not measure new timing. At slot 45 the same reference reached age five,
+beyond the configured maximum of four. The receiver-unavailable handling and
+subsequent causal refresh are now repaired in focused scope, not accepted as
+a completed run. All five affected MATLAB tests pass across
+`E:\SixGRResults\logs\pucch_stale_timing_affected_20261025_01.log` and
+`E:\SixGRResults\logs\pucch_stale_timing_failed_20261025_02.log` (final exit 0).
+The first batch's obsolete exception-expectation failure remains retained;
+its isolated missing-clock regression now verifies no detector decision,
+exactly-once protocol missing-feedback handling and unchanged actual ACK
+reception. The revised n40 symbol plan passes native indices, installed TDD
+directions and DCI agreement. Full 64×4 n40 continuation remains pending.
+PRACH now records measured CFO 399.013644942208 Hz; all eight CSI resource
+projected attenuation values are published with original operator receipts.
+These are integrated observations, not statistical qualification. The run has
+no checkpoints. Do not restart it from a CSV row or copy its results into a
+new scenario as new measurements.
+
+The parent dashboard status and PUCCH receipt-identity repairs pass 207
+focused Python tests (one optional retained-fixture skip). The reloaded HTTP
+views report the interrupted/failed sweep and count the original slot-44
+PUCCH as zero DTX out of one evaluated detection. Original CSVs are unchanged.
+Terminal receiver-unavailable feedback is separate from measured DTX and
+pending feedback; its MATLAB producer passes bounded shared-reception and
+CSV checks, while full-scenario publication remains pending.
+Affected tests only are authorized; `testAll` is not being run.
+
+#### Additional retained-run audit and next-slot boundaries
+
+The retained causal gate's 47 failures were not 47 independent PHY crashes:
+one stale SIB1-table binding blocked 22 dependent audit stages, alongside
+24 parameter-consumer provenance failures. The SIB1 audit now reads the
+original dedicated reception/install table with identity, clock and decode
+guards. Its focused regression and the existing causal-audit regression pass,
+including unchanged retained receipts. Of the 22 previously blocked stages,
+14 already have audit-local call/measurement/success evidence; eight still
+lack completion or publication evidence. This is not a blanket acceptance.
+
+All 24 parameter rows have matching configured/resolved values. Twenty-two
+refer to old or uninstrumented consumer identities; two adaptation paths were
+not reached before slot45. Missing runtime provenance remains an open audit
+requirement; matching configuration alone does not prove consumption.
+
+For the next run, report49 can use CSI36 and report59 can use CSI46. CSI56's
+next report is69, outside the new horizon. Control61 targets UL65 and must
+use SRS60 only after delivery by61 (target age five); it cannot use future
+SRS65. These are configured opportunities, not guaranteed decode/rank gains.
+See the [remaining-issues ledger](docs/lls/lls_gap_status_20261023.html) and
+the [guide's checkpoint flow](http://127.0.0.1:62907/#restart-flow).
+
+#### Earlier stopped run (historical evidence)
+
+The subsequent run `n40_20mhz_sixpoint_20261025_131325` failed at slot 44
+of its 30 dB reference-Es/N0 child with
+`sixgr:phy:pucch:PUCCHTimingReferenceRequired`. The child dashboard is
+<http://127.0.0.1:62906/realtime?run_id=9512997190>. Two connected DL CRC passes
+and no connected UL trial rows were retained. Successful access PUSCH timing
+had not been bridged into the retained gNB timing owner used by Format 0.
+Its failed recovery process was stopped with user approval; existing outputs
+were preserved on E:. The core handoff repair now passes actual SetupComplete
+to Format-0 reception at the four-slot age boundary, selected-attempt RAR/TAG
+clock binding, and the retained-history/same-slot PUCCH regressions. The final
+affected timing batch `ra_ul_timing_retention_20261025_06.log` exited 0.
+These component receptions are not feedback outcomes from the stopped run;
+no completed scenario or final sweep result is claimed. A subsequent audit
+found only live-measurement snapshots beneath that child's output folder;
+do not assume its original capture bundle remains available for replay.
+This run has no checkpoints and cannot be resumed from its last CSV row.
+
+PRACH frequency diagnostics are now enabled in the next two-point YAML.
+Native B4 blind detection/CFO checks pass for -400/0/+400 Hz at sample
+amplitudes 1 and 1e-6, with independent RX branches and unchanged thresholds.
+The original 1e-12-amplitude native detection failure remains a documented
+numerical-range limitation; only the standalone frequency diagnostic is
+verified at that extreme scale. Endpoint CFO metadata, native CSI projected
+attenuation and shared multiport CSI completion checks also pass across
+`csi_prach_rf_affected_20261025_01.log` and
+`csi_prach_failed_affected_20261025_03.log`.
+**Still missing:** CSI receiver paired-reference EVM and a received-estimate-
+driven UE transmit-oscillator tracking loop. Transmitter EVM is not substituted
+for receiver EVM; PRACH diagnostic estimation is not an applied AFC command.
+
+The stopped integration attempt was launched as
 `n40_20mhz_sixpoint_20261025_105017`, with its output root verified as
 `E:\SixGRResults`. Its parent WebGUI entry is
 <http://127.0.0.1:62906/realtime?run_id=9127551233> (local to this laptop).
-Select the active child for radio-slot measurements. This is a running
-experiment, **not a completed or statistically qualified result**.
+Select its child for retained radio-slot measurements. The 30 dB point failed
+at slot 41 with `sixgr:srs:PathlossReferenceContextMismatch`; report recovery
+also failed with `sixgr:report:InvalidSSBMeasurementVector`. The sweep continued
+into 20 dB before it was stopped with user approval. All evidence is preserved.
+This historical attempt is not a completed or statistically qualified result.
+
+The SRS retained-reference repair passes four affected tests across the retained
+logs. Both PBCH reporting tests and the PDCCH/PUCCH population test now pass.
+The received-PRACH repairs reconstruct unfiltered native occasions from original
+decoded SI and verify inner receipt hashes with their producers' canonical
+serialization. The delivered-timing gate now terminates with exit 0 after three
+actual BCH receptions and one actual SI reception. The separate mapped-preamble
+test passes native preambles 0/16/32/48 and eight coded RAR receptions (wrong
+RAPID rejected, matching RAPID accepted); its SI/validity boundary is declared
+and it does not claim shared RF or full access. Earlier failed test artifacts
+are preserved, not overwritten.
+The approved next configuration is **four SSBs per PRACH occasion, 16
+contention-based preambles per SSB, and 65 slots per point**. Its YAML-to-SIB1
+and received-association binding have passing focused checks. These settings
+permit earlier legal access; they do not guarantee a particular success slot.
+
+The selected n40 parent declares the association explicitly (not a forced
+access deadline):
+
+```yaml
+random_access:
+  ssb_per_rach_choice: four
+  cb_preambles_per_ssb: 16
+  ssb_ro_mapping_mode: nr_configured_association
+```
+
+With 64 total preambles, the four SSB partitions are 0–15, 16–31, 32–47 and
+48–63. The builder encodes this in SIB1; access admission must use the decoded
+configuration, selected received SSB and legal native occasion. The next two-point
+child uses `run_control.total_slots: 65` and a checkpoint after completed slot 60. The revised
+horizon and nonzero-preamble policy require their own affected verification;
+the older 100-slot tests do not establish the revised execution.
+
+The requested restart is an integration/measurement validation run. A passing
+focused gate does not close the broader LLS ledger: independent cell-owned
+PRACH/Msg2 integration, wider configurations and statistical qualification
+remain separate work. Consult the live run list for current process status,
+not the historical attempt URL above. Latest receipts are
+`n40_received_timing_gate_20261025_02.log`,
+`n40_control_population_gate_20261025_01.log` and
+`four_ssb_mapped_preambles_20261025_04.log` under `E:\SixGRResults\logs`.
 
 The focused `msg1_launch_gate_20261025_03.log` finished with MATLAB exit 0:
 `testSharedMsg1TransmissionCompletion` verified native Msg1 transmission,
@@ -29,11 +168,26 @@ included in the GitHub source commit. The dated v267–v272 notes below are
 historical; they do not describe the current process.
 
 Use this existing checkout and the `main` branch. The current run target is the
-six-point **n40 / 2.350 GHz / 20 MHz / 30 kHz TDD** YAML below: **100 slots per
-point**, `[30, 20, 10, 0, -10, -20]` dB nominal reference Es/N0, 64 gNB TXRU,
+two-point **n40 / 2.350 GHz / 20 MHz / 30 kHz TDD** YAML below: **65 slots per
+point (32.5 ms)**, `[20, 0]` dB nominal reference Es/N0, 64 gNB TXRU,
 four UE chains, adaptive ranks `[1,2,4]`, UMa and CDL-C/100 ns, physical control
-and RF, 20-ms SSB, **no checkpoints**. Actual measured SINR is recorded separately;
+and RF, 20-ms SSB, **checkpoint after slot 60**. Actual measured SINR is recorded separately;
 successful attachment and higher ranks at every point are not guaranteed.
+The 65-slot horizon may censor access retries or later CSI-driven adaptation;
+the runner must report those outcomes rather than manufacture successful data.
+The resolved-configuration gate now passes `testSSBPRACHAssociationYAMLAuthority`
+with exact `[20, 0]` points, the previous 70-slot horizon and actual SIB1 UPER association. The
+CB-offset policy and native received-attempt materialization tests also pass
+in `E:\SixGRResults\logs\ra_ul_timing_retention_20261025_04.log`.
+That batch is not an overall pass: the selected-beam RAR test exposed a missing
+test-harness association-source handoff, and SRS timing fixtures still require
+the original scoring-context repair. These are distinct from the three passing
+configuration/materialization checks; the scenario has not restarted.
+The next YAML requests `random_access.cb_preamble_selection_policy:
+fixed_partition_offset` and `cb_preamble_offset: 1`: the decoded four/16
+association selects preambles 1/17/33/49 for SSB indices 0/1/2/3. This is an
+explicit reproducible test policy, not TS 38.321's uniform-random contention
+selection. The gNB receiver must still detect the transmitted preamble independently.
 
 This is an **integration/measurement run**, not accepted statistical NR/6G study
 evidence. The latest completed core gate, v268, passes **4/4** focused MATLAB
@@ -50,8 +204,9 @@ state handoffs, TCI guards, selected-basis freezing and PDSCH TX checks pass.
 These are not full physical n40 feedback-loop qualification.
 
 The original v269 slot-1 failure and v270 intermediate failures remain
-preserved. The bounded SI-to-Msg1 main-path rerun is **v272; completion pending**.
-Do not start the full sweep concurrently or treat that pending run as passed.
+preserved. The dated v272 notes do not supersede the current failed sweep and
+repair gates above. Do not launch the full sweep concurrently with a focused
+test or treat an unfinished integration gate as passed.
 The guide's configuration/catalog snapshots were regenerated using MATLAB,
 not by replacing provenance hashes. A component pass is not full-scenario acceptance.
 Only affected tests are requested; **do not run `testAll`** for this handoff.
@@ -63,7 +218,7 @@ Do not launch a second MATLAB simulation while the focused gate or another
 scenario is active. The output directory is not another codebase.
 
 ```powershell
-$runTag = 'n40_20mhz_sixpoint_' + (Get-Date -Format 'yyyyMMdd_HHmmss')
+$runTag = 'n40_20mhz_twopoint_65slots_' + (Get-Date -Format 'yyyyMMdd_HHmmss')
 $runYaml = 'simulator/configs/scenarios/lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep.yaml'
 $outputRoot = 'E:\SixGRResults'
 $env:SIXGR_RESULTS_ROOT = $outputRoot # Authorize this external evidence root for MATLAB.
@@ -74,16 +229,41 @@ New-Item -ItemType Directory -Force -Path "$outputRoot\logs" | Out-Null
 
 The runner reports `RUN_FOLDER`; retain that entire directory, its resolved
 configuration and input snapshots, child results, source/seed metadata and the
-console log. The parent sweep requests joint reports across all six points;
+console log. The parent sweep requests joint reports across both points;
 each child's raw evidence remains separate for traceability. Failed or
 unexecuted measurements must not be replaced with synthetic rows. A terminal
 process is not necessarily a successful campaign: inspect `out.Ok`, child
 outcomes, final publication and the original failure receipts.
 
+Checkpoint creation is inherited by each independent waveform child, not a
+shared state across sweep points. `checkpoint_first_slot: 60` and
+`checkpoint_every_slots: 60` select only completed slot 60 within this horizon.
+The child's `meta/latest_slot_checkpoint.json` identifies the verified state;
+retain its private `.checkpoints` store and all referenced archives as well
+as the run folder. A CSV row or partial MAT save is not a restart point.
+Resume an individual saved waveform child, never the generic sweep parent.
+With this requested cadence, a failure before slot60 still has no earlier
+checkpoint in that new child. Slot60 protects continuation through61–65.
+The whole slot includes completed causal callbacks; pending future receptions,
+original TB/soft buffers, RNG, channel and RF state survive the checkpoint.
+Final publication at 65 is separate from the slot-60 save.
+"Completed slot" means the runtime finished that slot without an execution
+exception; legitimate CRC failures or missed detections remain in its state
+and do not turn into successful PHY outcomes because a checkpoint was saved.
+The scheduler rejects grants targeting slots beyond 65. It may finish the
+physical receive tail of already transmitted data without starting a new
+scheduling slot. Feedback still outstanding at the finite horizon is reported
+as right-censored, not fabricated ACK/NACK or a measured DTX decision.
+
 ### Monitor and understand the run
 
 - WebGUI: <http://127.0.0.1:62906/runs>; select the new tag and the active child.
   Do not mistake an older failed run or a completed parent summary for live PHY.
+- Live reliability views separate connected DL/UL first-transmission BLER,
+  all-attempt CRC failure ratio, received HARQ feedback and completed PUCCH DTX
+  decisions. Inspect the numerator/denominator and exclusions. Missing feedback
+  is pending/unavailable, not automatically DTX; RA Msg3 is not connected PUSCH.
+  A few decoded blocks are descriptive evidence, not a qualified BLER curve.
 - Technical guide: <http://127.0.0.1:62907/>; source links, algorithms and
   standards-versus-implementation distinctions live here.
 - [Remaining issues only](docs/lls/lls_gap_status_20261023.html): unresolved
@@ -391,7 +571,7 @@ for the declared capability-1 scope, not a measured decoder-latency claim.
 | Array/layers | 64 gNB TXRU, four-chain UE; measured DL/UL adaptation up to rank 4 |
 | Access | Four active SS/PBCH beams in eight candidate positions, 30 kHz Case C; GSCN 5875 (SSREF 2349.850 MHz); common/SIB1 and B4 PRACH also 30 kHz |
 | DL allocation | Symbols 0–13 (full DL) or 0–9 (special DL); installed CORESET-only unavailable-resource pattern, plus exact reference/common-signal exclusions |
-| UL allocation | Symbols 0–12; SRS at symbol 13, 48/51 PRBs sounded; PUCCH reservations and duplex/processing guards remain |
+| UL allocation | Configured PUSCH symbols 0–10 with matching DCI TDRA; SRS symbol 11 (48/51 PRBs sounded); PUCCH symbols 12–13. Native allocation/TDD and bounded same-slot receiver checks pass; full n40 execution remains pending. Duplex/processing and four-slot received-timing-age guards remain |
 | CSI/rank | Eight CSI-RS resources every 10 slots (5 ms), offset 5; reports at offset 8 use the latest causally eligible observation under n_CSI_ref; one valid decoded RI report can authorize a rank increase; no forced rank or transmitter-oracle feedback |
 | Channel/RF | CDL-C/100 ns, configured Doppler, CFO, phase noise, PA, IQ imbalance, timing offset, DAC/ADC and causal AGC retained |
 | Power | Absolute sqrt(mW), 30 dBm gNB full-BWP pre-RF budget / 23 dBm UE limit, UMa NLOS path loss, thermal noise with UE NF 7 dB / gNB NF 5 dB; no forced 40-dB SNR |

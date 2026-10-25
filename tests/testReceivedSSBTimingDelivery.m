@@ -117,7 +117,9 @@ assert(isequaln(localProtected(state),protected), ...
 raCfg.random_access.associated_ssb_index=state.SelectedSSBIndexByUE(1);
 accessBefore=localAccessSHA(state);
 [admitted,decision]=sixgr.truth.bindSharedRAPowerReference(raCfg,state,1,state.CurrentSlot);
-assert(decision.ReferenceUsable && decision.SelectedSSBTimingAvailable && ...
+assert(~decision.ReferenceUsable && decision.Status=="no_current_received_SSB_associated_RO" && ...
+    decision.Blocker=="waiting_for_received_SSB_associated_RO" && ...
+    ~isfield(admitted,'SharedReceivedPRACHSelection') && decision.SelectedSSBTimingAvailable && ...
     decision.SelectedSSBTimingBindingSHA256==selected.BindingSHA256 && ...
     decision.SelectedSSBTimingDeliveredAtSample==selected.DeliveredAvailableSample && ...
     isequaln(admitted.SharedRATimingBinding,selected) && ...
@@ -157,10 +159,128 @@ end
 [valid,~]=sixgr.truth.ReceivedSSBTimingDelivery.current(state,1,cfg,3); assert(~valid);
 assert(owner.Events.NextSampleIndex==clock && isequal(before,rng) && ...
     trackingPost.sampleHash()==originalHash && isequaln(localProtected(state),protected));
+% A delivered beam clock is necessary, not sufficient: the original wire
+% SIB1 association must also admit this exact preparation occasion. Preserve
+% physical channel/RF state while advancing to its next mapped opportunity.
+stale=state; stale.DecodedSIB1RecoveryByUE{1}.ReceivedMIBGenerationID="retired_generation";
+[~,allowed,why]=sixgr.truth.bindReceivedPRACHAssociation(admitted,stale,1,stale.CurrentSlot);
+assert(~allowed && why=="received_SIB1_belongs_to_another_acquisition");
+deadline=state.CurrentSlot+ceil(.160/sixgr.time.slotDurationSec(cfg));
+[expectedValidity,expectedNative]=sixgr.mac.ra.resolveReceivedPRACHValidity( ...
+    state.DecodedSIB1RecoveryByUE{1}.SIB1RxTree,mib.Context,[]);
+assert(expectedNative.DirectionPeriodSlots==1 && ...
+    expectedNative.PeriodFrames==expectedNative.BasePeriodFrames);
+serving=state.DecodedSIB1RecoveryByUE{1}.SIB1RxTree.message.c1.systemInformationBlockType1.servingCellConfigCommon;
+rach=serving.uplinkConfigCommon.initialUplinkBWP.rach_ConfigCommon;
+assert(string(rach.ssbPerRACHChoice)=="one" && string(rach.cbPreamblesPerSSB)=="n64");
+active=find(char(string(serving.ssb_PositionsInBurst.inOneGroup))=='1')-1;
+expectedAssociation=sixgr.mac.ra.resolveSSBPRACHAssociation(expectedNative,active,1,64,64, ...
+    expectedValidity.RepeatedValidity(:,1));
+beamRows=expectedAssociation.Mapping(expectedAssociation.Mapping.SSBIndex0==1,:);
+expectedPreparation=Inf;
+periodSlots=expectedAssociation.AssociationPeriodCarrierSlots;
+spec=sixgr.phy.frame.AbsoluteTime.resolveNumerology(struct( ...
+    'SCSKHz',expectedNative.CarrierSubcarrierSpacingKHz,'CyclicPrefix',expectedNative.CarrierCyclicPrefix));
+for k=1:height(beamRows)
+    source=expectedNative.Occasions(beamRows.SourceOccasionRow(k),:);
+    tick=source.PRACHWaveformStartTicks+int64(beamRows.ConfigurationPeriodIndex0(k)* ...
+        expectedNative.BasePeriodFrames)*sixgr.phy.frame.AbsoluteTime.TicksPerFrame;
+    time=sixgr.phy.frame.AbsoluteTime(tick); [~,f,sl]=time.floorToSlot(spec);
+    base=double(f)*spec.SlotsPerFrame+double(sl);
+    next=base+max(0,ceil((state.CurrentSlot+1-base)/periodSlots))*periodSlots;
+    expectedPreparation=min(expectedPreparation,next);
+end
+assert(isfinite(expectedPreparation) && expectedPreparation<deadline);
+allowed=false;
+while state.CurrentSlot<deadline
+    [state,none]=owner.advanceSlot(state,cfg); assert(isempty(none));
+    state.CurrentSlot=state.CurrentSlot+1;
+    [mapped,allowed]=sixgr.truth.bindReceivedPRACHAssociation(admitted,state,1,state.CurrentSlot);
+    if allowed, break; end
+end
+assert(allowed && state.CurrentSlot==expectedPreparation && isequaln(localProtected(state),protected));
+receipt=mapped.SharedReceivedPRACHSelection;
+assert(isequaln(receipt.NativeResolution,expectedNative) && ...
+    isequaln(receipt.Validity,expectedValidity));
+assert(receipt.PreparationSlot==state.CurrentSlot && receipt.Selection.SelectedSSBIndex0==1 && ...
+    receipt.AcquisitionGenerationID==mib.GenerationID && receipt.SIB1TreeSHA256==protected.Common{1}.TreeHash);
+[~,nativeSelected,selection]=sixgr.mac.ra.receivedPRACHAttemptSelection(mapped,state.CurrentSlot);
+assert(selection.SelectedAssociationRow.SSBIndex0==1 && ...
+    nativeSelected.Ordinal==selection.SelectedAssociationRow.SourceOccasionOrdinal && ...
+    all(receipt.Validity.RepeatedValidity(selection.SelectedAssociationRow.SourceOccasionRow,:)));
+[state,tag,rarOutcome]=localReceivedRARTAG(state,cfg,mapped,selected,protected);
 save(fullfile(folder,'original_delivered_timing.mat'),'cfg','mib','firstTiming','bindings', ...
-    'selected','otherBeam','protected','row','trackingRows','decision','ulClock');
-fprintf('RECEIVED_SSB_TIMING_PASS original_BCH_receivers=3 original_SI_receivers=1 declared_selection=0_to_1 Msg1_waveform=0 root=%s\n',folder);
+    'selected','otherBeam','protected','row','trackingRows','decision','ulClock','receipt','tag','rarOutcome');
+fprintf('RECEIVED_SSB_TIMING_PASS original_BCH_receivers=3 original_SI_receivers=1 actual_RAR_receiver=1 declared_selection=0_to_1 frozen_TAG_clock=1 Msg1_waveform=0 root=%s\n',folder);
 ok=true;
+end
+
+function [state,tag,out]=localReceivedRARTAG(state,cfg,mapped,selected,protected)
+% One actual coded unit-channel RAR, using the original decoded common SI
+% and independently resolved Type1 window. This is not shared-RF Msg1/RAR
+% execution or a complete access test; no synthetic RAR acceptance is used.
+owner=state.SharedWaveformStream; fs=owner.SampleRateHz;
+attemptStartSlot=state.CurrentSlot;
+attemptCfg=sixgr.mac.ra.installDecodedSIB1RACHConfig(mapped,state.DecodedSIB1RecoveryByUE{1});
+attemptCfg.phy.ssb.runtimeSSBIndex=selected.SSBIndex;
+% Mirror the production attempt's complete original selection handoff,
+% including its explicit source (this test declares which decoded beam wins).
+attemptCfg.random_access.associated_ssb_selection_source=state.SelectedSSBSelectionSourceByUE(1);
+attemptCfg.random_access.associated_ssb_measurement_db=state.SelectedSSBMeasurement_dBByUE(1);
+assert(attemptCfg.random_access.associated_ssb_index==selected.SSBIndex && ...
+    strlength(attemptCfg.random_access.associated_ssb_selection_source)>0 && ...
+    isfinite(attemptCfg.random_access.associated_ssb_measurement_db));
+ra=sixgr.mac.ra.RAConfig(attemptCfg,'UEId',1,'RuntimeSlot',attemptStartSlot);
+receiver=sixgr.phy.ra.RARReceiveWindow(attemptCfg,ra);
+slot=receiver.Window.MonitoringSlots(1);
+scheduled=ra; scheduled.Msg2Slot=slot;
+grant=sixgr.mac.ra.buildRARULGrant(scheduled);
+rar=sixgr.mac.ra.encodeMACRAR('RAPID',ra.PreambleIndex,'TimingAdvanceCommand',1, ...
+    'TemporaryCRNTI',ra.TempCRNTI,'ULGrant',grant);
+tx=sixgr.phy.ra.generateMsg2RARWaveform(attemptCfg,scheduled,rar);
+start=sixgr.phy.frame.AbsoluteTime.fromAbsoluteSlotSymbol(slot,0,receiver.Window.Numerology);
+ticksPerSample=double(sixgr.phy.frame.AbsoluteTime.TicksPerSecond)/fs;
+first=double(start.Ticks+receiver.Window.ClockOffsetTicks)/ticksPerSample;
+assert(first==fix(first));
+observation=sixgr.phy.waveform.WaveformObservationBuffer(first,first+size(tx.Waveform,1), ...
+    fs,size(tx.Waveform,2));
+observation.append(sixgr.phy.waveform.WaveformChunk(tx.Waveform,first),fs);
+[receiver,out]=receiver.receive(slot,observation,attemptCfg);
+assert(out.Accepted && out.Observation.DCICrcPass && out.Observation.PDSCHCrcPass && ...
+    out.Observation.RAPIDMatches && receiver.Status=="matched");
+while owner.Events.NextSampleIndex<observation.EndSampleExclusive
+    [state,none]=owner.advanceSlot(state,cfg); assert(isempty(none));
+    state.CurrentSlot=state.CurrentSlot+1;
+end
+tag=sixgr.truth.connectedRARTimingFromAttempt(state,1,attemptCfg,out.RAR,slot, ...
+    observation.EndSampleExclusive,fs,attemptStartSlot);
+assert(isequaln(tag.DLReference,selected.ReceivedDLTimingReference) && ...
+    ~isequaln(tag.DLReference,protected.Common{1}.ReceivedDLTimingReference) && ...
+    isequaln(tag.Offset,protected.Common{1}.ULTimingAdvanceOffset) && ...
+    isequaln(tag.ReceivedSSBTimingBinding,selected) && ...
+    tag.AcquisitionGenerationID==selected.AcquisitionGenerationID && ...
+    tag.RAAttemptStartSlot==attemptStartSlot && ...
+    tag.ReceivedRARTiming.Command==out.RAR.TimingAdvanceCommand && ...
+    isequaln(localProtected(state),protected));
+% Mutable selection may change while this accepted response was pending.
+% Its original frozen clock, not the new selection, owns the initial TAG.
+changed=state; changed.SelectedSSBIndexByUE(1)=0;
+same=sixgr.truth.connectedRARTimingFromAttempt(changed,1,attemptCfg,out.RAR,slot, ...
+    observation.EndSampleExclusive,fs,attemptStartSlot);
+assert(isequaln(same,tag));
+changed=state; changed.LastSuccessfulPBCHSlotByUE(1)=state.CurrentSlot;
+reject(@()sixgr.truth.connectedRARTimingFromAttempt(changed,1,attemptCfg,out.RAR,slot, ...
+    observation.EndSampleExclusive,fs,attemptStartSlot),'sixgr:truth:RARAttemptTimingGenerationMismatch');
+changed=state; changed.CurrentServingIdx(1)=2;
+reject(@()sixgr.truth.connectedRARTimingFromAttempt(changed,1,attemptCfg,out.RAR,slot, ...
+    observation.EndSampleExclusive,fs,attemptStartSlot),'sixgr:truth:RARAttemptTimingIdentityMismatch');
+reject(@()sixgr.truth.connectedRARTimingFromAttempt(state,1,attemptCfg,out.RAR,slot, ...
+    observation.EndSampleExclusive,fs,selected.DeliverySlot-1),'sixgr:truth:RARAttemptTimingNotAvailable');
+reject(@()sixgr.truth.connectedRARTimingFromAttempt(state,1,attemptCfg,out.RAR,slot, ...
+    owner.Events.NextSampleIndex+1,fs,attemptStartSlot),'sixgr:truth:RARAttemptTimingNotAvailable');
+changed=attemptCfg; changed.SharedULTimingContext.DLReference=protected.Common{1}.ReceivedDLTimingReference;
+reject(@()sixgr.truth.connectedRARTimingFromAttempt(state,1,changed,out.RAR,slot, ...
+    observation.EndSampleExclusive,fs,attemptStartSlot),'sixgr:truth:RARAttemptTimingCommonMismatch');
 end
 
 function [state,item,received,contexts,post]=localReceive(state,cfg,slot0,scope,candidates,acquisition,folder)

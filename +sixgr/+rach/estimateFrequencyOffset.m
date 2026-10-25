@@ -24,6 +24,18 @@ end
 
 rx = rx(1:L,:);
 ref = ref(1:L,:);
+% Common scaling preserves relative antenna energies and phase while
+% avoiding an absolute-watt validity threshold and product underflow.
+% This is numerical conditioning, not AGC applied to received samples.
+if any(~isfinite(rx(:))) || any(~isfinite(ref(:)))
+    return;
+end
+rxScale=max(abs(rx(:))); refScale=max(abs(ref(:)));
+if ~(rxScale>0 && refScale>0)
+    return;
+end
+rx=double(rx)/double(rxScale);
+ref=double(ref)/double(refScale);
 if size(ref,2)>1
     ref=mean(ref,2);
 end
@@ -42,7 +54,7 @@ for iBranch=1:size(rx,2)
     branch=rx(:,iBranch);
     rxLag=rxLag+sum(branch(lag+1:end).*conj(branch(1:end-lag)),'omitnan');
 end
-if ~(isfinite(real(rxLag))&&isfinite(imag(rxLag))&&abs(rxLag)>eps&&abs(refLag)>eps)
+if ~(isfinite(real(rxLag))&&isfinite(imag(rxLag))&&abs(rxLag)>0&&abs(refLag)>0)
     return;
 end
 

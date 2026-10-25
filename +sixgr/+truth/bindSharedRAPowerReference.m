@@ -35,7 +35,7 @@ end
 if isfield(state,'SharedWaveformStream')
     assert(isa(state.SharedWaveformStream,'sixgr.truth.CoupledWaveformStream'), ...
         'sixgr:truth:ReceivedSSBTimingOwnerRequired','Use the installed original shared receiver owner.');
-    for name=["SharedULTimingContext","SharedRATimingBinding"]
+    for name=["SharedULTimingContext","SharedRATimingBinding","SharedReceivedPRACHSelection"]
         if isfield(cfg,name), cfg=rmfield(cfg,name); end
     end
     decision.SelectedSSBTimingAvailable=false;
@@ -69,6 +69,12 @@ if isfield(state,'SharedWaveformStream')
         decision.SelectedSSBTimingCaptureEndSample=timing.OriginalBCHBinding.CaptureEndSampleExclusive;
         decision.SelectedSSBTimingDeliveredAtSample=timing.DeliveredAvailableSample;
         decision.SelectedSSBTimingAcquisitionGenerationID=timing.AcquisitionGenerationID;
+        [cfg,associated,associationStatus]=sixgr.truth.bindReceivedPRACHAssociation(cfg,state,ue,slot);
+        if ~associated
+            decision.ReferenceUsable=false;
+            decision.Status="no_current_received_SSB_associated_RO";
+            decision.Blocker=associationStatus;
+        end
     end
 end
 end

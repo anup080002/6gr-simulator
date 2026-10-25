@@ -197,8 +197,22 @@ if ra.PRACHOccasionPolicy ~= "ts_38_211_configuration_index_resolution"
     error("sixgr:mac:ra:UnsupportedPRACHOccasionPolicy", ...
         "random_access.prach_occasion_policy must be ts_38_211_configuration_index_resolution for strict four-step RA.");
 end
-[ra.PRACHOccasionResolution, resolvedOccasion] = ...
-    localResolveAndValidatePRACHOccasion(cfg, ra);
+receivedAssociation=isfield(cfg,'SharedReceivedPRACHSelection');
+if receivedAssociation
+    [ra.PRACHOccasionResolution,resolvedOccasion,receivedSelection]= ...
+        sixgr.mac.ra.receivedPRACHAttemptSelection(cfg,runtimeSlot);
+    ra.PreambleIndex=receivedSelection.PreambleIndex0;
+    ra.ReceivedPRACHAssociation=cfg.SharedReceivedPRACHSelection;
+    assert(ra.UEId==ra.ReceivedPRACHAssociation.UEIndex && ...
+        ra.ServingCell==ra.ReceivedPRACHAssociation.ServingCell, ...
+        'sixgr:mac:ra:InvalidReceivedPRACHAttempt','The attempt must use the admitted UE and serving-cell namespace.');
+elseif isfield(cfg,'SharedRATimingBinding')
+    error('sixgr:mac:ra:MissingReceivedPRACHAssociation', ...
+        'A received-beam shared attempt requires its admitted decoded-SIB1 association.');
+else
+    [ra.PRACHOccasionResolution, resolvedOccasion] = ...
+        localResolveAndValidatePRACHOccasion(cfg, ra);
+end
 ra.PRACHOccasionOrdinal = double(resolvedOccasion.Ordinal);
 ra.ResolvedPRACHFormat = string(resolvedOccasion.Format);
 frame = sixgr.phy.FrameStructureEngine(cfg,"FrameCoreOnly",true);
@@ -208,7 +222,14 @@ basePRACHSlot=ra.PRACHAbsoluteSlot;
 % not permission to replay frame zero when a UE starts a later attempt.
 % Bind only a NEW attempt to the next repetition of that same resource.
 % Continuations retain their already selected occasion and decoded timers.
-if isfinite(runtimeSlot)
+if receivedAssociation
+    ra.PRACHAbsoluteSlot=double(receivedSelection.SelectedAssociationRow.AbsoluteSlot);
+    ra.PRACHOccasionOrdinal=receivedSelection.PRACHOccasionOrdinal;
+    ra.PRACHOccasionFrame=floor(ra.PRACHAbsoluteSlot/frame.SlotsPerFrame);
+    ra.PRACHOccasionSlot=mod(ra.PRACHAbsoluteSlot,frame.SlotsPerFrame);
+    ra.PRACHOccasionSymbol=double(resolvedOccasion.StartSymbol);
+    ra.PRACHFrequencyIndex=double(resolvedOccasion.FrequencyIndex);
+elseif isfinite(runtimeSlot)
     period = double(sixgr.util.structGet( ...
         ra.PRACHOccasionResolution, "PeriodCarrierSlots", NaN));
     if ~(isscalar(period) && isfinite(period) && period >= 1 && ...
@@ -234,7 +255,10 @@ ra.PRACHOccasionEndSlot = ra.PRACHAbsoluteSlot + ...
     floor((startSymbol + durationSymbols - 1) / frame.SymbolsPerSlot);
 for symbol = startSymbol:(startSymbol+durationSymbols-1)
     slot = ra.PRACHAbsoluteSlot + floor(symbol/frame.SymbolsPerSlot);
-    if ~frame.IsULAllocation(slot,[mod(symbol,frame.SymbolsPerSlot) 1])
+    % A received-valid PRACH may occupy flexible symbols under 38.213 8.1.
+    % Its original complete CP/useful interval was checked against decoded
+    % common TDD and every known SSB, not this host full-UL-only policy.
+    if ~receivedAssociation && ~frame.IsULAllocation(slot,[mod(symbol,frame.SymbolsPerSlot) 1])
         error("sixgr:mac:ra:ConfiguredPRACHOccasionNotUL", ...
             "Configured PRACH occasion occupies a non-UL symbol at absolute slot %d symbol %d.", ...
             slot,mod(symbol,frame.SymbolsPerSlot));

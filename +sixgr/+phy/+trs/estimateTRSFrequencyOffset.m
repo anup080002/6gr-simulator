@@ -135,8 +135,8 @@ end
 function dt=localSymbolDelta(tx,d,pair)
 L=double(tx.GridSlots(1).Carrier.SymbolsPerSlot);
 first=(double(d.Slot)-double(tx.FirstSlot0Based))*L;
-lengths=double(tx.OFDM.SymbolLengths(:));
-cp=double(tx.OFDM.CyclicPrefixLengths(:));
+lengths=double(tx.SymbolTimeline.SymbolLengths(:));
+cp=double(tx.SymbolTimeline.CyclicPrefixLengths(:));
 carrier=tx.GridSlots(1).Carrier;
 scale=double(tx.SampleRateHz)/(double(tx.OFDM.Nfft)*double(carrier.SubcarrierSpacing)*1000);
 % FFT-window center differences: the useful FFT duration cancels. Retain

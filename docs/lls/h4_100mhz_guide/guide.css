@@ -64,3 +64,5 @@
 
 .walkthrough .table-scroll{overflow:auto}.walkthrough .flow{grid-template-columns:repeat(2,minmax(0,1fr))}.walkthrough .flow li:nth-child(2n)::after{content:"↓";right:10px;top:auto;bottom:-25px}.walkthrough .flow li:last-child::after{content:""}.walkthrough .meta,.local-evidence{font-size:13px;color:var(--muted)}.walkthrough details{scroll-margin-top:88px}.dark .walkthrough summary{color:var(--accent)}.dark .walkthrough .audit{background:var(--code)}.dark .walkthrough .flow li{background:var(--code)}
 @media(max-width:850px){.walkthrough .flow{grid-template-columns:1fr}}
+/* Long field names and evidence paths are prose, not horizontal code blocks. */
+#chapter-body :not(pre)>code{white-space:normal;overflow-wrap:anywhere}

@@ -38,8 +38,15 @@ if any(abs(boundaries-round(boundaries)) > 1e-7) || ...
         "TRS slot boundaries must match the actual OFDM sample clock and waveform extent.");
 end
 boundaries = round(boundaries);
-info.SymbolLengths = pattern(symbols);
-info.CyclicPrefixLengths = cpPattern(symbols);
+% OFDM retains the complete native subframe pattern and its original slot
+% phase. Replacing it with the expanded waveform timeline would make the
+% native clock metadata inconsistent (and rotate nonzero starts twice).
+symbolTimeline = struct("FirstSlot0Based",firstSlot, ...
+    "SymbolLengths",pattern(symbols), ...
+    "CyclicPrefixLengths",cpPattern(symbols), ...
+    "SampleBoundaries0Based",boundaries, ...
+    "IFFTToWaveformSampleScale",sampleScale, ...
+    "Source","waveform_relative_symbols_from_native_ofdm_clock");
 slotRows = repmat(localSlotRow(), numel(slots), 1);
 slotWaveforms = cell(numel(slots), 1);
 for ii = 1:numel(slots)
@@ -67,6 +74,7 @@ tx.SampleRateHz = double(sampleRate);
 tx.FirstSlot0Based = firstSlot;
 tx.PortGrid = portGrid;
 tx.OFDM = info;
+tx.SymbolTimeline = symbolTimeline;
 tx.SampleTimelineSource = "configured_slots_actual_ofdm_symbol_lengths";
 tx.GridSlots = slots;
 tx.SlotResources = mapped.SlotResources;

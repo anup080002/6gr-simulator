@@ -21,10 +21,11 @@ inherits:
 meta:
   scenario_id: lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep
   description: >
-    Six independent n40 2.350 GHz, 20 MHz, 30 kHz absolute-power connected
-    executions at nominal receive-reference Es/N0 30, 20, 10, 0, -10 and -20 dB,
+    Two independent n40 2.350 GHz, 20 MHz, 30 kHz absolute-power connected
+    executions at nominal receive-reference Es/N0 20 and 0 dB,
     in that descending order.
-    Each child executes 100 slots (50 ms), including physical initial access,
+    Each child executes 65 slots (32.5 ms), including physical initial access,
+    with one restart checkpoint after successful completion of slot 60,
     retaining the parent's UMa NLOS attenuation, CDL-C/100 ns fading,
     64-TXRU gNB/four-chain UE, physical RF operators, absolute sqrt(mW)
     samples, UL power control/PHR, measured RSRP/SINR, received CSI/SRS
@@ -47,11 +48,15 @@ meta:
 # propagation/RF/power-control settings. This parent only changes the explicit
 # noise reference and owns the sequential independent children.
 run_control:
-  runtime_checkpoint_enable: false
-  total_slots: 100
-  total_time_ms: 50
-  measurement_slots: 100
-  measurement_time_ms: 50
+  runtime_checkpoint_enable: true
+  checkpoint_first_slot: 60
+  checkpoint_every_slots: 60
+  runtime_checkpoint_keep: 2
+  deterministic_mode: true
+  total_slots: 65
+  total_time_ms: 32.5
+  measurement_slots: 65
+  measurement_time_ms: 32.5
 
 simulation:
   link_direction: both
@@ -74,16 +79,26 @@ simulation:
   # Fresh access/channel/RF/traffic/beam/LA/HARQ owners at each point.
   random_seed: 20260927
   deterministic_mode: true
-  n_frames: 5
-  n_slots: 100
-  n_subframes: 50
-  min_duration_s: 0.05
+  # Integral frame/subframe containers; the authoritative slot horizon stops
+  # after 65 slots (32.5 ms), not at the end of the 33rd subframe.
+  n_frames: 4
+  n_slots: 65
+  n_subframes: 33
+  min_duration_s: 0.0325
 
 random_access:
+  # Received detected-preamble repetition diagnostic; not DL-CFO reuse or
+  # an applied UE/gNB frequency-control command.
+  enable_frequency_estimation_metric: true
+  # Bounded reproducible test choice, NOT normative uniform-random CBRA.
+  # Offset 1 within the decoded SSB partition gives 1/17/33/49 for four/16.
+  # gNB detection still searches configured candidates without TX identity.
+  cb_preamble_selection_policy: fixed_partition_offset
+  cb_preamble_offset: 1
   # Match the declared campaign horizon. These bound standalone PRACH
   # diagnostics; connected RA occasions remain event/calendar driven.
-  num_slots: 100
-  num_subframes: 50
+  num_slots: 65
+  num_subframes: 33
 
 sweeps_and_matrix:
   snr_sweep:
@@ -101,36 +116,16 @@ scenario:
     # Preserve failed access/decoding and unavailable populations. No forced
     # rank, detector, current-sample normalization or successful rescue rows.
     overrides:
-      - label: reference_esn0_30_db
-        config:
-          meta: {scenario_id: lls_tdd_n40_20mhz_reference_esn0_30db}
-          simulation: {snr_db: 30, random_seed: 20260927}
-          output: {profile: lls_tdd_n40_20mhz_reference_esn0_30db}
       - label: reference_esn0_20_db
         config:
           meta: {scenario_id: lls_tdd_n40_20mhz_reference_esn0_20db}
           simulation: {snr_db: 20, random_seed: 20260927}
           output: {profile: lls_tdd_n40_20mhz_reference_esn0_20db}
-      - label: reference_esn0_10_db
-        config:
-          meta: {scenario_id: lls_tdd_n40_20mhz_reference_esn0_10db}
-          simulation: {snr_db: 10, random_seed: 20260927}
-          output: {profile: lls_tdd_n40_20mhz_reference_esn0_10db}
       - label: reference_esn0_0_db
         config:
           meta: {scenario_id: lls_tdd_n40_20mhz_reference_esn0_0db}
           simulation: {snr_db: 0, random_seed: 20260927}
           output: {profile: lls_tdd_n40_20mhz_reference_esn0_0db}
-      - label: reference_esn0_m10_db
-        config:
-          meta: {scenario_id: lls_tdd_n40_20mhz_reference_esn0_m10db}
-          simulation: {snr_db: -10, random_seed: 20260927}
-          output: {profile: lls_tdd_n40_20mhz_reference_esn0_m10db}
-      - label: reference_esn0_m20_db
-        config:
-          meta: {scenario_id: lls_tdd_n40_20mhz_reference_esn0_m20db}
-          simulation: {snr_db: -20, random_seed: 20260927}
-          output: {profile: lls_tdd_n40_20mhz_reference_esn0_m20db}
 
 output:
   profile: lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep

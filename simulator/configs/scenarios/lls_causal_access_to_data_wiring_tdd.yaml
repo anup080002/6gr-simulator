@@ -1175,11 +1175,11 @@ validation:
         dependency_stages: ["pbch_mib_recovery"]
         feature_authority: "sib1"
         required: true
-        consumer_source_files: ["+sixgr/+phy/+broadcast/recoverSIB1FromWaveform.m"]
-        measurement_artifact: "air_interface/csv/pbch_trials.csv"
-        measured_fields: ["SIB1DCICrcPass", "SIB1DLSCHCrcPass", "SIB1ASN1DecodeOk"]
+        consumer_source_files: ["+sixgr/+phy/+broadcast/recoverSIB1UsingReceivedMIB.m"]
+        measurement_artifact: "air_interface/csv/sib1_received_trials.csv"
+        measured_fields: ["DCICrcPass", "DLSCHCrcPass", "SIB1ASN1DecodeOk", "SIB1SemanticValid", "Installed"]
         measurement_min_rows: 1
-        success_field: "SIB1StrictOk"
+        success_field: "Installed"
         success_mode: "any_true"
       - stage_id: "ssb_beam_sweep"
         order: 60

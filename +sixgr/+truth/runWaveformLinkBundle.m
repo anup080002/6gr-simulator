@@ -6723,8 +6723,10 @@ end
         % before its nominal origin. Received SSB phase/common UL timing can
         % advance the actual UE TX origin slightly across that boundary.
         % This is a scheduling horizon only; IQ remains on its exact clock.
-        prachSignalOpportunityThisSlot = prachEnabled && ...
-            sixgr.truth.isPRACHWaveformPreparationSlot(cfg,slotIdx);
+        % Per-UE decoded SI/selected-SSB admission below owns the precise
+        % preparation calendar. A host-filtered calendar must not veto a
+        % received-valid flexible-symbol RO or another decoded FDM mapping.
+        prachSignalOpportunityThisSlot = prachEnabled;
     else
         prachSignalOpportunityThisSlot = prachEnabled && slotULAllowed && ...
             sixgr.truth.isActivePRACHOccasion(cfg, slotIdx);
@@ -8141,6 +8143,10 @@ if refreshHeavyArtifacts || writeRawTablesNow
     mergedSignalConst = localAppendCompatTable(dlConstT, ulConstT);
     sixgr.truth.exportLLSLiveSignalChainTables(rootRunFolder, mergedSignalTrials, mergedSignalConst, struct( ...
         "WaveformPreviewTable", waveformPreviewT, "WriteWaveformPreview",refreshHeavyArtifacts));
+    if ~refreshHeavyArtifacts
+        sixgr.truth.exportLLSLiveDerivedTables(cfg,rootRunFolder,rawTrials, ...
+            multiUser,struct(),runtimeState,"antenna_observations");
+    end
     % This compact summary is live evidence, not a startup-only reference.
     % Keep it synchronized with the published receiver tables without
     % rebuilding static deployment/MCS/CQI catalogs on every slot.
@@ -10669,15 +10675,14 @@ elseif item.Kind=="RARExpiry"
         retryRow.PreambleBackoff_ms,retryRow.EarliestRetryTicks,retryRow.PreambleTransMaxExhausted);
 elseif item.Kind=="RAR" && ~isempty(fieldnames(checkpoint)) && checkpoint.NextStage==3
     retry=retry.rarAccepted();
-    common=state.UECommonCellConfigurationByUE{ue};
     if isfield(state,'ConnectedULTimingByUE') && numel(state.ConnectedULTimingByUE)>=ue && ...
             ~isempty(state.ConnectedULTimingByUE{ue})
         error('sixgr:truth:ConnectedTAGReacquisitionNotIntegrated', ...
             'A received initial RAR cannot silently overwrite a running TAG timer.');
     end
-    state.ConnectedULTimingByUE{ue,1}=sixgr.mac.ra.connectedTimingFromRAR( ...
-        attempt.Config,common,checkpoint.RARRx,item.Context.AbsoluteSlot, ...
-        post.EndSampleExclusive,post.SampleRateHz);
+    state.ConnectedULTimingByUE{ue,1}=sixgr.truth.connectedRARTimingFromAttempt( ...
+        state,ue,attempt.Config,checkpoint.RARRx,item.Context.AbsoluteSlot, ...
+        post.EndSampleExclusive,post.SampleRateHz,attempt.StartSlot);
 elseif isfield(ra,'ContentionReceiver') && ...
         any(ra.ContentionReceiver.MAC.Status==["expired","identity_mismatch"])
     [retry,retryRow]=retry.contentionFailed(ra.ContentionReceiver, ...
@@ -10715,6 +10720,14 @@ state.ControlTrials.PRACHCorrelationTrace=localAppendCompatTable( ...
 state.ControlTrials.RAEvidenceTables=localAppendRAEvidenceTables( ...
     sixgr.util.structGet(state.ControlTrials,'RAEvidenceTables',struct()),evidence);
 if ~isempty(trial), state=sixgr.truth.CoupledTruthRuntime.applyPRACHTrial(state,ue,trial); end
+if item.Kind=="RA" && stage=="RRCSetupComplete"
+    % Identity adoption above is a received protocol transition. Preserve
+    % the independent DM-RS arrival measurement from this same completed
+    % post-TA capture; a scheduled SRS is not a prerequisite for Format 0.
+    [~,~,~,~,timingObservation]=sixgr.truth.sharedObservationEvidence(item.Planes);
+    state=sixgr.truth.retainReceivedRAULTimingReference(state,ue,attempt.Config, ...
+        ra,timingObservation,state.SharedWaveformStream.Events.NextSampleIndex);
+end
 if ~isempty(fieldnames(checkpoint))
     if any(item.Kind==["ContentionStart","ContentionExpiry"]) || ...
             (item.Kind=="Contention" && checkpoint.ContentionReceiver.MAC.Status=="waiting")

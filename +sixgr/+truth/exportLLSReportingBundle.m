@@ -264,7 +264,7 @@ if ~(istable(ctx.Tables.ULConstellation) && ~isempty(ctx.Tables.ULConstellation)
     ctx.Tables.ULConstellation = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "ul_constellation_preview.csv"));
     ctx.TableSources.ULConstellation = "air_interface/csv/ul_constellation_preview.csv";
 end
-ctx.Tables.PBCH = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "pbch_trials.csv"));
+ctx.Tables.PBCH = sixgr.report.readPBCHMeasurementTrials(fullfile(layout.AirInterfaceCSVDir, "pbch_trials.csv"));
 ctx.Tables.PRACH = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "prach_trials.csv"));
 ctx.Tables.PRACHCorrelationTrace = localReadOptionalTable(fullfile(layout.ReportCSVDir, "prach_correlation_trace.csv"));
 if ~(istable(ctx.Tables.PRACHCorrelationTrace) && ~isempty(ctx.Tables.PRACHCorrelationTrace))
@@ -812,10 +812,10 @@ switch key
         T = localSoundingPortLeakageRows(cat, metric, ctx.Tables.SRS);
     case "miss_detection_probability"
         T = [T; ...
-            localFailureRateRows(cat, metric, ctx.Tables.PDCCH, "PDCCH"); ...
-            localFailureRateRows(cat, metric, ctx.Tables.PUCCH, "PUCCH"); ...
+            localControlMissDetectionRows(cat, metric, ctx, "PDCCH"); ...
+            localControlMissDetectionRows(cat, metric, ctx, "PUCCH"); ...
             localPrachFailureRateRows(cat, metric, ctx); ...
-            localFailureRateRows(cat, metric, ctx.Tables.PBCH, "PBCH")];
+            localPBCHStageOutcomeRows(cat, metric, ctx)];
     case "false_alarm_probability"
         T = [T; ...
             localExplicitNoSignalFalseAlarmRows(cat, metric, ctx.Tables.PDCCH, "PDCCH", "air_interface/csv/pdcch_trials.csv"); ...
@@ -1605,6 +1605,102 @@ for entity=["DL","UL"]
 end
 end
 
+function T=localControlMissDetectionRows(cat,metric,ctx,signal)
+% Original per-observation outcomes, not generic procedure Status or an
+% independent-trial probability estimate. Do not pool resource/point clocks.
+trialT=ctx.Tables.(signal); n=height(trialT);
+source="air_interface/csv/"+lower(signal)+"_trials.csv";
+T=localEmptyMetricTable();
+if n==0, return; end
+vars=string(trialT.Properties.VariableNames);
+[attempted,attemptKnown]=localPBCHFlag(trialT,"DetectionAttempted");
+[present,presenceKnown]=localPBCHFlag(trialT,"SignalPresent");
+if ismember("PresenceScoringStatus",vars)
+    presenceKnown=presenceKnown & string(trialT.PresenceScoringStatus)=="observed_executed_component_presence";
+end
+eligible=false(n,1); event=nan(n,1);
+definition="";
+if signal=="PUCCH"
+    [valid,validKnown]=localPBCHFlag(trialT,"DetectionMetricValid");
+    outcome=localPBCHText(trialT,"DetectionOutcome");
+    eligible=attemptKnown & attempted & presenceKnown & present & validKnown & valid & ...
+        ismember(outcome,["detected","dtx"]);
+    event(eligible)=double(outcome(eligible)=="dtx");
+    % CRC/content/semantic failure after a detected signal is not DTX.
+    definition="original signal-present PUCCH completed presence decision: dtx=1, detected=0; independent of UCI CRC/content acceptance";
+    for alias=["DTXFlag","ReceiverDTX"]
+        [dtx,known]=localPBCHFlag(trialT,alias);
+        check=eligible & known;
+        assert(all(double(dtx(check))==event(check)), ...
+            'sixgr:report:ConflictingControlDetectionEvidence','PUCCH presence outcome conflicts with original %s.',alias);
+    end
+else
+    % RNTI-masked CRC/context acceptance is command detection, not a
+    % separately measured signal-presence detector. Keep its metric distinct.
+    T=localMetricTableRow(cat,metric,"PDCCH_signal_presence","rate","not_available",NaN,"", ...
+        "fraction",source,"No independent PDCCH signal-presence detector contract retained. CRC/context/payload command outcomes are reported separately.");
+    metric.key="pdcch_missed_expected_dci_command";
+    metric.label="Missed expected PDCCH DCI command (original CRC/context/payload outcome)";
+    [usable,usableKnown]=localPBCHFlag(trialT,"DetectionUsable");
+    [detected,detectedKnown]=localPBCHFlag(trialT,"DetectionSuccess");
+    [crc,crcKnown]=localPBCHFlag(trialT,"DCICrcPass");
+    [match,matchKnown]=localPBCHFlag(trialT,"PDCCHPayloadMatch");
+    bits=localPBCHNumber(trialT,"PDCCHExpectedDCIBitCount");
+    compared=localPBCHNumber(trialT,"PDCCHDCIBitsCompared");
+    errors=localPBCHNumber(trialT,"PDCCHDCIBitErrors");
+    errFlag=localPBCHNumber(trialT,"PDCCHErrFlag");
+    available=localPBCHNumber(trialT,"PDCCHCandidatesAvailable");
+    searched=localPBCHNumber(trialT,"PDCCHCandidatesAttempted");
+    hypotheses=localPBCHNumber(trialT,"BlindDecodeCount");
+    expected=isfinite(bits) & bits>0 & bits==fix(bits) & compared==bits & ...
+        isfinite(errors) & errors>=0 & errors<=bits & errors==fix(errors);
+    % Completed comparison with original TX bits establishes the expected
+    % command, never a configured size alone. Explicit absent/unknown
+    % presence, when published, cannot be overridden by that comparison.
+    if ismember("SignalPresent",vars), expected=expected & presenceKnown & present; end
+    complete=isfinite(available) & available>=1 & available==fix(available) & ...
+        searched==available & isfinite(hypotheses) & hypotheses>=searched & hypotheses==fix(hypotheses);
+    eligible=attemptKnown & attempted & usableKnown & usable & detectedKnown & crcKnown & matchKnown & ...
+        expected & complete & isfinite(errFlag) & errFlag>=0 & errFlag==fix(errFlag);
+    assert(all(crc(eligible)==(errFlag(eligible)==0)) && ...
+        all(match(eligible)==(errors(eligible)==0)) && ~any(detected(eligible) & ~crc(eligible)), ...
+        'sixgr:report:ConflictingControlDetectionEvidence','Original PDCCH CRC/context/payload operands conflict.');
+    event(eligible)=double(~(crc(eligible) & detected(eligible) & match(eligible)));
+    definition="missed_expected_DCI_command: original expected payload not accepted by completed monitored CRC/context/payload search; not independent RF signal-presence miss";
+end
+fields=intersect(["RunId","RunID","ExecutionID","ConfigHash","SweepPointIndex","ConfiguredSNR_dB", ...
+    "Frame","Slot","UEID","UEIndex","ServingCell","ReceiverID","ObservationID", ...
+    "ObservationStartSample","ObservationEndSampleExclusive","ObservationSampleRateHz", ...
+    "ReceiverObservationSHA256","PresenceObservationID","PresenceScoringStatus","PresenceScoringSource", ...
+    "PresenceRXStartSample","PresenceRXEndSampleExclusive","PresenceSampleRateHz", ...
+    "SignalPresent","Status","Crash","DetectionAttempted","DetectionMetricValid","DetectionMetricSource", ...
+    "DetectionOutcome","DetectionUsable","DetectionSuccess","DTXFlag","ReceiverDTX", ...
+    "CRCApplicable","CRCPass","CRCOutcome","DCICrcPass","PDCCHPayloadMatch", ...
+    "PDCCHExpectedDCIBitCount","PDCCHDCIBitsCompared","PDCCHDCIBitErrors","PDCCHErrFlag", ...
+    "PDCCHCandidatesAvailable","PDCCHCandidatesAttempted","BlindDecodeCount", ...
+    "ReceiverPUCCHFormat","ReceiverPUCCHResourceId","ReceiverContextDigest","ReceiverAssignmentDigest"],vars,'stable');
+digest=""; path=fullfile(ctx.RunFolder,char(source));
+if isfile(path), digest=string(sixgr.util.sha256File(path)); end
+if ~any(eligible)
+    T=[T;localMetricTableRow(cat,metric,signal+"_receiver_outcomes","observation","not_available",NaN,"", ...
+        "indicator",source,"No eligible original expected-signal/completed-decision operands; missing or malformed evidence is not a miss or success. "+definition)];
+    return;
+end
+for r=find(eligible).'
+    population=struct('ContractVersion',"sixgr.report.original_control_detection_observation/v1", ...
+        'MetricKey',string(metric.key),'SourceArtifact',source,'SourceSHA256',digest, ...
+        'SourceRowCount',n,'SourceRowIndex',r,'IncludedSourceRows',r, ...
+        'ExcludedIneligibleSourceRows',find(~eligible).','OriginalOperandsJSON',localSCHProjection(trialT(r,:),fields), ...
+        'OutcomeDefinition',definition,'StatisticallyQualified',false,'StandardizedAccuracyQualified',false, ...
+        'PopulationScope',"one_original_receiver_observation_not_pooled_across_resources_or_operating_points");
+    token=string(jsonencode(sixgr.util.jsonSafeValue(population)));
+    row=localMetricTableRow(cat,metric,signal+"@source_row="+r,"observation","observed",event(r),"", ...
+        "indicator",source,definition+". Original per-observation indicator, not an independent-trial miss probability; generic Status/Crash does not supply an outcome.");
+    row.PopulationJSON=token; row.PopulationID=string(sixgr.util.sha256Hex(char(token)));
+    T=[T;row]; %#ok<AGROW>
+end
+end
+
 function T = localFailureRateRows(cat, metric, trialT, entity)
 T = localEmptyMetricTable();
 if ~(istable(trialT) && ~isempty(trialT) && ismember("Status", string(trialT.Properties.VariableNames)))
@@ -1632,7 +1728,11 @@ entity="SSB_receiver_detection";
 scopedEntities=["SSB_transmitted_detector","SSB_quiet_detector"];
 denominator="completed original PSS decision, and original SSS decision when PSS detected";
 numerator="original PSSDetected and SSSDetected";
-if key=="cell_id_detection_success"
+if key=="miss_detection_probability"
+    success=~p.Detected;
+    scopedEntities=["SSB_transmitted_miss_detection","SSB_quiet_non_detection"];
+    numerator="original completed PSS miss, or completed SSS miss following PSS detection";
+elseif key=="cell_id_detection_success"
     eligible=p.CellEligible; success=p.Detected & p.CellRecovered;
     entity="receiver_cell_id_recovery";
     scopedEntities=["transmitted_cell_id_recovery","quiet_cell_id_recovery"];
@@ -1669,7 +1769,13 @@ fields=["Frame","SFN","Slot","UEIndex","UEID","ServingCell","SSBIndex", ...
 path=fullfile(ctx.RunFolder,char(artifact)); digest="";
 if isfile(path), digest=string(sixgr.util.sha256File(path)); end
 T=localEmptyMetricTable();
-for populationIndex=1:3
+populationIndices=1:3;
+if key=="miss_detection_probability"
+    % Non-detection on a quiet search is not a missed transmitted signal.
+    % Unknown historical TX membership cannot establish this denominator.
+    populationIndices=2;
+end
+for populationIndex=populationIndices
     eligible=baseEligible; entity=baseEntity; scope="all_original_receiver_attempts_TX_membership_not_required";
     if populationIndex==2
         entity=scopedEntities(1); scope="original_declared_transmitted_candidates";
@@ -1726,6 +1832,15 @@ end
 function [value,known]=localPBCHFlag(T,field)
 raw=localPBCHNumber(T,field);
 known=isfinite(raw) & (raw==0 | raw==1); value=known & raw==1;
+end
+
+function value=localPBCHText(T,field)
+value=strings(height(T),1);
+if ~ismember(field,string(T.Properties.VariableNames)), return; end
+raw=T.(field);
+if (isstring(raw)||iscellstr(raw)) && isequal(size(raw),[height(T),1])
+    value=string(raw); value(ismissing(value))="";
+end
 end
 
 function value=localPBCHNumber(T,field)
@@ -2610,6 +2725,13 @@ isWindow=varName=="SSBWindowReferenceRSRQPerReceiveAntenna_dB";
 for row=1:height(pbch)
     raw=pbch.(varName)(row,:);
     if iscell(raw), raw=raw{1}; end
+    if isWindow && (isstring(raw) || (ischar(raw) && isrow(raw))) && ...
+            isscalar(string(raw)) && string(raw)=="not_applicable_for_active_pbch_runtime"
+        % fillBlankCategoricalColumns publishes this exact unavailable token
+        % for the original text-valued window RSRQ vector. It is not a zero,
+        % an empty measured branch, or permission to ignore malformed data.
+        continue;
+    end
     x=localSSBranchVector(raw);
     if ~any(isfinite(x)), continue; end
     identity=entity;

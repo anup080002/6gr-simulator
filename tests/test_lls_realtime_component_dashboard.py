@@ -690,7 +690,8 @@ def _evaluate_sync_projection(control, data):
     block = source.split("    const receiverFrequencyFields =", 1)[1].split("    const tableSpecs =", 1)[0]
     script = ("const recent = v => v || []; const controlPreviews=" + json.dumps(control) +
               "; const dataPreviews=" + json.dumps(data) +
-              "; const msg1Rows=[]; const receiverFrequencyFields =" + block +
+              "; " + next(line.strip() for line in source.splitlines() if line.strip().startswith("const ssbBeamRows =")) +
+              " const msg1Rows=[]; const receiverFrequencyFields =" + block +
               "console.log(JSON.stringify({dl:dlSynchronizationRows,ul:ulSynchronizationRows}));")
     result = subprocess.run([node, "-e", script], capture_output=True, text=True,
                             encoding="utf-8", check=True, timeout=15)
@@ -1084,7 +1085,8 @@ def test_initial_access_renderer_includes_msg1_before_completed_ra() -> None:
                                       "Strongest detected preamble": 0, "Status": "PASS"}])
     script = ("const recent = v => (v || []).slice(-8).reverse();\nconst controlPreviews=" +
               json.dumps(control) + ";\nconst procedurePreviews=" + json.dumps(procedure) +
-              ";\nconst initialAccessRows = [" + block + "\nconsole.log(JSON.stringify(initialAccessRows));")
+              ";\n" + next(line.strip() for line in source.splitlines() if line.strip().startswith("const ssbBeamRows =")) +
+              "\nconst initialAccessRows = [" + block + "\nconsole.log(JSON.stringify(initialAccessRows));")
     result = subprocess.run([node, "-e", script], capture_output=True, text=True,
                             encoding="utf-8", check=True, timeout=15)
     rows = json.loads(result.stdout)

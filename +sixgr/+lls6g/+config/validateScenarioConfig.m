@@ -26,6 +26,7 @@ switch kind
         % Optional [] is not an instruction to silently restore a decoder default.
         sixgr.lls6g.config.mergeLDPCPolicyAuthority(struct(),cfg);
         if ~logical(opt.AllowPartial)
+            sixgr.lls6g.config.resolveSSBPRACHAssociationConfig(cfg.random_access);
             localValidateLDPCSchedule(cfg);
             if isfield(cfg,'kpi_spec') && isfield(cfg.kpi_spec,'csi_selection_quality')
                 selectionPolicy=sixgr.lls6g.config.resolveCSISelectionQualityPolicy(cfg.kpi_spec.csi_selection_quality);

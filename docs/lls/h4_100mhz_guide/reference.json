@@ -1,7 +1,7 @@
 {
   "scope": "configuration_snapshot_not_simulation_result",
   "scenario": "simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_adaptation.yaml",
-  "created": "2026-10-25 06:06:54",
+  "created": "2026-10-25 19:02:50",
   "matlab": "26.1.0.3312084 (R2026a) Update 4",
   "sources": [
     {
@@ -26,7 +26,7 @@
     },
     {
       "path": "simulator/configs/defaults/global.yaml",
-      "sha256": "d1da0e249791f39ba5ad72fcbc9e945dd369e27857a83a49b8dc07bd4c383c92"
+      "sha256": "7e84a219296251996a32fac62983e21b86b22e36ec5c5a686ef6440b0d241165"
     },
     {
       "path": "simulator/configs/defaults/logging.yaml",
@@ -94,7 +94,7 @@
     },
     {
       "path": "simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd.yaml",
-      "sha256": "fa0f8581d5cae1793ea771c7b1fe0155ec9a1cf56af1743aaf4c6110ce42f165"
+      "sha256": "78de82bee1d5cd445248d43a0c6c647b5f965df0c68f513f61760f1b6c7168fd"
     },
     {
       "path": "simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd_short.yaml",
@@ -6410,6 +6410,10 @@
       "prach_sequence_family": "zadoff_chu_baseline",
       "preamble_length_mode": "short",
       "preamble_count": 64,
+      "ssb_per_rach_choice": "one",
+      "cb_preambles_per_ssb": 64,
+      "cb_preamble_selection_policy": "deterministic_per_ue",
+      "cb_preamble_offset": 0,
       "zero_correlation_zone": 8,
       "detection_threshold": 0.5,
       "detection_threshold_mode": "auto",
@@ -6786,16 +6790,18 @@
             "feature_authority": "sib1",
             "required": true,
             "consumer_source_files": [
-              "+sixgr/+phy/+broadcast/recoverSIB1FromWaveform.m"
+              "+sixgr/+phy/+broadcast/recoverSIB1UsingReceivedMIB.m"
             ],
-            "measurement_artifact": "air_interface/csv/pbch_trials.csv",
+            "measurement_artifact": "air_interface/csv/sib1_received_trials.csv",
             "measured_fields": [
-              "SIB1DCICrcPass",
-              "SIB1DLSCHCrcPass",
-              "SIB1ASN1DecodeOk"
+              "DCICrcPass",
+              "DLSCHCrcPass",
+              "SIB1ASN1DecodeOk",
+              "SIB1SemanticValid",
+              "Installed"
             ],
             "measurement_min_rows": 1,
-            "success_field": "SIB1StrictOk",
+            "success_field": "Installed",
             "success_mode": "any_true"
           },
           {
@@ -9043,5 +9049,5 @@
     "SlotsPerFrame": 20
   },
   "source_root": "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main",
-  "scenario_hash": "54119669a44a5549f0dfc6721e1a6aee275b88b4a13701a7a7d2b83102f9208e"
+  "scenario_hash": "78301725956f1cd27950504ce0971bc835baf555e5cddab4a815504a6af92b4c"
 }

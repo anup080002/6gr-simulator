@@ -5,6 +5,8 @@ sixgr.runtime.RuntimeCallLedger.record("sixgr.phy.ra.recoverRRCSetupComplete","R
 grant = tx.Grant;
 cfgRx = sixgr.phy.ra.localizeRAPUSCHConfig(cfg, raCfg, grant, ...
     raCfg.SetupCompleteSlot, "RRCSetupComplete");
+[rxWaveform,observationArgs,timingReceipt]=sixgr.phy.ra.resolveRAPUSCHObservation( ...
+    rxWaveform,tx.Carrier,tx.PUSCH,"RRCSetupComplete");
 % An earlier TA command or channel trim is not a receiver timing estimate.
 % Preserve PUSCH_Rx's explicit aligned-boundary bypass, otherwise acquire
 % residual arrival from this actual UL-DCCH DM-RS observation.
@@ -15,9 +17,10 @@ cfgRx = sixgr.phy.ra.localizeRAPUSCHConfig(cfg, raCfg, grant, ...
     "TargetCodeRate", double(grant.TargetCodeRate), ...
     "RV", double(grant.RV), ...
     "InitialIMCSPerCodeword", double(grant.MCS), ...
-    "ExecutionProfile", "ra_setup_complete");
+    "ExecutionProfile", "ra_setup_complete",observationArgs{:});
 rx = puschRx;
 rx.Info = info;
+if ~isempty(fieldnames(timingReceipt)), rx.ReceivedULTimingReceipt=timingReceipt; end
 if logical(puschRx.Ok)
     % The bounded message carries its length in the received bytes. The
     % parser consumes that message and ignores TB padding; UE TX bookkeeping
