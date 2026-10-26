@@ -1,7 +1,8 @@
 contract: sixgr.n40.integration_gate/v1
 # Implementation acceptance, not a 3GPP conformance or BLER qualification.
-completed_slots: 65
+completed_slots: 60
 checkpoint_slot: 60
+continuation_start_slot: 55
 sweep_labels: [reference_esn0_20_db, reference_esn0_0_db]
 sweep_snr_db: [20, 0]
 manifest_true_fields: [RunCompleted, ResultOk, RuntimeTruthContractOk, ScenarioObjectiveOk, PublicationQualified]

@@ -1,0 +1,20 @@
+inherits:
+  - ./lls_tdd_5mhz_rank2_4tx2rx_awgn_m10db.yaml
+
+meta:
+  scenario_id: lls_trs_static_awgn_pilot_publication_fixture
+  description: Bounded four-transmit two-receive static AWGN TRS pilot-power publication fixture at minus 10 dB.
+  purpose: Verify finite received-pilot LS power publication on an explicitly eligible static operator; no fading or full-scenario qualification.
+  research_class: optional_research_experiment
+
+channels:
+  # Declare the static component before waveform execution. The inherited
+  # production scenario keeps its piecewise beam-failure/recovery operator.
+  awgn_beam_failure_recovery_enabled: false
+
+reference_signals:
+  trs:
+    runtime_channel_estimator: flat_static_awgn_ls
+
+output:
+  profile: lls_trs_static_awgn_pilot_publication_fixture

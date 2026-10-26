@@ -34,6 +34,9 @@ base = localBaseState(cfg, direction);
 adaptationState = localInitAdaptationState(cfg, direction, opt.AdaptationState);
 stateBeforeQuality = adaptationState;
 spatialUpdateAllowed = logical(sixgr.util.structGet(metrics, "SpatialUpdateAllowed", true));
+spatialOnly = logical(sixgr.util.structGet(metrics, "SpatialOnly", false));
+assert(~spatialOnly || (direction=="UL" && spatialUpdateAllowed), ...
+    'sixgr:link:InvalidSpatialOnlyDecision','Spatial-only delivery requires UL spatial authority.');
 qualityKey = string(sixgr.util.structGet(metrics, "QualityOperatingPointKey", ""));
 adaptationDomain = sixgr.link.resolveLinkAdaptationDomain(cfg, direction);
 [ackKnown, ackObserved, ackSource] = localResolveAckOutcome(metrics);
@@ -178,7 +181,7 @@ if ~decision.CausalFeedbackUsable
     decision.Reason = "stale_or_unusable_csi_feedback";
     return;
 end
-if strlength(qualityKey) > 0 && ...
+if ~spatialOnly && strlength(qualityKey) > 0 && ...
         qualityKey ~= string(sixgr.util.structGet(adaptationState,"QualityOperatingPointKey",""))
     adaptationState.Initialized = false;
     adaptationState.SmoothedCQI = NaN;
@@ -192,7 +195,7 @@ if strlength(qualityKey) > 0 && ...
     adaptationState.QualityOperatingPointKey = qualityKey;
 end
 
-if localPolicyEnabled(policy)
+if ~spatialOnly && localPolicyEnabled(policy)
     % TS 38.214 CQI index 0 explicitly reports that the channel is out of
     % range.  It is feedback, not a schedulable minimum-MCS operating
     % point.  Fail closed before either ILLA smoothing or OLLA ACK/NACK
@@ -364,7 +367,21 @@ if strlength(qualityKey) > 0 && ...
     decision.OLLAUpdateAppliedAtThisEvent = false;
 end
 
+if spatialOnly
+    % RI/TPMI admission is independent of an absolute data CQI. Never
+    % initialize or refresh quality from this spatial observation.
+    decision.MCSUpdated = false;
+    decision.MCSIndex = NaN;
+    decision.TargetCodeRate = NaN;
+    decision.Modulation = "";
+    decision.ResolvedCQI = NaN;
+end
 decision.Valid = logical(decision.MCSUpdated || decision.RankUpdated || decision.PMIUpdated || decision.CRIUpdated);
+if spatialOnly && isfinite(decision.RI) && isfinite(decision.PMI) && ...
+        decision.RI==decision.NumLayers && ...
+        ~any(string(decision.RankUpdateStatus)==["pending_increase_confirmation","held_missing_atomic_pmi"])
+    decision.Valid = true;
+end
 if decision.Valid
     decision.Reason = "adaptation_scheduled";
 else

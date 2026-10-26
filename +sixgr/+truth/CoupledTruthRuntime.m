@@ -4655,6 +4655,11 @@ methods(Static, Access=private)
         end
         if ~isRetx && tbsBits > 0
             state = sixgr.truth.CoupledTruthRuntime.reserveGrantBits(state, ueIdx, direction, tbsBits, grant);
+            servingCell=double(sixgr.util.structGet(grant,'ServingCell',NaN));
+            if isfinite(servingCell)
+                owner=sixgr.truth.CoupledTruthRuntime.schedulerForDirection(state,direction,servingCell);
+                if ~isempty(owner), owner.commitMCSTransition(grant); end
+            end
         end
 
         if direction == "UL"
@@ -8126,7 +8131,9 @@ methods(Static, Access=private)
         % finite CQI-based operating point to adjust.  OLLA is deliberately
         % not updated here; only decoded HARQ feedback owns that transition.
         srsAdaptationApplied = false;
-        if srsDataMCSUsable || srsDataOutOfRange
+        spatialOnly = ~srsDataMCSUsable && ~srsDataOutOfRange;
+        if srsDataMCSUsable || srsDataOutOfRange || ...
+                (isfinite(ri) && isfinite(sixgr.truth.CoupledTruthRuntime.sanitizeFeedbackPMI(tpmi,state.CfgMobility,"UL",ri)))
             servingCellForAdaptation = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
                 ["ServingCell","BaseStationID","CellID"], ...
                 double(sixgr.util.structGet(latest, "ServingCell", NaN)));
@@ -8139,6 +8146,11 @@ methods(Static, Access=private)
             % occasion; DueSlot/DeliveredSlot identify when its completed
             % observation may causally affect a later PUSCH grant.
             srsReport.DeliveredSlot = double(availableSlot);
+            srsReport.SpatialOnly = spatialOnly;
+            if spatialOnly
+                srsReport.CQI=NaN;
+                srsReport.SINR_dB=NaN;
+            end
             [state, srsReport] = sixgr.truth.CoupledTruthRuntime. ...
                 applyLinkAdaptationToCSIReport(state, srsReport, ueIdx, "UL", row);
             if srsReport.SchedulerSpatialDecisionDeferred
@@ -8158,6 +8170,21 @@ methods(Static, Access=private)
         protectDataMCS = ~srsDataMCSUsable || ...
             sixgr.truth.CoupledTruthRuntime.shouldPreserveRecentULDataMCS( ...
             latest, schedMCSIndex, availableSlot, state.CfgMobility, ri, tpmi);
+        if spatialOnly && ~(isequaln(latest.RI,ri) && isequaln(latest.PMI,tpmi)) && ...
+                ~(isfinite(latest.CQI) && latest.CQI==0)
+            % A quality decision belongs to its executed spatial point.
+            % Keep a measured outage blocked; otherwise return new spatial
+            % points to quality bootstrap until their own PUSCH is received.
+            latest.Valid=false;
+            latest.CQI=NaN;
+            latest.MCSIndex=NaN;
+            latest.LinkAdaptationMCSIndex=NaN;
+            latest.CQIBasedMCS=NaN;
+            latest.Modulation="";
+            latest.TargetCodeRate=NaN;
+            latest.QualityMeasurementSourceSlot=NaN;
+            latest.QualityMeasurementDeliveredSlot=NaN;
+        end
         % PendingCSITable contains reports that have not reached their
         % consumer. Their values must not select or suppress an active MCS.
         % ILLA may observe new SRS, but a retained PUSCH decision keeps its
@@ -10748,6 +10775,10 @@ methods(Static, Access=private)
 
     function row = buildGrantTraceRow(state, grant, direction, slotIdx, frameIdx, ueIdx, feedback)
         row = sixgr.truth.CoupledTruthRuntime.emptyGrantRow();
+        transitionEvidence=sixgr.truth.projectMCSTransitionEvidence(grant);
+        for name=string(fieldnames(transitionEvidence)).'
+            row.(name)=transitionEvidence.(name);
+        end
         srsEvidence=sixgr.truth.projectAcceptedSRSDecisionEvidence(grant);
         for name=string(fieldnames(srsEvidence)).'
             row.(name)=srsEvidence.(name);
@@ -11136,6 +11167,13 @@ methods(Static, Access=private)
             "SourceSlot", double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "SourceSlot", NaN)), ...
             "OLLAStateAuthority", char(ollaAuthority));
         scheduler.updateAfterRx(rxFeedback);
+        transitionFeedback=rxFeedback;
+        transitionFeedback.Direction=char(upper(string(direction)));
+        transitionFeedback.ServingCell=servingCell;
+        transitionFeedback.DeliveredSlot=double(sixgr.truth.CoupledTruthRuntime.rowValue( ...
+            row,'DeliveredSlot',sixgr.util.structGet(state,'CurrentSlot',NaN)));
+        transitionFeedback.CurrentSlot=double(sixgr.util.structGet(state,'CurrentSlot',NaN));
+        scheduler.observeMCSTransitionFeedback(transitionFeedback);
     end
 
     function [state, authority] = updateReceiverOwnedOLLAAfterFeedback(state, row, direction)
@@ -11632,6 +11670,14 @@ methods(Static, Access=private)
             grant.OLLAState = "configured_waiting_for_ack_feedback";
         else
             grant.OLLAState = "disabled";
+        end
+
+        % Runtime measured AMC can replace the scheduler's earlier target.
+        % Reapply the same pure bound before rebuilding TBS and packing DCI.
+        if ~isempty(scheduler)
+            grant=scheduler.previewMCSTransition(grant);
+            modStr=char(string(grant.Modulation));
+            targetCodeRate=double(grant.TargetCodeRate);
         end
 
         prbSet = double(sixgr.util.structGet(grant, "PRBSet", []));
@@ -12359,7 +12405,10 @@ methods(Static, Access=private)
         if ~sixgr.truth.CoupledTruthRuntime.schedulerUsesCQITableForDirection(state.CfgMobility, direction)
             return;
         end
-        if ~(isfinite(report.CQI) && report.CQI >= 0)
+        spatialOnly = direction=="UL" && ...
+            string(sixgr.util.structGet(report,'SourceSignal',""))=="SRS" && ...
+            logical(sixgr.util.structGet(report,'SpatialOnly',false));
+        if ~spatialOnly && ~(isfinite(report.CQI) && report.CQI >= 0)
             report.MCSSelectionSource = "missing_runtime_cqi";
             report.MCSValueStatus = "unavailable_missing_runtime_cqi";
             return;
@@ -12481,6 +12530,7 @@ methods(Static, Access=private)
         metrics.FeedbackEventType = "csi_measurement_delivery";
         metrics.AllowOLLAUpdate = false;
         metrics.SpatialUpdateAllowed = ~qualityOnly;
+        metrics.SpatialOnly = spatialOnly;
         % CSI-RS/SRS CQI describes the reported spatial hypothesis. PUSCH
         % DM-RS measures only its executed point. Do not mix a candidate
         % rank's CQI into an unconfirmed old rank's temporal filter, or keep
@@ -12531,7 +12581,9 @@ methods(Static, Access=private)
         nextState.(sourceClockField)=sourceSlot;
         nextState.(deliveryClockField)=feedbackAbsoluteSlot;
         nextState.(identityField)=[receivedIdentities(:);identity];
-        nextState.CSIAdaptationOutageRecoveryPending=logical(decision.CQIOutageRecoveryPending);
+        if ~spatialOnly
+            nextState.CSIAdaptationOutageRecoveryPending=logical(decision.CQIOutageRecoveryPending);
+        end
         report.AdaptationDeliveryStatus="accepted_new_feedback_delivery";
         report.RankUpdateStatus = string(decision.RankUpdateStatus);
         report.RankIncreaseConfirmationCount = double(decision.RankIncreaseConfirmationCount);
@@ -12539,6 +12591,9 @@ methods(Static, Access=private)
         report.SchedulerSpatialDecisionDeferred = ...
             any(report.RankUpdateStatus==["held_fixed_rank_feedback_mismatch", ...
             "pending_increase_confirmation","held_missing_atomic_pmi"]);
+        if spatialOnly && ~decision.Valid
+            report.SchedulerSpatialDecisionDeferred=true;
+        end
         if ~isfinite(acceptedRank)
             acceptedRank = double(decision.NumLayers);
         end
@@ -12554,7 +12609,7 @@ methods(Static, Access=private)
                 nextState.SpatialDecisionSourceSlot = sourceSlot;
                 nextState.SpatialDecisionDeliveredSlot = feedbackAbsoluteSlot;
             end
-            if ~report.SchedulerSpatialDecisionDeferred && ...
+            if ~spatialOnly && ~report.SchedulerSpatialDecisionDeferred && ...
                     (decision.Valid || string(decision.Reason)=="measured_cqi_zero_out_of_range")
                 nextState.QualityMeasurementSourceSlot = sourceSlot;
                 nextState.QualityMeasurementDeliveredSlot = feedbackAbsoluteSlot;
@@ -12674,6 +12729,17 @@ methods(Static, Access=private)
             return;
         end
 
+        if spatialOnly
+            report.CQI=NaN;
+            report.SchedulerResolvedCQI=NaN;
+            report.MCSIndex=NaN;
+            report.LinkAdaptationMCSIndex=NaN;
+            report.TargetCodeRate=NaN;
+            report.Modulation="";
+            report.MCSSelectionSource="measured_spatial_only_srs";
+            report.MCSValueStatus="unavailable_power_plane_calibrated_pusch_prediction";
+            return;
+        end
         if decisionValid && ...
                 isfinite(double(sixgr.util.structGet(decision, "MCSIndex", NaN)))
             decisionMCS = double(decision.MCSIndex);
@@ -19476,6 +19542,10 @@ methods(Static, Access=private)
             "LastSuccessfulTRSSlot", NaN, "LastEstimatedTRSDopplerHz", NaN, ...
             "TRSStateSource", "", "TRSRuntimeConsumer", "", "TRSInfluencedDecision", false, ...
             "TRSInfluenceDefinition", "", "TRSReceiverIntegrationStatus", "", "TRSReceiverIntegrationBlocker", "");
+        transitionEvidence=sixgr.truth.projectMCSTransitionEvidence();
+        for name=string(fieldnames(transitionEvidence)).'
+            row.(name)=transitionEvidence.(name);
+        end
         srsEvidence=sixgr.truth.projectAcceptedSRSDecisionEvidence();
         for name=string(fieldnames(srsEvidence)).'
             row.(name)=srsEvidence.(name);

@@ -12,8 +12,12 @@ end
 c=sixgr.lls6g.config.readConfigFile(options.CriteriaPath);
 assert(string(c.contract)=="sixgr.n40.integration_gate/v1", ...
     'sixgr:validation:N40GateCriteria','Unknown integration criteria contract.');
+window=double([c.continuation_start_slot c.checkpoint_slot c.completed_slots]);
+assert(all(isfinite(window))&&all(window==fix(window))&&window(1)>0&& ...
+    window(1)<window(2)&&window(2)==window(3), ...
+    'sixgr:validation:N40GateCriteria','Require an earlier continuation checkpoint and the terminal required checkpoint.');
 root=string(runFolder); rows=repmat(emptyCheck(),0,1); radio=table(); children={};
-identity=struct(); checkpoint=struct();
+identity=struct(); checkpoint=struct(); resumeCheckpoint=struct();
 summaryPath=fullfile(root,'reports','csv','sweep_summary.csv');
 if isfile(summaryPath) || isfolder(fullfile(root,'sweeps'))
     attempt('sweep_children','identity',summaryPath,@sweepChildren);
@@ -35,6 +39,7 @@ else
     attempt('received_csi','causality',fullfile(root,'control','csv','received_csi_reports.csv'),@receivedCSI);
     attempt('completed_csi_application','causality',fullfile(root,'air_interface','csv','dl_pdsch_trials.csv'),@csiApplication);
     attempt('accepted_srs_application','causality',fullfile(root,'packet_flow','csv','live_ul_scheduler_grants.csv'),@srsApplication);
+    attempt('executed_mcs_transitions','causality',fullfile(root,'air_interface','csv'),@executedMCSTransitions);
     attempt('checkpoint60','checkpoint',fullfile(root,'meta','latest_slot_checkpoint.json'),@checkpoint60);
     attempt('final_manifest','publication',fullfile(root,'meta','scenario_manifest.json'),@finalManifest);
     attempt('final_status_mirrors','publication',fullfile(root,'reports','csv','result_status_summary.csv'),@statusMirrors);
@@ -371,24 +376,154 @@ out.FinalAccepted=out.Ok && options.RequireContinuation;
         require(joined>0,'MissingCoverage','No retained accepted SRS decision joins an executed PUSCH receiver attempt.');
         detail="Accepted SRS decisions joined to completed PUSCH trials: "+joined;
     end
+    function detail=executedMCSTransitions()
+        config=readJSON(fullfile(root,'meta','scenario_config_resolved.json'));
+        policy=sixgr.util.structGet(config,'link_adaptation.mcs_transition',struct());
+        require(truth(field(policy,'enabled',false)),'Coverage', ...
+            'Selected n40 acceptance requires the configured MCS transition policy.');
+        defaults=sixgr.config.defaultConfig();
+        bootstrap=double(sixgr.util.structGet(config,'link_adaptation.bootstrap_mcs_index', ...
+            sixgr.util.structGet(config,'link_adaptation.bootstrapMCSIndex', ...
+            defaults.phy.linkAdaptation.bootstrapMCSIndex)));
+        slotSeconds=double(sixgr.util.structGet(config,'frame_timing.slot_duration_ms',NaN))/1000;
+        require(isscalar(bootstrap)&&isfinite(bootstrap)&&bootstrap>=0&&bootstrap==fix(bootstrap)&& ...
+            isscalar(slotSeconds)&&isfinite(slotSeconds)&&slotSeconds>0, ...
+            'Causality','Require the configured bootstrap MCS and canonical slot duration.');
+        count=0;
+        for direction=["DL","UL"]
+            file="dl_pdsch_trials.csv";
+            if direction=="UL", file="ul_pusch_trials.csv"; end
+            T=readCSV(fullfile(root,'air_interface','csv',file));
+            need(T,["Slot","RNTI","ServingCell","GrantContextId","HarqID","MCSIndex","IsRetransmission", ...
+                "MCSTransitionReceiptJSON","MCSTransitionReceiptSHA256","MCSTransitionAppliedMCS"]);
+            checkIdentity(T);
+            chosen=find(num(T.IsRetransmission)==0);
+            require(~isempty(chosen),'MissingCoverage','No executed new-data MCS policy evidence.');
+            [~,order]=sort(num(T.Slot(chosen))); chosen=chosen(order);
+            records=struct('ID',{},'Scope',{},'Point',{},'MCS',{},'Generation',{},'Slot',{},'PID',{},'Context',{},'Row',{});
+            feedbackPath=fullfile(root,'control','csv','gnb_harq_feedback_observations.csv');
+            if direction=="UL", feedbackPath=fullfile(root,'harq','csv','runtime_harq_process_timeline.csv'); end
+            feedback=table();
+            if isfile(feedbackPath), feedback=readCSV(feedbackPath); end
+            for j=chosen.'
+                token=string(T.MCSTransitionReceiptJSON(j));
+                require(textPresent(token)&&jsonHash(token)==string(T.MCSTransitionReceiptSHA256(j)), ...
+                    'Identity','Executed MCS transition receipt is missing or corrupt.');
+                e=jsondecode(token);
+                require(truth(e.Enabled)&&string(e.Direction)==direction && ...
+                    sameFinite(e.DataSlot,T.Slot(j))&&sameFinite(e.RNTI,T.RNTI(j))&& ...
+                    sameFinite(e.ServingCell,T.ServingCell(j))&& ...
+                    string(e.GrantContextId)==string(T.GrantContextId(j)) && ...
+                    sameFinite(e.AppliedMCS,T.MCSIndex(j))&&sameFinite(e.AppliedMCS,T.MCSTransitionAppliedMCS(j)), ...
+                    'Identity','MCS receipt does not belong to the original executed grant.');
+                require(sameFinite(e.MaxUpStep,policy.max_up_step)&& ...
+                    sameFinite(e.MaxDownStep,policy.max_down_step)&& ...
+                    sameFinite(e.RequiredACKCount,policy.increase_ack_count), ...
+                    'Identity','Executed MCS policy differs from resolved configuration.');
+                operands=[e.RawTargetMCS e.EffectivePreviousMCS e.PolicySelectedMCS e.AppliedMCS e.ACKCount e.NACKCount];
+                require(all(isfinite(operands)&operands>=0&operands==fix(operands)) && ...
+                    isfinite(e.DecisionSlot)&&e.DecisionSlot>=1&&e.DecisionSlot==fix(e.DecisionSlot)&& ...
+                    e.DecisionSlot<=e.DataSlot && textPresent(e.RawTargetAuthority), ...
+                    'Causality','MCS transition has unavailable operands or an invalid decision clock.');
+                scope=direction+"|cell="+string(e.ServingCell)+"|rnti="+string(e.RNTI);
+                require(string(e.ScopeKey)==scope&&textPresent(e.SpatialPoint),'Identity', ...
+                    'MCS receipt has a different scope or missing spatial operating point.');
+                previous=find(string({records.Scope})==scope,1,'last');
+                previousMCS=bootstrap; generation=0;
+                if isempty(previous)
+                    require(mcsGateNullNumber(e.PreviousCommittedMCS),'Identity', ...
+                        'The first executed transmission cannot claim a prior committed MCS.');
+                else
+                    previousMCS=records(previous).MCS; generation=records(previous).Generation;
+                    require(sameFinite(e.PreviousCommittedMCS,previousMCS)&& ...
+                        records(previous).Slot<=e.DecisionSlot,'Causality', ...
+                        'The MCS anchor differs from the preceding actual committed transmission.');
+                end
+                require(sameFinite(e.EffectivePreviousMCS,previousMCS)&& ...
+                    sameFinite(e.OperatingPointGeneration,generation),'Identity', ...
+                    'MCS anchor/generation was not derived from the actual transmitted history.');
+                require(numel(unique(string(e.ACKIdentities)))==e.ACKCount&& ...
+                    numel(unique(string(e.NACKIdentities)))==e.NACKCount, ...
+                    'Identity','MCS feedback counts differ from retained used identities.');
+                require(isempty(intersect(string(e.ACKIdentities),string(e.NACKIdentities))), ...
+                    'Identity','One feedback event cannot be both ACK and NACK.');
+                for outcome=["ACK","NACK"]
+                    used=string(e.(outcome+"Identities"));
+                    for id=reshape(used,1,[])
+                        source=find(string({records.ID})==id);
+                        require(numel(source)==1,'Identity','Used MCS feedback has no unique original executed transmission.');
+                        source=records(source);
+                        require(source.Scope==scope&&source.Point==string(e.SpatialPoint)&& ...
+                            source.MCS==previousMCS&&source.Generation==generation, ...
+                            'Causality','Used feedback belongs to a different spatial point, MCS or transmission generation.');
+                        mcsGateFeedback(feedback,T,source,direction,outcome,e.DecisionSlot,slotSeconds);
+                    end
+                end
+                require(e.PolicySelectedMCS<=e.RawTargetMCS && e.AppliedMCS<=e.PolicySelectedMCS && ...
+                    truth(e.FinalCapacityReduction)==(e.AppliedMCS<e.PolicySelectedMCS), ...
+                    'Identity','Final MCS exceeds its policy/capacity ceiling.');
+                if e.PolicySelectedMCS>e.EffectivePreviousMCS
+                    require(e.PolicySelectedMCS-e.EffectivePreviousMCS<=e.MaxUpStep && ...
+                        e.ACKCount>=e.RequiredACKCount&&e.NACKCount==0 && ...
+                        string(e.Reason)=="received_ACK_confirmed_up_step", ...
+                        'Causality','MCS increase lacks bounded, confirmed received feedback.');
+                end
+                if e.NACKCount>0
+                    require(e.PolicySelectedMCS<=min(e.RawTargetMCS,max(0,e.EffectivePreviousMCS-e.MaxDownStep)), ...
+                        'Causality','Received NACK did not reduce the admissible new-data MCS.');
+                end
+                pid=num(T.HarqID(j));
+                require(isscalar(pid)&&isfinite(pid)&&pid>=0&&pid==fix(pid),'Identity', ...
+                    'Executed MCS evidence requires the original HARQ process.');
+                id=scope+"|slot="+string(e.DataSlot)+"|pid="+string(pid);
+                require(~any(string({records.ID})==id),'Identity','Duplicate executed new-data MCS identity.');
+                if isempty(previous)||records(previous).Point~=string(e.SpatialPoint)||previousMCS~=e.AppliedMCS
+                    generation=generation+1;
+                end
+                records(end+1)=struct('ID',id,'Scope',scope,'Point',string(e.SpatialPoint), ...
+                    'MCS',e.AppliedMCS,'Generation',generation,'Slot',e.DataSlot,'PID',pid, ...
+                    'Context',string(e.GrantContextId),'Row',j); %#ok<AGROW>
+                count=count+1;
+            end
+        end
+        detail="Original executed MCS transition receipts verified: "+count;
+    end
     function detail=checkpoint60()
         base=sixgr.runtime.SlotCheckpoint.storageRoot(root);
-        entries=dir(fullfile(base,sprintf('after_slot_%06d_*',c.checkpoint_slot)));
-        entries=entries([entries.isdir]);
-        require(numel(entries)==1,'MissingCheckpoint','Require exactly one retained checkpoint60 generation.');
-        path=fullfile(entries(1).folder,entries(1).name,'state.mat');
-        checkpoint=readJSON(fullfile(fileparts(path),'checkpoint.json'));
-        require(checkpoint.CompletedSlotOneBased==c.checkpoint_slot && checkpoint.NextSlotOneBased==c.checkpoint_slot+1 && ...
-            string(checkpoint.Status)=="complete",'Coverage','Require the actual completed-slot60/next61 checkpoint.');
-        verifyFile(path,checkpoint.StateSHA256);
-        verifyFile(fullfile(fileparts(path),checkpoint.ScientificScenarioFile),checkpoint.ScientificScenarioSHA256);
-        require(canonical(checkpoint.RunFolder)==canonical(root),'Identity','Checkpoint belongs to another child.');
-        repo=fileparts(fileparts(fileparts(mfilename('fullpath'))));
-        require(~isempty(checkpoint.Source.Files),'MissingSource','Checkpoint source inventory is absent.');
-        for j=1:numel(checkpoint.Source.Files)
-            verifyFile(fullfile(repo,checkpoint.Source.Files(j).Path),checkpoint.Source.Files(j).SHA256);
+        latest=readJSON(fullfile(root,'meta','latest_slot_checkpoint.json'));
+        require(latest.CompletedSlotOneBased==c.checkpoint_slot && latest.NextSlotOneBased==c.checkpoint_slot+1, ...
+            'Coverage','The current child must retain its actual terminal checkpoint pointer.');
+        % Original and resumed terminal generations coexist. The restored
+        % child pointer, not directory order, owns the current endpoint.
+        checkpoint=verifyCheckpoint(base,c.checkpoint_slot,string(latest.Checkpoint));
+        resumeCheckpoint=verifyCheckpoint(base,c.continuation_start_slot,"");
+        require(string(checkpoint.Source.SHA256)==string(resumeCheckpoint.Source.SHA256), ...
+            'Identity','Continuation and terminal checkpoints have different source inventories.');
+        detail="Original continuation and selected terminal checkpoint payload/config/source bytes verified.";
+    end
+    function record=verifyCheckpoint(base,slot,selected)
+        entries=dir(fullfile(base,sprintf('after_slot_%06d_*',slot),'checkpoint.json'));
+        paths=strings(numel(entries),1);
+        for j=1:numel(entries), paths(j)=canonical(fullfile(entries(j).folder,'state.mat')); end
+        if strlength(selected)>0
+            hit=paths==canonical(selected);
+            require(nnz(hit)==1,'Identity','Terminal pointer must select one retained checkpoint of the required slot.');
+            path=paths(hit);
+        else
+            require(numel(paths)==1,'MissingCheckpoint','Require exactly one original continuation checkpoint.');
+            path=paths(1);
         end
-        detail="Checkpoint payload/config/source bytes verified; native state equivalence requires continuation comparison.";
+        record=readJSON(fullfile(fileparts(path),'checkpoint.json'));
+        require(record.CompletedSlotOneBased==slot && record.NextSlotOneBased==slot+1 && ...
+            string(record.Status)=="complete",'Coverage','Checkpoint receipt has the wrong completed/next slot or status.');
+        verifyFile(path,record.StateSHA256);
+        verifyFile(fullfile(fileparts(path),record.ScientificScenarioFile),record.ScientificScenarioSHA256);
+        require(canonical(record.RunFolder)==canonical(root),'Identity','Checkpoint belongs to another child.');
+        repo=fileparts(fileparts(fileparts(mfilename('fullpath'))));
+        require(~isempty(record.Source.Files),'MissingSource','Checkpoint source inventory is absent.');
+        for j=1:numel(record.Source.Files)
+            verifyFile(fullfile(repo,record.Source.Files(j).Path),record.Source.Files(j).SHA256);
+        end
     end
     function detail=finalManifest()
         M=readJSON(fullfile(root,'meta','scenario_manifest.json'));
@@ -441,10 +576,10 @@ out.FinalAccepted=out.Ok && options.RequireContinuation;
             require(string(field(M,name,""))==string(field(identity,name,"")) && textPresent(field(M,name,"")), ...
                 'Identity',"Continuation identity differs: "+name);
         end
-        require(M.CheckpointSlot==c.checkpoint_slot && M.NextSlot==c.checkpoint_slot+1 && M.FinalCompletedSlot==c.completed_slots, ...
-            'Coverage','Continuation did not cross the requested60-to65 boundary.');
-        require(string(M.CheckpointStateSHA256)==string(field(checkpoint,'StateSHA256',"")) && ...
-            string(M.SourceSHA256)==string(field(field(checkpoint,'Source',struct()),'SHA256',"")), ...
+        require(M.CheckpointSlot==c.continuation_start_slot && M.NextSlot==c.continuation_start_slot+1 && M.FinalCompletedSlot==c.completed_slots, ...
+            'Coverage','Continuation did not cross the configured checkpoint-to-terminal boundary.');
+        require(string(M.CheckpointStateSHA256)==string(field(resumeCheckpoint,'StateSHA256',"")) && ...
+            string(M.SourceSHA256)==string(field(field(resumeCheckpoint,'Source',struct()),'SHA256',"")), ...
             'Identity','Continuation checkpoint/source differs.');
         verifyFile(M.ChecksPath,M.ChecksSHA256); verifyFile(M.BaselineInventoryPath,M.BaselineInventorySHA256);
         verifyFile(M.ResumedAcceptancePath,M.ResumedAcceptanceSHA256);
@@ -461,6 +596,62 @@ out.FinalAccepted=out.Ok && options.RequireContinuation;
             require(textPresent(expected)&&all(string(T.(name))==expected),'Identity',"Primary rows disagree on "+name);
         end
     end
+end
+
+function mcsGateFeedback(F,T,source,direction,outcome,decisionSlot,slotSeconds)
+% Join an original policy credit to receiver evidence. DL observes decoded
+% UCI, which need not equal the hidden PDSCH CRC; UL uses the gNB decoder.
+require(~isempty(F),'MissingEvidence','Used MCS feedback has no retained receiver evidence.');
+decisionSeconds=(decisionSlot-1)*slotSeconds;
+if direction=="DL"
+    need(F,["SourceSlot","RNTI","ServingCell","HarqID","PHYGrantContextId", ...
+        "FeedbackOutcome","HARQFeedbackApplied","ReceiverUsable","StaleFeedbackIgnored", ...
+        "DecodeAttempted","ReceiverExecutionStatus","IsRetransmission","DueSlot", ...
+        "Slot","AvailableAtSample","ObservationSampleRateHz"]);
+    hit=num(F.SourceSlot)==source.Slot & num(F.RNTI)==num(T.RNTI(source.Row)) & ...
+        num(F.ServingCell)==num(T.ServingCell(source.Row)) & num(F.HarqID)==source.PID & ...
+        string(F.PHYGrantContextId)==source.Context;
+    require(nnz(hit)==1,'Identity','Used DL MCS feedback does not join one original received UCI outcome.');
+    r=F(hit,:);
+    require(string(r.FeedbackOutcome)==outcome&&num(r.HARQFeedbackApplied)==1&& ...
+        num(r.ReceiverUsable)==1&&num(r.StaleFeedbackIgnored)==0&& ...
+        num(r.DecodeAttempted)==1&&string(r.ReceiverExecutionStatus)=="executed"&& ...
+        num(r.IsRetransmission)==0,'Causality', ...
+        'Used DL MCS feedback was not the applied, usable original receiver outcome.');
+    available=num(r.AvailableAtSample); fs=num(r.ObservationSampleRateHz);
+    due=num(r.DueSlot); delivered=num(r.Slot);
+    require(isfinite(due)&&isfinite(delivered)&&source.Slot<=due&&due<=delivered&& ...
+        delivered<=decisionSlot,'Causality','DL MCS feedback was not due/delivered before its control decision.');
+else
+    need(T,["CRCPass","HARQFeedbackDueSlot","DataDecodeAvailableAtSample","DataReceiveSampleRateHz"]);
+    need(F,["Direction","RNTI","Slot","HarqID","PHYGrantContextId","IsRetransmission", ...
+        "CurrentDecodeOK","FeedbackDueSlot","DataDecodeAvailableAtSample", ...
+        "DataReceiveSampleRateHz","FeedbackMechanism","FeedbackEvidenceSource"]);
+    hit=string(F.Direction)=="UL" & num(F.Slot)==source.Slot & ...
+        num(F.RNTI)==num(T.RNTI(source.Row)) & num(F.HarqID)==source.PID & ...
+        string(F.PHYGrantContextId)==source.Context;
+    require(nnz(hit)==1,'Identity','Used UL MCS feedback does not join one original PUSCH decoder attempt.');
+    r=F(hit,:); crc=num(T.CRCPass(source.Row));
+    require(any(crc==[0 1])&&num(r.CurrentDecodeOK)==crc&& ...
+        (outcome=="ACK")==logical(crc)&&num(r.IsRetransmission)==0&& ...
+        string(r.FeedbackMechanism)=="gnb_pusch_decoder"&& ...
+        string(r.FeedbackEvidenceSource)=="same_waveform_pusch_rx_crc", ...
+        'Causality','Used UL MCS outcome differs from the actual gNB PUSCH decoder.');
+    available=num(r.DataDecodeAvailableAtSample); fs=num(r.DataReceiveSampleRateHz);
+    due=num(r.FeedbackDueSlot);
+    require(sameFinite(available,num(T.DataDecodeAvailableAtSample(source.Row)))&& ...
+        sameFinite(fs,num(T.DataReceiveSampleRateHz(source.Row)))&& ...
+        sameFinite(due,num(T.HARQFeedbackDueSlot(source.Row)))&& ...
+        source.Slot<=due&&due<=decisionSlot,'Causality', ...
+        'Used UL decoder feedback was not available at its original configured delivery boundary.');
+end
+require(isscalar(available)&&isfinite(available)&&available>=0&& ...
+    isscalar(fs)&&isfinite(fs)&&fs>0&&available/fs<=decisionSeconds+1e-12, ...
+    'Causality','MCS feedback receiver completion is later than the actual control decision.');
+end
+
+function tf=mcsGateNullNumber(value)
+tf=isempty(value)||(isnumeric(value)&&isscalar(value)&&isnan(value));
 end
 
 function r=emptyCheck()

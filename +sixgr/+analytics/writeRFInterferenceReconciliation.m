@@ -28,12 +28,7 @@ sixgr.util.ensureFolder(layout.AirInterfaceCSVDir);
 
 dlT = sixgr.util.structGet(rawTrials, "DL", table());
 ulT = sixgr.util.structGet(rawTrials, "UL", table());
-if ~(istable(dlT) && height(dlT) > 0)
-    dlT = localReadTable(fullfile(layout.AirInterfaceCSVDir, "dl_pdsch_trials.csv"));
-end
-if ~(istable(ulT) && height(ulT) > 0)
-    ulT = localReadTable(fullfile(layout.AirInterfaceCSVDir, "ul_pusch_trials.csv"));
-end
+[dlT,ulT]=sixgr.analytics.resolveRetainedDirectionalTrials(runFolder,dlT,ulT);
 % Credit logical TBs before any population slicing; both exporters use the
 % same owner for this artifact instead of overwriting it with anchor gates.
 schedulerT = sixgr.analytics.buildSchedulerKPIReconciliation(dlT, ulT, cfg);
@@ -1005,8 +1000,10 @@ if exist(char(path), "file") ~= 2
     return;
 end
 try
-    T = readtable(char(path), "VariableNamingRule", "preserve", "TextType", "string");
+    T = sixgr.util.csvReadTable(char(path), "TextType", "string");
 catch
+    % Optional legacy side artifacts remain optional. Canonical receiver
+    % populations use resolveRetainedDirectionalTrials and fail explicitly.
     T = table();
 end
 end

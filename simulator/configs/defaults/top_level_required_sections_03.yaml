@@ -16,6 +16,7 @@
     "modulation_candidate_tag": "baseline_benchmark", "high_order_modulation_stress_enabled": false, "qam4096_candidate_enabled": false
   },
   "link_adaptation": {
+    "mcs_transition": {"enabled": false, "max_up_step": 1, "max_down_step": 2, "increase_ack_count": 2},
     "fixed_or_amc": "amc", "domain": "cqi", "cqi_table": "table1", "outer_loop_flag": true, "inner_loop_flag": true, "cqi_source": "csi_feedback",
     "dmrs_based_tracking_flag": false, "csi_rs_based_tracking_flag": true, "delta_cqi_policy": "none", "delta_mcs_policy": "baseline",
     "pdcch_link_adaptation_policy": "fixed", "pdsch_link_adaptation_policy": "baseline", "pusch_link_adaptation_policy": "baseline",

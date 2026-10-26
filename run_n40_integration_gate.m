@@ -1,5 +1,5 @@
 function receipt=run_n40_integration_gate(configPath,outputRoot,runTag)
-% Actual two-point waveform qualification followed by native60->65 resumes.
+% Actual two-point waveform qualification followed by native55->60 resumes.
 % Configuration, output location and run identity are the only CLI inputs.
 setup6GRSimToolkit('Verbose',false);
 plan=sixgr.validation.preflightN40IntegrationGate(configPath,outputRoot,runTag);
@@ -28,8 +28,9 @@ try
         label=plan.Children(k).Label;
         fprintf('N40_GATE_CHECKPOINT_CONTINUATION_START child=%s\n',label);
         try
-            sixgr.validation.verifyCheckpoint60Continuation( ...
-                fullfile(plan.RunFolder,'sweeps',label),fullfile(diagnostic,label));
+            sixgr.validation.verifyN40CheckpointContinuation( ...
+                fullfile(plan.RunFolder,'sweeps',label),fullfile(diagnostic,label), ...
+                'CriteriaPath',plan.CriteriaPath);
         catch cause
             recordError("continuation_"+label,cause);
         end
@@ -45,7 +46,8 @@ catch cause
 end
 assert(receipt.Ok,'sixgr:validation:N40IntegrationGateFailed', ...
     'Full integration gate failed. Original evidence retained in %s.',diagnostic);
-fprintf('N40_INTEGRATION_GATE_PASS two_scenarios=2 slots_each=65 actual_checkpoint60_continuations=2\n');
+fprintf('N40_INTEGRATION_GATE_PASS scenarios=%d slots_each=%d continuation_start=%d actual_continuations=%d\n', ...
+    numel(plan.Children),plan.FinalSlot,plan.ContinuationStartSlot,numel(plan.Children));
 
     function assertFrozen()
         assert(isequaln(frozen,freeze(plan)),'sixgr:validation:N40SourceChanged', ...

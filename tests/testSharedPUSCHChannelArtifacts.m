@@ -1560,6 +1560,10 @@ published=sixgr.truth.buildLLSPublicOutputTables(base,sixgr.truth.llsOutputContr
 public=published.(channel+"_runtime_event_table");
 retained=[stages summaries "Status" "Crash" "FinalizedFlag" "PartialRowFlag" "CountsTowardCoverage" ...
     "PDCCHReceiverDecodeOk" "PDCCHDataAdmissionOk" "PDCCHTCIAdmissionStatus"];
+retained=[retained string(fieldnames(sixgr.truth.projectMCSTransitionEvidence())).'];
+retained=[retained "CRCOutcome" "ScheduledMCS" "ScheduledMCSIndex" "ScheduledModulation" ...
+    "ScheduledOperatingPointSource" "ScheduledOperatingPointEvidenceStatus" ...
+    "ScheduledOperatingPointMatchesTransmitted" "LinkAdaptationScheduled"];
 if direction=="DL"
     retained=[retained "DLSCHFinalOutcomeAvailable" "DLSCHFinalOutcomeStage" ...
         "DLSCHFinalOutcomeJSON" "DLSCHFinalOutcomeSHA256" "DLSCHSuccessfulDecodedBits" ...
@@ -1951,8 +1955,15 @@ for slot=prefixLastSlot+1:horizon
         [state,stop,rearm]=localRankTransitionAfterSlot(state,"DL");
         if rearm, issued=false; end
         if stop, break; end
-    elseif state.TestContinuationCompleted || state.TestContinuationRejected
+    elseif state.TestContinuationRejected
         break;
+    elseif state.TestContinuationCompleted
+        if logical(sixgr.util.structGet(cfg,'phy.linkAdaptation.mcsTransition.enabled',false))
+            [state,feedbackReceived]=localVerifyMCSTransitionReceivedFeedback(state);
+            if feedbackReceived, break; end
+        else
+            break;
+        end
     end
 end
 state.TestContinuationSchedulingAttempts=attempts;
@@ -1968,7 +1979,50 @@ assert(issued && state.TestContinuationCompleted,'test:CSIContinuationNotExercis
     'No completed admitted-CSI new-data application in the unchanged legal/gated horizon; inspect admission evidence.');
 assert(numel(owner.DataTransmissions)==state.TestContinuationInitialDataCount+1);
 assert(state.ConnectedULTimingByUE{1}.TimeAlignmentExpirySampleExclusive==expiry);
+if logical(sixgr.util.structGet(cfg,'phy.linkAdaptation.mcsTransition.enabled',false))
+    assert(sixgr.util.structGet(state,'TestMCSTransitionFeedbackVerified',false), ...
+        'test:MCSFeedbackNotExercised','Require actual received feedback for the bounded-MCS transmission.');
+end
 fprintf('RECEIVED_CSI_TO_SCHEDULED_PDSCH_PASS scheduler=PF actual_PUCCH=1 actual_PDCCH=1 canonical_control=1 completed_PDSCH=1 activated_TCI=0 full_scenario=0\n');
+end
+
+function [state,done]=localVerifyMCSTransitionReceivedFeedback(state)
+% Join the policy credit to original transmitted data and independently
+% received UCI. Continuing the shared clock never authors an ACK or NACK.
+done=false;
+F=sixgr.util.structGet(state,'SharedGNBUCIHARQTable',table());
+if isempty(F), return; end
+g=state.TestContinuationIssuedGrant;
+hit=F.SourceSlot==g.Slot & F.RNTI==g.RNTI & F.HarqID==g.HARQ.HarqID & ...
+    string(F.PHYGrantContextId)==string(g.PHYGrant.GrantContextId);
+if ~any(hit), return; end
+assert(nnz(hit)==1); r=F(hit,:);
+assert(r.HARQFeedbackApplied && ~r.StaleFeedbackIgnored && r.ReceiverUsable && ...
+    any(string(r.FeedbackOutcome)==["ACK","NACK"]) && ...
+    r.AvailableAtSample<=state.SharedWaveformStream.Events.NextSampleIndex);
+policy=state.DLSchedulers{1}.getMCSTransitionState();
+found=false;
+for k=1:numel(policy.Entries)
+    entry=policy.Entries{k};
+    for j=1:numel(entry.Transmissions)
+        tx=entry.Transmissions{j};
+        if tx.Slot~=g.Slot || tx.HarqID~=g.HARQ.HarqID, continue; end
+        assert(tx.MCS==g.MCSIndex && entry.LastMCS==g.MCSIndex && ...
+            any(entry.SeenFeedback==tx.ID));
+        if string(r.FeedbackOutcome)=="ACK", assert(any(entry.ACKs==tx.ID));
+        else, assert(any(entry.NACKs==tx.ID)); end
+        found=true;
+    end
+end
+assert(found,'test:MCSFeedbackPolicyBinding','Actual UCI must update the transmitted operating point.');
+state.TestMCSTransitionFeedbackVerified=true;
+state.TestMCSTransitionFeedback=table2struct(r);
+state.TestMCSTransitionState=policy;
+sixgr.util.csvWriteTable(localContinuationArtifact(state,'mcs_transition_received_harq.csv'),r,'PreserveSchema',true);
+sixgr.util.jsonWrite(localContinuationArtifact(state,'mcs_transition_committed_state.json'),policy);
+fprintf('MCS_TRANSITION_PHYSICAL_FEEDBACK_PASS source_slot=%d outcome=%s actual_MCS=%d\n', ...
+    g.Slot,string(r.FeedbackOutcome),g.MCSIndex);
+done=true;
 end
 
 function [report,capsule]=localCurrentContinuationReport(state,decisionSample)

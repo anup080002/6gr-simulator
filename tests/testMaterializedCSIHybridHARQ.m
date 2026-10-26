@@ -17,6 +17,8 @@ for kind=["PF","RR"]
     cfg.phy.csi.pmiCodebookMode='type1_su_mimo';
     cfg.mac.scheduler.maxUEPerSlot=1; cfg.mac.scheduler.maxUEPerSlotDL=1;
     cfg.mac.scheduler.muMimoEnabled=false; cfg.mac.harq.enable=true;
+    cfg.phy.linkAdaptation.mcsTransition=struct('enabled',true, ...
+        'maxUpStep',1,'maxDownStep',2,'increaseAckCount',2);
     harq=sixgr.l2.mac.HARQEntity(cfg,'Direction','DL', ...
         'NumProcesses',4,'MaxRetx',3,'StoreTB',true);
     if kind=="PF"
@@ -59,10 +61,22 @@ for kind=["PF","RR"]
     assert(~customFrozen.PrecodingState.CSIRSPortBasisApplied && ...
         isequal(customFrozen.PrecodingState.MatrixLogicalPorts,[1;0]));
     payload=zeros(first.TBSBits,1,'uint8');
+    originalReceipt=first.MCSTransition;
+    originalEvidence=sixgr.truth.projectMCSTransitionEvidence(first);
+    scheduler.commitMCSTransition(first); % Declared actual-TX boundary only.
+    originalState=scheduler.getMCSTransitionState();
     harq.onTx(ue.RNTI,first.HARQ.HarqID,payload,first,0);
     harq.onFeedback(ue.RNTI,first.HARQ.HarqID,'NACK','SourceSlot',0,'FeedbackSlot',4);
     retry=scheduler.schedule(5,ue,budget);
     assert(numel(retry)==1 && retry.HARQ.IsRetransmission);
+    assert(isequaln(retry.MCSTransition,originalReceipt), ...
+        'Retry must preserve original new-data selection authority.');
+    retryEvidence=sixgr.truth.projectMCSTransitionEvidence(retry);
+    assert(retryEvidence.MCSTransitionReceiptSHA256==originalEvidence.MCSTransitionReceiptSHA256);
+    assert(retry.Slot~=originalReceipt.DataSlot && ...
+        string(retry.GrantContextId)~=string(originalReceipt.GrantContextId));
+    scheduler.commitMCSTransition(retry);
+    assert(isequaln(originalState,scheduler.getMCSTransitionState()));
     actual=retry.PHYGrant.PrecodingState;
     assert(actual.CSIRSPortBasisApplied && actual.CSIResourceIndex==1 && ...
         isequal(actual.MatrixPhysicalPorts,prec.MatrixPhysicalPorts) && ...

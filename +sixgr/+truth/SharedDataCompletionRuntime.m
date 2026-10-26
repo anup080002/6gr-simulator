@@ -203,6 +203,13 @@ classdef SharedDataCompletionRuntime
             sixgr.util.structGet(state,'SharedWaveformPreviewTable',table()), ...
             plan.WaveformPreviewTable);
         trial=sixgr.truth.SharedDataCompletionRuntime.annotateGrantRows(trial,plan.GrantRow);
+        % The planning row is not the final scheduler receipt producer. Bind
+        % the original decision retained with the actual transmitted request;
+        % never recompute it from later CQI or feedback at receive completion.
+        transitionEvidence=sixgr.truth.projectMCSTransitionEvidence(p.RequestBinding.Grant);
+        for transitionField=string(fieldnames(transitionEvidence)).'
+            trial.(transitionField)=repmat(transitionEvidence.(transitionField),height(trial),1);
+        end
         % The planning row predates reception and cannot overwrite received DCI
         % evidence. Copy only the receiver-owned fields from this exact grant.
         for fieldIndex=1:numel(receivedEvidenceFields)
@@ -213,6 +220,8 @@ classdef SharedDataCompletionRuntime
         end
         state=sixgr.truth.CoupledTruthRuntime.setCurrentUE(state,item.UE,job.Direction);
         [state,trial]=sixgr.truth.CoupledTruthRuntime.completeSlot(state,plan.Cfg,item.UE,job.Direction,trial,res);
+        trial=sixgr.truth.bindDataCRCOutcome(trial);
+        res.TrialTable=trial;
         % Frozen CSI operands alone do not prove their application. Preserve a
         % separate receipt only after the actual transmitted and decoded attempt
         % has committed. Bootstrap grants without received CSI remain bootstrap.

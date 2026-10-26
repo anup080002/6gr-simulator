@@ -1,6 +1,8 @@
 function out = completeTRSReception(prepared,observation,replay,channelState,options)
 %COMPLETETRSRECEPTION Run the canonical receiver on already received samples.
 % No waveform generation, RF processing, noise injection or channel advance.
+% The canonical receiver binds prepared.PowerContext after rejecting a
+% conflicting replay context; shared replay need not duplicate that receipt.
 arguments
     prepared (1,1) struct
     observation (1,1) sixgr.phy.waveform.WaveformObservationBuffer

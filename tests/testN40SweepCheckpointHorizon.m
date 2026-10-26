@@ -27,12 +27,12 @@ bad=s; bad.scenario.sweep.base_profile='ai_benchmark';
 reject(@()sixgr.lls6g.buildInternalConfig(bad,tempname),'sixgr:checkpoint:UnsupportedRuntime');
 bad=s; bad.run_control.deterministic_mode=false; bad.simulation.deterministic_mode=false;
 reject(@()sixgr.lls6g.buildInternalConfig(bad,tempname),'sixgr:checkpoint:DeterminismRequired');
-fprintf('N40_SWEEP_CHECKPOINT_HORIZON_PASS points=2 slots=65 duration_ms=32.5 checkpoint=60 next_slot=61 physical_execution=0\n');
+fprintf('N40_SWEEP_CHECKPOINT_HORIZON_PASS points=2 slots=60 duration_ms=30 terminal_checkpoint=60 physical_execution=0\n');
 ok=true;
 end
 
 function check(cfg)
-assert(cfg.run.totalSlots==65 && cfg.run.totalTime_ms==32.5 && cfg.run.measurementSlots==65);
+assert(cfg.run.totalSlots==60 && cfg.run.totalTime_ms==30 && cfg.run.measurementSlots==60);
 assert(cfg.run.runtimeCheckpointEnabled && cfg.run.checkpointFirstSlot==60 && cfg.run.checkpointEverySlots==60);
 slots=1:cfg.run.totalSlots;
 due=arrayfun(@(slot)sixgr.runtime.CheckpointSchedule.due(slot,cfg.run.checkpointEverySlots,cfg.run.checkpointFirstSlot),slots);

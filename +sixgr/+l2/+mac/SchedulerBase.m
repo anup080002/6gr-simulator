@@ -67,6 +67,7 @@ classdef (Abstract) SchedulerBase < handle
     end
 
     properties(Access=protected)
+        MCSTransitionState = struct('Entries',{{}})
         UEStats = struct('RNTI',{},'AvgThroughput_bps',{},'LastServedSlot',{},'LastTBSBits',{}, ...
             'LastAck',{},'NumScheduledSlots',{},'NumUnscheduledSlots',{}, ...
             'OLLADeltaDb',{},'OLLADeltaMCS',{},'OLLAUpdateCount',{},'LastOLLAAck',{})
@@ -78,6 +79,50 @@ classdef (Abstract) SchedulerBase < handle
     end
 
     methods
+        function state = getMCSTransitionState(obj)
+            state=obj.MCSTransitionState;
+        end
+
+        function grant = previewMCSTransition(obj, grant)
+            if ~logical(sixgr.util.structGet(obj.Cfg,'phy.linkAdaptation.mcsTransition.enabled',false)) || ...
+                    sixgr.phy.grant.isExplicitHARQRetransmission(grant) || ...
+                    logical(sixgr.util.structGet(grant,'PDCCHGrantBindingOk',false)) || ...
+                    logical(sixgr.util.structGet(grant,'ControlDecodeOk',false)) || ...
+                    ~isfinite(double(sixgr.util.structGet(grant,'MCSIndex',NaN)))
+                return;
+            end
+            [~,receipt]=sixgr.link.mcsTransition('preview',obj.Cfg,obj.MCSTransitionState,grant);
+            prior=sixgr.util.structGet(grant,'MCSTransition',struct());
+            if isfield(prior,'StateVersion') && prior.StateVersion==receipt.StateVersion && ...
+                    prior.SpatialPoint==receipt.SpatialPoint && prior.AppliedMCS==grant.MCSIndex
+                % An identical refreeze is not a new target measurement.
+                % Preserve the original target/receipt through DCI packing.
+                targetGrant=grant; targetGrant.MCSIndex=prior.RawTargetMCS;
+                [~,receipt]=sixgr.link.mcsTransition('preview',obj.Cfg,obj.MCSTransitionState,targetGrant);
+            end
+            profile=sixgr.link.resolveMCSProfile( ...
+                sixgr.link.resolveConfiguredMCSTable(obj.Cfg,obj.Direction),receipt.AppliedMCS);
+            assert(profile.Valid,'sixgr:link:MCSTransitionProfile','Selected transition MCS is invalid.');
+            grant.MCSTransition=receipt;
+            grant.MCSTransitionRawTarget=receipt.RawTargetMCS;
+            grant.MCSTransitionPreviousCommittedMCS=receipt.PreviousCommittedMCS;
+            grant.MCSTransitionReason=char(receipt.Reason);
+            grant.MCSIndex=receipt.AppliedMCS; grant.MCS=receipt.AppliedMCS;
+            grant.Modulation=char(string(profile.Modulation));
+            grant.TargetCodeRate=double(profile.TargetCodeRate);
+            if isfield(grant,'AppliedLinkAdaptationMCS'), grant.AppliedLinkAdaptationMCS=receipt.AppliedMCS; end
+        end
+
+        function commitMCSTransition(obj,grant)
+            [obj.MCSTransitionState,~]=sixgr.link.mcsTransition( ...
+                'commit',obj.Cfg,obj.MCSTransitionState,grant);
+        end
+
+        function observeMCSTransitionFeedback(obj,event)
+            [obj.MCSTransitionState,~]=sixgr.link.mcsTransition( ...
+                'feedback',obj.Cfg,obj.MCSTransitionState,event);
+        end
+
         function obj = SchedulerBase(cfg, varargin)
             if nargin < 1 || isempty(cfg)
                 error('sixgr:SchedulerBase:NoCfg','SchedulerBase requires cfg struct.');
@@ -1407,7 +1452,15 @@ classdef (Abstract) SchedulerBase < handle
                 end
             end
             grantOut = obj.attachCanonicalTimingDecision(grantOut);
+            grantOut = obj.previewMCSTransition(grantOut);
             grantOut = obj.finalizeExactPHYFeasibility(grantOut);
+            if isfield(grantOut,'MCSTransition') && ...
+                    ~sixgr.phy.grant.isExplicitHARQRetransmission(grantOut)
+                grantOut.MCSTransition.PolicySelectedMCS=grantOut.MCSTransition.AppliedMCS;
+                grantOut.MCSTransition.AppliedMCS=double(grantOut.MCSIndex);
+                grantOut.MCSTransition.FinalCapacityReduction= ...
+                    grantOut.MCSIndex<grantOut.MCSTransition.PolicySelectedMCS;
+            end
             if ~logical(sixgr.util.structGet(grantOut,"ExactPHYFeasible",false))
                 % A rejected allocation must not acquire a frozen PHY contract.
                 grantOut.PHYGrant = struct();
@@ -1460,6 +1513,16 @@ classdef (Abstract) SchedulerBase < handle
                     frozenW, size(frozenW,1), nLayers);
             end
             grantOut.PHYGrant = phyGrant;
+            % HARQ inherits the original new-data decision receipt unchanged.
+            % Current-attempt identity remains in the ordinary grant fields.
+            if isfield(grantOut,'MCSTransition') && ...
+                    ~sixgr.phy.grant.isExplicitHARQRetransmission(grantOut)
+                grantOut.MCSTransition.GrantContextId=string(phyGrant.GrantContextId);
+                grantOut.MCSTransition.Direction=string(grantOut.Direction);
+                grantOut.MCSTransition.RNTI=double(grantOut.RNTI);
+                grantOut.MCSTransition.ServingCell=double(grantOut.ServingCell);
+                grantOut.MCSTransition.DataSlot=double(grantOut.Slot);
+            end
             grantOut.CSIReportApplication = sixgr.l2.mac.csiReportGrantApplication(grantOut,phyGrant);
             grantOut.GrantContextId = char(string(phyGrant.GrantContextId));
             grantOut.PHYGrantContextId = char(string(phyGrant.GrantContextId));

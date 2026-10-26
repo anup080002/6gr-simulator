@@ -1,0 +1,15 @@
+inherits:
+  - ./lls_tdd_received_csi_application_coexistence_fixture.yaml
+
+meta:
+  scenario_id: lls_tdd_received_csi_stepwise_application_fixture
+  description: Received CSI drives a bounded MCS, actual DCI/PDSCH and received HARQ feedback.
+  purpose: Physical component verification of applied-MCS admission; not full n40 qualification.
+  research_class: optional_research_experiment
+
+link_adaptation:
+  mcs_transition:
+    enabled: true
+    max_up_step: 1
+    max_down_step: 2
+    increase_ack_count: 2

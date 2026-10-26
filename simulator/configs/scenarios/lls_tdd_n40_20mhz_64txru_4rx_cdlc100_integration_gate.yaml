@@ -1,12 +1,12 @@
 inherits:
   - ./lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep.yaml
 
-# Operational-only overlay. Both original 65-slot scientific configurations,
+# Operational-only overlay. Both original 60-slot scientific configurations,
 # seeds and all physical resource allocations remain inherited unchanged.
 # The second genuine native checkpoint enables endpoint-state comparison
-# after an actual checkpoint60 continuation through slot65.
+# after an actual checkpoint55 continuation through terminal slot60.
 run_control:
   runtime_checkpoint_enable: true
-  checkpoint_first_slot: 60
+  checkpoint_first_slot: 55
   checkpoint_every_slots: 5
   runtime_checkpoint_keep: 3

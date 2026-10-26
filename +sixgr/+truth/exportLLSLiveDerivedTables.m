@@ -25,6 +25,10 @@ sixgr.util.ensureFolder(analyticsCSVDir);
 
 % Bind raw rows as primary CSVs do. Persisted component evidence loaded
 % later retains its own identity; it must not be relabeled as this run.
+[retainedDL,retainedUL]=sixgr.analytics.resolveRetainedDirectionalTrials(runFolder, ...
+    sixgr.util.structGet(rawTrials,'DL',table()),sixgr.util.structGet(rawTrials,'UL',table()));
+rawTrials.DL=retainedDL;
+rawTrials.UL=retainedUL;
 for signal = ["DL","UL","SRS","TRS","CSIRS","PBCH"]
     if isfield(rawTrials,signal)
         rawTrials.(signal) = sixgr.truth.bindCoupledExecutionIdentity( ...

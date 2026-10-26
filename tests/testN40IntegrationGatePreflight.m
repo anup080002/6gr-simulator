@@ -15,6 +15,10 @@ reject(@()sixgr.validation.preflightN40IntegrationGate(gate,tempname,'gate_prefl
     'sixgr:validation:N40GateOutputRoot');
 plan=sixgr.validation.preflightN40IntegrationGate(gate,root,'gate_preflight');
 assert(numel(plan.Children)==2 && ~plan.PhysicalExecution);
+assert(plan.ContinuationStartSlot==55 && plan.RequiredCheckpointSlot==60 && plan.FinalSlot==60);
+for child=plan.Children.'
+    assert(child.CompletedSlotsRequired==60 && isequal(child.CheckpointSlots,[55 60]));
+end
 reject(@()sixgr.validation.preflightN40IntegrationGate(original,root,'gate_preflight'), ...
     'sixgr:validation:N40GateCheckpoints');
 mkdir(plan.RunFolder);

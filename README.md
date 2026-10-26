@@ -12,7 +12,7 @@ results cannot be attributed to that stopped attempt.
 The latest retained failed attempt is
 `n40_integration_65slots_20261026_022232`, under
 `E:\SixGRResults\lls\lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep`.
-It executes two independent **[20, 0] dB nominal reference-Es/N0** points,
+It was configured for two independent **[20, 0] dB nominal reference-Es/N0** points,
 **65 slots (32.5 ms) each**, using n40/2.350 GHz, 20 MHz/51 PRBs, 30 kHz TDD,
 64 gNB TXRU, four UE chains and CDL-C/100 ns. Measured receiver SINR remains
 separate from the configured reference-Es/N0 label.
@@ -33,9 +33,13 @@ The stop and failure inspection on **26 October 2026** established:
 
 All original results remain unchanged. Failure operands and file hashes are
 retained in the gate folder's `slot56_architecture_failure.json`.
-Both completed children, native checkpoint60 continuations through65 and
-final-report acceptance remain unverified in this README. MATLAB executes
+The next configured sweep is **60 slots (30 ms) per child**, with terminal
+checkpoint60 and an actual checkpoint55-to-60 continuation check. Both
+completed children and final-report acceptance remain unverified. MATLAB executes
 the gate's checks automatically; this file does not update with the run.
+Full scenario execution remains stopped at the user's request. The latest
+verification used affected tests, bounded physical integrations and retained-data
+audits; it did not start either 60-slot child.
 Use the [run list](http://127.0.0.1:62906/runs) and select the fresh tag for
 current local status. The parent and active child are two dashboard rows
 for one sequential sweep, not two concurrent waveform simulations.
@@ -81,8 +85,65 @@ RI1/PMI31/CRI1 produces the exact retained physical-matrix digest at DL52–54.
 The repaired gate rejects the original missing frozen CRI without changing
 any primary row. This closes the diagnosed provenance/refreeze defect at
 the focused boundary; it does not qualify a completed fresh n40 sweep.
-Restart is held for the separately requested bounded MCS/rank-adaptation
-repair and its verification.
+The subsequent adaptation repair addresses a separate wiring defect: valid
+PUSCH quality was rejected because spatial-only SRS rank/TPMI had not updated
+the accepted adaptation operating point. Spatial acceptance now remains
+separate from unavailable SRS-derived CQI, and a changed spatial point clears
+old positive quality before accepting matching received PUSCH measurements.
+
+The selected n40 YAML now enables an explicit implementation policy: an MCS
+increase is at most one index and requires two distinct received ACKs at the
+same rank/precoder and MCS. NACKs request a two-index reduction; a lower
+resolved AMC ceiling or outage can require a larger reduction. Only actual
+new-data transmissions commit the anchor. Scheduling previews cannot consume
+feedback or ratchet MCS, and HARQ retries preserve their original coding and
+decision receipt. Higher measured rank requires two independent reports;
+RI/PMI stay paired, without inventing an intermediate rank or precoder.
+These settings are scheduler policy, not 3GPP-mandated step sizes.
+SRS rank/TPMI selection still uses a codebook-based sum-log2(1+MMSE-layer-SINR)
+objective. It is not a statistically qualified coded-BLER/goodput-optimal rank
+selector, and an actual four-layer CRC success alone cannot establish optimal rank.
+
+All **31 distinct affected tests have passing latest results** across the
+preserved batches in
+`E:\SixGRResults\logs\n40_link_adaptation_20261026_final.json`.
+The latest bounded physical CSI → PUCCH → PF/DCI → PDSCH16 execution retained
+MCS4 against raw target26, passed CRC, received its ACK on PUCCH20 and preserved
+the original scheduler/CRC receipts in the canonical and public tables. That
+realization verifies the hold and feedback path; sustained upward/downward
+adaptation and rank changes still require the selected full n40 sweep.
+The final test/audit batches left all 58 monitored files unchanged.
+Original failed test batches and the corrected external audit script remain
+preserved. Native checkpoint55-to-60 continuation and final reports remain pending.
+
+The retained-value audit repaired missing scheduled-MCS and CRC-label publication,
+recovered original prepared TRS power metadata, and guarded against empty callbacks
+erasing nonempty receiver accounting. Malformed primary CSVs now fail explicitly.
+The audit reprojects the original ten DL and two UL trials into a separate folder;
+all eight input files retain their original SHA256 hashes. Its TRS receiver replay
+preserves the original measurements and performs zero RF/channel executions.
+Receipt: `E:\SixGRResults\value_audits\n40_values_20261026_01\audit_receipt.json`.
+
+The stopped run's throughput arithmetic is consistent with its original operands:
+
+| Direction | Unique delivered TB bits | Goodput over summed trial exposure | Goodput over 27.5-ms elapsed run |
+| --- | ---: | ---: | ---: |
+| DL | 10,120 | 2.024 Mbps | 0.368 Mbps |
+| UL | 10,000 | 10 Mbps | 0.363636 Mbps |
+
+Per-trial offered throughput is original TB bits divided by that trial's TTI;
+it is not application offered load. Zero DL goodput on failed CRCs remains a
+valid measured outcome. Unknown CRCs remain unknown in public exports.
+Uncalibrated SRS CQI and unsupported native TRS pilot SINR remain unavailable.
+An explicitly static-AWGN fixture separately verifies finite TRS pilot-SINR
+publication; it does not qualify the fading estimator. Restored TRS transmit
+power fields describe the prepared waveform contribution, not measured
+post-composite RF/PA output.
+
+The separate `E:\SixGRResults\logs\n40_values_rf_audit_20261026.json` records
+25 retained-operand arithmetic checks covering EVM, NMSE, noise scaling, power,
+CSI-RSRQ and independent TRS scoring. Arithmetic consistency does not establish
+statistical measurement accuracy or full 3GPP conformance.
 
 The preceding SRS handoff repair passed **eight affected checks**:
 `testULAcceptedSRSSpatialProvenance`, `test20MHzSharedSRSPowerBinding`,
@@ -119,7 +180,7 @@ has finished or been explicitly stopped**. Do not launch a duplicate run.
 Keep the evidence drive connected and use a fresh tag; the gate rejects reuse.
 
 ```powershell
-$runTag = 'n40_integration_65slots_' + (Get-Date -Format 'yyyyMMdd_HHmmss')
+$runTag = 'n40_integration_60slots_' + (Get-Date -Format 'yyyyMMdd_HHmmss')
 $runYaml = 'simulator/configs/scenarios/lls_tdd_n40_20mhz_64txru_4rx_cdlc100_integration_gate.yaml'
 $outputRoot = 'E:\SixGRResults'
 $env:SIXGR_RESULTS_ROOT = $outputRoot
@@ -130,9 +191,10 @@ New-Item -ItemType Directory -Force -Path "$outputRoot\logs" | Out-Null
 
 The [gate overlay](simulator/configs/scenarios/lls_tdd_n40_20mhz_64txru_4rx_cdlc100_integration_gate.yaml)
 inherits the original scientific sweep and changes only checkpoint controls:
-first60, every5, keep3. It therefore retains genuine native checkpoints60 and65.
-After both full children, the driver restores each original checkpoint60 and
-actually executes61–65, compares retained state/outcome projections, preserves
+first55, every5, keep3. It therefore retains genuine native checkpoints55 and60.
+After both full children, the driver restores each original checkpoint55 and
+actually executes56–60, compares retained state/outcome projections including
+the schedulers' MCS feedback/credit state, preserves
 the resumed diagnostics, and restores the untouched baseline report bytes.
 Final acceptance also checks child/parent publication and report hashes.
 

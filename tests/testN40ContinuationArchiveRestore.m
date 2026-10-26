@@ -4,7 +4,7 @@ setup6GRSimToolkit('Verbose',false);
 folder=fullfile(pwd,'logs','lls_repairs', ...
     "continuation_archive_"+string(datetime('now','Format','yyyyMMdd_HHmmss_SSS')));
 mkdir(folder);
-source=fileread(which('sixgr.validation.verifyCheckpoint60Continuation'));
+source=fileread(which('sixgr.validation.verifyN40CheckpointContinuation'));
 first=strfind(source,'function diagnostic=restoreBaseline(');
 last=strfind(source,'function [path,receipt]=findCheckpoint(');
 inventoryStart=strfind(source,'function T=inventoryFolder(');

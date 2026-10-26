@@ -31,6 +31,9 @@ T.UL_DurationBasis = ulBasis;
 T.KPIFormulaVersion = "scheduler_transport_credit_v1";
 T.KPIApplicable = applicable;
 T.EvaluationStatus = "evaluated_receiver_trial_accounting";
+if isempty(dl) && isempty(ul)
+    T.EvaluationStatus="unavailable_no_receiver_trials";
+end
 if ~applicable, T.EvaluationStatus = "not_applicable_fixed_link_campaign_only"; end
 end
 

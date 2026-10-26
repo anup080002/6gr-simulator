@@ -26,6 +26,10 @@ if ~isempty(fieldnames(receivedContext))
     % Reject incomplete/invalid captures outside the measurement catch: a
     % scheduler waiting for samples has not observed a failed TRS trial.
     localValidateTRSReception(receivedContext);
+    % The shared receiver replay owns executed RX/noise metadata; transmit
+    % normalization belongs to this original prepared contribution. Do not
+    % reconstruct it from the configuration current at receive completion.
+    receivedContext.Replay.PowerContext = receivedContext.Prepared.PowerContext;
     cfg = receivedContext.Prepared.ReceiverConfig;
     snr_dB = receivedContext.Prepared.RequestedSNR_dB;
     initialChannelState = receivedContext.ChannelState;
@@ -298,6 +302,14 @@ try
     out.FullBWPActivityFactor = double(sixgr.util.structGet( ...
         powerContext,"FullBWPActivityFactor",NaN));
     out = sixgr.report.bindTransmitPowerEvidence(out, powerContext);
+    % These values describe the prepared TRS contribution. The shared RF
+    % transmitter can also contain other signals and subsequent impairments;
+    % this receipt is not a measurement of that composite RF output.
+    if out.TransmitPowerPhysicalApplicable
+        out.TransmitPowerReferencePlane = "prepared_TRS_waveform_power_reference";
+    else
+        out.TransmitPowerReferencePlane = "prepared_TRS_waveform_normalized_unit_occupied_RE_Es";
+    end
     out.PowerReferenceOutput_dBm = out.ReferenceOutputPower_dBm;
     out.ActualEmittedPowerBackoffFromBudget_dB = double(sixgr.util.structGet( ...
         powerContext,"ActualEmittedPowerBackoffFromBudget_dB",NaN));
@@ -380,7 +392,11 @@ try
     out.DesiredPilotPower = double(sixgr.util.structGet(ch, "DesiredPilotPower", NaN));
     out.ResidualPilotPower = double(sixgr.util.structGet(ch, "ResidualPilotPower", NaN));
     if ~isfinite(out.MeasuredTrialSINR_dB)
-        out.MeasuredTrialSINRNAReason = "trs_pilot_signed_linear_ratio_nonpositive_or_unavailable";
+        if string(ch.PilotSINRSource)=="unavailable_pilot_fit_is_not_independent_SINR"
+            out.MeasuredTrialSINRNAReason = string(ch.PilotSINRSource);
+        else
+            out.MeasuredTrialSINRNAReason = "trs_pilot_signed_linear_ratio_nonpositive_or_unavailable";
+        end
     end
     out.TRSRuntimeEvidenceUsable = logical(runtimeEvidenceOk);
     out.StrictReceiverEvidenceOk = logical(runtimeEvidenceOk);
@@ -697,6 +713,16 @@ if ~observation.isComplete()
         observation.ReceivedThroughSample,observation.EndSampleExclusive);
 end
 p=reception.Prepared;
+if ~isfield(p,"PowerContext") || ~isstruct(p.PowerContext) || ...
+        ~isscalar(p.PowerContext) || isempty(fieldnames(p.PowerContext))
+    error("sixgr:link:MissingPreparedTRSPowerContext", ...
+        "TRS completion requires its original prepared waveform power context.");
+end
+if isfield(reception.Replay,"PowerContext") && ...
+        ~isequaln(reception.Replay.PowerContext,p.PowerContext)
+    error("sixgr:link:ConflictingTRSPowerContext", ...
+        "Receiver replay must not replace the original prepared TRS power context.");
+end
 if ~all(isfield(p,["SampleRateHz","NumSamples","ReceiverConfig","StrictConfig","Tx","RequestedSNR_dB"])) || ...
         observation.SampleRateHz~=p.SampleRateHz || ...
         observation.EndSampleExclusive-observation.StartSample~=p.NumSamples

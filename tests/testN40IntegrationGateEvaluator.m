@@ -38,6 +38,7 @@ out=sixgr.validation.evaluateN40IntegrationGate(root,'RequireContinuation',false
 assert(~pass(out,'primary_pdsch'),'Missing applicable CRC must not become a measured failure or pass.');
 testOriginalCSIBinding(root);
 testCompletedCSISelection(root);
+testExecutedMCSTransitions(root);
 testParentPublication();
 fprintf('N40_INTEGRATION_GATE_EVALUATOR_PASS incomplete_test_fixture=%s\n',root);
 ok=true;
@@ -98,6 +99,119 @@ T=table("gate_unit","gate_execution",string(repmat('a',1,64)),1,0,0,0,layers, ..
     'CompletedCSIApplicationEvidenceSHA256','CompletedCSIApplicationReportIdentity', ...
     'CompletedCSIApplicationReportObservationID'});
 sixgr.util.csvWriteTable(path,T,'PreserveSchema',true);
+end
+
+function testExecutedMCSTransitions(root)
+% Authored parser evidence, deliberately incomplete: never a full gate pass.
+policy=struct('enabled',true,'max_up_step',1,'max_down_step',2,'increase_ack_count',2);
+path=fullfile(root,'meta','scenario_config_resolved.json');
+sixgr.util.jsonWrite(path,struct('TestFixture',true, ...
+    'frame_timing',struct('slot_duration_ms',1), ...
+    'link_adaptation',struct('mcs_transition',policy,'bootstrap_mcs_index',1)));
+sixgr.util.jsonWrite(fullfile(root,'meta','scenario_config_identity.json'), ...
+    struct('ConfigHash',repmat('a',1,64),'ResolvedJSONSHA256',sixgr.util.sha256File(path)));
+dl=mcsFixtureSequence("DL"); ul=mcsFixtureSequence("UL");
+writeMCSSequence(root,"DL",dl); writeMCSSequence(root,"UL",ul);
+out=sixgr.validation.evaluateN40IntegrationGate(root,'RequireContinuation',false);
+assert(pass(out,'executed_mcs_transitions')&&~out.Ok,'%s',checkDetail(out,'executed_mcs_transitions'));
+% The first authored DL data CRC is zero while its independently authored
+% received UCI is ACK. The gate must use the latter for DL policy credits.
+for variant=1:11
+    bad=dl;
+    switch variant
+        case 1, bad(3).ACKIdentities(1)="DL|cell=1|rnti=101|slot=99|pid=1";
+        case 2, bad(3).EffectivePreviousMCS=2; bad(3).PreviousCommittedMCS=2;
+        case 3, bad(3).PolicySelectedMCS=4; bad(3).AppliedMCS=4;
+        case 4, bad(3).GrantContextId="foreign_grant";
+        case 5, bad(3).MaxUpStep=2;
+        case 8, bad(3).SpatialPoint="different_original_operator";
+        case 10, bad(4).NACKIdentities=bad(2).ACKIdentities;
+        case 11, bad(4).PolicySelectedMCS=2; bad(4).AppliedMCS=2;
+    end
+    writeMCSSequence(root,"DL",bad); writeMCSSequence(root,"UL",ul);
+    if any(variant==[6 7])
+        feedbackPath=fullfile(root,'control','csv','gnb_harq_feedback_observations.csv');
+        F=readtable(feedbackPath,'TextType','string','VariableNamingRule','preserve');
+        if variant==6, F.FeedbackOutcome(1)="NACK";
+        else, F.AvailableAtSample(1)=999999; end
+        sixgr.util.csvWriteTable(feedbackPath,F,'PreserveSchema',true);
+    elseif variant==9
+        feedbackPath=fullfile(root,'harq','csv','runtime_harq_process_timeline.csv');
+        F=readtable(feedbackPath,'TextType','string','VariableNamingRule','preserve');
+        F.CurrentDecodeOK(1)=0;
+        sixgr.util.csvWriteTable(feedbackPath,F,'PreserveSchema',true);
+    end
+    primaryPath=fullfile(root,'air_interface','csv','dl_pdsch_trials.csv');
+    before=sixgr.util.sha256File(primaryPath);
+    out=sixgr.validation.evaluateN40IntegrationGate(root,'RequireContinuation',false);
+    assert(~pass(out,'executed_mcs_transitions')&&sixgr.util.sha256File(primaryPath)==before, ...
+        'Invalid original MCS/feedback evidence variant %d was accepted or rewritten.',variant);
+end
+writeMCSSequence(root,"DL",dl); writeMCSSequence(root,"UL",ul);
+out=sixgr.validation.evaluateN40IntegrationGate(root,'RequireContinuation',false);
+assert(pass(out,'executed_mcs_transitions'),'%s',checkDetail(out,'executed_mcs_transitions'));
+end
+
+function E=mcsFixtureSequence(direction)
+scope=direction+"|cell=1|rnti=101";
+e=struct('Enabled',true,'Direction',direction,'RNTI',101,'ServingCell',1,'DataSlot',1, ...
+    'DecisionSlot',1,'GrantContextId',"",'RawTargetMCS',24,'ScopeKey',scope, ...
+    'SpatialPoint',"declared_parser_operator",'OperatingPointGeneration',0, ...
+    'PreviousCommittedMCS',NaN,'EffectivePreviousMCS',1,'PolicySelectedMCS',1,'AppliedMCS',1, ...
+    'FinalCapacityReduction',false,'MaxUpStep',1,'MaxDownStep',2,'RequiredACKCount',2, ...
+    'ACKCount',0,'NACKCount',0,'ACKIdentities',strings(0,1),'NACKIdentities',strings(0,1), ...
+    'RawTargetAuthority',"authored_parser_target",'Reason',"hold_without_current_point_ACK_confirmation");
+E=repmat(e,4,1); slots=[1 3 5 7]; applied=[1 1 2 0]; previous=[NaN 1 1 2]; generation=[0 1 1 2];
+for k=1:4
+    E(k).DataSlot=slots(k); E(k).DecisionSlot=slots(k);
+    E(k).GrantContextId="fixture_"+direction+"_"+slots(k);
+    E(k).AppliedMCS=applied(k); E(k).PolicySelectedMCS=applied(k);
+    E(k).PreviousCommittedMCS=previous(k); E(k).OperatingPointGeneration=generation(k);
+    if k>1, E(k).EffectivePreviousMCS=previous(k); end
+end
+E(2).ACKCount=1; E(2).ACKIdentities=scope+"|slot=1|pid=1";
+E(3).ACKCount=2; E(3).ACKIdentities=[scope+"|slot=1|pid=1";scope+"|slot=3|pid=3"];
+E(3).Reason="received_ACK_confirmed_up_step";
+E(4).NACKCount=1; E(4).NACKIdentities=scope+"|slot=5|pid=1"; E(4).Reason="received_NACK_down_step";
+end
+
+function writeMCSSequence(root,direction,E)
+rows=cell(numel(E),1); feedbackRows=cell(numel(E),1); slots=[1 3 5 7]; crc=[1 1 0 1];
+for k=1:numel(E)
+    slot=slots(k); context="fixture_"+direction+"_"+slot;
+    token=string(jsonencode(E(k))); actualCRC=crc(k);
+    if direction=="DL"&&k==1, actualCRC=0; end
+    rows{k}=struct('RunID',"gate_unit",'ExecutionID',"gate_execution", ...
+        'ConfigHash',string(repmat('a',1,64)),'Slot',slot,'RNTI',101,'ServingCell',1, ...
+        'GrantContextId',context,'HarqID',mod(slot,4),'MCSIndex',E(k).AppliedMCS, ...
+        'IsRetransmission',0,'MCSTransitionReceiptJSON',token, ...
+        'MCSTransitionReceiptSHA256',string(sixgr.util.sha256Hex(token)), ...
+        'MCSTransitionAppliedMCS',E(k).AppliedMCS,'CRCApplicable',1,'CRCPass',actualCRC, ...
+        'Crash',0,'FallbackFlag',0,'HARQFeedbackDueSlot',slot+1, ...
+        'DataDecodeAvailableAtSample',(slot-1)*1000+800,'DataReceiveSampleRateHz',1e6);
+    if direction=="DL"
+        outcome="ACK"; if crc(k)==0, outcome="NACK"; end
+        feedbackRows{k}=struct('SourceSlot',slot,'RNTI',101,'ServingCell',1,'HarqID',mod(slot,4), ...
+            'PHYGrantContextId',context,'FeedbackOutcome',outcome,'HARQFeedbackApplied',1, ...
+            'ReceiverUsable',1,'StaleFeedbackIgnored',0,'DecodeAttempted',1, ...
+            'ReceiverExecutionStatus',"executed",'IsRetransmission',0,'DueSlot',slot+1, ...
+            'Slot',slot+1,'AvailableAtSample',slot*1000,'ObservationSampleRateHz',1e6);
+    else
+        feedbackRows{k}=struct('Direction',"UL",'RNTI',101,'Slot',slot,'HarqID',mod(slot,4), ...
+            'PHYGrantContextId',context,'IsRetransmission',0,'CurrentDecodeOK',crc(k), ...
+            'FeedbackDueSlot',slot+1,'DataDecodeAvailableAtSample',(slot-1)*1000+800, ...
+            'DataReceiveSampleRateHz',1e6,'FeedbackMechanism',"gnb_pusch_decoder", ...
+            'FeedbackEvidenceSource',"same_waveform_pusch_rx_crc");
+    end
+end
+file="dl_pdsch_trials.csv"; feedbackPath=fullfile(root,'control','csv','gnb_harq_feedback_observations.csv');
+if direction=="UL"
+    file="ul_pusch_trials.csv"; feedbackPath=fullfile(root,'harq','csv','runtime_harq_process_timeline.csv');
+end
+if ~isfolder(fileparts(feedbackPath)), mkdir(fileparts(feedbackPath)); end
+T=struct2table(vertcat(rows{:}));
+sixgr.util.csvWriteTable(fullfile(root,'air_interface','csv',file),T,'PreserveSchema',true);
+sixgr.util.csvWriteTable(feedbackPath,struct2table(vertcat(feedbackRows{:})),'PreserveSchema',true);
 end
 
 function testParentPublication()

@@ -1,9 +1,10 @@
 function T = applyScheduledOperatingPointEvidence(T)
 %APPLYSCHEDULEDOPERATINGPOINTEVIDENCE Publish the executed grant operating point.
 %
-% The scheduled operating point is materialized only when the raw row says
-% an adaptive scheduler decision was scheduled and the executed waveform is
-% explicitly bound to a frozen scheduler grant.  This is not a reconstruction
+% The adaptive operating point is materialized when the executed waveform is
+% explicitly bound to a frozen scheduler grant. LinkAdaptationScheduled names
+% a future receiver-feedback update, not the current transmitted decision.
+% This is not a reconstruction
 % from receiver output: MCSIndex/Modulation are the grant-owned values used by
 % the Tx chain.  Missing grant authority remains missing and fails downstream.
 
@@ -20,7 +21,6 @@ scheduledSource = localText(T, "ScheduledOperatingPointSource", n);
 status = localText(T, "ScheduledOperatingPointEvidenceStatus", n);
 
 adaptive = localLogical(T, "AdaptiveMode", n);
-scheduled = localLogical(T, "LinkAdaptationScheduled", n);
 transmittedMCS = localNumberFirst(T, ["MCSIndex","MCS"], n);
 transmittedModulation = localTextFirst(T, ["Modulation"], n);
 grantSource = localTextFirst(T, ...
@@ -37,7 +37,7 @@ pdcchGrantBound = localLogical(T, "PDCCHGrantBindingOk", n);
 % trials to lose their scheduled MCS/modulation lineage.
 executedFrozenGrant = contains(lower(grantSource), "scheduler_grant") | ...
     strlength(strtrim(frozenGrantContext)) > 0 | pdcchGrantBound;
-grantBound = adaptive & scheduled & isfinite(transmittedMCS) & ...
+grantBound = adaptive & isfinite(transmittedMCS) & ...
     strlength(strtrim(transmittedModulation)) > 0 & ...
     executedFrozenGrant & ...
     strlength(strtrim(grantContext)) > 0;
@@ -65,12 +65,12 @@ alreadyCanonical = grantBound & contains(lower(grantSource), "scheduler_grant");
 sourceValue(alreadyCanonical) = grantSource(alreadyCanonical);
 scheduledSource(grantBound) = sourceValue(grantBound);
 
-notApplicable = ~adaptive | ~scheduled;
+notApplicable = ~adaptive;
 status(notApplicable & strlength(status) == 0) = ...
     "not_applicable_no_adaptive_scheduled_decision";
 status(grantBound) = "materialized_from_executed_frozen_scheduler_grant";
-missingEvidence = adaptive & scheduled & ~grantBound;
-status(missingEvidence & strlength(status) == 0) = ...
+missingEvidence = adaptive & ~grantBound;
+status(missingEvidence) = ...
     "missing_frozen_scheduler_grant_operating_point_evidence";
 
 matches = false(n, 1);

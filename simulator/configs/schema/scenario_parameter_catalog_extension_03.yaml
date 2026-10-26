@@ -46,6 +46,7 @@
       "outage_recovery_cqi_tolerance": {"required": false, "type": "integer", "min": 0, "max": 15},
       "outage_recovery_max_gap_slots": {"required": false, "type": "integer", "min": 1},
       "rank_increase_confirmation_reports": {"required": false, "type": "integer", "min": 1},
+      "mcs_transition": {"required": false, "type": "struct"},
       "olla_step_down": {"required": false, "type": "number", "min": 0},
       "olla_step_up": {"required": false, "type": "number", "min": 0},
       "olla_margin_min_db": {"required": false, "type": "number"},

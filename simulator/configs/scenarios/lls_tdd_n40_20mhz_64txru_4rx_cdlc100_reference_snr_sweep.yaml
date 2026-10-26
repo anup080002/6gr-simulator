@@ -24,8 +24,8 @@ meta:
     Two independent n40 2.350 GHz, 20 MHz, 30 kHz absolute-power connected
     executions at nominal receive-reference Es/N0 20 and 0 dB,
     in that descending order.
-    Each child executes 65 slots (32.5 ms), including physical initial access,
-    with one restart checkpoint after successful completion of slot 60,
+    Each child executes 60 slots (30 ms), including physical initial access,
+    with a terminal checkpoint after successful completion of slot 60,
     retaining the parent's UMa NLOS attenuation, CDL-C/100 ns fading,
     64-TXRU gNB/four-chain UE, physical RF operators, absolute sqrt(mW)
     samples, UL power control/PHR, measured RSRP/SINR, received CSI/SRS
@@ -53,10 +53,10 @@ run_control:
   checkpoint_every_slots: 60
   runtime_checkpoint_keep: 2
   deterministic_mode: true
-  total_slots: 65
-  total_time_ms: 32.5
-  measurement_slots: 65
-  measurement_time_ms: 32.5
+  total_slots: 60
+  total_time_ms: 30
+  measurement_slots: 60
+  measurement_time_ms: 30
 
 simulation:
   link_direction: both
@@ -79,12 +79,25 @@ simulation:
   # Fresh access/channel/RF/traffic/beam/LA/HARQ owners at each point.
   random_seed: 20260927
   deterministic_mode: true
-  # Integral frame/subframe containers; the authoritative slot horizon stops
-  # after 65 slots (32.5 ms), not at the end of the 33rd subframe.
-  n_frames: 4
-  n_slots: 65
-  n_subframes: 33
-  min_duration_s: 0.0325
+  # The authoritative slot horizon and frame/subframe containers agree.
+  n_frames: 3
+  n_slots: 60
+  n_subframes: 30
+  min_duration_s: 0.03
+
+link_adaptation:
+  # Explicit scheduler policy, not a normative NR step-size requirement.
+  # New-data increases consume distinct received ACKs at the same spatial
+  # operating point; NACKs request a bounded reduction. A lower quality
+  # ceiling or outage may require a larger safety reduction.
+  mcs_transition:
+    enabled: true
+    max_up_step: 1
+    max_down_step: 2
+    increase_ack_count: 2
+  # Confirm measured higher rank twice, retaining its own RI/PMI together.
+  # No intermediate rank or calibrated SRS quality is fabricated.
+  rank_increase_confirmation_reports: 2
 
 random_access:
   # Received detected-preamble repetition diagnostic; not DL-CFO reuse or
@@ -97,8 +110,8 @@ random_access:
   cb_preamble_offset: 1
   # Match the declared campaign horizon. These bound standalone PRACH
   # diagnostics; connected RA occasions remain event/calendar driven.
-  num_slots: 65
-  num_subframes: 33
+  num_slots: 60
+  num_subframes: 30
 
 sweeps_and_matrix:
   snr_sweep:

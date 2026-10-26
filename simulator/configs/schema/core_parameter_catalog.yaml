@@ -406,6 +406,12 @@
         "reportPMIEnhancedType2": {"value_type": "boolean", "default": false}
       },
       "linkAdaptation": {
+        "mcsTransition": {
+          "enabled": {"value_type": "boolean", "default": false},
+          "maxUpStep": {"value_type": "integer", "default": 1, "min": 1, "max": 31},
+          "maxDownStep": {"value_type": "integer", "default": 2, "min": 1, "max": 31},
+          "increaseAckCount": {"value_type": "integer", "default": 2, "min": 1}
+        },
         "bootstrapMCSIndex": {"value_type": "integer", "default": 1, "min": 0, "max": 31},
         "ageReportedCQI": {"value_type": "boolean", "default": true},
         "cqiAgingStep_dB": {"value_type": "number", "default": 2, "min": 0.000001},

@@ -127,8 +127,17 @@ try
     % tens of thousands of pipe characters and can otherwise be mistaken
     % for an 80k-column pipe-delimited file during persisted refinalization.
     T = sixgr.util.csvReadTable(pathStr,"TextType","string");
-catch
-    T = table();
+catch ME
+    [~,stem]=fileparts(pathStr);
+    if ~any(string(stem)==["dl_pdsch_trials","ul_pusch_trials"])
+        % Preserve optional legacy-artifact reads. Only present canonical
+        % receiver populations must fail instead of masquerading as absent.
+        T=table();
+        return;
+    end
+    failure=MException('sixgr:analytics:UnreadableRetainedArtifact', ...
+        'Existing evidence CSV could not be read: %s',pathStr);
+    throwAsCaller(addCause(failure,ME));
 end
 end
 

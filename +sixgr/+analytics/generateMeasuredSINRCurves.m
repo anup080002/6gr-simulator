@@ -40,6 +40,9 @@ end
 
 dlRaw = localTableField(trialData, ["dl","DL"]);
 ulRaw = localTableField(trialData, ["ul","UL"]);
+[dlRaw,ulRaw]=sixgr.analytics.resolveRetainedDirectionalTrials(runDir,dlRaw,ulRaw);
+trialData.dl=dlRaw;
+trialData.ul=ulRaw;
 dlSourceArtifact = localPrimaryTrialArtifact(dlRaw, "DL");
 ulSourceArtifact = localPrimaryTrialArtifact(ulRaw, "UL");
 

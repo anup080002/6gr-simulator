@@ -1,4 +1,4 @@
-function ok=testReceivedCSIToScheduledPDSCH(preflightOnly)
+function [ok,state]=testReceivedCSIToScheduledPDSCH(preflightOnly,fixture)
 % Actual shared CSI -> combined PUCCH -> admitted PF feedback -> later
 % scheduled/decoded PDCCH -> emitted/completed PDSCH with canonical data
 % preparation, completion/publication and per-UE state drain. YAML gates and TAG
@@ -7,11 +7,14 @@ function ok=testReceivedCSIToScheduledPDSCH(preflightOnly)
 % This is one 5 MHz component, not n40/full access,
 % activated Type-D TCI, RR coverage, or a BLER/adaptation qualification.
 if nargin<1, preflightOnly=false; end
+state=struct();
 assert(islogical(preflightOnly) && isscalar(preflightOnly));
 setup6GRSimToolkit('Verbose',false);
 root=fileparts(fileparts(mfilename('fullpath')));
-fixture=fullfile(root,'simulator','configs','scenarios', ...
-    'lls_tdd_received_csi_application_coexistence_fixture.yaml');
+if nargin<2
+    fixture=fullfile(root,'simulator','configs','scenarios', ...
+        'lls_tdd_received_csi_application_coexistence_fixture.yaml');
+end
 s=sixgr.lls6g.config.loadScenarioConfig(fixture);
 cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
 localMappedAllocationPreflight(cfg);

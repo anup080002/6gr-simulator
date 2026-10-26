@@ -5,6 +5,10 @@ seed0 = double(sixgr.util.structGet(cfg, "run.seed", 1));
 dopp = double(sixgr.util.structGet(cfg, "channel.doppler_Hz", ...
     sixgr.util.structGet(cfg, "channel.dopplerHz", sixgr.util.structGet(cfg, "channel.fading.maxDoppler_Hz", 0))));
 row = struct();
+transitionEvidence=sixgr.truth.projectMCSTransitionEvidence();
+for transitionField=string(fieldnames(transitionEvidence)).'
+    row.(transitionField)=transitionEvidence.(transitionField);
+end
 row.Direction = string(direction);
 noiseFields=sixgr.link.absoluteReferenceNoisePublication();
 for noiseField=string(fieldnames(noiseFields)).'
