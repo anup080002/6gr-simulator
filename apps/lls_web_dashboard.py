@@ -21413,6 +21413,17 @@ window.addEventListener('DOMContentLoaded', function () {
     return (rows || []).map(run => [run.run_id, run.status_text, run.updated_utc, run.created_utc].map(part => String(part || '')).join('|')).join('||');
   }
   function queryRunId() { return new URLSearchParams(location.search).get('run_id') || ''; }
+  function runScopedHref(href, pageId) {
+    // An explicit historical selection owns all result views. Without one,
+    // Live continues to follow the preferred active run as before.
+    if (!href || !['realtime','phy_grid','plots','tables','reports','analytics','artifacts','qualification'].includes(pageId)) return href;
+    const explicit = queryRunId();
+    if (!explicit) return href;
+    const url = new URL(href, window.location.href);
+    if (url.origin !== window.location.origin || url.searchParams.has('run_id')) return href;
+    url.searchParams.set('run_id', explicit);
+    return `${url.pathname}${url.search}${url.hash}`;
+  }
   function selectedRunId() {
     const explicit = queryRunId();
     if (explicit) return String(explicit);
@@ -23765,7 +23776,7 @@ return `<article class="ue-status-card ${esc(ue.health || '')}"><div class="tool
     const p = target.closest('[data-page]');
     if (p) {
       const nextPage = p.dataset.page;
-      const nextHref = p.getAttribute('href');
+      const nextHref = runScopedHref(p.getAttribute('href'), nextPage);
       if ((nextPage === 'reports' || nextPage === 'analytics') && !(((root.report_sections || []).length) || ((root.analytics_sections || []).length))) { window.location.href = nextHref; return; }
       e.preventDefault();
       state.page = nextPage;

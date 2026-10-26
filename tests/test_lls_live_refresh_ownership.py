@@ -19,6 +19,8 @@ sys.path.insert(0, str(ROOT / "apps"))
 import lls_web_dashboard as dashboard  # noqa: E402
 
 SOURCE = (ROOT / "apps/lls_web_dashboard.py").read_text(encoding="utf-8")
+NAV_JS = SOURCE[SOURCE.index("  function queryRunId()"):
+                SOURCE.index("  function selectedRunId()")]
 REFRESH_JS = SOURCE[SOURCE.index("  function livePayloadRunId("):
                     SOURCE.index("  async function fetchContractSectionEvidence(")]
 LOG_JS = SOURCE[SOURCE.index("  function realtimeLogPanel() {"):
@@ -58,11 +60,33 @@ def execute_js(body: str, *, renderer: bool = False) -> None:
         import playwright
         node = str(Path(playwright.__file__).parent / "driver" /
                    ("node.exe" if sys.platform == "win32" else "node"))
-    script = HARNESS + REFRESH_JS + (LOG_JS if renderer else "")
+    script = HARNESS + NAV_JS + REFRESH_JS + (LOG_JS if renderer else "")
     script += "\n(async () => {\n" + body + "\n})().catch(error => { console.error(error); process.exitCode = 1; });"
     result = subprocess.run([node, "-e", script], capture_output=True,
                             text=True, timeout=15)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_explicit_historical_selection_follows_result_navigation_only() -> None:
+    execute_js(r"""
+globalThis.location = new URL('http://127.0.0.1:62906/realtime?run_id=9769067634');
+globalThis.window = {location};
+for (const page of ['realtime','phy_grid','plots','tables','reports','analytics','artifacts','qualification']) {
+  const target = new URL(runScopedHref(`/${page}?view=details#evidence`, page), location);
+  assert.equal(target.searchParams.get('run_id'), '9769067634');
+  assert.equal(target.searchParams.get('view'), 'details');
+  assert.equal(target.hash, '#evidence');
+}
+assert.equal(runScopedHref('/plots?run_id=202', 'plots'), '/plots?run_id=202');
+assert.equal(runScopedHref('/run-control', 'run_control'), '/run-control');
+assert.equal(runScopedHref('/runs', 'runs'), '/runs');
+assert.equal(runScopedHref('https://example.org/plots', 'plots'), 'https://example.org/plots');
+globalThis.location = new URL('http://127.0.0.1:62906/realtime');
+window.location = location;
+assert.equal(runScopedHref('/realtime', 'realtime'), '/realtime');
+assert.equal(runScopedHref('/plots', 'plots'), '/plots');
+""")
+    assert "const nextHref = runScopedHref(p.getAttribute('href'), nextPage);" in SOURCE
 
 
 def test_lite_merge_preserves_same_run_previews_but_never_another_run() -> None:
