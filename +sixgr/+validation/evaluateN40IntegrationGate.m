@@ -325,6 +325,25 @@ out.FinalAccepted=out.Ok && options.RequireContinuation;
                 'Causality','CSI application precedes received information or physical completion.');
             require(truth(e.WaveformApplicationVerified)&&e.AdditionalPHYExecutions==0, ...
                 'Coverage','CSI application must belong to the original completed waveform.');
+            frozen=field(e,'FrozenApplication',struct());
+            require(string(field(frozen,'ReportIdentity',""))==string(a.ReportIdentity) && ...
+                string(field(frozen,'ObservationID',""))==string(a.ObservationID) && ...
+                string(T.CompletedCSIApplicationReportIdentity(j))==string(a.ReportIdentity) && ...
+                string(T.CompletedCSIApplicationReportObservationID(j))==string(a.ObservationID), ...
+                'Identity','Frozen CSI operands and published row must retain the admitted report identity.');
+            % This n40 Type-I scheduler admits an atomic RI/PMI/CRI tuple.
+            % Rank deferral retains the entire previous accepted report.
+            for name=["RI","PMI","CRI"]
+                require(sameFinite(field(frozen,"Reported"+name,NaN),field(a,name,NaN)), ...
+                    'Identity',"Frozen reported "+name+" differs from the admitted CSI report.");
+            end
+            require(sameFinite(field(frozen,'FrozenNumLayers',NaN),a.RI) && ...
+                sameFinite(field(frozen,'FrozenPMI',NaN),a.PMI) && ...
+                sameFinite(field(frozen,'FrozenCSIResourceIndex',NaN),a.CRI), ...
+                'Identity','Frozen selected CSI rank/PMI/resource identity is missing or differs from the admitted tuple.');
+            need(T,"Layers");
+            require(sameFinite(T.Layers(j),field(frozen,'FrozenNumLayers',NaN)), ...
+                'Identity','Completed PDSCH layer count differs from the frozen selected CSI rank.');
         end
         detail="Verified original completed CSI-to-PDSCH capsules: "+numel(chosen);
     end
@@ -480,6 +499,10 @@ end
 end
 function tf=truth(v)
 n=num(v); tf=isscalar(n)&&isfinite(n)&&n==1;
+end
+function tf=sameFinite(a,b)
+a=num(a); b=num(b);
+tf=isscalar(a)&&isscalar(b)&&isfinite(a)&&isfinite(b)&&a==b;
 end
 function tf=textPresent(v)
 s=string(v); tf=isscalar(s)&&~ismissing(s)&&strlength(strtrim(s))>0;

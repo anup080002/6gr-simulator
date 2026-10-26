@@ -37,12 +37,67 @@ sixgr.util.csvWriteTable(path,T,'PreserveSchema',true);
 out=sixgr.validation.evaluateN40IntegrationGate(root,'RequireContinuation',false);
 assert(~pass(out,'primary_pdsch'),'Missing applicable CRC must not become a measured failure or pass.');
 testOriginalCSIBinding(root);
+testCompletedCSISelection(root);
 testParentPublication();
 fprintf('N40_INTEGRATION_GATE_EVALUATOR_PASS incomplete_test_fixture=%s\n',root);
 ok=true;
 end
 function value=pass(out,id)
 hit=out.Checks.CheckID==id; assert(nnz(hit)==1); value=out.Checks.Passed(hit);
+end
+
+function testCompletedCSISelection(root)
+% Authored parser fixture only: no PHY execution or full-gate acceptance.
+mkdir(fullfile(root,'control','csv'));
+R=table("fixture_report","fixture_observation",1,"delivered_to_runtime_scheduler", ...
+    'VariableNames',{'ReportIdentity','ObservationID','CSIUCIDecodeOk','DeliveryStatus'});
+sixgr.util.csvWriteTable(fullfile(root,'control','csv','received_csi_reports.csv'),R);
+a=struct('ReportIdentity','fixture_report','ObservationID','fixture_observation', ...
+    'AvailableAtSample',100,'RI',1,'PMI',31,'CRI',1);
+f=struct('ReportIdentity',a.ReportIdentity,'ObservationID',a.ObservationID, ...
+    'ReportedRI',1,'ReportedPMI',31,'ReportedCRI',1, ...
+    'FrozenNumLayers',1,'FrozenPMI',31,'FrozenCSIResourceIndex',1);
+e=struct('AdmittedCSI',a,'FrozenApplication',f,'DecisionClock',struct('AtSample',101), ...
+    'FirstActiveSample',110,'CompletedAtSample',200,'WaveformApplicationVerified',true, ...
+    'AdditionalPHYExecutions',0);
+path=fullfile(root,'air_interface','csv','dl_pdsch_trials.csv');
+writeCompletedCSI(path,e,1);
+out=sixgr.validation.evaluateN40IntegrationGate(root,'RequireContinuation',false);
+assert(pass(out,'completed_csi_application')&&~out.Ok,'%s',checkDetail(out,'completed_csi_application'));
+for name=["ReportedRI","ReportedPMI","ReportedCRI","FrozenNumLayers","FrozenPMI","FrozenCSIResourceIndex"]
+    for value=[NaN f.(name)+1]
+        bad=e; bad.FrozenApplication.(name)=value;
+        writeCompletedCSI(path,bad,1); before=sixgr.util.sha256File(path);
+        out=sixgr.validation.evaluateN40IntegrationGate(root,'RequireContinuation',false);
+        assert(~pass(out,'completed_csi_application') && ...
+            out.Checks.Status(out.Checks.CheckID=="completed_csi_application")=="IDENTITY_MISMATCH", ...
+            'Missing or inconsistent selected CSI operand must fail: %s',name);
+        assert(sixgr.util.sha256File(path)==before,'Evaluator must preserve the original evidence.');
+    end
+end
+writeCompletedCSI(path,e,2);
+out=sixgr.validation.evaluateN40IntegrationGate(root,'RequireContinuation',false);
+assert(~pass(out,'completed_csi_application'),'Completed layer count must match its frozen selection.');
+bad=e; bad.FrozenApplication.ObservationID='wrong_observation'; writeCompletedCSI(path,bad,1);
+out=sixgr.validation.evaluateN40IntegrationGate(root,'RequireContinuation',false);
+assert(~pass(out,'completed_csi_application'),'Frozen observation substitution must fail.');
+writeCompletedCSI(path,e,1);
+out=sixgr.validation.evaluateN40IntegrationGate(root,'RequireContinuation',false);
+assert(pass(out,'completed_csi_application')&&pass(out,'primary_pdsch')&&~out.Ok);
+assert(out.RadioOutcomes.CRCFailCount(out.RadioOutcomes.Signal=="pdsch")==1, ...
+    'A measured NACK remains a valid radio result with correct application provenance.');
+end
+
+function writeCompletedCSI(path,e,layers)
+token=string(jsonencode(e));
+hash=string(sixgr.util.sha256Hex(uint8(unicode2native(char(token),'UTF-8'))));
+T=table("gate_unit","gate_execution",string(repmat('a',1,64)),1,0,0,0,layers, ...
+    1,token,hash,string(e.AdmittedCSI.ReportIdentity),string(e.AdmittedCSI.ObservationID), ...
+    'VariableNames',{'RunID','ExecutionID','ConfigHash','CRCApplicable','CRCPass','Crash', ...
+    'FallbackFlag','Layers','CompletedCSIApplicationVerified','CompletedCSIApplicationEvidenceJSON', ...
+    'CompletedCSIApplicationEvidenceSHA256','CompletedCSIApplicationReportIdentity', ...
+    'CompletedCSIApplicationReportObservationID'});
+sixgr.util.csvWriteTable(path,T,'PreserveSchema',true);
 end
 
 function testParentPublication()

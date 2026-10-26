@@ -14,6 +14,9 @@ scenario = sixgr.lls6g.config.loadScenarioConfig(fullfile( ...
 cfg = sixgr.lls6g.buildInternalConfig(scenario, ...
     fullfile(tempdir, "h4_selected_csirs_pdsch_basis"));
 baseline = localCheckBasis(cfg);
+for rank = [2 4]
+    localCheckBasis(cfg, rank);
+end
 renamed = scenario.toStruct();
 renamed.reference_signals.csi_rs_resource_ids = [17 5 33 9 41 13 57 21];
 renamed.mimo_and_beam_management.ssb_to_initial_csi_resource_ids = [17 5 33 9];
@@ -34,18 +37,27 @@ ok = true;
 fprintf("[PASS] H4 received-CRI CSI-RS basis is frozen before PMI application.\n");
 end
 
-function frozen = localCheckBasis(cfg)
+function frozen = localCheckBasis(cfg, rank)
+if nargin < 2, rank = 1; end
+cfg.phy.pdsch.numLayers = rank; cfg.phy.pdsch.nLayers = rank;
+cfg.phy.pdsch.dmrs.portSet = 0:rank-1;
+cfg.phy.pdsch.dmrs.DMRSPortSet = 0:rank-1;
 [cfg, ~] = sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg, 31, 2);
 
 baseGrant = localGrant(cfg);
+baseGrant.NumLayers = rank; baseGrant.Layers = rank;
 baseGrant = withAuthoredPDSCHDCI(cfg, baseGrant);
 [candidates, ~] = sixgr.phy.dl.pmiCodebookCandidates( ...
-    cfg, 1, 4, "Mode", "type1_su_mimo");
-selectedPMI = 4;
-Wcsi = double(candidates(selectedPMI + 1).W);
+    cfg, rank, 4, "Mode", "type1_su_mimo");
+selectedIndex = min(5,numel(candidates));
+if rank==1 && any([candidates.PMI]==31)
+    selectedIndex=find([candidates.PMI]==31,1);
+end
+selectedPMI = double(candidates(selectedIndex).PMI);
+Wcsi = double(candidates(selectedIndex).W);
 
-frozen = cell(1, 2);
-selectedCRIs = [0 3];
+selectedCRIs = [0 1 3];
+frozen = cell(1, numel(selectedCRIs));
 for ordinal = 1:numel(selectedCRIs)
     cri = selectedCRIs(ordinal);
     grant = baseGrant;
@@ -75,6 +87,49 @@ for ordinal = 1:numel(selectedCRIs)
         string(phyGrant.PrecodingState.HybridRFDesignStatus) == ...
             "frozen_selected_csirs_basis", ...
         "Frozen grant must label the selected-CRI hybrid beam contract.");
+    if rank==1
+        hydratedInput=grant; hydratedInput.PHYGrant=phyGrant;
+        hydrated=sixgr.truth.GrantPreparation.hydrateGrantSnapshot(cfg,"DL",hydratedInput);
+        assert(string(hydrated.AppliedPrecoderCodebookMode)==string(phyGrant.PrecodingState.CodebookMode) && ...
+            hydrated.AppliedPrecoderPMI==phyGrant.PrecodingState.PMI && ...
+            isequal(hydrated.PrecodingMatrixLogicalPorts,Wcsi), ...
+            'Production hydration must preserve selected CSI provenance with the exact operator.');
+    end
+    % Reproduce the materialized new-data -> HARQ retry boundary. Explicit
+    % matrices must retain their selected basis even under the bootstrap cfg.
+    materialized = grant;
+    materialized.PrecodingMatrixLogicalPorts = phyGrant.PrecodingState.MatrixLogicalPorts;
+    materialized.PrecodingMatrix = phyGrant.PrecodingState.MatrixPhysicalPorts;
+    materialized.HybridElementToPortMatrix = phyGrant.PrecodingState.HybridElementToPortMatrix;
+    materialized.AppliedPrecoderCodebookMode = phyGrant.PrecodingState.CodebookMode;
+    materialized.PrecoderNormalizationConvention = phyGrant.PrecodingState.NormalizationConvention;
+    for retry = [false true]
+        materialized.HARQ.IsRetransmission = retry;
+        materialized.HARQ.RV = 2*double(retry);
+        materialized.HARQTBContext = struct('OriginalNumLayers',rank);
+        repeated = sixgr.phy.grant.freezePHYGrant(cfg,"DL",materialized, ...
+            "SNR_dB",40,"Frame",1,"Slot",grant.Slot);
+        assert(repeated.PrecodingState.CSIRSPortBasisApplied && ...
+            repeated.PrecodingState.CSIResourceIndex==cri && ...
+            isequal(repeated.PrecodingState.MatrixLogicalPorts,Wcsi) && ...
+            isequal(repeated.PrecodingState.MatrixPhysicalPorts,expected) && ...
+            string(repeated.PrecodingState.CSIRSPortToElementMatrixSHA256)== ...
+                string(phyGrant.PrecodingState.CSIRSPortToElementMatrixSHA256), ...
+            'Materialized/retry selected CSI matrix and provenance must survive refreeze.');
+    end
+    bad=materialized; bad.CRI=mod(cri+1,size(cfg.phy.csirs.precoderMatrices,3));
+    localReject(@()sixgr.phy.grant.freezePHYGrant(cfg,"DL",bad), ...
+        "sixgr:phy:grant:FrozenHybridCSIRSBasisMismatch");
+    bad=materialized; bad.PrecodingMatrixLogicalPorts(1,1)=bad.PrecodingMatrixLogicalPorts(1,1)+0.01;
+    localReject(@()sixgr.phy.grant.freezePHYGrant(cfg,"DL",bad), ...
+        "sixgr:phy:grant:MaterializedCSILogicalMatrixMismatch");
+    bad=materialized; bad.PrecodingMatrixLogicalPorts(:,end+1)=0;
+    localReject(@()sixgr.phy.grant.freezePHYGrant(cfg,"DL",bad), ...
+        "sixgr:phy:grant:MaterializedCSILogicalMatrixMismatch");
+    changed=cfg;
+    changed.phy.csirs.precoderMatrices(:,:,cri+1)=-changed.phy.csirs.precoderMatrices(:,:,cri+1);
+    localReject(@()sixgr.phy.grant.freezePHYGrant(changed,"DL",materialized), ...
+        "sixgr:phy:grant:FrozenHybridCSIRSBasisMismatch");
     frozen{ordinal} = phyGrant;
 end
 
@@ -123,4 +178,14 @@ grant = struct( ...
     "GrantContextId", "DL|h4-selected-csirs-basis", "K0", 0, ...
     "HARQ", struct("HarqID", 0, "NDI", true, "RV", 0, ...
         "IsRetransmission", false));
+end
+
+function localReject(f,identifier)
+try
+    f();
+catch ME
+    assert(string(ME.identifier)==identifier,'Unexpected error %s: %s',ME.identifier,ME.message);
+    return;
+end
+error('testH4SelectedCSIRSPDSCHBasis:ExpectedRejection','Expected %s',identifier);
 end

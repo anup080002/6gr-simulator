@@ -3,13 +3,13 @@
 ## 26 October 2026: n40 integration gate and repaired feedback handoffs
 
 The recovered code, integration gate and latest repairs are consolidated in
-this checkout on `main`. The current waveform attempt started with runtime
-revision **`d40031e0`**. Documentation-only commits after that revision do not
-change the gate's sealed executable/configuration inputs.
+this checkout on `main`. The stopped waveform attempt below used runtime
+revision **`d40031e0`**. The slot-56 repair requires a fresh execution; its
+results cannot be attributed to that stopped attempt.
 
 ### Latest verification snapshot — full acceptance remains pending
 
-The latest launched attempt is
+The latest retained failed attempt is
 `n40_integration_65slots_20261026_022232`, under
 `E:\SixGRResults\lls\lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep`.
 It executes two independent **[20, 0] dB nominal reference-Es/N0** points,
@@ -17,27 +17,39 @@ It executes two independent **[20, 0] dB nominal reference-Es/N0** points,
 64 gNB TXRU, four UE chains and CDL-C/100 ns. Measured receiver SINR remains
 separate from the configured reference-Es/N0 label.
 
-The last one-time status inspection on **26 October 2026** found:
+The stop and failure inspection on **26 October 2026** established:
 
-- The 20 dB child had completed **52 slots** and was processing slot **53**.
-- The connected **slot-50 PUSCH passed CRC with four layers and MCS 1**.
-  Seven published connected DL trials also passed CRC.
-- The inspected log contained no software exception, and the eight inspected
-  primary PHY trial tables had no crash-marked rows. Non-detections remain
-  original radio outcomes; they are not fabricated successes.
-- Checkpoint60 had **not yet been created**, and the 0 dB child had not started.
+- The 20 dB child completed **55 slots**, then slot **56** raised
+  `sixgr:phy:grant:FrozenHybridArchitectureMismatch` during PF HARQ retry
+  preparation. The exact sweep MATLAB processes were stopped.
+- Connected **PUSCH50 and PUSCH55 passed CRC with four layers and MCS 1**,
+  confirming the repaired SRS spatial handoff at both boundaries.
+- DL52/53/54 retained actual CRC failures without software crashes. Their
+  NACKs were received on PUCCH54/55 and correctly triggered retransmission.
+  The defect was lost CSI-selected basis metadata during materialization
+  and HARQ refreezing, not the existence of those negative radio outcomes.
+- Native checkpoint60 was **not reached**, and the 0 dB child never started.
+  The diagnostic runtime failure CSV is not a native restart checkpoint.
 
-This is a retained progress snapshot, not live status or a final gate pass.
+All original results remain unchanged. Failure operands and file hashes are
+retained in the gate folder's `slot56_architecture_failure.json`.
 Both completed children, native checkpoint60 continuations through65 and
 final-report acceptance remain unverified in this README. MATLAB executes
 the gate's checks automatically; this file does not update with the run.
-Use the [run list](http://127.0.0.1:62906/runs) or the
-[20 dB child's live view](http://127.0.0.1:62906/realtime?run_id=9769067634)
-for current local status. The parent and active child are two dashboard rows
+Use the [run list](http://127.0.0.1:62906/runs) and select the fresh tag for
+current local status. The parent and active child are two dashboard rows
 for one sequential sweep, not two concurrent waveform simulations.
 
 ### Repairs and focused evidence
 
+- Materialized PDSCH grants retain original CSI-selected RI/PMI/CRI and basis
+  provenance only after exact logical/physical/basis operator and digest
+  validation. HARQ refreezing revalidates that selection without substituting
+  the bootstrap basis. Custom and measured MU matrices retain their own
+  authority. RF-chain and transmit-RU counts remain separate from logical ports.
+- The n40 gate rejects missing or inconsistent frozen CSI rank/PMI/resource
+  operands and report identity, including the original missing-CRI defect.
+  Correctly attributed CRC failures remain measured radio outcomes.
 - Original SRS noise/EVM evidence reaches the collector and exporter;
   recovery retains the original execution identity. Consumer instrumentation
   records actual operands rather than inferring execution from configuration.
@@ -51,7 +63,28 @@ for one sequential sweep, not two concurrent waveform simulations.
 - The integration gate rejects redirected output roots, seals runtime and
   configuration inputs, and checks actual PHY/feedback/report ownership.
 
-All **eight latest affected checks passed**:
+The slot56 repair passed **14 affected MATLAB tests**, including selected
+CSI bases at ranks1/2/4, actual PF/RR HARQ scheduling, beam-transition TX
+preparation, RF-architecture guards, rank/precoder atomicity, 333 UL DCI
+cases, scheduler context/TBS consistency and the integration-gate evaluator.
+Fresh physical CSI → combined PUCCH → normal PF/DCI → PDSCH16 completed
+at rank1/MCS26 with CRC success and canonical publication. Separately, four
+original HARQ receiver captures and seven rejection guards passed replay.
+The geometry component uses an explicit Type-I/wideband fixture and still
+rejects the unqualified original Type-II/subband master configuration.
+Receipt: `E:\SixGRResults\logs\n40_slot56_repair_20261026_final.json`.
+The initial external-runner setup failure and original geometry fixture
+failure remain preserved; the corrected geometry rerun passed in batch03.
+
+Read-only reconstruction from the original n40 configuration proves that
+RI1/PMI31/CRI1 produces the exact retained physical-matrix digest at DL52–54.
+The repaired gate rejects the original missing frozen CRI without changing
+any primary row. This closes the diagnosed provenance/refreeze defect at
+the focused boundary; it does not qualify a completed fresh n40 sweep.
+Restart is held for the separately requested bounded MCS/rank-adaptation
+repair and its verification.
+
+The preceding SRS handoff repair passed **eight affected checks**:
 `testULAcceptedSRSSpatialProvenance`, `test20MHzSharedSRSPowerBinding`,
 `testReceivedSRSToScheduledPUSCH`, `testFutureULPlanningCausality`,
 `testPUSCHCausalSRSFrozenGrant`, `testSchedulerGrantConsistency`,
