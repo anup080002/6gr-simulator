@@ -1,5 +1,14 @@
 # SixGR Foundation v2
 
+### Live dashboard refresh repair — 26 October 2026
+
+Open [Live](http://127.0.0.1:62906/realtime) to follow the active waveform point,
+or select a previous run from the Run dropdown. The display now retains actual
+measurements during refresh, identifies loading/failed refreshes, and links
+sweep parents to their child measurements. Final acceptance remains separate.
+Use [the live-dashboard launcher](tools/live_dashboard/README.md) for these
+repairs; it preserves the running n40 gate's frozen source files.
+
 ## 26 October 2026: n40 integration gate and repaired feedback handoffs
 
 The recovered code, integration gate and latest repairs are consolidated in
@@ -37,9 +46,10 @@ The next configured sweep is **60 slots (30 ms) per child**, with terminal
 checkpoint60 and an actual checkpoint55-to-60 continuation check. Both
 completed children and final-report acceptance remain unverified. MATLAB executes
 the gate's checks automatically; this file does not update with the run.
-Full scenario execution remains stopped at the user's request. The latest
-verification used affected tests, bounded physical integrations and retained-data
-audits; it did not start either 60-slot child.
+That stopped-state snapshot predates the fresh launch. The two-point 60-slot
+gate `n40_integration_60slots_20261026_100846` was subsequently started on
+26 October 2026. Its 20 dB child is run `9604785681`; the parent is `9518918043`.
+Use live evidence for its current state; this document is not a completion receipt.
 Use the [run list](http://127.0.0.1:62906/runs) and select the fresh tag for
 current local status. The parent and active child are two dashboard rows
 for one sequential sweep, not two concurrent waveform simulations.
@@ -1186,7 +1196,7 @@ from this same checkout, only if port 62906 is not already serving it:
 ```cmd
 set "SIXGR_RESULTS_ROOT=E:\SixGRResults"
 set "SIXGR_OUTPUT_BACKEND_OVERRIDE=filesystem"
-"apps\.webgui-venv\Scripts\python.exe" apps\lls_web_dashboard.py --host 127.0.0.1 --port 62906 --server auto --threads 32 --no-browser
+"apps\.webgui-venv\Scripts\python.exe" tools\live_dashboard\serve.py --host 127.0.0.1 --port 62906 --server auto --threads 32 --no-browser
 ```
 
 Open <http://127.0.0.1:62906/realtime> and select the intended run. This command
