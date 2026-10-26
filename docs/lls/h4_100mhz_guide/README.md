@@ -6,21 +6,38 @@ configuration. The separate simulator dashboard on port 62906 is unaffected.
 
 This is the single home for mathematics, port/layer diagrams, algorithms,
 configuration flows, measurements, source links, and 3GPP/MATLAB references.
-The primary reading order now uses 16 topic areas rather than a flat list of
-all chapters. Detailed chapters remain subsections with their original deep
-links, current-topic context, on-page outline and ordered next-reading links.
-Search still reaches the detailed content. This navigation consolidation
-preserves the explanations; it is not a claim that every repeated paragraph
-has already been merged.
+The home page starts with three paths: radio fundamentals, reading results,
+and configuration. A four-step radio explanation and short introductions to
+MCS, rank, goodput, BLER, SNR/SINR and unavailable measurements come first.
+The sidebar keeps five essential links visible. Expand **All technical topics**
+for the complete 16-topic library; advanced bookmarks and searches open it
+automatically. Detailed chapters retain their original links, equations,
+source viewer, calculators and next-reading navigation.
 `../lls_gap_status_20261023.html` is an issue ledger only: pending work,
 root causes, implemented-but-unverified repairs, and scoped verified fixes.
 The guide serves that same ledger at `/issues.html`; it is not a second copy.
 Local logs/results remain private and are not exposed by the documentation server.
 
+### Open or restart the guide
+
+From the repository directory:
+
+```powershell
+python docs\lls\h4_100mhz_guide\serve.py --port 62907
+```
+
+Open <http://127.0.0.1:62907/>. The server must remain running; after a laptop
+restart, start it again. Port **62907** is this explanation guide. The **Live
+dashboard** link opens the simulation GUI on **62906**, where the Run dropdown
+selects current or previous runs. The guide does not poll or control simulations.
+If the port is already in use, open the existing guide rather than starting a
+second copy. This documentation-only UI change needs the focused guide browser
+check below; it does not require launching another MATLAB simulation.
+
 ### External output location for a waveform run
 
 The documentation server never launches a simulation. When launching the
-selected six-point scenario separately, the external evidence directory must
+selected n40 reference scenario separately, the external evidence directory must
 also be authorized through the existing storage allowlist. Merely passing
 `E:\SixGRResults` as a CLI argument is insufficient: an unauthorized absolute
 root can resolve to the repository's `results` folder. This is a storage
@@ -38,7 +55,7 @@ checkpoints. A launched or completed process is not automatically a passed
 physical or statistical result; inspect every child and the final receipt.
 
 The latest technical chapters are [ports and CSI flow](http://127.0.0.1:62907/#port-layer-measurement-flow),
-[n40 six-point reference sweep](http://127.0.0.1:62907/#n40-reference-sweep), and
+[n40 reference sweep](http://127.0.0.1:62907/#n40-reference-sweep), and
 [measurement operators](http://127.0.0.1:62907/#measurement-operator-maths).
 They share the existing navigation, search, source viewer and authority labels.
 Chapter subsections use `#chapter-id?section=section-id` links, which expand

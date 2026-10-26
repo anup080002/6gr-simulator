@@ -15,22 +15,65 @@ def verify_topic_navigation(page, base, screenshots=None):
     owned = [entry['id'] for topic in topics for entry in topic['entries'] if not entry['section']]
     assert len(owned) == len(set(owned)) == len(chapters)
     assert set(owned) == {chapter['id'] for chapter in chapters}
-    expect(page.locator('#navigation > .nav-topic')).to_have_count(len(topics))
-    expect(page.locator('#navigation > .nav-topic[open]')).to_have_count(1)
-    assert page.locator('#navigation .nav-reading:visible').count() < len(chapters)
-    expect(page.locator('#nav-status')).to_contain_text('preserved chapters')
-    expect(page.locator('#guide-topic-index')).to_have_text(f'Read the guide in {len(topics)} ordered topics')
+    starter_routes = ('start', 'fundamentals', 'dashboard-reading', 'configuration-map', 'glossary')
+    expect(page.locator('.starter-navigation')).to_be_visible()
+    assert page.locator('.starter-navigation a').evaluate_all(
+        '(links)=>links.map(link=>link.getAttribute("href"))') == [
+            '#' + route for route in starter_routes]
+    expect(page.locator('#advanced-navigation .nav-topic')).to_have_count(len(topics))
+    expect(page.locator('#advanced-navigation .nav-topic[open]')).to_have_count(1)
+    expect(page.locator('#advanced-navigation')).to_have_js_property('open', False)
+    expect(page.locator('#advanced-navigation .nav-reading:visible')).to_have_count(0)
+    expect(page.locator('.start-paths')).to_be_visible()
+    assert page.locator('.start-paths a').evaluate_all(
+        '(links)=>links.map(link=>link.getAttribute("href"))') == [
+            '#fundamentals', '#dashboard-reading', '#configuration-map']
+    expect(page.locator('.basics-flow')).to_be_visible()
+    expect(page.locator('.basics-flow')).not_to_be_empty()
+    expect(page.locator('a.live-link')).to_contain_text('Live dashboard')
+    expect(page.locator('a.live-link')).to_have_attribute(
+        'href', 'http://127.0.0.1:62906/realtime')
+    expect(page.locator('#all-topics')).to_have_js_property('open', False)
+    assert page.evaluate('''() => Boolean(document.querySelector('.basics-flow')
+        .compareDocumentPosition(document.getElementById('all-topics')) & Node.DOCUMENT_POSITION_FOLLOWING)''')
     expect(page.locator('.guide-topic-directory li')).to_have_count(len(topics))
     expect(page.locator('#chapter-footer .reading-next')).to_have_attribute('href', '#fundamentals')
+    # The full reference is still accessible on demand, rather than occupying
+    # the first screen. Native details keep the disclosure keyboard-operable.
+    page.locator('#all-topics > summary').click()
+    expect(page.locator('#guide-topic-index')).to_be_visible()
+    expect(page.locator('.guide-topic-directory li:visible')).to_have_count(len(topics))
+    page.locator('#all-topics > summary').click()
+    expect(page.locator('#all-topics')).to_have_js_property('open', False)
+    # Search covers advanced chapter prose even while the beginner menu is
+    # active. Clearing search restores the compact beginner presentation.
+    page.locator('#search').fill('rate matching')
+    expect(page.locator('#advanced-navigation')).to_have_js_property('open', True)
+    assert 0 < page.locator('#advanced-navigation .nav-reading:visible').count() < len(chapters)
+    expect(page.locator('#nav-status')).to_contain_text('matching readings')
+    page.locator('#search').fill('')
+    expect(page.locator('#advanced-navigation')).to_have_js_property('open', False)
+    if screenshots:
+        screenshots.mkdir(parents=True, exist_ok=True)
+        page.goto(base + '/#start', wait_until='networkidle')
+        page.screenshot(path=str(screenshots / 'beginner-home-desktop.png'), full_page=True)
 
-    # All old chapter hashes render their original title, with ordered context
-    # rather than redirecting to a replacement page or silently losing detail.
+    # All old chapter hashes render their original title. The home page has a
+    # compact introduction; detailed readings retain their ordered context.
     for chapter in chapters:
         page.goto(base + '/#' + chapter['id'], wait_until='domcontentloaded')
         expect(page.locator('h1')).to_have_text(chapter['title'])
-        expect(page.locator('.reading-context')).to_contain_text('Reading')
+        if chapter['id'] == 'start':
+            expect(page.locator('#content > .eyebrow')).to_be_visible()
+            expect(page.locator('#content .reading-context')).to_have_count(0)
+            expect(page.locator('#content .page-outline')).to_have_count(0)
+            expect(page.locator('#content .method-basis')).to_have_count(0)
+        else:
+            expect(page.locator('.reading-context')).to_contain_text('Reading')
         expect(page.locator('#chapter-body')).not_to_be_empty()
-        expect(page.locator('#navigation a[aria-current="page"]')).to_have_count(1)
+        expect(page.locator('#advanced-navigation .nav-topic a[aria-current="page"]')).to_have_count(1)
+        expect(page.locator('#advanced-navigation')).to_have_js_property(
+            'open', chapter['id'] not in starter_routes)
         assert page.evaluate('''() => [...document.querySelectorAll('.page-outline a')].every(a=>{
             const section=new URLSearchParams(a.hash.split('?')[1]).get('section');
             return Boolean(document.getElementById(section));
@@ -38,6 +81,7 @@ def verify_topic_navigation(page, base, screenshots=None):
     # Each topic is a small ordered table of contents over the same sources.
     for topic in topics:
         page.goto(base + '/#topic-' + topic['id'], wait_until='domcontentloaded')
+        expect(page.locator('#advanced-navigation')).to_have_js_property('open', True)
         expect(page.locator('h1')).to_have_text(topic['title'])
         expect(page.locator('.topic-cards > li')).to_have_count(len(topic['entries']))
         expect(page.locator('#chapter-footer .reading-next')).to_have_attribute(
@@ -50,6 +94,7 @@ def verify_topic_navigation(page, base, screenshots=None):
                 continue
             page.goto(base + '/#' + entry['id'] + '?section=' + entry['section'],
                       wait_until='domcontentloaded')
+            expect(page.locator('#advanced-navigation')).to_have_js_property('open', True)
             expect(page.locator('#' + entry['section'])).to_have_attribute('open', '')
             expect(page.locator('#navigation .current-topic')).to_have_attribute('data-topic', topic['id'])
             expect(page.locator('#' + entry['section'] + ' > summary')).to_be_visible()
@@ -65,13 +110,14 @@ def verify_topic_navigation(page, base, screenshots=None):
     page.locator('#search').fill('unfindable-navigation-example-763291')
     expect(page.locator('#navigation')).to_contain_text('No topic or subsection matches')
     page.locator('#search').fill('')
-    expect(page.locator('#navigation > .nav-topic[open]')).to_have_count(1)
+    expect(page.locator('#advanced-navigation')).to_have_js_property('open', True)
+    expect(page.locator('#advanced-navigation .nav-topic[open]')).to_have_count(1)
     # Native summary keyboard behavior and one-open-topic accordion.
     summary = page.locator('#navigation [data-topic="downlink-data"] > summary')
     summary.focus()
     page.keyboard.press('Enter')
     expect(page.locator('#navigation [data-topic="downlink-data"]')).to_have_attribute('open', '')
-    expect(page.locator('#navigation > .nav-topic[open]')).to_have_count(1)
+    expect(page.locator('#advanced-navigation .nav-topic[open]')).to_have_count(1)
     page.locator('#navigation [data-topic="downlink-data"] .topic-overview').click()
     expect(page.locator('h1')).to_have_text('PDSCH & DL-SCH')
 
@@ -102,6 +148,16 @@ def verify_topic_navigation(page, base, screenshots=None):
         page.goto(base + '/#topic-spatial-feedback', wait_until='networkidle')
         page.screenshot(path=str(screenshots / 'ordered-topics-desktop.png'), full_page=True)
     page.set_viewport_size({'width':390, 'height':844})
+    page.goto(base + '/#start', wait_until='networkidle')
+    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
+    expect(page.locator('.start-paths')).to_be_visible()
+    expect(page.locator('#all-topics')).to_have_js_property('open', False)
+    page.locator('#menu').click()
+    expect(page.locator('.starter-navigation')).to_be_visible()
+    expect(page.locator('#advanced-navigation')).to_have_js_property('open', False)
+    if screenshots:
+        page.screenshot(path=str(screenshots / 'beginner-home-mobile.png'), animations='disabled')
+    page.locator('#close-menu').click()
     for target in ('topic-orientation', 'topic-spatial-feedback', 'receiver-algorithm-lab',
                    'channel-playbooks?section=playbook-pdsch'):
         page.goto(base + '/#' + target, wait_until='networkidle')
@@ -121,6 +177,8 @@ def verify_topic_navigation(page, base, screenshots=None):
     expect(page.locator('#menu')).to_have_attribute('aria-expanded', 'false')
     page.set_viewport_size({'width':1440, 'height':1000})
     return {'status':'PASS', 'ordered_topics':len(topics), 'preserved_chapter_routes':len(chapters),
+            'beginner_starter_routes':len(starter_routes), 'beginner_paths':3,
+            'progressive_reference_and_global_search':True,
             'targeted_procedure_links':sum(bool(e['section']) for t in topics for e in t['entries']),
             'source_filter_calculator_mobile_checks':True,
             'scope':'navigation_and_documentation_UI_only_no_PHY_or_prose_deduplication_claim'}
@@ -282,7 +340,11 @@ def main():
         for chapter in chapters:
             page.goto(args.url+'/#'+chapter['id'], wait_until='networkidle')
             assert page.locator('h1').inner_text() == chapter['title']
-            assert page.locator('.method-basis').first.locator('.badge').count() > 0
+            if chapter['id'] == 'start':
+                expect(page.locator('#content > .eyebrow')).to_be_visible()
+                expect(page.locator('#content .method-basis')).to_have_count(0)
+            else:
+                assert page.locator('.method-basis').first.locator('.badge').count() > 0
         # Authority labels and links must be complete, not a silent default.
         audit = page.evaluate("""() => {
             const g=window.H4Guide, ids=new Set(g.CHAPTERS.map(c=>c.id));
@@ -500,7 +562,8 @@ def main():
             page.locator('#qam-canvas').scroll_into_view_if_needed()
             page.screenshot(path=str(args.screenshots/'constellation.png'))
         page.locator('#search').fill('rate matching')
-        assert 0 < page.locator('#navigation a').count() < len(chapters)
+        expect(page.locator('#advanced-navigation')).to_have_js_property('open', True)
+        assert 0 < page.locator('#advanced-navigation .nav-reading:visible').count() < len(chapters)
         page.locator('#search').fill('')
         page.locator('#theme').click()
         assert page.locator('body').evaluate("el=>el.classList.contains('dark')")

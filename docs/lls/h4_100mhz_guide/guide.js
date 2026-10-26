@@ -146,6 +146,7 @@ async function evidenceExplorer(stamp,params){
  }catch(e){if(stamp===epoch)error('evidence-inventory-summary',e);}
 }
 function flatten(obj,prefix='',out=[]){Object.entries(obj||{}).forEach(([k,v])=>{const p=prefix?`${prefix}.${k}`:k;if(v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).length)flatten(v,p,out);else out.push({path:p,value:v});});return out;}
+const STARTER_READINGS=[['start','Start here'],['fundamentals','Radio fundamentals'],['dashboard-reading','Understand the results'],['configuration-map','Choose a configuration'],['glossary','Terms explained']];
 function navigation(){
  const q=$('search').value.trim().toLowerCase();let matches=0;
  const html=TOPICS.map((topic,i)=>{
@@ -162,9 +163,11 @@ function navigation(){
    <summary><span class="topic-number">${String(i+1).padStart(2,'0')}</span><span class="topic-name">${esc(topic.title)}</span></summary>
    <div class="topic-readings"><a class="topic-overview" href="${topicHref(topic)}"${active&&current.startsWith('topic-')?' aria-current="page"':''}>Topic overview <span aria-hidden="true">↗</span></a>${links}</div></details>`;
  }).join('');
- $('navigation').innerHTML=html||'<p class="nav-empty">No topic or subsection matches. Try a shorter term.</p>';
- $('nav-status').textContent=q?`${matches} matching readings · clear search to restore topics`:`${TOPICS.length} ordered topics · ${CHAPTERS.length} preserved chapters`;
- $('navigation').setAttribute('aria-label',q?'Search results by topic':'Ordered guide topics');
+ const beginner=STARTER_READINGS.some(([id])=>id===current);
+ const starters=`<div class="starter-navigation" aria-label="Start with the essentials">${STARTER_READINGS.map(([id,label])=>`<a href="#${id}"${current===id?' aria-current="page"':''}>${label}</a>`).join('')}</div>`;
+ $('navigation').innerHTML=(!q?starters:'')+`<details id="advanced-navigation"${q||!beginner?' open':''}><summary>${q?'Search results':'All technical topics'} <span>${q?matches:TOPICS.length}</span></summary>${html||'<p class="nav-empty">No topic or subsection matches. Try a shorter term.</p>'}</details>`;
+ $('nav-status').textContent=q?`${matches} matching readings · clear search to return`:'Start simple. Open technical topics when you need more detail.';
+ $('navigation').setAttribute('aria-label',q?'Search results by topic':'Guide navigation');
  // Native details provide keyboard operation; open one topic at a time when
  // not searching. Search intentionally opens all matching topic groups.
  $('navigation').querySelectorAll('.nav-topic').forEach(detail=>detail.addEventListener('toggle',()=>{
@@ -192,9 +195,9 @@ function renderTopic(topic){
  document.title=`${topic.title} · SixGR Field Guide`;readingFooter(topic);
 }
 function topicDirectory(){
- return `<section class="guide-topic-directory" aria-label="Guide topic index"><h2 id="guide-topic-index">Read the guide in ${TOPICS.length} ordered topics</h2>
-  <p>Choose a topic, then follow its detailed subsections and read-next links. The existing chapter bookmarks still work; the topic sequence is the main reading structure.</p>
-  <ol>${TOPICS.map((t,i)=>`<li><a href="${topicHref(t)}"><span>${String(i+1).padStart(2,'0')}</span>${esc(t.title)}</a></li>`).join('')}</ol></section>`;
+ return `<details id="all-topics"><summary>Explore all ${TOPICS.length} technical topics</summary><section class="guide-topic-directory" aria-label="Guide topic index"><h2 id="guide-topic-index">Read the guide in ${TOPICS.length} ordered topics</h2>
+  <p>Go deeper with the equations, channel procedures, source code and standards references. Each topic has its own reading order.</p>
+  <ol>${TOPICS.map((t,i)=>`<li><a href="${topicHref(t)}"><span>${String(i+1).padStart(2,'0')}</span>${esc(t.title)}</a></li>`).join('')}</ol></section></details>`;
 }
 function pageOutline(chapter){
  const content=$('chapter-body');
@@ -320,7 +323,8 @@ function route(){
   if(topic){renderTopic(topic);return;}
   const c=CHAPTERS[idx];
   const entryIndex=activeTopic.entries.findIndex(e=>e.id===c.id&&(!e.section||e.section===currentSection));
-  $('content').innerHTML=contextHeader(activeTopic,`Reading ${entryIndex+1} of ${activeTopic.entries.length}`)+`<h1>${esc(c.title)}</h1><p class="lead">${esc(c.lead)}</p><div id="page-outline"></div>${window.H4Guide.chapterAuthority(c.id)}<article id="chapter-body">${c.id==='start'?topicDirectory():''}${c.body()}</article>`;
+  const context=contextHeader(activeTopic,`Reading ${entryIndex+1} of ${activeTopic.entries.length}`);
+  $('content').innerHTML=(c.id==='start'?'<div class="eyebrow">SixGR, explained step by step</div>':context)+`<h1>${esc(c.title)}</h1><p class="lead">${esc(c.lead)}</p><div id="page-outline"></div>${c.id==='start'?'':window.H4Guide.chapterAuthority(c.id)}<article id="chapter-body">${c.body()}${c.id==='start'?topicDirectory():''}</article>`;
   document.title=`${c.title} · SixGR Field Guide`;
   readingFooter(activeTopic,entryIndex);
   const labs={start:hero,architecture:flow,grid,mimo:rankLab,harq:harqLab,rf:qamLab,prach:prachLab};
@@ -331,7 +335,7 @@ function route(){
   if(c.id==='parameters')parameterExplorer(stamp,params);
   if(c.id==='scenarios')scenarioExplorer(stamp,params);
   if(c.id==='output-atlas')evidenceExplorer(stamp,params);
-  pageOutline(c);
+  if(c.id!=='start')pageOutline(c);
   // Deep links stay inside the chapter router. Open the containing details
   // before scrolling; a subsection ID must never be mistaken for a chapter.
   const section=params.get('section');
