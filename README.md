@@ -1,5 +1,21 @@
 # SixGR Foundation v2
 
+### Fresh report verification — 27 October 2026
+
+The authorized run is `n40_reports_60slots_20261027_070038`, using the current
+two-point n40 integration gate: 20 dB then 0 dB, 60 slots per child, with
+checkpoint60, continuation and final-report checks. Its prerequisite
+[13 affected CSV/PNG/report checks](docs/lls/n40_20261026_failure_review/n40_report_launch_checks.json)
+passed with unchanged runtime sources, including actual PNG publication.
+Follow its live status in the [run monitor](http://127.0.0.1:62906/runs);
+this launch description is not a completion receipt.
+
+Checkpoint55 from the previous attempt passed its integrity check, but the
+current configuration differs in CSI timing/backend, PUCCH power control,
+SRS path-power measurement and access timing. The fresh run exercises those
+settings from slot zero. The three failures below remain open under the
+requested reporting-only verification scope; no assertions were disabled.
+
 ### Recovery checkpoint — 27 October 2026
 
 The current MATLAB, configuration, reporting and test edits are consolidated in
@@ -9,8 +25,8 @@ Three failures remain: DRB packet-lineage validation, the selected-PUSCH CSI
 reference-clock assertion, and UL MAC finalization requiring the original
 received assignment and immutable TBS.
 
-This is an incomplete integration checkpoint. **All P0 checks have not passed;
-the two 60-slot n40 runs remain stopped.** Common SRB/security/DRB activation
+This is an incomplete integration checkpoint. **All P0 checks have not passed.**
+At this checkpoint, the two 60-slot runs were stopped. Common SRB/security/DRB activation
 and remaining shared physical episodes still need completion. Full-suite and
 R2024a acceptance are not claimed. See the
 [checkpoint and original test receipt](docs/lls/n40_20261026_failure_review/P0_CHECKPOINT_20261027.md)

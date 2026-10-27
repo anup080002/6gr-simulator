@@ -1,0 +1,144 @@
+{
+  "ok": true,
+  "results": [
+    {
+      "name": "testCommonSignalEnergyObservations",
+      "ok": true,
+      "msg": "",
+      "duration_s": 11.723068,
+      "identifier": "",
+      "extended_report_available": false,
+      "diagnostic_rendering_error": ""
+    },
+    {
+      "name": "testLiveReceiverSummaryPublication",
+      "ok": true,
+      "msg": "",
+      "duration_s": 15.1732405,
+      "identifier": "",
+      "extended_report_available": false,
+      "diagnostic_rendering_error": ""
+    },
+    {
+      "name": "testCompactCausalStageEvidence",
+      "ok": true,
+      "msg": "",
+      "duration_s": 1.4823863,
+      "identifier": "",
+      "extended_report_available": false,
+      "diagnostic_rendering_error": ""
+    },
+    {
+      "name": "testCSVLiteralIdentityPreservation",
+      "ok": true,
+      "msg": "",
+      "duration_s": 1.5972084,
+      "identifier": "",
+      "extended_report_available": false,
+      "diagnostic_rendering_error": ""
+    },
+    {
+      "name": "testSerializedMeasurementOperandPreservation",
+      "ok": true,
+      "msg": "",
+      "duration_s": 0.183515,
+      "identifier": "",
+      "extended_report_available": false,
+      "diagnostic_rendering_error": ""
+    },
+    {
+      "name": "testLLSMeasurementSidecarIntegrity",
+      "ok": true,
+      "msg": "",
+      "duration_s": 1.8429148,
+      "identifier": "",
+      "extended_report_available": false,
+      "diagnostic_rendering_error": ""
+    },
+    {
+      "name": "testControlDataMeasurementAcceptance",
+      "ok": true,
+      "msg": "",
+      "duration_s": 0.4079255,
+      "identifier": "",
+      "extended_report_available": false,
+      "diagnostic_rendering_error": ""
+    },
+    {
+      "name": "testCSIReportLatencyIdentityTransition",
+      "ok": true,
+      "msg": "",
+      "duration_s": 0.8082585,
+      "identifier": "",
+      "extended_report_available": false,
+      "diagnostic_rendering_error": ""
+    },
+    {
+      "name": "testPUCCHFeedbackConfusionPopulation",
+      "ok": true,
+      "msg": "",
+      "duration_s": 0.2151032,
+      "identifier": "",
+      "extended_report_available": false,
+      "diagnostic_rendering_error": ""
+    },
+    {
+      "name": "testLiveCSVPlotPublication",
+      "ok": true,
+      "msg": "",
+      "duration_s": 37.4185786,
+      "identifier": "",
+      "extended_report_available": false,
+      "diagnostic_rendering_error": ""
+    },
+    {
+      "name": "testCanonicalDataSINRStatus",
+      "ok": true,
+      "msg": "",
+      "duration_s": 0.2921339,
+      "identifier": "",
+      "extended_report_available": false,
+      "diagnostic_rendering_error": ""
+    },
+    {
+      "name": "testSpectralPortAndPowerAccounting",
+      "ok": true,
+      "msg": "",
+      "duration_s": 0.2385207,
+      "identifier": "",
+      "extended_report_available": false,
+      "diagnostic_rendering_error": ""
+    },
+    {
+      "name": "testRawCubicEnvelopeEvidence",
+      "ok": true,
+      "msg": "",
+      "duration_s": 0.2330792,
+      "identifier": "",
+      "extended_report_available": false,
+      "diagnostic_rendering_error": ""
+    }
+  ],
+  "selected_tests": [
+    "testCommonSignalEnergyObservations",
+    "testLiveReceiverSummaryPublication",
+    "testCompactCausalStageEvidence",
+    "testCSVLiteralIdentityPreservation",
+    "testSerializedMeasurementOperandPreservation",
+    "testLLSMeasurementSidecarIntegrity",
+    "testControlDataMeasurementAcceptance",
+    "testCSIReportLatencyIdentityTransition",
+    "testPUCCHFeedbackConfusionPopulation",
+    "testLiveCSVPlotPublication",
+    "testCanonicalDataSINRStatus",
+    "testSpectralPortAndPowerAccounting",
+    "testRawCubicEnvelopeEvidence"
+  ],
+  "total_duration_s": 72.0502297,
+  "SourceFilesUnchanged": true,
+  "SourceSHA256": "e013d759a7e70329cffc97ec93b8b6f47ef5f1fb90d2954f60f1aa80403d1dab",
+  "MATLABVersion": "26.1.0.3312084 (R2026a) Update 4",
+  "FullN40Accepted": false,
+  "AllP0Closed": false,
+  "Scope": "Affected CSV/PNG/final-report launch checks; three known integration failures remain open separately"
+}

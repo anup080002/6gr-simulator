@@ -30,9 +30,15 @@ RLC STATUS recovery and application delivery need accepted physical episodes.
 The [open issue ledger](../lls_gap_status_20261023.html) retains that scope.
 
 The original two-point run still has no accepted checkpoint60 or final-report
-set. The 60-slot runs remain stopped until the required P0 checks pass.
+set. No 60-slot run was restarted during this recovery checkpoint.
 R2024a execution remains unverified; this laptop's R2026a results do not
 establish cross-release compatibility.
+
+The subsequent report-verification scope explicitly leaves the three failures
+open. Its [13 affected report checks](n40_report_launch_checks.json) passed
+before launch. A fresh run is required to use the current scientific settings;
+the old checkpoint55 retains different CSI, power-control and access settings.
+No test assertion or runtime guard is disabled for that reporting run.
 
 To repeat the same affected selection after repairs, from the repository root:
 
