@@ -14,6 +14,7 @@ end
 scopeToken = lower(regexprep(char(string(scopeToken)), "[^a-z0-9]+", "_"));
 T = sixgr.truth.normalizeDisabledInterferenceIdentity(T, string(scopeToken));
 if any(string(scopeToken) == ["dl_pdsch_trials", "ul_pusch_trials"])
+    T = sixgr.truth.bindCanonicalDataSINRStatus(T);
     T = localCorrectBootstrapLinkAdaptationClaim(T);
     phaseFields=["AdaptiveMode","LinkAdaptationScheduled","LinkAdaptationApplied","LinkAdaptationBootstrap"];
     if all(ismember(phaseFields,string(T.Properties.VariableNames)))
@@ -51,7 +52,7 @@ end
 names=string(T.Properties.VariableNames);
 for i = 1:numel(names)
     fieldName = char(names(i));
-    if sixgr.truth.isImmutableIdentityField(fieldName)
+    if sixgr.truth.isImmutableIdentityField(fieldName) || sixgr.truth.isSerializedMeasurementOperandField(fieldName)
         % Missing provenance identity must remain visibly missing so the
         % strict identity gate can fail closed.  Never decorate it with a
         % semantic availability token.

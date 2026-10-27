@@ -18,7 +18,7 @@ classdef DCIParser
                     "DCI %s requires exactly %d bits in context %s; received %d.", ...
                     context.Data.DCIFormat, K, context.Digest, numel(bits));
             end
-            definitions = schema.Definitions;
+            definitions = sixgr.phy.pdcch.DCISizeAlignmentEngine.wireDefinitions(schema,alignment.Selected);
             fields = struct();
             rows = repmat(localFieldRow(), 0, 1);
             cursor = 1;
@@ -97,6 +97,10 @@ classdef DCIParser
                 direction = "DL";
                 grantType = "PDSCH";
             end
+            referenceStart=NaN;
+            if any(fmt==["0_0","1_0"]) && ~isfield(data,'ConnectedPolicy')
+                [nBWP,referenceStart]=sixgr.phy.pdcch.DCISchemaEngine.fallbackFrequencyReference(data,fmt);
+            end
             if ~ismember(lower(string(data.FrequencyAllocationType)), ["type1","type1_riv"])
                 error("sixgr:phy:pdcch:field_out_of_range", ...
                     "Grant materialization currently requires type1_riv allocation.");
@@ -131,6 +135,7 @@ classdef DCIParser
                 "scheduled_carrier", double(data.ScheduledCarrier), ...
                 "scheduled_bwp", double(data.ScheduledBWP), ...
                 "configuration_epoch", double(data.ConfigurationEpoch));
+            if isfinite(referenceStart), derived.reference_start=referenceStart; end
             if isfield(data,'ConnectedPolicy')
                 derived.time_domain_assignment_index=index;
                 if fmt=="1_1"

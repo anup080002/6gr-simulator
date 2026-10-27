@@ -157,6 +157,9 @@ assert(isequal(a,b)&&isequal(ag,bg)&&isequal(at,bt)&&e.InitialTime_s==0.003125, 
     'test:FreshCDLRejectedLiveCallChangedState');
 for mode=["finite","global_rng","coefficient_only","response_mode","nonzero","columns"]
     q=ordinaryNative(cfg,fs,seed,"DL"); z=warmup;
+    % R2024a exposes only the documented path-gain signature; no alternate
+    % response-mode property exists to configure or reject on that release.
+    if mode=="response_mode" && ~isprop(q,'ChannelResponseOutput'),continue;end
     switch mode
         case "finite"
             q.SampleDensity=64; id='sixgr:channel:FreshCDLInitializationFiniteDensityUnsupported';

@@ -28,8 +28,12 @@ if isprop(object,'ChannelResponseOutput')
 elseif isprop(object,'PathGainsOutputPort')
     contract.OutputCount=1+double(object.PathGainsOutputPort);
 else
-    error('sixgr:channel:UnknownWaveformOutputContract', ...
-        'The installed native channel exposes no supported response-output selector.');
+    % Legacy nrCDLChannel/nrTDLChannel (including R2024a) expose
+    % [waveform,pathGains,sampleTimes] directly. They have neither the
+    % newer ChannelResponseOutput selector nor PathGainsOutputPort.
+    % These exact native classes were checked above; this is their
+    % documented waveform signature, not trial-and-retry on a live owner.
+    contract.OutputCount=3;
 end
 contract.Kind="native_filtered_channel";
 contract.ModelApplied=string(object.DelayProfile);

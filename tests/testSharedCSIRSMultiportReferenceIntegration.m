@@ -39,7 +39,31 @@ for pass=1:2
     % canonical slots, SNR. The slot is NOT the sweep index.
     state=sixgr.truth.CoupledTruthRuntime.startSlot(state,current,'DL',1,1,1,7,30);
     state.CurrentServingIdx(:)=1;
+    assert(isempty(fieldnames(state.LargeScaleState)),'test:SharedPropagationAuthority', ...
+        'This regression requires the original empty propagation-cache boundary.');
     [state,owner]=sixgr.truth.CoupledWaveformStream.initialize(state,current,{current,current});
+    assert(isfield(state.LargeScaleState,'LOS'),'test:SharedPropagationAuthority', ...
+        'The owner must retain the original context-created propagation realization.');
+    retainedPropagation=state.LargeScaleState; propagationRNG=rng;
+    for ue=1:state.NumUsers
+        originalIdentity=owner.broadcastReceiveIdentity(ue);
+        assert(originalIdentity.ServingCell==state.CurrentServingIdx(ue));
+        for direction=["DL","UL"]
+            [bound,reusedState]=sixgr.truth.CoupledTruthRuntime.applyUserContext(current,state,ue,direction);
+            cellIndex=state.CurrentServingIdx(ue);
+            u=bound.lls6g.userContext;
+            observed=[double(bound.channel.runtimeLOS),double(u.RuntimeServingCell), ...
+                u.RuntimePropagationPathloss_dB,u.RuntimeServingPropagationDelay_s];
+            expected=[double(retainedPropagation.LOS(ue,cellIndex)),double(cellIndex), ...
+                retainedPropagation.Pathloss_dB(ue,cellIndex),retainedPropagation.PropagationDelay_s(ue,cellIndex)];
+            fprintf('ORIGINAL_PROPAGATION_BINDING UE=%d direction=%s observed=%s expected=%s\n', ...
+                ue,direction,mat2str(observed,17),mat2str(expected,17));
+            assert(isequaln(observed,expected),'test:SharedPropagationAuthority', ...
+                'Original propagation fields (including explicitly unavailable values) must be retained exactly.');
+            assert(isequaln(reusedState.LargeScaleState,retainedPropagation) && isequal(rng,propagationRNG), ...
+                'test:SharedPropagationAuthority','Reusing original propagation must not redraw its realization.');
+        end
+    end
     assert(state.NumUsers==2,'The declared broadcast fixture requires exactly two original UEs.');
     slotClocks=cell(0,1); retainSlotClock("initial",1);
     before=rng;
@@ -298,7 +322,35 @@ fprintf('SHARED_CSIRS_MULTIPORT_REFERENCE_PASS parents=2 resources=2 ports=4 UEs
             unmodifiedRX=rx; beforeScore=rng;
             modelComparison=sixgr.truth.scoreSharedCSIRSLinearPortModel( ...
                 item,rx,desired,source,replay,owner);
+            receivedEVM=sixgr.truth.scoreSharedCSIRSReceivedEVM( ...
+                item,rx,desired,source,replay,owner);
             original.ModelComparison=modelComparison;
+            original.ReceivedEVM=receivedEVM.Metrics;
+            % Both optional-model arms publish actual aggregate RX pairs.
+            assert(receivedEVM.Metrics.Available, ...
+                'test:CSIReceivedEVMIntegration','Original aggregate reference unavailable: %s', ...
+                string(jsonencode(receivedEVM.Metrics)));
+            [txPairs,~]=sixgr.phy.refsig.pairCSIRSTransmitterSymbols(p,tx);
+            trial=table("DL",double(item.UE),1,double(item.Context.Slot), ...
+                'VariableNames',{'Direction','UEIndex','CellID','Slot'});
+            trial=sixgr.report.retainControlEVMPairs(current.run.rootRunFolder,trial,txPairs);
+            txNames=string(trial.Properties.VariableNames);
+            txNames=txNames(startsWith(txNames,"ControlEVMSamples"));
+            originalTX=trial(:,txNames);
+            trial=sixgr.report.retainCSIRSReceivedEVMPairs(current.run.rootRunFolder, ...
+                trial,receivedEVM.Pairs,receivedEVM.Metrics);
+            trial=sixgr.report.exportCSIRSReceivedEVMPairs(current.run.rootRunFolder,trial);
+            assert(isequaln(originalTX,trial(:,txNames))&& ...
+                trial.CSIRSReceivedEVMSamplesCount==receivedEVM.Metrics.SampleCount&& ...
+                ~trial.CSIRSReceivedEVMRFConformanceQualified);
+            sixgr.util.csvWriteTable(fullfile(current.run.rootRunFolder, ...
+                sprintf('received_csi_evm_slot%d_ue%d.csv',item.Context.Slot,item.UE)),trial, ...
+                'PreserveSchema',true);
+            bad=trial; bad.CSIRSReceivedEVMIsolationEvidenceSHA256=string(repmat('0',1,64));
+            rejected=false;
+            try, sixgr.report.exportCSIRSReceivedEVMPairs(current.run.rootRunFolder,bad);
+            catch cause, rejected=strcmp(cause.identifier,'sixgr:report:CSIRSReceivedEVMProof'); end
+            assert(rejected,'test:CSIReceivedEVMGuard','Reject changed original isolation binding.');
             scorePath=fullfile(current.run.rootRunFolder, ...
                 sprintf('original_model_score_slot%d_ue%d.mat',item.Context.Slot,item.UE));
             save(scorePath,'original','rx','modelComparison','-v7.3');

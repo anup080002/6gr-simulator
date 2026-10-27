@@ -2,7 +2,63 @@ classdef PUSCHPowerController
     %PUSCHPOWERCONTROLLER Exact PUSCH open/closed-loop power application.
 
     methods (Static)
-        function result = resolve(varargin)
+        function result=resolve(varargin)
+            result=localResolve(true,varargin{:});
+        end
+        function result=resolveAllocation(varargin)
+            % Before MAC assembly: no waveform is encoded or fabricated.
+            % PH/requested/applied target use exactly the same original formula.
+            % Waveform reference and amplitude remain explicitly unavailable.
+            result=localResolve(false,varargin{:});
+        end
+
+        function [waveform, evidence] = apply(waveform, result)
+            if ~isstruct(result) || ~isfield(result, "AmplitudeScale")
+                error("sixgr:pusch:PowerControlStateMissing", ...
+                    "Resolved PUSCH power-control evidence is required.");
+            end
+            if ~(isnumeric(waveform) && ~isempty(waveform) && ...
+                    all(isfinite(real(waveform(:)))) && all(isfinite(imag(waveform(:)))))
+                error("sixgr:pusch:InvalidWaveform", ...
+                    "PUSCH power control requires a finite nonempty waveform.");
+            end
+            assert(isscalar(result.AmplitudeScale)&&isfinite(result.AmplitudeScale)&& ...
+                result.AmplitudeScale>0,'sixgr:pusch:UnboundWaveformPower', ...
+                'Allocation-only power cannot scale a waveform without its original reference.');
+            inputPower = mean(abs(double(waveform(:))).^2);
+            waveform = waveform .* double(result.AmplitudeScale);
+            outputPower = mean(abs(double(waveform(:))).^2);
+            measuredGain = 10 * log10(outputPower / inputPower);
+            expectedGain = 20 * log10(double(result.AmplitudeScale));
+            evidence = result;
+            evidence.InputMeanPower = inputPower;
+            evidence.OutputMeanPower = outputPower;
+            evidence.ExpectedGain_dB = expectedGain;
+            evidence.MeasuredGain_dB = measuredGain;
+            evidence.PowerError_dB = abs(measuredGain - expectedGain);
+            evidence.WaveformScaled = true;
+        end
+    end
+end
+
+function value = localInteger(raw, minimum, maximum, name)
+value = double(raw);
+if ~(isscalar(value) && isfinite(value) && value == fix(value) ...
+        && value >= minimum && value <= maximum)
+    error("sixgr:pusch:InvalidPowerControlInteger", ...
+        "%s must be an integer in [%g,%g].", name, minimum, maximum);
+end
+end
+
+function value = localFinite(raw, name)
+value = double(raw);
+if ~(isscalar(value) && isfinite(value))
+    error("sixgr:pusch:InvalidPowerControlValue", ...
+        "%s must be a finite scalar.", name);
+end
+end
+
+function result=localResolve(requireWaveformReference,varargin)
             ip = inputParser;
             ip.addParameter("LoopId", [], @(x) isnumeric(x) && isscalar(x));
             ip.addParameter("AdjustmentMode", "", @(x) ischar(x) || isstring(x));
@@ -61,9 +117,11 @@ classdef PUSCHPowerController
                 localFinite(o.DeltaTF_dB, "DeltaTF_dB") + updatedF;
             pcmax = localFinite(o.PCMAX_dBm, "PCMAX_dBm");
             applied = min(pcmax, requested);
-            reference = localFinite(o.ReferenceWaveformPower_dBm, ...
-                "ReferenceWaveformPower_dBm");
-            scale = 10 ^ ((applied - reference) / 20);
+            reference=NaN;scale=NaN;
+            if requireWaveformReference
+                reference = localFinite(o.ReferenceWaveformPower_dBm,"ReferenceWaveformPower_dBm");
+                scale = 10 ^ ((applied - reference) / 20);
+            end
 
             result = struct( ...
                 "LoopId", localInteger(o.LoopId, 0, inf, "LoopId"), ...
@@ -91,47 +149,5 @@ classdef PUSCHPowerController
                 "PathlossReferenceRS", referenceRS, ...
                 "FormulaIncludesMuFactor", true, ...
                 "Source", "TS_38_213_PUSCH_power_control");
-        end
 
-        function [waveform, evidence] = apply(waveform, result)
-            if ~isstruct(result) || ~isfield(result, "AmplitudeScale")
-                error("sixgr:pusch:PowerControlStateMissing", ...
-                    "Resolved PUSCH power-control evidence is required.");
-            end
-            if ~(isnumeric(waveform) && ~isempty(waveform) && ...
-                    all(isfinite(real(waveform(:)))) && all(isfinite(imag(waveform(:)))))
-                error("sixgr:pusch:InvalidWaveform", ...
-                    "PUSCH power control requires a finite nonempty waveform.");
-            end
-            inputPower = mean(abs(double(waveform(:))).^2);
-            waveform = waveform .* double(result.AmplitudeScale);
-            outputPower = mean(abs(double(waveform(:))).^2);
-            measuredGain = 10 * log10(outputPower / inputPower);
-            expectedGain = 20 * log10(double(result.AmplitudeScale));
-            evidence = result;
-            evidence.InputMeanPower = inputPower;
-            evidence.OutputMeanPower = outputPower;
-            evidence.ExpectedGain_dB = expectedGain;
-            evidence.MeasuredGain_dB = measuredGain;
-            evidence.PowerError_dB = abs(measuredGain - expectedGain);
-            evidence.WaveformScaled = true;
-        end
-    end
-end
-
-function value = localInteger(raw, minimum, maximum, name)
-value = double(raw);
-if ~(isscalar(value) && isfinite(value) && value == fix(value) ...
-        && value >= minimum && value <= maximum)
-    error("sixgr:pusch:InvalidPowerControlInteger", ...
-        "%s must be an integer in [%g,%g].", name, minimum, maximum);
-end
-end
-
-function value = localFinite(raw, name)
-value = double(raw);
-if ~(isscalar(value) && isfinite(value))
-    error("sixgr:pusch:InvalidPowerControlValue", ...
-        "%s must be a finite scalar.", name);
-end
 end

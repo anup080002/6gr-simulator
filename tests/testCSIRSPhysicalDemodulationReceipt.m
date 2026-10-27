@@ -41,7 +41,7 @@ for enabled=[false true]
     token=rx.PhysicalMeasurementDemodulationReceiptJSON;
     assert(rx.PhysicalMeasurementDemodulationReceiptSHA256==sixgr.util.sha256Hex(char(token)));
     r=jsondecode(token);
-    assert(r.ContractVersion=="sixgr.csirs.physical_demodulation/v1" && ...
+    assert(r.ContractVersion=="sixgr.csirs.physical_demodulation/v2" && ...
         r.InputSHA256==sixgr.phy.waveform.WaveformHash.runtimeArray(preInput) && ...
         r.InputSHA256~=sixgr.phy.waveform.WaveformHash.runtimeArray(postInput));
     assert(isequal(r.InputSize(:).',size(preInput)) && r.NumReceiveChannels==2 && ...
@@ -256,11 +256,32 @@ end
 
 function localCheckSupport(r,carrier,rx,ofdm,inputCount)
 f=r.FFTSupport;
-assert(f.Available && string(version('-release'))=="2026a", ...
-    'This native FFT-window regression is scoped to the qualified R2026a operator.');
+assert(f.Available && f.NativeFFTCapability.Available && ...
+    string(f.RuntimeMATLABRelease)==string(version('-release')));
+sixgr.phy.waveform.validateRecordedOFDMFFTAuthority(f,carrier,ofdm.Nfft,ofdm.SampleRate, ...
+    ofdm.CyclicPrefixFraction,double(carrier.SymbolsPerSlot),0,false);
 K=12*carrier.NSizeGrid; L=carrier.SymbolsPerSlot;
 ind=double(rx.CSIRSIndices(:)); physical=unique(mod(ind-1,K*L));
 support=unique([mod(physical,K) floor(physical/K)],'rows','sorted');
+prepared=struct('Carrier',carrier,'SampleRateHz',ofdm.SampleRate, ...
+    'Tx',struct('OFDMInfo',ofdm),'ReceiveStartSample',0,'ReceiveEndSampleExclusive',inputCount);
+sixgr.truth.validateCSIRSOriginalOperator(r,rx,prepared,support);
+% Legacy-shaped compatibility fixture only. The original actual v2 receipt
+% and its exported token remain untouched; no historical evidence is relabeled.
+legacy=r; legacy.ContractVersion="sixgr.csirs.physical_demodulation/v1";
+legacy.FFTSupport=rmfield(legacy.FFTSupport,'NativeFFTCapability');
+if string(version('-release'))=="2026a"
+    sixgr.truth.validateCSIRSOriginalOperator(legacy,rx,prepared,support);
+    bad=legacy; bad.FFTSupport.FFTIntervals(1,1)=bad.FFTSupport.FFTIntervals(1,1)+1;
+    localRejectOperator(@()sixgr.truth.validateCSIRSOriginalOperator(bad,rx,prepared,support), ...
+        'sixgr:truth:CSIRSLinearModelOperator');
+else
+    localRejectOperator(@()sixgr.truth.validateCSIRSOriginalOperator(legacy,rx,prepared,support), ...
+        'sixgr:waveform:RecordedFFTAuthority');
+end
+bad=r; bad.FFTSupport=rmfield(bad.FFTSupport,'NativeFFTCapability');
+localRejectOperator(@()sixgr.truth.validateCSIRSOriginalOperator(bad,rx,prepared,support), ...
+    'sixgr:waveform:RecordedFFTAuthority');
 assert(f.ResourceSupportSHA256==sixgr.phy.waveform.WaveformHash.runtimeArray(support) && ...
     f.PhysicalRECount==size(support,1));
 symbol=unique(support(:,2));
@@ -287,4 +308,11 @@ try, fn(); catch cause
     return;
 end
 error('test:MissingCSIReceiptRejection','Expected original receipt binding rejection.');
+end
+
+function localRejectOperator(fn,id)
+try, fn(); catch failure
+    assert(strcmp(failure.identifier,id),'test:FFTAuthorityGuard','Expected %s, got %s',id,failure.identifier); return;
+end
+error('test:FFTAuthorityMissingGuard','Expected %s.',id);
 end

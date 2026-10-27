@@ -10,7 +10,7 @@ classdef DCIPacker
             end
             schema = sixgr.phy.pdcch.DCISchemaEngine.resolve(context);
             alignment = sixgr.phy.pdcch.DCISizeAlignmentEngine.resolve(context);
-            definitions = schema.Definitions;
+            definitions = sixgr.phy.pdcch.DCISizeAlignmentEngine.wireDefinitions(schema,alignment.Selected);
             allowed = string(arrayfun(@(x) x.Name, definitions, "UniformOutput", false));
             supplied = string(fieldnames(fields));
             unexpected = setdiff(supplied, allowed);
@@ -50,10 +50,6 @@ classdef DCIPacker
                 bits(cursor:stop) = fieldBits;
                 rows(end+1,1) = localMakeRow(definition, value, cursor, stop); %#ok<AGROW>
                 cursor = stop + 1;
-            end
-            if alignment.Selected.TruncatedFrequencyBits > 0
-                error("sixgr:phy:pdcch:dci_size_alignment_failure", ...
-                    "Frequency-field truncation requires an explicit Release-18 context not enabled by this schema.");
             end
             if alignment.Selected.PaddingBits > 0
                 pad = alignment.Selected.PaddingBits;

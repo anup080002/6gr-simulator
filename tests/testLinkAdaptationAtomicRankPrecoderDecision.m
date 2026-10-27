@@ -34,6 +34,7 @@ increaseCfg.phy.pdsch.numLayers = 1;
 increaseCfg.phy.pdsch.nLayers = 1;
 increaseCfg.phy.pdsch.maxLayers = 2;
 increaseCfg.phy.pdsch.precoding.matrix = [];
+increaseCfg.phy.linkAdaptation.initialSpatialConfirmationReports=2; % Explicit two-report initial fixture.
 increaseCfg.phy.linkAdaptation.rankIncreaseConfirmationReports = 2;
 [increasePending, increaseState] = sixgr.link.computeLinkAdaptationDecision( ...
     increaseCfg, "DL", struct("RI", 2, "PMI", 1));

@@ -17,6 +17,7 @@ installedTiming=cfg.phy.frameStructure.TimingContext;
 % infer that conversion from the scheduler's legacy Slot fallback.
 controlSlots0=[30 35 40];
 runtimeSlots=controlSlots0+1;
+cfg.phy.linkAdaptation.initialSpatialConfirmationReports=1; % Acquire first rank-one point; later increases still need two.
 cfg.phy.linkAdaptation.rankIncreaseConfirmationReports=2;
 cfg.mac.scheduler.maxUEPerSlot=1;
 cfg.mac.scheduler.minPRBPerUE=12;

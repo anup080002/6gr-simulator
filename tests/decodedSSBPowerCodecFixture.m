@@ -3,6 +3,7 @@ function common=decodedSSBPowerCodecFixture(cfg,power,cellId,availableSlot)
 % Use the real UPER encoder/decoder and UE installation path.
 bc=sixgr.config.defaultConfig(); bc.frequency.band_name='n77';
 bc.phy.carrier.NSizeGrid=25; bc.phy.carrier.SubcarrierSpacing=15;
+bc.phy.ssb.scs_kHz=15;
 % This helper deliberately returns the same fixed 25-RB/15-kHz codec
 % boundary for every caller; it does not claim the caller's cell waveform.
 % Keep its broadcast reference SCS consistent with those actual codec BWPs,

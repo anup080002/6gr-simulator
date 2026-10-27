@@ -60,6 +60,20 @@ classdef DCISchemaEngine
                 nBWP, data.FrequencyAllocationType);
             nTime = max(1, ceil(log2(size(timeRows, 1))));
             nHARQ = max(1, ceil(log2(double(data.HARQProcessCount))));
+            if any(fmt==["0_0","1_0"])
+                % The fallback formats have fixed fields even when the
+                % installed list/process population contains fewer entries.
+                assert(~data.CarrierIndicatorPresent && ~data.SULIndicatorPresent && ...
+                    ~logical(sixgr.util.structGet(data,'SharedSpectrum',false)), ...
+                    'sixgr:phy:pdcch:unsupported_fallback_dci_configuration', ...
+                    'Fallback DCI currently supports one licensed non-SUL carrier.');
+                assert(data.HARQProcessCount<=16, ...
+                    'sixgr:phy:pdcch:unsupported_fallback_dci_configuration', ...
+                    'Fallback DCI carries the fixed four-bit HARQ process field.');
+                [nBWP,~]=sixgr.phy.pdcch.DCISchemaEngine.fallbackFrequencyReference(data,fmt);
+                nFreq=sixgr.phy.pdcch.DCISchemaEngine.frequencyWidth(nBWP,data.FrequencyAllocationType);
+                nTime=4; nHARQ=4;
+            end
             definitions = sixgr.phy.pdcch.DCISchemaEngine.emptyDefinitions();
             feedbackWidth=3; feedbackMax=7;
             if fmt=="1_1" && isfield(data,'HARQFeedbackTimingConfigured')
@@ -90,7 +104,7 @@ classdef DCISchemaEngine
                         localDef("format_identifier", 1, 0, 0, "DCI format 0_0", "38.212 7.3.1.1")
                         localOptional(data.CarrierIndicatorPresent, "carrier_indicator", data.CarrierIndicatorWidth, "CrossCarrierSchedulingConfig", "38.212 7.3.1.1")
                         localDef("frequency_resource_assignment", nFreq, 0, 2^nFreq-1, "active UL BWP", "38.212 7.3.1.1")
-                        localDef("time_resource_assignment", nTime, 0, size(timeRows,1)-1, "active PUSCH-TimeDomainResourceAllocationList", "38.212 7.3.1.1")
+                        localDef("time_resource_assignment", nTime, 0, 15, "common/active PUSCH TDRA table", "38.212 7.3.1.1.1")
                         localDef("frequency_hopping", 1, 0, 1, "PUSCH frequency hopping", "38.212 7.3.1.1")
                         localDef("mcs", 5, 0, 31, "active PUSCH MCS table", "38.212 7.3.1.1")
                         localDef("ndi", 1, 0, 1, "HARQ state", "38.212 7.3.1.1")
@@ -103,13 +117,13 @@ classdef DCISchemaEngine
                         localDef("format_identifier", 1, 1, 1, "DCI format 1_0", "38.212 7.3.1.2")
                         localOptional(data.CarrierIndicatorPresent, "carrier_indicator", data.CarrierIndicatorWidth, "CrossCarrierSchedulingConfig", "38.212 7.3.1.2")
                         localDef("frequency_resource_assignment", nFreq, 0, 2^nFreq-1, "initial/active DL BWP procedure context", "38.212 7.3.1.2")
-                        localDef("time_resource_assignment", nTime, 0, size(timeRows,1)-1, "active PDSCH-TimeDomainResourceAllocationList", "38.212 7.3.1.2")
+                        localDef("time_resource_assignment", nTime, 0, 15, "common/active PDSCH TDRA table", "38.212 7.3.1.2.1")
                         localDef("vrb_to_prb_mapping", 1, 0, 1, "PDSCH resource allocation", "38.212 7.3.1.2")
                         localDef("mcs", 5, 0, 31, "active PDSCH MCS table", "38.212 7.3.1.2")
                         localDef("ndi", 1, 0, 1, "HARQ state", "38.212 7.3.1.2")
                         localDef("rv", 2, 0, 3, "HARQ state", "38.212 7.3.1.2")
                         localDef("harq_process", nHARQ, 0, data.HARQProcessCount-1, "HARQ process set", "38.212 7.3.1.2")
-                        localDef("dai", data.DAIWidth, 0, 2^data.DAIWidth-1, "HARQ-ACK codebook", "38.212 7.3.1.2")
+                        localDef("dai", 2, 0, 3, "HARQ-ACK codebook", "38.212 7.3.1.2.1")
                         localDef("tpc_command_for_pucch", 2, 0, 3, "PUCCH power control", "38.212 7.3.1.2")
                         localDef("pucch_resource_indicator", 3, 0, 7, "PUCCH resource set", "38.212 7.3.1.2")
                         localDef("pdsch_to_harq_feedback_timing", 3, 0, 7, "38.213 9.2.3 PUCCH numerology table", "38.212 7.3.1.2.1")];
@@ -176,6 +190,23 @@ classdef DCISchemaEngine
                 "TimeAssignmentBits", double(nTime), ...
                 "SchemaVersion", "sixgr_dci_schema_r18_8_0_v1", ...
                 "StandardClause", "3GPP TS 38.212 V18.8.0");
+        end
+
+        function [sizeRB,startRB] = fallbackFrequencyReference(data,fmt)
+            % TS38.212 7.3.1.0 Step0/1 and TS38.214 6.1.2.2.2.
+            common=any(upper(string(data.SearchSpaceType))==["CSS","TYPE0","TYPE0A","TYPE1","TYPE2","TYPE3"]);
+            if startsWith(string(fmt),"0_")
+                if common, prefix="InitialULBWP"; else, prefix="ActiveULBWP"; end
+            else
+                if common, prefix="InitialDLBWP"; else, prefix="ActiveDLBWP"; end
+                if common && isfield(data,'CORESET0Size')
+                    sizeRB=double(data.CORESET0Size); startRB=double(data.CORESET0Start);
+                    validateattributes(sizeRB,{'numeric'},{'scalar','finite','integer','>=',1,'<=',275});
+                    validateattributes(startRB,{'numeric'},{'scalar','finite','integer','nonnegative'});
+                    return;
+                end
+            end
+            sizeRB=double(data.(prefix+"Size")); startRB=double(data.(prefix+"Start"));
         end
 
         function width = frequencyWidth(nBWP, allocationType)

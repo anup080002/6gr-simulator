@@ -121,6 +121,38 @@ classdef BSRStateMachine < handle
             if ~ce.Truncated, obj.PeriodicExpirySlot=slot+obj.PeriodicTimer; end
             obj.RetxExpirySlot=slot+obj.RetxTimer;
         end
+        function report=previewReport(obj,postLCPBuffers,grantBytes,slot)
+            validateattributes(postLCPBuffers,{'numeric'},{'row','real','finite','integer','nonnegative','numel',numel(obj.Buffers)});
+            shadow=sixgr.l2.mac.BSRStateMachine(obj.UEID,numel(obj.Buffers),obj.PeriodicTimer,obj.RetxTimer);
+            for name=["PendingTrigger","PeriodicExpirySlot","RetxExpirySlot","CurrentSlot", ...
+                    "TriggerSequence","PreparationSequence","PendingSequences","LastReportSlot"]
+                shadow.(name)=obj.(name);
+            end
+            shadow.Buffers=postLCPBuffers;
+            report=shadow.buildReport(grantBytes,slot);
+            if report.Transmit
+                report.PostLCPBuffers=postLCPBuffers;
+                report.ReportID=sixgr.l2.mac.MACHash.of(rmfield(report,'ReportID'));
+            end
+        end
+        function validatePreviewCommit(obj,report,slot,actualBuffers)
+            validateattributes(actualBuffers,{'numeric'},{'row','real','finite','integer','nonnegative','numel',numel(obj.Buffers)});
+            validateattributes(slot,{'numeric'},{'scalar','finite','integer','>=',obj.CurrentSlot});
+            assert(report.Transmit&&report.UEID==obj.UEID&&slot>=report.PreparedSlot && ...
+                report.PreparationSequence==obj.PreparationSequence+1 && ...
+                report.CoveredTriggerSequence<=obj.TriggerSequence && ...
+                string(report.ReportID)==sixgr.l2.mac.MACHash.of(rmfield(report,'ReportID')), ...
+                'sixgr:mac:BSRPreviewCommitMismatch','Original BSR preview/trigger generation required.');
+        end
+        function commitPreview(obj,report,slot,actualBuffers)
+            obj.validatePreviewCommit(report,slot,actualBuffers);
+            obj.Buffers=actualBuffers;
+            obj.PreparationSequence=report.PreparationSequence;
+            obj.PreparedReports(char(report.ReportID))=report;
+            if ~report.Truncated, obj.PeriodicExpirySlot=slot+obj.PeriodicTimer; end
+            obj.RetxExpirySlot=slot+obj.RetxTimer;
+            obj.recordTransmission(report,slot);
+        end
         function recordTransmission(obj,report,slot)
             % The normal coordinator must call this from actual TX evidence.
             % This helper validates identity/ordering, not an RF observation.

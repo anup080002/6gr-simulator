@@ -1,4 +1,4 @@
-function T = collectCSIReportLatency(reports, measurements)
+function T = collectCSIReportLatency(reports, measurements, transitions)
 %COLLECTCSIREPORTLATENCY Post-reception audit, never scheduler/receiver input.
 % Durations are simulated sample-clock intervals, not CPU time or a configured
 % reporting period. The CSI reference-resource slot is not the UE's private
@@ -6,6 +6,7 @@ function T = collectCSIReportLatency(reports, measurements)
 arguments
     reports table
     measurements table
+    transitions table = table()
 end
 prototype=struct('ReportIdentity',"",'UEIndex',NaN,'RNTI',NaN, ...
     'ServingCell',NaN,'CSIReportConfigID',"",'CSIConfigurationEpoch',NaN, ...
@@ -22,6 +23,8 @@ prototype=struct('ReportIdentity',"",'UEIndex',NaN,'RNTI',NaN, ...
     'UCIObservationDuration_ms',NaN,'UCICompletionDelay_ms',NaN, ...
     'MeasurementEndToDelivery_ms',NaN,'MeasurementAvailableToDelivery_ms',NaN, ...
     'LatencyAvailable',false,'LatencyStatus',"not_evaluated", ...
+    'MeasurementOriginalRNTI',NaN,'IdentityTransitionUsed',false, ...
+    'IdentityTransitionEvidenceSHA256',"",'IdentityTransitionInstalledSlot',NaN, ...
     'MeasurementSourceArtifact',"air_interface/csv/csi_rs_trials.csv", ...
     'ReportSourceArtifact',"air_interface/csv/received_csi_reports.csv");
 T=struct2table(repmat(prototype,0,1));
@@ -40,13 +43,13 @@ for k=1:height(reports)
     decoded=sixgr.util.structGet(r,'CSIUCIDecodeOk',false);
     if (isnumeric(decoded) || islogical(decoded)) && isscalar(decoded) && decoded==1 && ...
             string(sixgr.util.structGet(r,'DeliveryStatus',""))=="delivered_to_runtime_scheduler"
-        out=measure(out,r,slots(k),authority(k),measurements);
+        out=measure(out,r,slots(k),authority(k),measurements,transitions);
     end
     T=[T;struct2table(out,'AsArray',true)]; %#ok<AGROW>
 end
 end
 
-function out=measure(out,r,slot,authority,measurements)
+function out=measure(out,r,slot,authority,measurements,transitions)
 out.LatencyStatus="missing_identity_bound_UE_measurement_audit";
 if ~isfinite(slot) || ~startsWith(authority,"posthoc_"), return; end
 audit=jsondecode(string(r.UEReferenceRecordJSON)); % identity checked above
@@ -66,7 +69,7 @@ for field=["CSIMeasurementID","CSIMeasurementDigest"]
     if ~isscalar(value) || ismissing(value) || strlength(strtrim(value))==0, return; end
     out.(field)=value;
 end
-mask=measurements.Slot==slot & measurements.UEIndex==r.UEIndex & measurements.RNTI==r.RNTI;
+mask=measurements.Slot==slot & measurements.UEIndex==r.UEIndex;
 mask=mask & string(measurements.CSIReportConfigID)==string(audit.CSIReportConfigID) & ...
     measurements.CSIConfigurationEpoch==audit.CSIConfigurationEpoch & ...
     string(measurements.CSIMeasurementID)==out.CSIMeasurementID & ...
@@ -86,11 +89,26 @@ end
 if isfinite(number(audit,'MeasurementClockEpoch'))
     mask=mask & measurements.MeasurementClockEpoch==number(audit,'MeasurementClockEpoch');
 end
-hit=find(mask);
+direct=mask & measurements.RNTI==r.RNTI;
+hit=find(direct);
+if isempty(hit)&&any(mask)&&~isempty(transitions)
+    candidates=find(mask);
+    for j=reshape(candidates,1,[])
+        m=table2struct(measurements(j,:));
+        bridge=identityBridge(r,m,transitions);
+        if ~isempty(bridge)
+            assert(isempty(hit),'sixgr:report:CSILatencyAmbiguousObservation','Multiple bridged observations.');
+            hit=j; out.IdentityTransitionUsed=true;
+            out.IdentityTransitionEvidenceSHA256=string(bridge.EvidenceSHA256);
+            out.IdentityTransitionInstalledSlot=bridge.InstalledAtCanonicalSlot;
+        end
+    end
+end
 if isempty(hit), out.LatencyStatus="missing_matching_CSI_observation"; return; end
 assert(isscalar(hit),'sixgr:report:CSILatencyAmbiguousObservation', ...
     'CSI latency requires one exact observation, not the first same-slot candidate.');
 m=table2struct(measurements(hit,:));
+out.MeasurementOriginalRNTI=m.RNTI;
 out.MeasurementSourceRow=hit;
 ueClock=[number(audit,'MeasurementAvailableAtSample'),number(audit,'MeasurementClockEpoch')];
 rxClock=[number(r,'AvailableAtSample'),number(r,'ReceiverClockEpoch'), ...
@@ -137,4 +155,38 @@ value=NaN;
 if isfield(s,field) && isnumeric(s.(field)) && isscalar(s.(field))
     value=double(s.(field));
 end
+end
+
+function bridge=identityBridge(r,m,T)
+bridge=[];
+req={'UEIndex','ServingCell','ConfiguredRNTI','RNTI','InstalledAtCanonicalSlot', ...
+    'EvidenceSHA256','DecodedRAEvidenceSHA256','TransitionEvidenceRole','RunID','ExecutionID','ConfigHash'};
+if ~all(ismember(req,T.Properties.VariableNames)), return; end
+for scope=["RunID","ExecutionID","ConfigHash"]
+    if ~isfield(r,scope)||~isfield(m,scope)||strlength(string(r.(scope)))==0|| ...
+            string(r.(scope))~=string(m.(scope)), return; end
+end
+mask=T.UEIndex==r.UEIndex&T.ServingCell==r.ServingCell& ...
+    T.ConfiguredRNTI==m.RNTI&T.RNTI==r.RNTI;
+for scope=["RunID","ExecutionID","ConfigHash"]
+    mask=mask&string(T.(scope))==string(r.(scope));
+end
+mask=mask&T.InstalledAtCanonicalSlot>m.Slot&T.InstalledAtCanonicalSlot<=r.DueSlot;
+hit=find(mask); if isempty(hit), return; end
+assert(isscalar(hit),'sixgr:report:CSILatencyAmbiguousTransition','Multiple received identity transitions.');
+b=table2struct(T(hit,:));
+if string(b.TransitionEvidenceRole)~="received_RA_installation_bridge_not_measurement_relabel" || ...
+        strlength(string(b.EvidenceSHA256))~=64 || strlength(string(b.DecodedRAEvidenceSHA256))~=64
+    return;
+end
+% The installation's canonical slot is an interval, not an invented exact
+% sample. Require the ENTIRE interval after measurement and before UCI.
+width=number(m,'DeliverySlotEndSampleExclusive')-number(m,'DeliverySlotStartSample');
+if ~isfinite(width)||width<=0||width~=fix(width), return; end
+if mod(number(m,'DeliverySlotStartSample'),width)~=0 || ...
+        number(m,'ResultAvailableAtSample')>(b.InstalledAtCanonicalSlot-1)*width || ...
+        b.InstalledAtCanonicalSlot*width>number(r,'ObservationStartSample')
+    return;
+end
+bridge=b;
 end

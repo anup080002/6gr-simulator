@@ -483,6 +483,22 @@ trial.PUCCHPowerControlMRB = double(sixgr.util.structGet(tx,"Power.MRB",NaN));
 trial.PUCCHPowerControlMu = double(sixgr.util.structGet(tx,"Power.Mu",NaN));
 trial.PUCCHPowerBandwidthTerm_dB = double(sixgr.util.structGet(tx,"Power.BandwidthTermdB",NaN));
 trial.PUCCHPowerBandwidthSource = string(sixgr.util.structGet(tx,"Power.BandwidthSource",""));
+originalPower=tx.Assignment.PowerControlState.Data;
+trial.PUCCHClosedLoopAdjustment_dB=double(originalPower.ClosedLoopAdjustmentdB);
+trial.PUCCHTPCCommandSource=string(originalPower.TPCCommandSource);
+trial.PUCCHDeltaTF_dB=double(originalPower.DeltaTFdB);
+trial.PUCCHReceivedPowerProposalSHA256="";
+trial.PUCCHReceivedPowerProposalJSON="";
+trial.PUCCHDeltaTFEvidenceSHA256="";
+trial.PUCCHDeltaTFEvidenceJSON="";
+if isfield(originalPower,'ReceivedPowerProposal')
+    trial.PUCCHReceivedPowerProposalSHA256=string(originalPower.ReceivedPowerProposal.Digest);
+    trial.PUCCHReceivedPowerProposalJSON=string(jsonencode(originalPower.ReceivedPowerProposal));
+end
+if isfield(originalPower,'DeltaTFEvidence')
+    trial.PUCCHDeltaTFEvidenceSHA256=string(originalPower.DeltaTFEvidence.SHA256);
+    trial.PUCCHDeltaTFEvidenceJSON=string(jsonencode(originalPower.DeltaTFEvidence));
+end
 trial.PUCCHPCMAX_dBm = double(sixgr.util.structGet( ...
     tx,"Power.PCMAXdBm",NaN));
 trial.PUCCHPowerHeadroom_dB = double(sixgr.util.structGet( ...

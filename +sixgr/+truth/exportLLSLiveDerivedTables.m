@@ -12,9 +12,10 @@ if nargin < 6 || ~isstruct(slotTrace)
 end
 if nargin < 7, publicationScope="full"; end
 assert(isscalar(string(publicationScope)) && ...
-    any(string(publicationScope)==["full","harq_observations","antenna_observations"]), ...
+    any(string(publicationScope)==["full","harq_observations","antenna_observations","receiver_observations"]), ...
     'sixgr:truth:LivePublicationScope','Unknown live publication scope.');
 
+receiverOnly=string(publicationScope)=="receiver_observations";
 artifacts = struct();
 layout = sixgr.report.resultLayout(runFolder);
 sixgr.util.ensureFolder(layout.ReportCSVDir);
@@ -56,6 +57,19 @@ if string(publicationScope)=="antenna_observations"
     return;
 end
 srsT = sixgr.util.structGet(rawTrials, "SRS", table());
+artifacts.ControlDataAcceptancePath=fullfile(layout.ReportCSVDir,"control_data_measurement_acceptance.csv");
+acceptancePackets=table(); acceptanceSDUs=table();
+packetPath=fullfile(layout.PacketFlowCSVDir,'live_application_packet_delivery_ledger.csv');
+sduPath=fullfile(layout.PacketFlowCSVDir,'live_packet_sdu_delivery_ledger.csv');
+if isfile(packetPath), acceptancePackets=sixgr.util.csvReadTable(packetPath,'TextType','string'); end
+if isfile(sduPath), acceptanceSDUs=sixgr.util.csvReadTable(sduPath,'TextType','string'); end
+artifacts.ControlDataAcceptance=sixgr.report.collectControlDataMeasurementAcceptance( ...
+    dlT,ulT,acceptancePackets,acceptanceSDUs);
+sixgr.util.csvWriteTable(artifacts.ControlDataAcceptancePath, ...
+    artifacts.ControlDataAcceptance,'PreserveSchema',true,'RoundTripNumericText',true);
+if receiverOnly
+    artifacts.CausalStageEvidence=sixgr.truth.exportCompactCausalStageEvidence(runFolder,cfg,rawTrials);
+end
 trsT = sixgr.util.structGet(rawTrials, "TRS", table());
 csirsRuntimeT = sixgr.util.structGet(rawTrials, "CSIRS", table());
 pbchT = sixgr.util.structGet(rawTrials, "PBCH", table());
@@ -123,6 +137,7 @@ symbolThroughputT = localBuildSymbolThroughputTable(cfg, dlT, ulT);
 % HARQ process state is retained separately for retransmission diagnostics.
 % In particular, do not replace the primary-trial observation schema with
 % the process-state schema merely because the latter is available.
+if ~receiverOnly
 compactHARQ=localPublishHARQObservations(layout,dlT,ulT,slotTrace);
 harqSummaryT=compactHARQ.HARQ.SummaryTable;
 harqTimelineT=compactHARQ.HARQ.TimelineTable;
@@ -173,14 +188,18 @@ if ~(istable(coverageT) && ~isempty(coverageT))
     coverageT = localBuildCoverageLayerTable(coverageInputs, userPerfT);
 end
 coverageT = localEnsureCoverageLayerSINRContract(coverageT);
+end % Full publication owns runtime HARQ, user performance and coverage.
 errorRateT = localBuildErrorRateSummaryTable(dlT, ulT);
 trialCombinedT = localCombineDirectionalTrials(dlT, ulT);
-antennaConfigT = localBuildAntennaConfigResolvedTable(mobilityArtifacts, slotTrace, trialCombinedT);
+
 antennaRuntimeT = localBuildAntennaRuntimeEvidenceTable(trialCombinedT, cfg);
 arrayConsistencyT = localBuildChannelArrayConsistencyTable(trialCombinedT, cfg);
+if ~receiverOnly
+antennaConfigT = localBuildAntennaConfigResolvedTable(mobilityArtifacts, slotTrace, trialCombinedT);
 todToaT = localBuildTodToaTraceTable(trialCombinedT);
 timingPositioningT = localBuildTimingPositioningRuntimeEvidenceTable(trialCombinedT);
 channelImpulseT = sixgr.truth.buildChannelImpulseResponseTable(cfg);
+end
 
 sixgr.util.csvWriteTable(artifacts.ChannelEstimationStatsPath, channelT, "PreserveSchema", true);
 sixgr.util.csvWriteTable(artifacts.SRSChannelQualificationDiagnosticsPath, srsDiagnosticsT, "PreserveSchema", true);
@@ -201,19 +220,24 @@ sixgr.util.csvWriteTable(artifacts.CSIRSStatsPath, csirsT, 'PreserveSchema', tru
 sixgr.util.csvWriteTable(artifacts.LinkAdaptationInputPath, linkAdaptationT, "PreserveSchema", true);
 sixgr.util.csvWriteTable(artifacts.SymbolThroughputPath, symbolThroughputT);
 sixgr.util.csvWriteTable(artifacts.SymbolThroughputAnalyticsPath, symbolThroughputT);
-sixgr.util.csvWriteTable(artifacts.UserPerformancePath, userPerfT);
-sixgr.util.csvWriteTable(artifacts.CoverageLayerPath, coverageT);
+if ~receiverOnly
+    sixgr.util.csvWriteTable(artifacts.UserPerformancePath, userPerfT);
+    sixgr.util.csvWriteTable(artifacts.CoverageLayerPath, coverageT);
+end
 sixgr.util.csvWriteTable(artifacts.ErrorRateSummaryPath, errorRateT);
 sixgr.util.csvWriteTable(artifacts.FERSummaryPath, errorRateT);
 sixgr.util.csvWriteTable(artifacts.FERSummaryReportPath, errorRateT);
-sixgr.util.csvWriteTable(artifacts.AntennaConfigResolvedPath, antennaConfigT, 'PreserveSchema', true);
+
 sixgr.util.csvWriteTable(artifacts.AntennaRuntimeEvidencePath, antennaRuntimeT, 'PreserveSchema', true);
 sixgr.util.csvWriteTable(artifacts.ChannelArrayConsistencyPath, arrayConsistencyT);
+if ~receiverOnly
+sixgr.util.csvWriteTable(artifacts.AntennaConfigResolvedPath, antennaConfigT, 'PreserveSchema', true);
 sixgr.util.csvWriteTable(artifacts.TodToaTracePath, todToaT);
 sixgr.util.csvWriteTable(artifacts.TimingPositioningEvidencePath, timingPositioningT);
 sixgr.util.csvWriteTable(artifacts.ChannelImpulseResponsePath, channelImpulseT);
 rfInterferenceArtifacts = sixgr.analytics.writeRFInterferenceReconciliation( ...
     cfg, runFolder, rawTrials, mobilityArtifacts, slotTrace);
+end
 
 artifacts.ChannelEstimationStats = channelT;
 artifacts.SRSChannelQualificationDiagnostics = srsDiagnosticsT;
@@ -230,12 +254,26 @@ artifacts.CSISelectionObservations = selectionT;
 artifacts.CSIRSStats = csirsT;
 artifacts.LinkAdaptationInput = linkAdaptationT;
 artifacts.SymbolThroughput = symbolThroughputT;
-artifacts.UserPerformance = userPerfT;
-artifacts.CoverageLayer = coverageT;
+
 artifacts.ErrorRateSummary = errorRateT;
-artifacts.AntennaConfigResolved = antennaConfigT;
+
 artifacts.AntennaRuntimeEvidence = antennaRuntimeT;
 artifacts.ChannelArrayConsistency = arrayConsistencyT;
+if receiverOnly
+    % Use the same raw receiver accounting as full RF reconciliation. This
+    % lightweight publication must precede energy/plot work, including at a
+    % heavy milestone, so those failures cannot leave startup zero counts.
+    artifacts.SchedulerReconciliation = sixgr.analytics.buildSchedulerKPIReconciliation(dlT,ulT,cfg);
+    artifacts.SchedulerReconciliationPath=fullfile(layout.ReportCSVDir,'scheduler_kpi_reconciliation.csv');
+    sixgr.analytics.writeAnalysisTable(artifacts.SchedulerReconciliationPath,artifacts.SchedulerReconciliation);
+    artifacts.PublicationScope="receiver_observations";
+    artifacts.DLReceiverRows=height(dlT);
+    artifacts.ULReceiverRows=height(ulT);
+    return;
+end
+artifacts.UserPerformance = userPerfT;
+artifacts.CoverageLayer = coverageT;
+artifacts.AntennaConfigResolved = antennaConfigT;
 artifacts.TodToaTrace = todToaT;
 artifacts.TimingPositioningEvidence = timingPositioningT;
 artifacts.ChannelImpulseResponse = channelImpulseT;

@@ -1189,8 +1189,7 @@ assert(isscalar(hit)&&string(outputs(hit).SHA256)==string(sha), ...
 end
 function supported=localSupportedReference(d)
 supported=isstruct(d)&&isscalar(d)&&isfield(d,'Available')&&isequal(d.Available,true)&& ...
-    isfield(d,'NativeFilterAuthority')&&string(d.NativeFilterAuthority)== ...
-    "R2026a_Inf_fresh_both_direction_public_getPathFilters";
+    sixgr.channel.isNativeCDLReferenceDependency(d);
 end
 function binding=localChannelBinding(link,transmitters,receivers,epoch)
 power=sixgr.rf.PowerContext(transmitters(link.TX).RF.Configuration,transmitters(link.TX).RF.Chain.Direction);

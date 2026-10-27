@@ -138,6 +138,8 @@ row.CSIRSReferenceIsolationErrorIdentifier=string(isolation.ErrorIdentifier);
 % This does not turn the aggregate nonlinear link into isolated port truth.
 modelComparison=sixgr.truth.scoreSharedCSIRSLinearPortModel( ...
     item,reception,desired,channelSource,replay,state.SharedWaveformStream);
+receivedEVM=sixgr.truth.scoreSharedCSIRSReceivedEVM( ...
+    item,reception,desired,channelSource,replay,state.SharedWaveformStream);
 for field=string(fieldnames(modelComparison)).'
     row.(field)=modelComparison.(field);
 end
@@ -151,6 +153,8 @@ else
         storageRoot,row,prepared,reception,channelSource,channelCaptures);
 end
 row=sixgr.report.retainControlEVMPairs(storageRoot,row,paired);
+row=sixgr.report.retainCSIRSReceivedEVMPairs(storageRoot,row,receivedEVM.Pairs,receivedEVM.Metrics);
+row=sixgr.report.exportCSIRSReceivedEVMPairs(storageRoot,row);
 row=sixgr.truth.DLMeasurementInstallation.stamp(state,row,prepared.ReceiverConfig,item.UE,"CSI-RS");
 state = sixgr.truth.CoupledTruthRuntime.applyCSIRSTrial(state,item.UE,row);
 end
@@ -185,7 +189,7 @@ bindingToken=string(plane.PhysicalMeasurementPlaneBindingJSON);
 assert(string(plane.PhysicalMeasurementPlaneBindingSHA256)== ...
     string(sixgr.util.sha256Hex(char(bindingToken))),id,'Original RX plane binding changed.');
 b=jsondecode(bindingToken);
-assert(string(r.ContractVersion)=="sixgr.csirs.physical_demodulation/v1"&& ...
+assert(any(string(r.ContractVersion)==["sixgr.csirs.physical_demodulation/v1","sixgr.csirs.physical_demodulation/v2"])&& ...
     string(r.InputPlane)=="supplied_pre_composite_receiver_front_end_capture"&& ...
     string(b.ReceiverWindowID)==string(item.ID)&&string(b.OriginalInputSHA256)==string(r.InputSHA256)&& ...
     string(b.OriginalDemodulationReceiptSHA256)==string(reception.PhysicalMeasurementDemodulationReceiptSHA256)&& ...

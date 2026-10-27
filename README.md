@@ -1,5 +1,107 @@
 # SixGR Foundation v2
 
+### Recovery checkpoint — 27 October 2026
+
+The current MATLAB, configuration, reporting and test edits are consolidated in
+this checkout. The latest affected MATLAB batch passed **23 of 26 tests** on
+R2026a Update 4, with all 6,237 monitored files unchanged during execution.
+Three failures remain: DRB packet-lineage validation, the selected-PUSCH CSI
+reference-clock assertion, and UL MAC finalization requiring the original
+received assignment and immutable TBS.
+
+This is an incomplete integration checkpoint. **All P0 checks have not passed;
+the two 60-slot n40 runs remain stopped.** Common SRB/security/DRB activation
+and remaining shared physical episodes still need completion. Full-suite and
+R2024a acceptance are not claimed. See the
+[checkpoint and original test receipt](docs/lls/n40_20261026_failure_review/P0_CHECKPOINT_20261027.md)
+and the [current open issues](docs/lls/lls_gap_status_20261023.html).
+
+### Portable n40 CSI implementation — R2024a target
+
+The n40 parent selects `portable_typeI_mmse` explicitly in YAML, covering
+the standalone impaired scenario and its reference sweep.
+This core MATLAB path replaces the release-specific CSI selector with the
+repository's TS 38.214 Type-I SinglePanel codebooks, original measured channel
+and disturbance operands, MMSE candidate evaluation and typed CSI report packing.
+Its current supported reporting domain is four logical ports, wideband reporting,
+and configured ranks within 1–4; selected n40 retains its declared `[1, 2, 4]`
+candidate set. Rank/PMI selection uses a declared mutual-information
+policy; CQI uses an explicitly configured, uncalibrated threshold model. These
+policies are not prescribed optimality or BLER guarantees from 3GPP.
+
+The portable path does not call `nrCSIReportConfig` or the R2026a private CSI
+selectors. The separately named `native_maxse_r2026a` backend remains available
+for configurations that explicitly select that implementation. There is no
+automatic release-based substitution between policies. Native CDL continuation
+and OFDM FFT support are checked using isolated public-API capability probes;
+those probes do not advance the simulation's original channel or receiver input.
+
+R2024a execution is not verified on this laptop. Before accepting a run on that
+server, run the following in its MATLAB session, then run the n40 integration
+gate with a fresh result tag. Keep the resulting receipts; a successful focused
+check does not establish checkpoint60 or complete-sweep acceptance.
+
+```matlab
+setup6GRSimToolkit('Verbose',false);
+testAll('Names', ["testNativeCDLFIRCapability", ...
+    "testRuntimeCDLFreshInitialization", "testAppliedChannelReferenceStream", ...
+    "testNativeOFDMFFTCapability", "testSRSAntennaPowerFFTSupport", ...
+    "testPortableCSIBackendConfiguration", "testPortableTypeICSIReportEngine", ...
+    "testPortableReceivedCSIRSCompletion", "testSharedSRSReceivedPowerOwner"]);
+```
+
+### Latest n40 attempt: slot-58 report failure — 26 October 2026
+
+The fresh `n40_integration_60slots_20261026_100846` attempt failed at slot58
+with `sixgr:truth:UnexecutedCommonSignalObservation`. Its native checkpoint55
+and original results are preserved; checkpoint60 and the 0 dB child were not
+reached. The failed recovery MATLAB process has been stopped. This supersedes
+the launch-status note below; the older slot56 failure remains separate evidence.
+
+The executed data is in `sweeps/reference_esn0_20_db`, underneath the sweep
+parent. It contains 12 DL trials and one UL trial. All 13 passed CRC. DL used
+MCS1 then MCS2; UL55 used MCS1/rank4 and delivered 5,000 bits. That is 10 Mbps
+over its 0.5 ms trial, or about 0.1724 Mbps over the 29 ms observed clock.
+The planned UL60 grant is not an executed throughput sample.
+
+The diagnosed crash was a report-consumer type error: native MATLAB logical
+flags became NaN through text conversion, falsely rejecting executed access
+waveforms. Many live summaries were still empty because they waited for the
+heavy refresh that failed. The scoped fixes, retained-evidence replay and
+remaining qualification limits are recorded in the
+[failure and recovery review](docs/lls/n40_20261026_failure_review/README.md) and
+[uplink review](docs/lls/n40_20261026_failure_review/uplink_review.md).
+An affected-test pass or diagnostic report replay does not establish a
+completed 60-slot sweep or authorize replacement of its original receipts.
+
+UL startup now separates first spatial acquisition from later rank increases.
+The focused planner regression accepts SRS45 at control46 for PUSCH50, preserving
+the original RI/TPMI, stale-feedback guards and K2=4. The selected CSI calendar
+also permits an earlier legal report44 while keeping continuous data and the
+required reference age. Physical execution and sustained adaptation remain
+separate acceptance checks.
+
+The [active issue ledger](docs/lls/lls_gap_status_20261023.html) contains only
+current unresolved work, grouped with integration first. Duplicate requirements
+are consolidated; completed repairs and historical defect narratives are absent.
+The current run's 85 parameter-consumer bindings pass, and the repaired live
+publisher passes all 28 causal stages in separate retained-data replay. Original failed-run
+evidence, recovered diagnostic reports and complete-run acceptance stay distinct.
+
+The attached measurement backlog now has an individual review for all
+[39 measurement families](docs/lls/n40_20261026_failure_review/measurement_inventory_review.csv).
+Core MATLAB repairs cover received-measurement status, CSI latency across the
+received RNTI transition, feedback-error denominators, spectral port/power
+accounting, raw cubic-envelope evidence and lossless measurement sidecars.
+The original 388 modeled radiation intervals reconcile without RF replay;
+calibrated feed power and hardware conformance remain unqualified. Actual
+multiport CSI received-EVM and shared 20-MHz SRS detected-path checks pass with
+all 28 sealed sources unchanged. Selected n40 SRS path power is enabled and
+configuration-validated. PHR wire encoding and release-pinned quantization pass
+their focused checks; received PHR transport and scheduler integration remain open.
+The bounded 51-slot early-feedback integration gate is separate from complete
+60-slot/checkpoint acceptance. Exact evidence and limits are retained in the inventory.
+
 ### Live dashboard refresh repair — 26 October 2026
 
 Open [Live](http://127.0.0.1:62906/realtime) to follow the active waveform point,
@@ -7,7 +109,7 @@ or select a previous run from the Run dropdown. The display now retains actual
 measurements during refresh, identifies loading/failed refreshes, and links
 sweep parents to their child measurements. Final acceptance remains separate.
 Use [the live-dashboard launcher](tools/live_dashboard/README.md) for these
-repairs; it preserves the running n40 gate's frozen source files.
+repairs; it was deployed without changing the then-running gate's frozen sources.
 
 ## 26 October 2026: n40 integration gate and repaired feedback handoffs
 
@@ -16,9 +118,9 @@ this checkout on `main`. The stopped waveform attempt below used runtime
 revision **`d40031e0`**. The slot-56 repair requires a fresh execution; its
 results cannot be attributed to that stopped attempt.
 
-### Latest verification snapshot — full acceptance remains pending
+### Earlier slot56 verification snapshot — full acceptance remains pending
 
-The latest retained failed attempt is
+The earlier retained failed attempt is
 `n40_integration_65slots_20261026_022232`, under
 `E:\SixGRResults\lls\lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep`.
 It was configured for two independent **[20, 0] dB nominal reference-Es/N0** points,

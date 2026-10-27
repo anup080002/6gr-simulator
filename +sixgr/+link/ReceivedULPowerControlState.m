@@ -20,6 +20,17 @@ classdef ReceivedULPowerControlState
         end
 
         function [wave,pc,cfgOut,state,next]=resolvePUSCH(obj,cfg,a,tx,observation)
+            % Existing post-waveform interface preserves nonzero waveform guard.
+            assert(isnumeric(tx.Waveform)&&~isempty(tx.Waveform)&&all(isfinite(tx.Waveform(:)))&& ...
+                mean(sum(abs(double(tx.Waveform)).^2,2))>0, ...
+                'sixgr:pusch:InvalidPowerControlWaveform','Original actual waveform required.');
+            allocation=struct('Carrier',tx.Carrier,'PUSCH',tx.PUSCH,'NumSamples',size(tx.Waveform,1));
+            [pc,cfgOut,state,next]=obj.previewPUSCHAllocation(cfg,a,allocation,observation);
+            wave=tx.Waveform;
+        end
+
+        function [pc,cfgOut,state,next]=previewPUSCHAllocation(obj,cfg,a,tx,observation)
+            validateattributes(tx.NumSamples,{'numeric'},{'scalar','finite','integer','positive'});
             c=sixgr.phy.pdcch.validateConnectedAssignment(cfg,a);
             assert(a.Direction=="UL" && a.RNTI==obj.RNTI, ...
                 'sixgr:power:WrongEndpoint','A UE cannot consume another endpoint or DL command.');
@@ -39,7 +50,7 @@ classdef ReceivedULPowerControlState
                 'sixgr:power:NumerologyMismatch','Power timing must use the executed carrier.');
             slotStart=sixgr.phy.frame.slotStartSample(tx.Carrier,a.DataAbsoluteSlot,fs);
             timing=sixgr.link.resolveConnectedULTransmissionTiming(cfg, ...
-                slotStart/fs,fs,size(tx.Waveform,1));
+                slotStart/fs,fs,tx.NumSamples);
             slotStart=timing.TransmitStartSample;
             ofdm=nrOFDMInfo(tx.Carrier,'SampleRate',fs);
             offset=mod(double(tx.Carrier.NSlot),double(tx.Carrier.SlotsPerSubframe))* ...
@@ -87,8 +98,8 @@ classdef ReceivedULPowerControlState
                 end
             end
             grant=struct('PRBSet',tx.PUSCH.PRBSet,'DecodedDCIFields',a.Fields);
-            [wave,pc,cfgOut,state]=sixgr.link.bindPUSCHPowerControlContext( ...
-                tx.Waveform,cfg,tx,grant,state);
+            [pc,cfgOut,state]=sixgr.link.resolvePUSCHAllocationPowerContext( ...
+                cfg,tx,grant,state);
             pc.StateOwner="received_ue_pusch_power_control";
             pc.StateResetReason=reset;
             pc.ReceivedAssignmentDigest=a.AssignmentDigest;

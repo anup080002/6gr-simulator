@@ -8,11 +8,18 @@ scopeToken = lower(regexprep(char(string(scopeToken)), "[^a-z0-9]+", "_"));
 names = string(T.Properties.VariableNames);
 for index = 1:numel(names)
     fieldName = char(names(index));
-    if sixgr.truth.isImmutableIdentityField(fieldName) || endsWith(fieldName,"JSON","IgnoreCase",true)
+    literalReceiverField=endsWith(fieldName,["Hex","BitVector"],"IgnoreCase",true) || ...
+        endsWith(fieldName,"ContentionIdentity","IgnoreCase",true) || ...
+        any(lower(string(fieldName))==["receivedidentity","expectedidentity", ...
+        "ueidentity","contentionidentitytx","contentionidentityrx"]);
+    if sixgr.truth.isImmutableIdentityField(fieldName) || sixgr.truth.isSerializedMeasurementOperandField(fieldName) || literalReceiverField
         % Identity and serialized evidence are producer-owned, not display
         % categories. An empty JSON field can mean this reference plane was
         % not used (e.g. absolute power in normalized AWGN). Do not create
         % text that masquerades as an available structured measurement.
+        % Literal bytes/bits are not display categories either: an absent
+        % decoded payload or an inapplicable signal's union column must stay
+        % empty, not become a non-hex/non-binary applicability sentence.
         continue;
     end
     rawColumn = T.(fieldName);

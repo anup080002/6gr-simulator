@@ -19,6 +19,9 @@ for direction=["DL","UL"]
     end
     evidence.(prefix+"AdaptationStatePresent")=~isempty(fieldnames(adaptation));
     evidence.(prefix+"ILLAUpdateCount")=double(sixgr.util.structGet(adaptation,'UpdateCount',NaN));
+    evidence.(prefix+"HasAcceptedSpatialDecision")=logical(sixgr.util.structGet(adaptation,'HasAcceptedSpatialDecision',false));
+    evidence.(prefix+"InitialSpatialConfirmationRequired")=double(sixgr.util.structGet(adaptation,'InitialSpatialRequiredCount',NaN));
+    evidence.(prefix+"SpatialConfigurationEpoch")=double(sixgr.util.structGet(adaptation,'SpatialConfigurationEpoch',NaN));
     evidence.(prefix+"AcceptedRank")=double(sixgr.util.structGet(adaptation,'SchedulerAcceptedRank',NaN));
     evidence.(prefix+"PendingRankIncrease")=double(sixgr.util.structGet(adaptation,'RankIncreaseCandidate',NaN));
     evidence.(prefix+"RankConfirmationCount")=double(sixgr.util.structGet(adaptation,'RankIncreaseConfirmationCount',NaN));

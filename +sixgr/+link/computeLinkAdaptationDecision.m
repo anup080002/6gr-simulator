@@ -33,6 +33,13 @@ beamPolicy = lower(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.beamPoli
 base = localBaseState(cfg, direction);
 adaptationState = localInitAdaptationState(cfg, direction, opt.AdaptationState);
 stateBeforeQuality = adaptationState;
+initialSpatial = ~adaptationState.HasAcceptedSpatialDecision;
+spatialRequired = adaptationState.RankIncreaseRequiredCount;
+spatialPhase = "steady_state_rank_confirmation";
+if initialSpatial
+    spatialRequired = adaptationState.InitialSpatialRequiredCount;
+    spatialPhase = "initial_measured_spatial_acquisition";
+end
 spatialUpdateAllowed = logical(sixgr.util.structGet(metrics, "SpatialUpdateAllowed", true));
 spatialOnly = logical(sixgr.util.structGet(metrics, "SpatialOnly", false));
 assert(~spatialOnly || (direction=="UL" && spatialUpdateAllowed), ...
@@ -71,6 +78,9 @@ decision = struct( ...
     "RankUpdateBlockedReason", "", ...
     "RankIncreaseConfirmationCount", double(adaptationState.RankIncreaseConfirmationCount), ...
     "RankIncreaseRequiredCount", double(adaptationState.RankIncreaseRequiredCount), ...
+    "SpatialConfirmationPhase", spatialPhase, ...
+    "SpatialConfirmationRequiredCount", double(spatialRequired), ...
+    "HasAcceptedSpatialDecision", logical(adaptationState.HasAcceptedSpatialDecision), ...
     "MCSUpdated", false, ...
     "PMIType", char(string(sixgr.util.structGet(metrics, "PMIType", ""))), ...
     "PMICodebookMode", char(string(sixgr.util.structGet(metrics, "PMICodebookMode", ""))), ...
@@ -265,7 +275,32 @@ if rankControl.AdaptiveRank && spatialUpdateAllowed
     if isfinite(ri)
         maxLayers = localMaxLayers(cfg, direction);
         requestedLayers = max(1, min(maxLayers, round(ri)));
-        if requestedLayers < decision.NumLayers
+        if initialSpatial && ~isfinite(decision.PMI)
+            decision.RankUpdateStatus="held_missing_atomic_pmi";
+            decision.RankUpdateBlockedReason="initial_spatial_acquisition_requires_atomic_pmi";
+            if direction=="DL" && localHasStaleExplicitPDSCHMatrix(cfg,requestedLayers)
+                decision.RankUpdateBlockedReason="explicit_precoder_rank_transition_requires_simultaneous_finite_pmi";
+            end
+        elseif initialSpatial
+            if isequal(adaptationState.RankIncreaseCandidate,double(requestedLayers))
+                adaptationState.RankIncreaseConfirmationCount=adaptationState.RankIncreaseConfirmationCount+1;
+            else
+                adaptationState.RankIncreaseCandidate=double(requestedLayers);
+                adaptationState.RankIncreaseConfirmationCount=1;
+            end
+            decision.RankIncreaseConfirmationCount=adaptationState.RankIncreaseConfirmationCount;
+            if adaptationState.RankIncreaseConfirmationCount>=spatialRequired
+                decision.RankUpdated=requestedLayers~=decision.NumLayers;
+                decision.NumLayers=requestedLayers;
+                decision.RankUpdateStatus="initial_spatial_acquisition_ready";
+            else
+                decision.RankUpdateStatus="pending_initial_spatial_confirmation";
+                if requestedLayers>decision.NumLayers
+                    decision.RankUpdateStatus="pending_increase_confirmation";
+                end
+                decision.RankUpdateBlockedReason="initial_spatial_acquisition_requires_received_reports";
+            end
+        elseif requestedLayers < decision.NumLayers
             % A receiver-requested rank reduction is protective and is
             % applied immediately. Confirmation is required only for an
             % increase in the spatial operating point.
@@ -319,7 +354,7 @@ end
 % A PMI accompanying an unconfirmed higher RI belongs to the candidate
 % rank, not the currently executable rank. Hold both parts of the spatial
 % decision until the causal RI confirmation requirement is met.
-if string(decision.RankUpdateStatus) == "pending_increase_confirmation"
+if any(string(decision.RankUpdateStatus)==["pending_increase_confirmation","pending_initial_spatial_confirmation"])
     decision.PMIUpdated = false;
 end
 
@@ -344,7 +379,7 @@ end
 
 if strlength(qualityKey) > 0 && ...
         any(string(decision.RankUpdateStatus) == ...
-        ["pending_increase_confirmation","held_missing_atomic_pmi"])
+        ["pending_increase_confirmation","pending_initial_spatial_confirmation","held_missing_atomic_pmi"])
     % Candidate-rank CQI cannot enter the executable-rank temporal filter.
     % Keep only the spatial confirmation transition; all prior quality and
     % OLLA state remains intact. Raw candidate CQI/RI stays in the report.
@@ -379,14 +414,29 @@ end
 decision.Valid = logical(decision.MCSUpdated || decision.RankUpdated || decision.PMIUpdated || decision.CRIUpdated);
 if spatialOnly && isfinite(decision.RI) && isfinite(decision.PMI) && ...
         decision.RI==decision.NumLayers && ...
-        ~any(string(decision.RankUpdateStatus)==["pending_increase_confirmation","held_missing_atomic_pmi"])
+        ~any(string(decision.RankUpdateStatus)==["pending_increase_confirmation","pending_initial_spatial_confirmation","held_missing_atomic_pmi"])
     decision.Valid = true;
 end
+% This state records an accepted spatial decision, independently of CQI
+% filtering/OLLA initialization. Quality-only callbacks cannot acquire it.
+% Runtime callers validate original receiver identity and delivery first.
+spatialAccepted=decision.Valid && spatialUpdateAllowed && rankControl.AdaptiveRank && ...
+    isfinite(decision.RI) && isfinite(decision.PMI) && decision.RI==decision.NumLayers && ...
+    ~any(string(decision.RankUpdateStatus)==["pending_increase_confirmation", ...
+        "pending_initial_spatial_confirmation","held_missing_atomic_pmi"]) && ...
+    (spatialOnly || (isfinite(decision.ResolvedCQI) && decision.ResolvedCQI>0));
+if spatialAccepted
+    adaptationState.HasAcceptedSpatialDecision=true;
+    adaptationState.AcceptedSpatialRank=double(decision.RI);
+    adaptationState.AcceptedSpatialPMI=double(decision.PMI);
+    adaptationState.AcceptedSpatialCRI=double(decision.CRI);
+end
+decision.HasAcceptedSpatialDecision=adaptationState.HasAcceptedSpatialDecision;
 if decision.Valid
     decision.Reason = "adaptation_scheduled";
 else
     if strlength(decision.Reason) == 0
-        if string(decision.RankUpdateStatus) == "pending_increase_confirmation"
+        if any(string(decision.RankUpdateStatus)==["pending_increase_confirmation","pending_initial_spatial_confirmation"])
             decision.Reason = "rank_increase_confirmation_pending";
         else
             decision.Reason = "no_change";
@@ -1563,6 +1613,11 @@ adaptationState = struct( ...
     "Direction", char(direction), ...
     "LinkAdaptationDomain", char(sixgr.link.resolveLinkAdaptationDomain(cfg, direction)), ...
     "Initialized", false, ...
+    "HasAcceptedSpatialDecision", false, ...
+    "AcceptedSpatialRank", NaN, "AcceptedSpatialPMI", NaN, "AcceptedSpatialCRI", NaN, ...
+    "SpatialConfigurationEpoch", localSpatialConfigurationEpoch(cfg,direction), ...
+    "InitialSpatialRequiredCount", localPositiveIntegerConfig(cfg, ...
+        "phy.linkAdaptation.initialSpatialConfirmationReports",1), ...
     "InnerLoopEnabled", logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.innerLoopFlag", false)), ...
     "OuterLoopEnabled", logical(olla.Enabled), ...
     "CQISmoothingAlpha", double(cqiSmoothingAlpha), ...
@@ -1612,6 +1667,21 @@ prevFields = fieldnames(previousState);
 for i = 1:numel(prevFields)
     adaptationState.(prevFields{i}) = previousState.(prevFields{i});
 end
+% Legacy states have no proof of spatial acquisition. A changed installed
+% spatial generation clears only this acquisition/candidate state; ordinary
+% RI/CQI/MCS filter resets must never regain the initial threshold.
+spatialEpoch=localSpatialConfigurationEpoch(cfg,direction);
+if ~isequaln(adaptationState.SpatialConfigurationEpoch,spatialEpoch)
+    adaptationState.HasAcceptedSpatialDecision=false;
+    adaptationState.AcceptedSpatialRank=NaN; adaptationState.AcceptedSpatialPMI=NaN;
+    adaptationState.AcceptedSpatialCRI=NaN;
+    adaptationState.RankIncreaseCandidate=NaN; adaptationState.RankIncreaseConfirmationCount=0;
+end
+adaptationState.SpatialConfigurationEpoch=spatialEpoch;
+assert(islogical(adaptationState.HasAcceptedSpatialDecision) && isscalar(adaptationState.HasAcceptedSpatialDecision), ...
+    'sixgr:link:InvalidSpatialAcquisitionState','Spatial acquisition state must be a logical scalar.');
+adaptationState.InitialSpatialRequiredCount=localPositiveIntegerConfig(cfg, ...
+    "phy.linkAdaptation.initialSpatialConfirmationReports",1);
 % Configuration remains authoritative if a long-lived state object crosses
 % a scenario or configuration epoch.
 adaptationState.CQIOutageRecoveryRequiredCount = localPositiveIntegerConfig( ...
@@ -1760,4 +1830,12 @@ for i = 1:numel(paths)
         return;
     end
 end
+end
+
+function epoch=localSpatialConfigurationEpoch(cfg,direction)
+if direction=="UL", path="rf.configurationEpoch";
+else, path="phy.csi.reportConfigurationEpoch"; end
+epoch=sixgr.util.structGet(cfg,path,0);
+assert(isnumeric(epoch) && isscalar(epoch) && isreal(epoch) && isfinite(epoch) && epoch>=0 && epoch==fix(epoch), ...
+    'sixgr:link:InvalidSpatialConfigurationEpoch','Installed spatial generation must be a nonnegative integer.');
 end

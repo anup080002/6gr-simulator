@@ -26,6 +26,7 @@ s=sixgr.lls6g.config.loadScenarioConfig(file);
 cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
 operatingPoint=sixgr.truth.resolveWaveformOperatingPointMetadata(cfg);
 if reportedRI==2
+    cfg.phy.linkAdaptation.initialSpatialConfirmationReports=2;
     cfg.phy.linkAdaptation.rankIncreaseConfirmationReports=2;
 end
 if priorOutage

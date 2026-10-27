@@ -2,11 +2,12 @@ classdef MACPDUAssembler
     %MACPDUASSEMBLER Exact bounded assembly; never drops an SDU silently.
     methods (Static)
         function result=assemble(direction,subPDUs,tbsBytes)
+            validateattributes(tbsBytes,{'numeric'},{'scalar','real','finite','integer','positive'});
             direction=upper(string(direction));
             encoded=uint8.empty(1,0); rows=struct([]);
             for ii=1:numel(subPDUs)
                 item=subPDUs(ii);
-                payload=uint8(item.Payload(:).');
+                payload=sixgr.l2.mac.requireMACOctets(item.Payload);
                 header=sixgr.l2.mac.MACSubheaderCodec.encode( ...
                     direction,item.LCID,numel(payload));
                 if numel(encoded)+numel(header)+numel(payload)>tbsBytes

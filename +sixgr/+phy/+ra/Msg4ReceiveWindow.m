@@ -11,6 +11,10 @@ classdef Msg4ReceiveWindow
     end
     methods
         function obj=Msg4ReceiveWindow(cfg,ra,grant,identity,physicalTiming)
+            assert(isempty(fieldnames(sixgr.util.structGet(cfg,'GNBCommonCellConfiguration',struct()))) && ...
+                isempty(fieldnames(sixgr.util.structGet(cfg,'GNBCommonMIBConfiguration',struct()))) && ...
+                string(sixgr.util.structGet(ra,'Msg4DCIReference.AuthorityRole',""))~="original_gNB_transmitter_configuration", ...
+                'sixgr:phy:ra:GNBConfigurationAtUEReceiver','A UE contention receiver cannot use gNB common authority.');
             assert(physicalTiming.Source=="received_DL_reference_received_RAR_TA_and_common_offset" && ...
                 physicalTiming.WaveformTimingApplied, ...
                 'sixgr:phy:ra:ContentionTransmitClock','Use the actual UE Msg3 symbol clock, not its gNB decode result.');
@@ -27,6 +31,11 @@ classdef Msg4ReceiveWindow
             finish=finish.plusTicks(shift);
             duration=int64(ra.RAContentionResolutionTimerSlots)* ...
                 idivide(sixgr.phy.frame.AbsoluteTime.TicksPerFrame,int64(spec.SlotsPerFrame));
+            if isfield(ra,'RAContentionResolutionTimerTicks')
+                assert(ra.RAContentionResolutionTimerTicks==duration, ...
+                    'sixgr:phy:ra:ContentionTimerUnits','Original timer and current slot projection disagree.');
+                duration=ra.RAContentionResolutionTimerTicks;
+            end
             obj.MAC=sixgr.mac.ra.ContentionResolutionState(identity,ra.TempCRNTI,finish.Ticks,duration);
             offset=int64(physicalTiming.DLReference.DLPhaseOffsetSamples)*int64(tc);
             beginRadio=finish.plusTicks(-offset);
@@ -88,7 +97,7 @@ classdef Msg4ReceiveWindow
                 'DCICrcPass','PDSCHCrcPass','ReceivedIdentity','IdentityMatches','Status','Source','ProxyUsed','FallbackUsed'});
             obj.Observations=[obj.Observations;row]; obj.SeenSlots(end+1,1)=slot;
             outcome=struct('PDCCH',control,'PDSCH',data,'Message',message,'RAConfig',ra, ...
-                'Observation',row,'Status',obj.MAC.Status);
+                'Observation',row,'Status',obj.MAC.Status,'OriginalObservationSHA256',observation.sampleHash());
             obj.LastOutcome=outcome;
         end
         function obj=expire(obj,nowTicks)

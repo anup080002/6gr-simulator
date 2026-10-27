@@ -1,7 +1,15 @@
 function [pdcch,evidence] = resolveRARCommonControl(cfg,carrier)
 %RESOLVERARCOMMONCONTROL Common-control layout, independent of a TX slot.
 ue = sixgr.util.structGet(cfg,"UECommonCellConfiguration",struct());
-if ~isempty(fieldnames(ue))
+gnb = sixgr.util.structGet(cfg,"GNBCommonCellConfiguration",struct());
+assert(isempty(fieldnames(ue)) || isempty(fieldnames(gnb)), ...
+    'sixgr:phy:ra:MixedCommonControlAuthority','A producer cannot mix gNB configured and UE decoded common authority.');
+if ~isempty(fieldnames(gnb))
+    assert(gnb.ConfigurationSource=="original_gNB_common_configuration" && gnb.PDCCHConfigCommonPresent, ...
+        'sixgr:phy:ra:MissingRARCommonControl','Require the original configured cell common control.');
+    common=gnb.PDCCHConfigCommon; bwp=gnb.InitialDLBWP;
+    source="original_gNB_configured_pdcch_config_common";
+elseif ~isempty(fieldnames(ue))
     if ~ue.PDCCHConfigCommonPresent
         error("sixgr:phy:ra:MissingRARCommonControl","Decoded SIB1 has no RAR common control configuration.");
     end

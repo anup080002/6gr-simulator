@@ -26,6 +26,20 @@ def test_lut_risk_acronym_does_not_match_absolute_or_resolution() -> None:
     assert AUDIT_MODULE.risk_counts("unavailable_decoder_truth_proxy_not_materialized")["proxy"] == 1
 
 
+def test_large_original_evidence_cell_is_parsed_without_truncation(tmp_path: Path) -> None:
+    path = tmp_path / "evidence.csv"
+    evidence = json.dumps({"original_bits": "01" * 100000, "label": "exact, quoted"})
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["EvidenceJSON", "Observed"])
+        writer.writerow([evidence, 1])
+    prior = csv.field_size_limit()
+    row, columns, previews = AUDIT_MODULE.audit_csv(path, tmp_path)
+    assert row["parse_ok"] and row["row_count"] == 1 and row["issue_count"] == 0
+    assert len(columns) == 2 and json.loads(previews[0]["values_json"])[0] == evidence
+    assert csv.field_size_limit() == prior
+
+
 def run_audit(
     run: Path,
     output: Path,

@@ -6,6 +6,10 @@ setup6GRSimToolkit('Verbose',false);
 scenario=sixgr.lls6g.config.loadScenarioConfig( ...
     'simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_gate.yaml');
 cfg=sixgr.lls6g.buildInternalConfig(scenario,tempname);
+% This unit-link waveform represents canonical control slot1. The receiver
+% must bind the configured CORESET association at that actual slot clock.
+cfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,1);
+assert(cfg.lls6g.runtime.AbsoluteSlotIndex0==0);
 assert(cfg.phy.beamManagement.requireReceivedTCIForData);
 context=sixgr.phy.pdcch.DCIContextFactory.fromRuntimeConfig(cfg,'1_1');
 schema=sixgr.phy.pdcch.DCISchemaEngine.resolve(context);
@@ -22,6 +26,10 @@ for k=1:numel(codepoints)
     tx=sixgr.phy.dl.PDCCH_Tx(cfg,'DCIBits',packed.Bits,'RNTI',context.Data.RNTIValue);
     [rx,info]=sixgr.phy.dl.PDCCH_Rx(tx.Waveform,cfg,'SampleRate_Hz',122.88e6);
     assert(rx.Ok && info.ReceiverConfiguredMonitoring && isequal(rx.DCIBits,packed.Bits));
+    assert(info.ReceiverAbsoluteSlotIndex0==0 && ...
+        isequaln(info.ReceiverCORESETQCLReference, ...
+            sixgr.pdsch.CORESETQCLReference.fromInstalled(cfg,context,0)), ...
+        'Retain the actual receive-clock-qualified installed association.');
     value=double(rx.DecodedDCI.Fields.transmission_configuration_indication);
     assert(value==codepoints(k));
     decoded{k}=table(value,'VariableNames',{'DecodedDCITCICodepoint'});

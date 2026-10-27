@@ -1148,6 +1148,7 @@ sections:
       occasion: {required: false, type: struct}
       ra_response_window_slots: {required: false, type: integer, min: 1}
       ra_contention_resolution_timer_slots: {required: false, type: integer, min: 1}
+      ra_contention_resolution_timer_subframes: {required: false, type: integer, enum: [8, 16, 24, 32, 40, 48, 56, 64]}
       preamble_trans_max: {required: false, type: integer, min: 1}
       power_ramping_step_db: {required: false, type: number, min: 0}
       preamble_received_target_power_dbm: {required: false, type: number}

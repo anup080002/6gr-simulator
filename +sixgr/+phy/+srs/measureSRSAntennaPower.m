@@ -1,4 +1,4 @@
-function out = measureSRSAntennaPower(carrier,srs,observation,replay,searchWindow,resource,plane)
+function out = measureSRSAntennaPower(carrier,srs,observation,replay,searchWindow,resource,plane,pathPolicy)
 %MEASURESRSANTENNAPOWER Independent SRS power from an actual antenna capture.
 % TS 38.215 V18.4.0 5.2.5 defines linear RE power averaging and a diversity
 % lower bound. Maximum-branch selection implements that bound; it is not a
@@ -17,9 +17,13 @@ out=struct('SRS_RSRP_dBm',NaN,'SRSRSRPPerReceiveAntenna_dBm',zeros(1,0), ...
     'SRSAbsolutePowerSelectedBranch0',NaN,'SRSAbsolutePowerResourceID',NaN, ...
     'SRSAbsolutePowerEvidenceJSON',"",'SRSAbsolutePowerEvidenceSHA256',"", ...
     'SRSAbsolutePowerErrorIdentifier',"",'SRSAbsolutePowerAccuracyQualified',false);
+pathDefaults=sixgr.phy.srs.srsPathPowerEvidence();
+for field=string(fieldnames(pathDefaults)).', out.(field)=pathDefaults.(field); end
 if nargin==0, return; end
-assert(nargin==7,'sixgr:srs:AntennaPowerArguments', ...
+assert(any(nargin==[7 8]),'sixgr:srs:AntennaPowerArguments', ...
     'Supply the complete actual observation, original execution and installed resource.');
+if nargin<8, pathPolicy=struct('Enabled',false); end
+if pathPolicy.Enabled, out.SRSPathPowerStatus="unavailable_no_completed_pre_RX_observation"; end
 if isempty(observation), return; end
 try
     assert(isa(observation,'sixgr.phy.waveform.WaveformObservationBuffer') && ...
@@ -98,12 +102,16 @@ try
     refs=symbols(:); support=unique([subcarrier symbol],'rows','sorted');
     signal=complex(zeros(K*L,R,'like',grid));
     perPortEnergy=zeros(P,R); perPortCount=zeros(P,1);
+    pathResponse=[]; pathNoise=[];
+    if pathPolicy.Enabled
+        pathResponse=complex(nan(numel(indices),R)); pathNoise=nan(numel(indices),R);
+    end
     cdm=sixgr.phy.srs.resolveCDMLengths(srs);
     % Per-symbol estimation preserves hopping/repetition support. It does
     % not infer a scalar full-grid channel on a fading channel.
     for sym=unique(symbol(:)).'
         selected=symbol==sym;
-        estimate=nrChannelEstimate(carrier,grid,indices(selected),refs(selected), ...
+        [estimate,estimatedNoise]=nrChannelEstimate(carrier,grid,indices(selected),refs(selected), ...
             'CDMLengths',cdm,'AveragingWindow',[0 1]);
         for p=1:P
             use=selected & port==p; count=nnz(use);
@@ -114,6 +122,10 @@ try
                 hidx=sub2ind([K,L,R,P],subcarrier(use),symbol(use), ...
                     repmat(r,count,1),repmat(p,count,1));
                 contribution=estimate(hidx).*refs(use);
+                if pathPolicy.Enabled
+                    pathResponse(use,r)=estimate(hidx).*abs(refs(use));
+                    pathNoise(use,r)=estimatedNoise;
+                end
                 assert(all(isfinite(contribution)), ...
                     'sixgr:srs:AntennaPowerEstimate','Every configured SRS RE must have a finite estimate.');
                 % Sum coincident port signals before taking physical RE
@@ -166,9 +178,10 @@ try
     % operator must not erase an otherwise valid noisy power measurement.
     evidence.FFTSupportAvailable=false; evidence.FFTSupportErrorIdentifier="";
     try
-        evidence.FFTSupport=sixgr.phy.srs.srsAntennaPowerFFTSupport( ...
+        [evidence.FFTSupport,probeAccounting]=sixgr.phy.srs.srsAntennaPowerFFTSupport( ...
             carrier,ofdm,timing,observation.StartSample,observation.EndSampleExclusive,support-1);
         evidence.FFTSupportAvailable=true;
+        evidence.IsolatedFFTCapabilityProbeAccounting=probeAccounting;
     catch supportError
         evidence.FFTSupportErrorIdentifier=string(supportError.identifier);
     end
@@ -188,6 +201,26 @@ try
     out.SRSAbsolutePowerResourceID=resource.ResourceID;
     out.SRSAbsolutePowerEvidenceJSON=token;
     out.SRSAbsolutePowerEvidenceSHA256=string(sixgr.rrc.asn1.asn1SHA256Hex(unicode2native(char(token),'UTF-8')));
+    if pathPolicy.Enabled
+        try
+            binding=struct('ReferencePlane',"internal_physical_receive_element_before_RX_front_end", ...
+                'ResponseUnit',"sqrt_W",'SubcarrierSpacingHz',double(carrier.SubcarrierSpacing)*1000, ...
+                'ObservationSHA256',observation.sampleHash(),'ReceivedGridSHA256',string(ofdm.GridSHA256), ...
+                'TruthChannelConsumed',false,'PostRFEstimateConsumed',false, ...
+                'OriginalAntennaPowerEvidenceSHA256',out.SRSAbsolutePowerEvidenceSHA256, ...
+                'ObservationID',string(plane.ObservationID),'Resource',resource, ...
+                'ObservationStartSample',observation.StartSample,'ObservationEndSampleExclusive',observation.EndSampleExclusive, ...
+                'SampleRateHz',observation.SampleRateHz,'PhysicalConfigurationEpoch',epoch, ...
+                'RawGridAmplitudeDivisor',scale,'Timing',timing,'Estimator',evidence.Estimator);
+            result=sixgr.phy.srs.measureSRSDetectedPathPower(pathResponse/scale, ...
+                [subcarrier symbol port]-1,pathNoise/(scale^2),pathPolicy,binding);
+            fields=sixgr.phy.srs.srsPathPowerEvidence(result);
+            for field=string(fieldnames(fields)).', out.(field)=fields.(field); end
+        catch pathError
+            out.SRSPathPowerStatus="unavailable_original_path_estimation_failed";
+            out.SRSPathPowerErrorIdentifier=string(pathError.identifier);
+        end
+    end
 catch cause
     % This independent measurement must not turn a usable practical SRS
     % receiver into a failure or leak a partly computed power value.

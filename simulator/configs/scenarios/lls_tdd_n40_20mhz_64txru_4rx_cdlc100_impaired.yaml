@@ -34,6 +34,9 @@ simulation:
   n_subframes: 30
   min_duration_s: 0.03
 canonical_control:
+  random_access:
+    ra_contention_resolution_timer_subframes: 64
+    ra_contention_resolution_timer_slots: 128
   launch:
     run_class: ue_placement_geometry_lls
     scenario_mode: ue_placement_geometry
@@ -175,13 +178,38 @@ initial_access:
     observation_subframes: 7
   sib1:
     observation_subframes: 7
+    pusch_config_common:
+      # Separate on-air common authority; not inferred from dedicated TDRA.
+      # S=0, L=11 gives SLIV 69 under TS 38.214; K2=4 reaches full UL slots.
+      pusch_TimeDomainAllocationList:
+        - {k2: 4, mappingType: typeA, startSymbolAndLength: 69}
+pucch_resources:
+  power_control:
+    # P0 remains explicitly configured dedicated input, not decoded RRC P0.
+    # Commands and autonomous cutoff timing require original received DCI/SI.
+    closed_loop_mode: received_dci
+    received_dci_installation_policy: configured_dedicated_p0_at_first_connected_control_preparation
+    received_dci_autonomous_policy: received_common_k2
+    closed_loop_adjustment_db: 0
+    delta_tf_mode: ts_38_213_payload_resource
 random_access:
+  # TS 38.331 sf64 is 64 ms: 128 data slots at 30 kHz, not 64 slots.
+  ra_contention_resolution_timer_subframes: 64
+  ra_contention_resolution_timer_slots: 128
   # TS 38.213 8.1 / TS 38.331: four SSB partitions in each valid RO.
   ssb_per_rach_choice: four
   cb_preambles_per_ssb: 16
   ssb_ro_mapping_mode: nr_configured_association
   num_slots: 60
   num_subframes: 30
+  # Msg3 consumes the actual SIB1 common TDRA row0, not default-A row0.
+  # At30kHz the separate Msg3 delta remains3 slots; the cell calendar admits
+  # the resulting original RAR+K2+delta UL occasion.
+  timing:
+    msg3_k2_slots: 4
+  msg3_pusch:
+    symbol_start: 0
+    num_symbols: 11
   # These common PDSCH assignments start at the MIB-derived CORESET0 RB.
   msg2_pdsch:
     prb_start: 15
@@ -241,6 +269,16 @@ reference_signals:
     periodicity_slots: 20
     period_offset: 6
 csi_acquisition_and_reporting:
+  # Explicit portable policy on both supported MATLAB releases; this authored
+  # CQI threshold model is uncalibrated and is not native MaxSE equivalence.
+  selection_backend: portable_typeI_mmse
+  portable_cqi_model:
+    model_id: authored_legacy_thresholds_table1_v1
+    source: "CSI_Feedback.localStrictRuntimeConfig legacy numerical thresholds; authored uncalibrated model"
+    cqi_table: table1
+    thresholds_db: [-6.7, -4.7, -2.3, 0.2, 2.4, 4.3, 5.9, 8.1, 10.3, 11.7, 14.1, 16.3, 18.7, 21.0, 22.7]
+    comparison_tolerance_db: 0
+    calibration_qualified: false
   report_periodicity: 5ms
   # Offset 8 uses legal special-slot PUCCH. The n_CSI_ref guard selects
   # the preceding completed CSI occasion, never an unprocessed new report.
@@ -248,6 +286,9 @@ csi_acquisition_and_reporting:
 # Post-reception optional study only. This does not select actual RI/PMI or
 # qualify PDSCH BLER, RF power, or NR-optimal reporting. Execution binds units.
 kpi_spec:
+  # Same-capture internal pre-RX path diagnostic; no standardized accuracy claim.
+  srs_path_power:
+    enabled: true
   csi_selection_quality:
     enabled: true
     objective: mean_support_sum_log2_one_plus_linear_mmse_sinr

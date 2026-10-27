@@ -1,0 +1,14 @@
+inherits:
+  - ./lls_tdd_n40_20mhz_64txru_4rx_cdlc100_impaired.yaml
+  - ../protocol/bounded_preconfigured_drb_ul_mac.yaml
+meta:
+  scenario_id: lls_n40_received_mac_component
+  description: >
+    Bounded original 20-MHz n40 SRS and received MAC component. Connected
+    common/DRB/TAG state is declared, not decoded access evidence. CSI reports
+    remain configured but their next occasion is outside this short test.
+csi_acquisition_and_reporting:
+  csi_report_periodicity_slots: 40
+  csi_report_offset_slots: 3
+link_adaptation:
+  outage_recovery_max_gap_slots: 40

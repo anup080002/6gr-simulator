@@ -1,0 +1,9 @@
+function bytes=requireMACOctets(value)
+% Original numeric octets only: validation precedes any narrowing conversion.
+% Logical bit vectors require explicit MSB-first packing by their owner.
+assert(isnumeric(value)&&~islogical(value)&&isreal(value)&& ...
+    (isvector(value)||isempty(value))&&all(isfinite(value(:)))&& ...
+    all(value(:)>=0 & value(:)<=255 & value(:)==fix(value(:))), ...
+    'sixgr:mac:InvalidOriginalOctets','Require finite real integer octets in [0,255].');
+bytes=reshape(uint8(value),1,[]);
+end

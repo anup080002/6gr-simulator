@@ -43,6 +43,16 @@ classdef ProtocolLineageLedger < handle
                 "Hash",hash);
         end
 
+        function validateDelivery(obj,packetID,payload)
+            key=char(string(packetID));
+            assert(isKey(obj.DeliveryState,key)&&isKey(obj.Nodes,key)&&isKey(obj.PacketBytes,key), ...
+                'sixgr:protocol:LineageViolation','Original completion refers to an unknown packet.');
+            original=obj.Nodes(key);
+            assert(strcmp(obj.DeliveryState(key),'QUEUED')&&obj.PacketBytes(key)==numel(payload)&& ...
+                original.Hash==sixgr.protocol.ProtocolHash.bytes(payload), ...
+                'sixgr:protocol:LineageViolation','Original queued packet bytes or terminal state differ.');
+        end
+
         function first = deliver(obj, packetID)
             key = char(string(packetID));
             if ~isKey(obj.DeliveryState, key)
@@ -50,6 +60,8 @@ classdef ProtocolLineageLedger < handle
                     "Delivery refers to an unknown packet.");
             end
             first = ~strcmp(obj.DeliveryState(key), 'DELIVERED');
+            assert(~strcmp(obj.DeliveryState(key),'DROPPED'), ...
+                'sixgr:protocol:ConservationFailure','A terminally discarded unsent packet cannot subsequently be delivered.');
             if first
                 obj.DeliveryState(key) = 'DELIVERED';
             end

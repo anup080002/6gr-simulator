@@ -369,7 +369,7 @@ try
                 % timer must not erase the physically executed Msg4 trial.
                 result=localApplyMsg4(result,raCfg,msg3Tx.Msg3, ...
                     receivedContention.PDCCH,receivedContention.PDSCH,msg4Tx, ...
-                    receivedContention.Message,msg4Tx.Msg4);
+                    receivedContention.Message,msg4Tx.Msg4,rarReceiver,contentionReceiver);
             end
         end
         result.ContentionReceiver=contentionReceiver;
@@ -431,6 +431,39 @@ try
         refreshed=localApplyRuntimeReceiverSyncContext(cfg,runtime,"DL");
         cfgRx=cfg; cfgRx.lls6g.receiverSync=refreshed.lls6g.receiverSync;
         [rarReceiver,received]=rarReceiver.receive(rarObservationSlot,observation,cfgRx);
+        % Receiver execution above is independent of the cell's response.
+        % Only afterwards may diagnostics join the actual emitted component.
+        if isfield(runtime.StageWaveforms,'CellRARTransmissionOwner')
+            cellOwner=runtime.StageWaveforms.CellRARTransmissionOwner;
+            assert(isa(cellOwner,'sixgr.truth.CoupledWaveformStream'), ...
+                'sixgr:phy:ra:CellRAROriginalOwnerRequired','Use the original shared cell owner.');
+            source=cellOwner.completedCellRARTransmission(raCfg.ServingCell,rarObservationSlot,raCfg.RARNTI);
+            if ~isempty(fieldnames(source))
+                rarPreparedTransmission=source.Prepared;msg2Tx=source.Prepared.Tx;
+                proof=source.ExecutionProof;
+                assert(proof.PhysicalTransmissionVerified && ~proof.ReceiverExecutionClaimed && ...
+                    proof.SampleRateHz==observation.SampleRateHz && ...
+                    proof.TransmitEndSampleExclusive<=observation.EndSampleExclusive, ...
+                    'sixgr:phy:ra:CellRARTransmitClock','Join only an actual completed original cell response.');
+                result.CellRARTransmitEvidence=proof;
+                if received.Accepted
+                    plan=source.Prepared.RARPlan;
+                    hit=find([plan.Assignments.RAPID]==received.RAR.RAPID);
+                    assert(isscalar(hit),'sixgr:phy:ra:CellRARReceivedPayloadMismatch', ...
+                        'The accepted received RAPID must occur in the original actual cell transmission.');
+                    det=plan.OriginalDetections(plan.SortedDetectionSourceIndices(hit));
+                    ta=plan.TimingAdvance(hit);
+                    % Diagnostic join only; no detector value authorized the
+                    % UE receiver, accepted grant, TA or temporary C-RNTI.
+                    result=localApplyMsg1(result,raCfg,det,ta,false,true, ...
+                        logical(sixgr.util.structGet(det,'Ambiguous',false)));
+                    result.CellPRACHReceiverReceiptSHA256=plan.OriginalReceiverReceiptSHA256;
+                    result.CellPRACHDiagnosticJoinSource="actual_received_RAR_RAPID_to_original_cell_detector";
+                    result.PRACHCollisionEvaluationScope="cell_preamble_detection_does_not_establish_number_of_UE_transmitters";
+                    result.PRACHCollisionProbabilityQualified=false;
+                end
+            end
+        end
         result.RARMonitoringObservations=rarReceiver.Observations;
         result.RARMonitoringCandidates=rarReceiver.Candidates;
         result.RARMonitoringDecodedFields=rarReceiver.DecodedFields;
@@ -444,7 +477,12 @@ try
             stageConfig=raCfg; stageConfig.Msg2Slot=rarPreparedTransmission.AbsoluteSlot;
             [~,runtime,stageInfo]=localResolveStageRxWaveform("Msg2","DL",msg2Tx.Waveform,cfg,stageConfig,msg2Tx,runtime);
             result=localAppendRuntimeStage(result,stageInfo,runtime);
-            result=sixgr.phy.ra.appendObservedStageAllocation(result,msg2Tx,stageInfo);
+            if ~isfield(runtime.StageWaveforms,'CellRARTransmissionOwner')
+                result=sixgr.phy.ra.appendObservedStageAllocation(result,msg2Tx,stageInfo);
+            end
+            % The cell-owned TX completion publishes this original resource
+            % allocation once. Each UE monitoring reception remains a
+            % receiver row, not another copy of the common transmitter.
         end
         if ~received.Accepted
             [result,continuation]=captureContinuation(2);
@@ -651,10 +689,19 @@ try
     powerState = sixgr.mac.ra.applyRARGrantPowerCommand(powerState, grantRx);
     result = localApplyPowerStateToResult(result, powerState);
     ueIdentity = "UE-" + string(round(double(raCfg.UEId)));
-    msg3TxPayload = sixgr.mac.ra.buildMsg3Payload( ...
-        "UEId", double(raCfg.UEId), ...
-        "UEIdentity", ueIdentity, ...
-        "RRCSetupRequest", true);
+    if raCfg.RRCEncodingProfile=="nr_rrc_access_base_srb1_uper_v1"
+        original=sixgr.util.structGet(cfg,'NRInitialAccessRequest',struct());
+        assert(all(isfield(original,{'Context','Request','T300ExpirySample'})) && ...
+            original.Context.UEIndex==raCfg.UEId && original.Context.ServingCell==raCfg.ServingCell && ...
+            original.Request.EncodingProfile==raCfg.RRCEncodingProfile, ...
+            'sixgr:phy:ra:MissingNRRRCRequest','Use the original RRC-attempt-owned request across MAC retries.');
+        msg3TxPayload=original.Request;
+    else
+        msg3TxPayload = sixgr.mac.ra.buildMsg3Payload( ...
+            "UEId", double(raCfg.UEId), ...
+            "UEIdentity", ueIdentity, ...
+            "RRCSetupRequest", true);
+    end
     [msg3Tx, pusch] = sixgr.phy.ra.generateMsg3PUSCHWaveform(cfg, raCfg, grantRx, msg3TxPayload);
     localProgress(opt, "msg3_tx_done", sprintf("samples=%d", size(msg3Tx.Waveform, 1)));
     [msg3Tx.Waveform, msg3Power] = localApplyWaveformTxPower(msg3Tx.Waveform, ...
@@ -743,12 +790,19 @@ try
     if ~logical(raCfg.RequireRRCSetupComplete)
         setupTransactionID = 0;
     end
+    if raCfg.RRCEncodingProfile=="nr_rrc_access_base_srb1_uper_v1"
+        assert(faultMode~="msg4_identity_mismatch", ...
+            'sixgr:phy:ra:NRFaultInjectionProfile','Do not replace an original NR CCCH identity with a legacy tagged fault.');
+        msg4TxPayload=sixgr.mac.ra.buildNRMsg4ContentionResolution( ...
+            msg3Decoded.ContentionIdentityBytes,setupTransactionID);
+    else
     msg4TxPayload = sixgr.mac.ra.buildMsg4ContentionResolution( ...
         msg4Identity, ...
         "FinalCRNTI", double(raCfg.FinalCRNTI), ...
         "RRCSetup", logical(raCfg.RequireRRCSetupComplete), ...
         "TransactionID", setupTransactionID, ...
         "SRB1LCID", max(1, double(raCfg.SRB1LCID)));
+    end
     [msg4Tx, msg4Sched] = sixgr.phy.ra.generateMsg4Waveform(cfg, raCfg, msg4TxPayload);
     localProgress(opt, "msg4_tx_done", sprintf("samples=%d", size(msg4Tx.Waveform, 1)));
     [msg4Tx.Waveform, msg4Power] = localApplyWaveformTxPower(msg4Tx.Waveform, ...
@@ -773,14 +827,22 @@ try
     localProgress(opt, "msg4_rx_done", sprintf("pdcch=%d pdsch=%d", ...
         logical(sixgr.util.structGet(msg4PdcchRx, "Ok", false)), logical(sixgr.util.structGet(msg4PdschRx, "Ok", false))));
     end
-    result = localApplyMsg4(result, raCfg, msg3Tx.Msg3, msg4PdcchRx, msg4PdschRx, msg4Tx, msg4Decoded, msg4TxPayload);
+    result = localApplyMsg4(result, raCfg, msg3Tx.Msg3, msg4PdcchRx, msg4PdschRx, msg4Tx, msg4Decoded, msg4TxPayload,rarReceiver,contentionReceiver);
     rrcSetupDecoded = ~logical(raCfg.RequireRRCSetupComplete);
     if logical(raCfg.RequireRRCSetupComplete) && logical(result.ContentionIdentityMatches) && ...
             logical(sixgr.util.structGet(msg4Decoded,"RRCSetupPresent",false))
         % The UE learns Setup from received bytes, not from gNB configuration.
+        if raCfg.RRCEncodingProfile=="nr_rrc_access_base_srb1_uper_v1"
+            identity=sixgr.mac.ra.receivedNRContentionIdentity(msg4Decoded,rarReceiver,contentionReceiver);
+            receivedSetup=struct('TransactionID',msg4Decoded.RRCSetup.TransactionID, ...
+                'SRB1LCID',msg4Decoded.RRCSetup.SRB1LCID,'RNTI',identity.RNTI, ...
+                'Source',"original_received_NR_RRCSetup_pending_SRB_runtime_installation", ...
+                'EncodingProfile',identity.EncodingProfile,'MACRRCStandardsQualified',false);
+        else
         receivedSetup=sixgr.mac.ra.receivedRRCSetup(msg4Decoded, ...
             logical(msg4PdcchRx.Ok),logical(msg4PdschRx.Ok), ...
             string(msg3Tx.Msg3.ContentionIdentity));
+        end
         result.ReceivedRRCSetup=receivedSetup;
         result.ReceivedRRCSetupTransactionID=receivedSetup.TransactionID;
         result.ReceivedSRB1LCID=receivedSetup.SRB1LCID;
@@ -810,6 +872,9 @@ try
     result.RRCSetupDecoded = logical(rrcSetupDecoded);
     result.SRB1Installed = logical(result.RRCSetupDecoded) && ...
         isfinite(double(result.ReceivedSRB1LCID));
+    if raCfg.RRCEncodingProfile=="nr_rrc_access_base_srb1_uper_v1"
+        result.SRB1Installed=false; % Main original receiver owner installs the real protocol instance.
+    end
     result.RRCSetupSHA256 = string(sixgr.util.structGet( ...
         msg4Decoded, "RRCSetupSHA256", ""));
     if stopStage == 4 && logical(result.RACompleted) && logical(raCfg.RequireRRCSetupComplete)
@@ -820,6 +885,9 @@ try
 
     if logical(result.RACompleted) && ...
             logical(raCfg.RequireRRCSetupComplete)
+        assert(raCfg.RRCEncodingProfile~="nr_rrc_access_base_srb1_uper_v1", ...
+            'sixgr:phy:ra:NRSetupCompleteRequiresReceivedGrant', ...
+            'NR SetupComplete requires queued SRB PDCP/RLC and an original received C-RNTI grant; configured legacy PUSCH is not authorization.');
         if reusePreparedStage ~= 5
         localProgress(opt, "rrc_setup_complete_tx_start", "");
         setupCompleteTxPayload = sixgr.mac.ra.buildRRCSetupComplete( ...
@@ -3201,7 +3269,7 @@ if isfield(pusch, "SymbolAllocation")
 end
 end
 
-function result = localApplyMsg4(result, raCfg, msg3Decoded, pdcchRx, pdschRx, msg4Tx, msg4Decoded, msg4TxPayload)
+function result = localApplyMsg4(result, raCfg, msg3Decoded, pdcchRx, pdschRx, msg4Tx, msg4Decoded, msg4TxPayload,rarOwner,contentionOwner)
 result.DecodedMsg4 = msg4Decoded;
 result.Msg4ScheduledSlot = double(raCfg.Msg4Slot);
 result.Msg4PDCCHCrcPass = logical(sixgr.util.structGet(pdcchRx, "Ok", false));
@@ -3231,8 +3299,12 @@ expected = string(sixgr.util.structGet(msg3Decoded, "ContentionIdentity", ""));
 decoded = string(sixgr.util.structGet(msg4Decoded, "ContentionIdentity", ""));
 result.ContentionIdentityMatches = strlength(expected) > 0 && expected == decoded && logical(result.Msg4PDSCHCrcPass);
 if result.ContentionIdentityMatches
-    identity=sixgr.mac.ra.receivedMsg4Identity(msg4Decoded, ...
-        result.Msg4PDCCHCrcPass,result.Msg4PDSCHCrcPass,expected);
+    if string(sixgr.util.structGet(msg4Decoded,'EncodingProfile',""))=="nr_rrc_access_base_srb1_uper_v1"
+        identity=sixgr.mac.ra.receivedNRContentionIdentity(msg4Decoded,rarOwner,contentionOwner);
+    else
+        identity=sixgr.mac.ra.receivedMsg4Identity(msg4Decoded, ...
+            result.Msg4PDCCHCrcPass,result.Msg4PDSCHCrcPass,expected);
+    end
     result.FinalCRNTI = identity.RNTI;
     result.FinalCRNTISource = identity.Source;
     result.FinalCRNTIEncodingProfile = identity.EncodingProfile;

@@ -9,7 +9,9 @@ classdef ProtocolHash
                 data = uint8(data);
             end
             digest = java.security.MessageDigest.getInstance("SHA-256");
-            digest.update(typecast(data(:), "int8"));
+            % MATLAB cannot resolve Java's overloaded update for an empty
+            % numeric vector. Digesting no input is the standard empty SHA-256.
+            if ~isempty(data),digest.update(typecast(data(:), "int8"));end
             value = lower(string(reshape(dec2hex( ...
                 typecast(digest.digest(), "uint8"), 2).', 1, [])));
         end

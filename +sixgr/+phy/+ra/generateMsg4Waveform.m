@@ -31,7 +31,12 @@ strict = sixgr.pdsch.RASIPDSCHContext.materialize( ...
     localProcedureContext(cfgTx, raCfg, sched), ...
     "ChannelModel", "AWGN", ...
     "MaterializationRole", "transmitter");
-tbBits = localPadBits(msg4.PayloadBits, strict.TransportBlockSize);
+if string(sixgr.util.structGet(msg4,'EncodingProfile',""))=="nr_rrc_access_base_srb1_uper_v1"
+    mac=sixgr.l2.mac.MACPDUAssembler.assemble("DL",msg4.MACSubPDUs,strict.TransportBlockSize/8);
+    tbBits=reshape(int8(bitget(repmat(mac.Bytes(:),1,8),repmat(8:-1:1,numel(mac.Bytes),1))).',[],1);
+else
+    tbBits = localPadBits(msg4.PayloadBits, strict.TransportBlockSize);
+end
 [pdschTx, pdschInfo] = sixgr.phy.dl.PDSCH_Tx(cfgTx, ...
     "Carrier", carrier, ...
     "TransportBlockBits", tbBits, ...
@@ -51,6 +56,7 @@ tx.PDSCH = pdschTx;
 tx.Msg4 = msg4;
 tx.Msg4BitLength = double(numel(msg4.PayloadBits));
 tx.TransportBlockSize = double(pdschTx.TransportBlockSize);
+tx.TransportBlockBits=tbBits;
 tx.PDCCHInfo = pdcchInfo;
 tx.Msg4DCIFieldTable = sched.DCIFieldTable;
 tx.Msg4DCIContextDigest = sched.DCIContext.Digest;

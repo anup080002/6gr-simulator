@@ -133,7 +133,7 @@ if any(isfield(reception,cellstr(receiptFields)))
     receipt=jsondecode(token);
     carrier=prepared.Carrier;
     assert(isstruct(receipt)&&isscalar(receipt)&& ...
-        string(receipt.ContractVersion)=="sixgr.csirs.physical_demodulation/v1"&& ...
+        any(string(receipt.ContractVersion)==["sixgr.csirs.physical_demodulation/v1","sixgr.csirs.physical_demodulation/v2"])&& ...
         string(receipt.Status)==status&& ...
         status=="retained_practical_preRF_demodulation_not_independent_reference"&& ...
         string(receipt.Source)=="original_CSI_RS_physical_measurement_demodulation"&& ...
@@ -257,6 +257,12 @@ if isfield(csi,'RankSelectionEvidence')
     row.RankSelectionEvidenceSHA256=sixgr.util.sha256Hex(char(row.RankSelectionEvidenceJSON));
     row.RankSelectionEvidenceAvailable=true;
     row.RankSelectionEvidenceStatus="recorded_original_MaxSE_model_operands_not_accuracy_qualification";
+    if string(decision.ContractVersion)=="sixgr.portable_TypeI_MMSE_rank_decision/v1"
+        row.RankSelectionEvidenceStatus="recorded_original_portable_MMSE_model_operands_not_accuracy_qualification";
+        row.CQIModelSource=string(decision.CQIModelEvidence.Source);
+        row.CQIModelID=string(decision.CQIModelEvidence.ModelID);
+        row.CQIModelCalibrationQualified=false;
+    end
 end
 row.PMIType = string(sixgr.util.structGet(csi,"PMIType",""));
 row.PMICodebookMode = string(sixgr.util.structGet(csi,"PMICodebookMode",""));

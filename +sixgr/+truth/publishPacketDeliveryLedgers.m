@@ -9,7 +9,9 @@ if hasPackets
     state=sixgr.truth.refreshApplicationPacketDeliveries(state);
 end
 if ~sixgr.util.persistenceEnabled(), return; end
-if ~hasPackets && ~hasAttempts, return; end
+hasControl=~isempty(sixgr.util.structGet(state,'MACControlTransportLedgerTable',table())) || ...
+    ~isempty(sixgr.util.structGet(state,'ProtocolSecurityIndicationsTable',table()));
+if ~hasPackets && ~hasAttempts && ~hasControl, return; end
 layout=sixgr.report.resultLayout(runFolder);
 % Publish the actual receiver-attempt journal before its derived counters.
 % Never reconstruct attempts from packet counts or transmitter ACK state.
@@ -17,6 +19,19 @@ layout=sixgr.report.resultLayout(runFolder);
 if hasAttempts
     paths.HARQ=string(fullfile(layout.HARQCSVDir,'runtime_harq_process_timeline.csv'));
     sixgr.util.csvWriteTable(paths.HARQ,state.HARQTimelineTable,'PreserveSchema',true);
+end
+for pair={'RLCRecoveryTransportLedgerTable','live_rlc_recovery_transport_ledger.csv'; ...
+        'ProtocolDiscardEventsTable','live_protocol_discard_events.csv'; ...
+        'ProtocolUpperLayerIndicationsTable','live_protocol_upper_layer_indications.csv'; ...
+        'RLCStatusTransportLedgerTable','live_rlc_status_transport_ledger.csv'; ...
+        'MACControlTransportLedgerTable','live_mac_control_transport_ledger.csv'; ...
+        'ProtocolSecurityIndicationsTable','live_protocol_security_indications.csv'}.'
+    T=sixgr.util.structGet(state,pair{1},table());
+    if ~isempty(T)
+        path=string(fullfile(layout.PacketFlowCSVDir,pair{2}));
+        sixgr.util.csvWriteTable(path,T,'PreserveSchema',true);
+        paths.(pair{1})=path;
+    end
 end
 if ~hasPackets, return; end
 paths.Application=string(fullfile(layout.PacketFlowCSVDir,'live_application_packet_delivery_ledger.csv'));

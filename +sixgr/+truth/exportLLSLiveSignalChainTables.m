@@ -346,6 +346,7 @@ T = sixgr.truth.normalizeDisabledInterferenceIdentity(T, string(scopeToken));
 names = string(T.Properties.VariableNames);
 for i = 1:numel(names)
     fieldName = char(names(i));
+    if sixgr.truth.isSerializedMeasurementOperandField(fieldName), continue; end
     rawCol = T.(fieldName);
     if ~localIsStringLikeColumn(rawCol)
         continue;

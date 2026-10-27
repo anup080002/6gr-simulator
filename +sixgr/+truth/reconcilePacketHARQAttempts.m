@@ -21,13 +21,25 @@ if ~isfield(state,'PacketSDULedgerTable') || ~istable(state.PacketSDULedgerTable
     return;
 end
 S=state.PacketSDULedgerTable;
-if isempty(S)
+initial=S;recovery=sixgr.util.structGet(state,'RLCRecoveryTransportLedgerTable',table());
+assert(istable(recovery),'sixgr:protocol:IncompletePacketAttemptSchema','Recovery attempts require a typed original ledger.');
+if isempty(S)&&isempty(recovery)
     P.HARQAttemptCount(:)=0;
     P.HARQAttemptCountStatus(:)="no_committed_packet_segments";
     state.PacketDeliveryLedgerTable=P;
     return;
 end
-requireColumns(S,[owner {'TransportBlockId','RNTI','HARQProcessId','NDIEpoch','ScheduleSlot'}]);
+columns=[owner {'TransportBlockId','RNTI','HARQProcessId','NDIEpoch','ScheduleSlot'}];
+if isempty(S)&&width(S)==0,S=recovery([],:);end
+requireColumns(S,columns);
+S=S(:,columns);
+if ~isempty(recovery)
+    requireColumns(recovery,columns);
+    keys={'Direction','UEIndex','TransportBlockId'};
+    assert(isempty(intersect(S(:,keys),recovery(:,keys),'rows')), ...
+        'sixgr:protocol:PacketAttemptOwnerMismatch','RLC recovery requires a distinct new transport-block identity.');
+    S=[S;recovery(:,columns)];
+end
 segmentOwner=zeros(height(S),1);
 for k=1:height(S)
     match=upper(string(P.Direction))==upper(string(S.Direction(k))) & ...
@@ -44,7 +56,7 @@ S.HARQAttemptCountDefinition=repmat( ...
 S.HARQAttemptCountStatus=repmat("missing_receiver_attempt_timeline",height(S),1);
 P.HARQAttemptCountStatus(:)="missing_receiver_attempt_timeline";
 if ~isfield(state,'HARQTimelineTable') || ~istable(state.HARQTimelineTable)
-    state.PacketDeliveryLedgerTable=P; state.PacketSDULedgerTable=S;
+    state=publish(state,P,S,initial,recovery);
     return;
 end
 H=state.HARQTimelineTable;
@@ -103,8 +115,17 @@ for k=1:height(S)
 end
 P.HARQAttemptCount=cellfun(@(rows)numel(unique(rows)),packetAttempts);
 P.HARQAttemptCountStatus(:)="receiver_attempt_timeline_reconciled";
-state.PacketDeliveryLedgerTable=P;
-state.PacketSDULedgerTable=S;
+state=publish(state,P,S,initial,recovery);
+end
+
+function state=publish(state,P,S,initial,recovery)
+n=height(initial);
+for name={'HARQAttemptCount','HARQAttemptCountDefinition','HARQAttemptCountStatus'}
+    initial.(name{1})=S.(name{1})(1:n,:);
+    if ~isempty(recovery),recovery.(name{1})=S.(name{1})(n+1:end,:);end
+end
+state.PacketDeliveryLedgerTable=P;state.PacketSDULedgerTable=initial;
+if isfield(state,'RLCRecoveryTransportLedgerTable')||~isempty(recovery),state.RLCRecoveryTransportLedgerTable=recovery;end
 end
 
 function requireColumns(T,names)

@@ -1,21 +1,39 @@
-function ok=testPacketHARQFirstSuccessEvidence()
+function ok=testPacketHARQFirstSuccessEvidence(options)
 % Actual coded PDSCH bytes -> production protocol/SDU delivery reducer.
 % Noiseless component check, not a BLER or complete shared-runtime campaign.
+arguments
+    options.OutOfOrder (1,1) logical=false
+    options.Queued (1,1) logical=false
+    options.LateAfterReordering (1,1) logical=false
+end
 setup6GRSimToolkit('Verbose',false);
 cfg=localPHYConfig();
-bridge=sixgr.protocol.WaveformProtocolBridge(localProtocolConfig(),1);
+protocol=localProtocolConfig();
+if options.LateAfterReordering,protocol.pdcp.t_reordering_ms=1;end
+bridge=sixgr.protocol.WaveformProtocolBridge(protocol,1);
 probe=sixgr.phy.dl.PDSCH_Tx(cfg);
 tbs=double(probe.TransportBlockSize);
 nbytes=bridge.maximumPayloadBytes(tbs);
 savedRNG=rng; cleanup=onCleanup(@()rng(savedRNG)); %#ok<NASGU>
 rng(73819,'twister'); payload=uint8(randi([0 255],2*nbytes,1));
 state=localState(numel(payload)*8);
+state.ProtocolBridge=bridge;
+state.PacketDeliveryLedgerTable.OriginalApplicationPayloadSHA256=sixgr.protocol.ProtocolHash.bytes(payload);
+if options.Queued
+    assert(options.OutOfOrder,'Queued test also verifies reordered segment delivery.');
+    bridge.enqueuePacket(1,'DL','packet-1',payload,0);
+end
 bits=cell(2,1); grants=cell(2,1); received=cell(2,1);
 for k=1:2
     id="decoded-tb-"+k;
     part=payload((k-1)*nbytes+(1:nbytes));
-    [bits{k},evidence]=bridge.encodeFragment(1,'DL',id, ...
-        "runtime-DL-UE-001-packet-1-fragment-"+k,part,tbs,(k-1)*.001);
+    if options.Queued
+        [bits{k},evidence]=bridge.prepareQueuedSegment(1,'DL',id,tbs,(k-1)*.001,0);
+        assert(evidence.PayloadBits==nbytes*8 && evidence.ApplicationOffsetBytes==(k-1)*nbytes);
+    else
+        [bits{k},evidence]=bridge.encodeFragment(1,'DL',id, ...
+            "runtime-DL-UE-001-packet-1-fragment-"+k,part,tbs,(k-1)*.001);
+    end
     grant=struct('TBSBits',tbs,'RNTI',1001,'UEIndex',1,'Slot',k,'Frame',1, ...
         'ServingCell',1,'TransportBlockId',id,'TBId',id,'GrantContextId',"attempt-"+k, ...
         'ProtocolPayloadSameWaveformTruth',true,'ProtocolPacketId',"packet-1", ...
@@ -28,6 +46,7 @@ for k=1:2
     grant.ProtocolFragmentId=evidence.ProtocolFragmentId;
     state=sixgr.truth.CoupledTruthRuntime.commitGrantExecution(state,1,'DL',grant);
     tx=sixgr.phy.dl.PDSCH_Tx(cfg,'TransportBlockBits',bits{k});
+    if options.Queued,bridge.commitPreparedTransportBlock(id,(k-1)*.001);end
     rx=sixgr.phy.dl.PDSCH_Rx(tx.Waveform,cfg,'Carrier',tx.Carrier, ...
         'PDSCH',tx.PDSCH,'PDSCHIndices',tx.PDSCHIndices, ...
         'TransportBlockSize',tx.TransportBlockSize,'TargetCodeRate',tx.TargetCodeRate, ...
@@ -37,6 +56,48 @@ for k=1:2
     grants{k}=grant; received{k}=rx.TransportBlock;
 end
 T=state.PacketSDULedgerTable;
+if options.OutOfOrder
+    % Two real coded/decoded TBs, with explicitly arranged delivery order.
+    % This checks the production reducer, not shared RF timing qualification.
+    second=sixgr.truth.matchPacketTransportBlock(T,grants{2},'DL',1);
+    h=struct('Slot',2,'FeedbackDueSlot',5,'RV',0,'CombinedDecodeOK',true);
+    clock=sixgr.truth.CoupledTruthRuntime.decodedTBDeliveryTimingRuntime(state,2,5);
+    T=sixgr.truth.applyPacketHARQReception(T,second,h,received{2},clock,true,bridge);
+    assert(~any(T.DeliverySuccess) && T.ProtocolDecodedBitExact(2));
+    proof=T.ProtocolDecodedMACSHA256(2);
+    if options.LateAfterReordering
+        % Exact original timer releases only the actually received second
+        % PDCP PDU. The first actual coded TB arrives below RX_DELIV later.
+        completed=bridge.advance(.004);
+        clock=sixgr.truth.CoupledTruthRuntime.decodedTBDeliveryTimingRuntime(state,4,7);
+        T=sixgr.truth.applyProtocolPacketCompletions(T,completed,clock);
+        assert(T.DeliverySuccess(2)&&~T.DeliverySuccess(1)&&T.ProtocolDecodedMACSHA256(2)==proof);
+        first=sixgr.truth.matchPacketTransportBlock(T,grants{1},'DL',1);
+        h.Slot=5;h.FeedbackDueSlot=8;
+        clock=sixgr.truth.CoupledTruthRuntime.decodedTBDeliveryTimingRuntime(state,5,8);
+        T=sixgr.truth.applyPacketHARQReception(T,first,h,received{1},clock,true,bridge);
+        assert(~T.DeliverySuccess(1)&&T.TBCrcPass(1)&&T.ProtocolDecodedBitExact(1)&& ...
+            T.ProtocolDeliveryStatus(1)=="original_PDCP_duplicate_or_below_RX_DELIV_discarded"&& ...
+            T.Status(1)=="phy_decode_pass_original_PDCP_duplicate_or_below_RX_DELIV_discarded");
+        state.PacketSDULedgerTable=T;
+        state=sixgr.truth.refreshApplicationPacketDeliveries(state);
+        assert(~state.PacketDeliveryLedgerTable.DeliverySuccess&&state.PacketDeliveryLedgerTable.DeliveredBits==0&& ...
+            state.PacketDeliveryLedgerTable.BitConservationErrorBits==0);
+        assert(isempty(bridge.advance(.02)));
+        ok=true;return;
+    end
+    first=sixgr.truth.matchPacketTransportBlock(T,grants{1},'DL',1);
+    h.Slot=3;
+    clock=sixgr.truth.CoupledTruthRuntime.decodedTBDeliveryTimingRuntime(state,3,5);
+    T=sixgr.truth.applyPacketHARQReception(T,first,h,received{1},clock,true,bridge);
+    assert(all(T.DeliverySuccess) && all(T.HARQAttemptCount==1) && ...
+        all(T.DeliveryTime_s==clock.DeliveryTime_s) && T.ProtocolDecodedMACSHA256(2)==proof);
+    state.PacketSDULedgerTable=T;
+    state=sixgr.truth.refreshApplicationPacketDeliveries(state);
+    assert(state.PacketDeliveryLedgerTable.DeliverySuccess && ...
+        state.PacketDeliveryLedgerTable.DecodedApplicationPayloadSHA256==sixgr.protocol.ProtocolHash.bytes(payload));
+    ok=true; return;
+end
 first=sixgr.truth.matchPacketTransportBlock(T,grants{1},'DL',1);
 h=struct('Slot',1,'FeedbackDueSlot',4,'RV',0,'CombinedDecodeOK',true);
 clock=sixgr.truth.CoupledTruthRuntime.decodedTBDeliveryTimingRuntime(state,1,4);
@@ -83,6 +144,8 @@ assert(T.ProtocolDecodedMACSHA256(1)~=T.ProtocolDecodedMACSHA256(2), ...
 state.PacketSDULedgerTable=T;
 complete=sixgr.truth.refreshApplicationPacketDeliveries(state);
 assert(complete.PacketDeliveryLedgerTable.DeliverySuccess && ...
+    complete.PacketDeliveryLedgerTable.DecodedApplicationPayloadSHA256==sixgr.protocol.ProtocolHash.bytes(payload) && ...
+    complete.PacketDeliveryLedgerTable.DecodedApplicationBytes==numel(payload) && ...
     complete.PacketDeliveryLedgerTable.DeliveredBits==numel(payload)*8 && ...
     complete.PacketDeliveryLedgerTable.DeliveryTime_s==clock.DeliveryTime_s && ...
     all(complete.PacketSDULedgerTable.ApplicationDeliveryFlag));

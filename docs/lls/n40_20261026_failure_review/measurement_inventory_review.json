@@ -1,0 +1,422 @@
+{
+  "ReviewDate": "2026-10-26",
+  "Run": "n40_integration_60slots_20261026_100846/reference_esn0_20_db",
+  "Interpretation": "PASS applies only to the stated operands/population. Original failed run and current code verification are distinct.",
+  "OriginalArtifactsRewritten": false,
+  "FullRunAccepted": false,
+  "Checkpoint60Verified": false,
+  "Families": [
+    {
+      "Family": "SS-RSRP",
+      "PreviousRunResult": "PASS",
+      "VerifiedScope": "8 measured of12 PBCH attempts;32 branch/window plot records;4 quiet observations stay unavailable.",
+      "CurrentRepairResult": "NO_PRODUCER_CHANGE",
+      "CurrentRepair": "Retained scoped evidence reviewed; broader qualification remains separate.",
+      "RemainingQualification": "Internal pre-RX element plane only; connector/power-unit/accuracy/hardware qualification false."
+    },
+    {
+      "Family": "CSI-RSRP",
+      "PreviousRunResult": "PASS",
+      "VerifiedScope": "6 observations x8 resources x4 branches=192 resource/branch records; original preview02 validates matched linear/log/window and same-branch closure.",
+      "CurrentRepairResult": "NO_PRODUCER_CHANGE",
+      "CurrentRepair": "Retained scoped evidence reviewed; broader qualification remains separate.",
+      "RemainingQualification": "Internal plane only. RSRQ=N_RB*RSRP/RSSI requires same branch/window; standalone max RSRP is not selected RSRQ numerator."
+    },
+    {
+      "Family": "UL SRS-RSRP",
+      "PreviousRunResult": "PASS",
+      "VerifiedScope": "3 observations; original reference available3/3; error0.0365247065..0.1235333624dB.",
+      "CurrentRepairResult": "NO_PRODUCER_CHANGE",
+      "CurrentRepair": "Retained scoped evidence reviewed; broader qualification remains separate.",
+      "RemainingQualification": "Modeled internal same-execution comparison, not standardized accuracy; BS reference point depends on BS type."
+    },
+    {
+      "Family": "UL SRS-RSRPP",
+      "PreviousRunResult": "UNSUPPORTED",
+      "VerifiedScope": "No independently detected path power producer identified; SRS-RSRP and modeled CDL taps are distinct.",
+      "CurrentRepairResult": "FOCUSED_PHYSICAL_PASS",
+      "CurrentRepair": "Actual shared 20-MHz SRS reception validates 550 detected-path records, original received-grid/capture hashes and coherent-mean power arithmetic. Selected n40 policy enabled; generic default disabled. Terminal batch06 receipt and selected config validation pass.",
+      "RemainingQualification": "Selected continuous n40 feedback/data integration remains under execution. Same-capture detection/averaging selection bias is explicit; internal pre-RX element plane, independent accuracy and standardized/hardware power qualification remain separate."
+    },
+    {
+      "Family": "RSSI",
+      "PreviousRunResult": "PASS",
+      "VerifiedScope": "12 DL x4 branches=48;1 UL x64 branches=64 original physical carrier-window measurements published.",
+      "CurrentRepairResult": "NO_PRODUCER_CHANGE",
+      "CurrentRepair": "Retained scoped evidence reviewed; broader qualification remains separate.",
+      "RemainingQualification": "Exact native window only, not pilot-power average or alternate standardized window."
+    },
+    {
+      "Family": "RSRQ",
+      "PreviousRunResult": "PASS",
+      "VerifiedScope": "6 observations x8 resources x4 branches=192 resource/branch records; original preview02 validates matched linear/log/window and same-branch closure.",
+      "CurrentRepairResult": "NO_PRODUCER_CHANGE",
+      "CurrentRepair": "Retained scoped evidence reviewed; broader qualification remains separate.",
+      "RemainingQualification": "Internal plane only. RSRQ=N_RB*RSRP/RSSI requires same branch/window; standalone max RSRP is not selected RSRQ numerator."
+    },
+    {
+      "Family": "SS/CSI SINR",
+      "PreviousRunResult": "PASS",
+      "VerifiedScope": "SS8 received estimates;CSI6 actual CDM/CSI-IM estimates;SRS3 pilot-reconstruction estimates.",
+      "CurrentRepairResult": "NO_PRODUCER_CHANGE",
+      "CurrentRepair": "Retained scoped evidence reviewed; broader qualification remains separate.",
+      "RemainingQualification": "Estimands differ; CSI emitted-component comparison unavailable6/6, SS estimator disturbance is not independent clean-grid accuracy."
+    },
+    {
+      "Family": "PDSCH/PUSCH SINR",
+      "PreviousRunResult": "FAIL",
+      "VerifiedScope": "13 actual receiver scheduling metrics exist, but13 legacy SINRValueStatus aliases incorrectly say not_emitted while MeasuredTrialSINRValueStatus is OK.",
+      "CurrentRepairResult": "PASS",
+      "CurrentRepair": "Canonical status alias now validates value/source/role/definition before copying original measured status; original13-row replay passes without changing measurements.",
+      "RemainingQualification": "DL12 decision-residual bounded;UL1 bounded equalizer; not configured SNR or independent decomposition."
+    },
+    {
+      "Family": "Ec/N0, Eb/N0",
+      "PreviousRunResult": "NOT_QUALIFIED",
+      "VerifiedScope": "Previous bounded pure-AWGN operands do not qualify shared/RF or combined-HARQ energy in this run.",
+      "CurrentRepairResult": "NO_PRODUCER_CHANGE",
+      "CurrentRepair": "Retained scoped evidence reviewed; broader qualification remains separate.",
+      "RemainingQualification": "Matching energy plane, coded/information-bit counts and combined-HARQ populations remain required."
+    },
+    {
+      "Family": "EVM",
+      "PreviousRunResult": "PARTIAL",
+      "VerifiedScope": "Arithmetic closes PBCH8(decision-directed),SRS3(55296 original received pairs),TRS3(7344 pairs),DL12,UL1; per-file checks attached. CSI receiver pairs absent in the original run; TX pairs are not RX pairs.",
+      "CurrentRepairResult": "FOCUSED_PHYSICAL_PASS",
+      "CurrentRepair": "Actual multiport CSI reception passes with optional model disabled and enabled: four callbacks per arm, two parents/resources/UEs, four ports, original aggregate-pilot pairing and eleven negative guards. Received-pair storage/export remains separate from TX pairs; original isolation/receiver-plane authority retained.",
+      "RemainingQualification": "Continuous n40 CSI26 pair/capture publication is under physical verification. Independent accuracy, concurrent-component isolation where unavailable, wider populations and RF conformance remain open."
+    },
+    {
+      "Family": "Channel NMSE",
+      "PreviousRunResult": "PASS",
+      "VerifiedScope": "Arithmetic closes PBCH8,CSI6,SRS3,TRS3,DL12,UL1. CSI6 each13056 compared complex values;data scoped pilot counts retained.",
+      "CurrentRepairResult": "NO_PRODUCER_CHANGE",
+      "CurrentRepair": "Retained scoped evidence reviewed; broader qualification remains separate.",
+      "RemainingQualification": "SRS3 phase-aligned mode explicitly true; retain raw NMSE too. Data ChannelNMSEReferenceAvailable0 legacy differs from NMSEScoringAvailable1; requires contract-specific audit, not blanket authority promotion."
+    },
+    {
+      "Family": "CRI",
+      "PreviousRunResult": "FAIL",
+      "VerifiedScope": "Original selected DL application has missing AppliedCSIResourceIndex; raw diagnostic CRI cannot replace it.",
+      "CurrentRepairResult": "FOCUSED_PASS",
+      "CurrentRepair": "Original received resource/decision/operator provenance guards retained; fresh bounded n40 physical application still under verification.",
+      "RemainingQualification": "Fresh physical stage join; independent optimal selection not established."
+    },
+    {
+      "Family": "RI",
+      "PreviousRunResult": "PASS",
+      "VerifiedScope": "DL12 executed rank1; UL1 rank4. Recommendation/received/admitted/actual remain separate.",
+      "CurrentRepairResult": "FOCUSED_PASS",
+      "CurrentRepair": "Initial spatial acquisition needs one original received report; later upward changes retain two-report confirmation. Planner SRS45/control46/PUSCH50 passes; fresh physical result reported separately.",
+      "RemainingQualification": "Rank-change and independent optimal-RI populations not exercised in original run."
+    },
+    {
+      "Family": "PMI/TPMI",
+      "PreviousRunResult": "PARTIAL",
+      "VerifiedScope": "DL raw PMI28 differs legitimately from applied31; legacy selected-basis metadata incomplete. UL native applied TPMI4.",
+      "CurrentRepairResult": "FOCUSED_PASS",
+      "CurrentRepair": "Applied precoder evidence no longer falls back to configured PMI. Strict retained causal replay28/28 stages passes, not full-run acceptance.",
+      "RemainingQualification": "Fresh integrated selected-basis/operator join."
+    },
+    {
+      "Family": "CQI",
+      "PreviousRunResult": "PARTIAL",
+      "VerifiedScope": "One decoded CSI report; SRS quality unavailable remains NaN. Lookup consistency is not coded reliability.",
+      "CurrentRepairResult": "FOCUSED_PASS",
+      "CurrentRepair": "Keep data flowing and use earliest legally received report; report44 uses reference34/CSI26. No SRS CQI is manufactured.",
+      "RemainingQualification": "CQI calibration/held-out coded-link reliability."
+    },
+    {
+      "Family": "Residual timing",
+      "PreviousRunResult": "UNSUPPORTED",
+      "VerifiedScope": "13 data rows finite -2..-1 samples, explicitly earliest-arrival-relative alignment scoring.",
+      "CurrentRepairResult": "NO_PRODUCER_CHANGE",
+      "CurrentRepair": "Retained scoped evidence reviewed; broader qualification remains separate.",
+      "RemainingQualification": "Not independent post-correction received timing estimator; TRS peak reference also not earliest-arrival accuracy."
+    },
+    {
+      "Family": "Residual frequency",
+      "PreviousRunResult": "PASS",
+      "VerifiedScope": "TRS3 different-observable same-capture residuals -102.4863..-24.4283Hz;PBCH8 common-frequency estimates. DL12 post-correction estimates independence not established;UL1~3e-14 is same-observation consistency.",
+      "CurrentRepairResult": "NO_PRODUCER_CHANGE",
+      "CurrentRepair": "Retained scoped evidence reviewed; broader qualification remains separate.",
+      "RemainingQualification": "PASS only common-frequency publication, not oscillator-only residual/independent accuracy."
+    },
+    {
+      "Family": "Doppler spread",
+      "PreviousRunResult": "UNSUPPORTED",
+      "VerifiedScope": "All trial DopplerHz11.118803 is applied model parameter, not spread measurement.",
+      "CurrentRepairResult": "NO_PRODUCER_CHANGE",
+      "CurrentRepair": "Retained scoped evidence reviewed; broader qualification remains separate.",
+      "RemainingQualification": "3 TRS observations do not establish qualified spread estimator/population."
+    },
+    {
+      "Family": "TA",
+      "PreviousRunResult": "PARTIAL",
+      "VerifiedScope": "RAR command1 ->512Tc=8samples; UL total26112Tc=408samples including25600Tc offset. Quantized command not detector timing error.",
+      "CurrentRepairResult": "NO_PRODUCER_CHANGE",
+      "CurrentRepair": "Retained scoped evidence reviewed; broader qualification remains separate.",
+      "RemainingQualification": "Full received-command/effective-adjustment matrix."
+    },
+    {
+      "Family": "AoA/AoD/ZoA/ZoD",
+      "PreviousRunResult": "NOT_EXERCISED",
+      "VerifiedScope": "13 data records export applied24-path model angles;12DL have5..10 execution segments,UL11 segments.",
+      "CurrentRepairResult": "NO_PRODUCER_CHANGE",
+      "CurrentRepair": "Retained scoped evidence reviewed; broader qualification remains separate.",
+      "RemainingQualification": "Applied angles are not receiver estimates; no receiver angle accuracy measured."
+    },
+    {
+      "Family": "Path loss/PDP",
+      "PreviousRunResult": "PASS",
+      "VerifiedScope": "13 data rows applied loss97.0959817358367dB;PBCH8 reference-signal pathloss99.468..111.5265dB;24 modeled paths retained.",
+      "CurrentRepairResult": "NO_PRODUCER_CHANGE",
+      "CurrentRepair": "Retained scoped evidence reviewed; broader qualification remains separate.",
+      "RemainingQualification": "Applied macro loss and modeled PDP differ from measured path loss/tap power; no per-tap independent propagation-loss claim."
+    },
+    {
+      "Family": "SRS port leakage",
+      "PreviousRunResult": "PASS",
+      "VerifiedScope": "3 actual code-domain projections;worst -44.8745674..-44.7333704dB.",
+      "CurrentRepairResult": "NO_PRODUCER_CHANGE",
+      "CurrentRepair": "Retained scoped evidence reviewed; broader qualification remains separate.",
+      "RemainingQualification": "Hest-based reconstructed source-port projections;not independently isolated physical components or hardware crosstalk."
+    },
+    {
+      "Family": "Inter-layer leakage",
+      "PreviousRunResult": "PASS",
+      "VerifiedScope": "12 DL rank1 responses have0 off-diagonal power;UL1 estimated WH response mean0.000148732259.",
+      "CurrentRepairResult": "NO_PRODUCER_CHANGE",
+      "CurrentRepair": "Retained scoped evidence reviewed; broader qualification remains separate.",
+      "RemainingQualification": "Zero rank1 off-diagonal sum is valid, not evidence of multilayer isolation;no independent desired/interfering/noise decomposition across ranks."
+    },
+    {
+      "Family": "BER",
+      "PreviousRunResult": "PASS",
+      "VerifiedScope": "DL0/16792; UL0/5000. UL symbol errors11/16248 remain separate.",
+      "CurrentRepairResult": "PASS",
+      "CurrentRepair": "Core live/final family acceptance exports real comparator counts; malformed counts fail, partially missing populations are PARTIAL. Focused collector and full exporter tests pass.",
+      "RemainingQualification": "Coded BER and statistical confidence absent."
+    },
+    {
+      "Family": "BLER",
+      "PreviousRunResult": "PASS",
+      "VerifiedScope": "DL0/12 and UL0/1 CRC failures; no crash in denominator.",
+      "CurrentRepairResult": "PASS",
+      "CurrentRepair": "Core acceptance separates actual decoder CRC outcomes from software failures and rejects malformed flags. Focused collector/full exporter tests pass.",
+      "RemainingQualification": "Larger and failure populations; no full-run acceptance."
+    },
+    {
+      "Family": "HARQ residual BLER",
+      "PreviousRunResult": "NOT_EXERCISED",
+      "VerifiedScope": "No retransmissions. Original HARQ population12 stale versus13 actual attempts; latest compact publication repaired separately.",
+      "CurrentRepairResult": "NO_PRODUCER_CHANGE",
+      "CurrentRepair": "Retained scoped evidence reviewed; broader qualification remains separate.",
+      "RemainingQualification": "Natural retries, soft-buffer terminal/censored lineage, conditional curves."
+    },
+    {
+      "Family": "Detection/miss/false detection",
+      "PreviousRunResult": "PARTIAL",
+      "VerifiedScope": "One PRACH success. Complete independent H0 occasion denominator unavailable.",
+      "CurrentRepairResult": "NO_PRODUCER_CHANGE",
+      "CurrentRepair": "Retained scoped evidence reviewed; broader qualification remains separate.",
+      "RemainingQualification": "H0/H1 population and threshold qualification."
+    },
+    {
+      "Family": "False ACK/NACK, DTX, SR errors",
+      "PreviousRunResult": "NOT_EXERCISED",
+      "VerifiedScope": "Six PUCCH H1 rows/ten observed ACK associations, no transmitted NACK/DTX population. Old DTX falseACK report erroneously conditioned on receiverDTX.",
+      "CurrentRepairResult": "PASS",
+      "CurrentRepair": "DTX-to-ACK denominator uses original transmitted-presence receipts, not receiver DTX. Positive H0/H1 and missing/corrupted proof guards pass; no old H0 population invented.",
+      "RemainingQualification": "Actual H0 and mixed multi-bit confusion populations; no false zero rates."
+    },
+    {
+      "Family": "Goodput",
+      "PreviousRunResult": "PASS",
+      "VerifiedScope": "DL16792/UL5000 distinct credited bits;29ms elapsed ->0.5790344828/0.1724137931Mbps; trial exposure ->2.7986666667/10Mbps.",
+      "CurrentRepairResult": "PASS",
+      "CurrentRepair": "Core family acceptance retains unique transport credit and explains incomplete application packets and CRC-only packet mapping. No transport success becomes decoded application delivery.",
+      "RemainingQualification": "Application goodput unavailable:0 completed packets, mapping is not decoded app payload."
+    },
+    {
+      "Family": "Spectral efficiency",
+      "PreviousRunResult": "PASS",
+      "VerifiedScope": "Elapsed efficiencies0.0289517241/0.0086206897bit/s/Hz; active-trial0.1399333333/0.5. Different scope from occupied18.36MHz.",
+      "CurrentRepairResult": "NO_PRODUCER_CHANGE",
+      "CurrentRepair": "Retained scoped evidence reviewed; broader qualification remains separate.",
+      "RemainingQualification": "Canonical integrated denominator publication and full-run population."
+    },
+    {
+      "Family": "Latency",
+      "PreviousRunResult": "FAIL",
+      "VerifiedScope": "Original CSI36 RNTI1 precedes received identity4660 installed40; report49 original join unavailable. New scoped received-transition bridge yields6.4880859375ms, preserving original measurement.",
+      "CurrentRepairResult": "PASS",
+      "CurrentRepair": "Original scoped received identity transition bridges CSI36 RNTI1 to report49 RNTI4660:6.4880859375ms. Five focused stages plus malformed-operand retry pass; original files unchanged.",
+      "RemainingQualification": "Fresh integrated publication; legacy bounded codec not NR MAC/RRC qualification. No completed application packets: latency remains censored/unavailable, not zero."
+    },
+    {
+      "Family": "Resource overhead",
+      "PreviousRunResult": "PARTIAL",
+      "VerifiedScope": "Original lossless exact-RE CSV has599317 rows across343 clock groups; original PRB exclusions alone were insufficient.",
+      "CurrentRepairResult": "ORIGINAL_RE_UNION_REPLAY_PASS",
+      "CurrentRepair": "Exact occupied time-frequency union matches independent bitsets for all 599317 original rows across343 groups, using27036 original support representatives. Zero count/coordinate error and zero JSON normalization; original SHA256 unchanged, no RF execution.",
+      "RemainingQualification": "Allocation-time requested/reserved/available support, silent reservations, full denominator and complete collision classification still need end-to-end retention. Exact occupied union is complete in its stated scope."
+    },
+    {
+      "Family": "PHR/PCMAX",
+      "PreviousRunResult": "PARTIAL",
+      "VerifiedScope": "Signed requested headroom and declared PCMAX exist; no received allocation-qualified PHR MAC-CE population established.",
+      "CurrentRepairResult": "CODEC_MAPPING_PASS",
+      "CurrentRepair": "PHR codec and mapping use one release-pinned authority, exact P/PH/PCMAX octet layout, all64 quantizer bins, explicit intervals and malformed/nonfinite rejection. New codec regression plus four existing mapping/vector checks pass;122 sealed inputs unchanged, no RF.",
+      "RemainingQualification": "Original allocation-qualified actual/reference PH and PCMAX must traverse actual MAC CE/PUSCH decode, report-admission commit, received state and later scheduling. Applicable NR MPR/A-MPR/full-power coverage and CE-versus-application accounting remain open."
+    },
+    {
+      "Family": "PAPR/CM",
+      "PreviousRunResult": "PARTIAL",
+      "VerifiedScope": "Original per-port waveform PAPR exists. Normalized sixth moment was not retained in original trial JSON.",
+      "CurrentRepairResult": "PASS",
+      "CurrentRepair": "Core PAPR producer now also retains per-port normalized envelope sixth moment and10log10(moment), original sample hash/window and explicit uncalibrated scope; analytic and actual link-metric JSON tests pass.",
+      "RemainingQualification": "Normalized envelope statistic is not UTRA-calibrated CM or NR MPR; independent waveform populations/CCDF tails remain."
+    },
+    {
+      "Family": "PSD/occupied bandwidth",
+      "PreviousRunResult": "NOT_QUALIFIED",
+      "VerifiedScope": "No final selected-run IQ/spectrum identity acceptance from this failed run.",
+      "CurrentRepairResult": "PASS",
+      "CurrentRepair": "Core PSD now preserves simultaneous ports, correct FFT normalization/odd-bin frequencies, window ENBW versus zero-padding bin spacing, zero-energy status and sample hash. Analytic and existing spectral tests pass.",
+      "RemainingQualification": "Actual configured-run spectrum/IQ chain, occupied-bandwidth policy and calibrated plane remain; FFT kernel pass alone is insufficient."
+    },
+    {
+      "Family": "ACLR/SEM",
+      "PreviousRunResult": "UNSUPPORTED",
+      "VerifiedScope": "Native30.72MSa/s does not capture complete adjacent20MHz channels. Existing finite-band arithmetic is now repaired.",
+      "CurrentRepairResult": "PASS",
+      "CurrentRepair": "Core SEM corrects port concatenation and zero-padding power bias, keeps explicit half-open bands/units, and rejects incomplete captured bands. Analytic and existing RF measurement tests pass; adjacent-band RF path is still absent.",
+      "RemainingQualification": "Oversampling before the original nonlinear RF operator and applicable measurement filters/limits are required. Posthoc zero padding cannot create missing emissions."
+    },
+    {
+      "Family": "TRP/EIRP",
+      "PreviousRunResult": "PASS_MODELED_SCOPE",
+      "VerifiedScope": "388 original post-TX RF covariance intervals with installed native field/native installation are complete and recompute exactly.",
+      "CurrentRepairResult": "PASS",
+      "CurrentRepair": "Original388 modeled radiation intervals pass full retained RF/covariance/native-installation/field recomputation;7 original file hashes unchanged, no RF replay. Component receipts retain their original limited scope.",
+      "RemainingQualification": "Accepted-feed power, calibrated radiation efficiency/polarization and hardware/OTA conformance remain false. Internal/model power ratios are not arbitrarily renormalized."
+    },
+    {
+      "Family": "Energy/J per bit",
+      "PreviousRunResult": "FAIL_PUBLICATION",
+      "VerifiedScope": "Original energy timeline empty after slot58 exception; retained accounting recovery is separate.",
+      "CurrentRepairResult": "RETAINED_REPLAY_PASS",
+      "CurrentRepair": "Fixed native logical admission parser and retained original-owner energy publication. Separate diagnostic has656 endpoint intervals and734 timeline rows; original failed artifact remains empty.",
+      "RemainingQualification": "Same endpoint/time/unique-bit denominator and full-run acceptance remain. Application denominator0 does not mean zero J/bit; always-awake model cannot show sleep savings."
+    },
+    {
+      "Family": "Complexity/runtime",
+      "PreviousRunResult": "PASS_SCOPED",
+      "VerifiedScope": "1841 original execution-stage rows and4 runtime-stage rows; receiver decode/pipeline host timings exist.",
+      "CurrentRepairResult": "NO_PRODUCER_CHANGE",
+      "CurrentRepair": "Retained scoped evidence reviewed; broader qualification remains separate.",
+      "RemainingQualification": "Host elapsed time is not packet latency or measured operation complexity; processor/memory benchmark comparability remains."
+    }
+  ],
+  "Evidence": [
+    {
+      "Path": "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\measurement_family_audit.json",
+      "SHA256": "3918b726b19a211d0717179db7dec179d62575b835ca40619a2c6566eec6fb32"
+    },
+    {
+      "Path": "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\measurement_family_original_inventory.json",
+      "SHA256": "8f2a1d04680ba1d6e1c39b5991fdc4ff0d8d9d5d2b013d51de78661c502c14c0"
+    },
+    {
+      "Path": "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\measurement_inventory_control_accounting_outcomes.json",
+      "SHA256": "067d53c9a28f5e53c46f7086c78bf5593b6d519163c9c7217ceb57d17d3bb67e"
+    },
+    {
+      "Path": "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\measurement_inventory_control_accounting_audit.json",
+      "SHA256": "9773f7c2de3ce8349ef4f00f35cc2edb57387e585e75fd2d276eab6942178f5b"
+    },
+    {
+      "Path": "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\root_measurement_batch01.json",
+      "SHA256": "f4ee0b8973d47dfbba16be888657de2b565d0941c41b95bea6557a7d8d64e043"
+    },
+    {
+      "Path": "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\root_measurement_batch02.json",
+      "SHA256": "7297810d03f656c38f3ea815ebda9d303b557c48eea94b32bc6ed6b1af620fce"
+    },
+    {
+      "Path": "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\original_radiation_closure_receipt.json",
+      "SHA256": "4c84a440ed18232f9fbf8e37022af9eb06aeceac7315e465ac439b0cf405bb04"
+    },
+    {
+      "Path": "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\measurement_phase2_receipt.json",
+      "SHA256": "52fd34218fa40a55af84bb8da3e351e90b4338de4e68bdebb516b2e9f106db1e"
+    },
+    {
+      "Path": "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\measurement_csi_batch01_receipt.json",
+      "SHA256": "49cd03c5c9784a5eb40cf3c4be58342d7c94447afd4e8659c1cd8cf635cd12f4"
+    },
+    {
+      "Path": "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\control_accounting_tests01.log",
+      "SHA256": "355674d9306865622c6626f88081e4e61c9660c474eebd1c7daddeb6c6e2c7a9"
+    },
+    {
+      "Path": "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\control_accounting_tests02.log",
+      "SHA256": "333dc9d7c518dcc856b9664e7e00b9f4c0b88195025a4692f266450e61d16f59"
+    },
+    {
+      "Path": "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\measurement_phase2_batch06_receipt.json",
+      "SHA256": "116448c943ce450143d3fa1bd1561d93d88446f39e064153cc87885e08cfed8a"
+    },
+    {
+      "Path": "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\measurement_selected_srs_config01_receipt.json",
+      "SHA256": "9b133cfd3b769d3d4366d3cd2f02c15def7fac89ca7f73a8c5fcff38a1a3fc29"
+    },
+    {
+      "Path": "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\measurement_phase2_completion_summary.json",
+      "SHA256": "26c5a15bff528daa01b9f08caca74025c3bf011e1ab0e5c359121ce6ba88b7e7"
+    },
+    {
+      "Path": "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\observed_re_union_replay03.json",
+      "SHA256": "2d2b288f84319899f68553b04e5241a7eaf49abe2190391bd74dd3517f70f340"
+    },
+    {
+      "Path": "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\phr_codec_batch01.json",
+      "SHA256": "042378e0fe5382ddde27a02a3107dc48488debab6ba53067096be5ba31e0e19f"
+    },
+    {
+      "Path": "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\pucch_received_power_integration_audit.json",
+      "SHA256": "13474f91b6901023eb0c9598db8eb370e5c5bfed71380cf7145b59e3b1692d65"
+    }
+  ],
+  "Standards": [
+    {
+      "Document": "TS38.215 V18.4.0",
+      "Scope": "SS/CSI/SRS reference-plane and detected-path power definitions; no hardware accuracy inferred"
+    },
+    {
+      "Document": "TS38.214 V18.8.0 section5.2.2.5",
+      "Scope": "Periodic CSI reference-resource age"
+    },
+    {
+      "Document": "TS38.104 V18.8.0 sections6.6.2,6.6.3,6.6.4 and9.7.4",
+      "Scope": "Occupied bandwidth, applicable ACLR/SEM/OTA measurement domains"
+    },
+    {
+      "Document": "TS38.213 V18.8.0 section7.7;TS38.321 V18.8.0 sections5.4.6 and6.1.3.8",
+      "Scope": "Power headroom and received MAC-CE procedure"
+    },
+    {
+      "Document": "TS38.101-1 V18.8.0 sections6.2.2/6.2.3",
+      "Scope": "Applicable UE maximum power reduction branches"
+    },
+    {
+      "Document": "TS25.101 section6.2.2",
+      "Scope": "UTRA CM calibration is not imported into NR; raw sixth moment retained under its own definition"
+    },
+    {
+      "Document": "TS38.133 V18.8.0 sections10.1.17.1 and10.1.18.1",
+      "Scope": "PH and PCMAX quantization intervals; single-entry encoding is TS38.321 V18.8.0 Figure6.1.3.8-1"
+    }
+  ]
+}

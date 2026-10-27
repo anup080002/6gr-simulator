@@ -95,7 +95,9 @@ link_adaptation:
     max_up_step: 1
     max_down_step: 2
     increase_ack_count: 2
-  # Confirm measured higher rank twice, retaining its own RI/PMI together.
+  # Acquire the first received spatial tuple once; later increases need two.
+  initial_spatial_confirmation_reports: 1
+  # Confirm subsequent measured higher rank twice, retaining its RI/PMI together.
   # No intermediate rank or calibrated SRS quality is fabricated.
   rank_increase_confirmation_reports: 2
 
@@ -142,3 +144,9 @@ scenario:
 
 output:
   profile: lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep
+
+# Earlier legal connected CSI occasions (30 kHz: 5 slots = 2.5 ms).
+# Original multi-resource reference/processing and actual PUCCH decoding remain mandatory.
+csi_acquisition_and_reporting:
+  csi_report_periodicity_slots: 5
+  csi_report_offset_slots: 3

@@ -2,7 +2,12 @@ classdef MACPDUDemultiplexer
     %MACPDUDEMULTIPLEXER Strict bounded decoder with byte ownership.
     methods (Static)
         function result=decode(direction,bytes)
-            bytes=uint8(bytes(:).'); offset=0; rows=struct([]);
+            bytes=sixgr.l2.mac.requireMACOctets(bytes); offset=0;
+            % Padding-only MAC PDUs have zero subPDUs, with the same schema
+            % as populated results; never manufacture an empty SDU row.
+            rows=repmat(struct('SubPDUIndex',0,'LCID',0,'Kind',"", ...
+                'HeaderOffset',0,'HeaderLength',0,'PayloadOffset',0, ...
+                'PayloadLength',0,'Payload',uint8.empty(1,0),'PayloadSHA256',""),0,1);
             while offset<numel(bytes)
                 first=bytes(offset+1); lcid=double(bitand(first,63));
                 if lcid==63

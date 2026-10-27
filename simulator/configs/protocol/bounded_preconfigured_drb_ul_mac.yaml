@@ -1,0 +1,70 @@
+# Explicit bounded preconfigured DRB profile. This is not received RRC setup.
+canonical_control:
+  protocol_stack:
+    enabled: true
+    strict: true
+    profile_id: nr_rel18_connected_mode_bounded_strict
+    configuration_epoch: 1
+    vector_root: tests/vectors/protocol
+    rlc:
+      mode: AM
+      arq_enabled: true
+      sn_bits: 18
+      poll_pdu: 16
+      poll_byte: 65536
+      max_retx_threshold: 8
+      t_poll_retransmit_ms: 45
+      t_reassembly_ms: 35
+      t_status_prohibit_ms: 10
+    pdcp:
+      bearer_type: DRB
+      sn_bits: 18
+      cipher_algorithm: NEA0
+      integrity_algorithm: NIA0
+      t_reordering_ms: 50
+      discard_timer_ms: 100
+      duplication_enabled: false
+    sdap:
+      pdu_session_id: 1
+      default_drb_id: 1
+      qfi_to_drb:
+        - qfi: 9
+          drb_id: 1
+    mac:
+      lcid: 4
+      bearer_configuration_authority: explicit_preconfigured_bounded_DRB
+      uplink_control:
+        enabled: true
+        lcg_id: 0
+        sr_probe_bytes: 64
+        received_report_max_age_ms: 100
+        bsr_periodic_ms: 10
+        bsr_retx_ms: 80
+        phr_periodic_ms: 10
+        phr_prohibit_ms: 0
+        phr_pathloss_change_db: 3
+        phr_power_management_backoff: false
+        # Scheduler model: unchanged non-bandwidth power terms between reports.
+        # This is not a 3GPP-mandated scheduler or a power guarantee.
+        phr_allocation_policy: constant_terms_quantized_lower_bound
+        phr_allocation_margin_db: 0
+    component_validation:
+      enabled: false
+    rrc:
+      endpoint_profile: ue_and_gnb
+      setup_enabled: false
+      security_mode_enabled: false
+      capability_exchange_enabled: false
+      reconfiguration_enabled: false
+      handover_enabled: false
+    # Traffic packets/rates remain owned by the scenario's actual traffic
+    # source. These records bind direction/QFI/bearer, not a second generator.
+    traffic:
+      enabled: true
+      sessions:
+        - flow_id: data-1
+          profile_id: CBR
+          pdu_session_id: 1
+          qfi: 9
+          direction: BIDIR
+          packet_bytes: 1500

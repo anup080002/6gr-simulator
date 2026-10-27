@@ -1143,8 +1143,12 @@ classdef (Abstract) SchedulerBase < handle
             stageScope=sixgr.runtime.ExecutionStageProfiler.scope("scheduler",upper(string(obj.Direction))+"_"+planStage); %#ok<NASGU>
             queueBytes = max(0, floor(double(queueBytes)));
             [modStr, nLayers, targetCodeRate, amc] = obj.selectAMC(ue);
+            phrAllocation=struct();
+            if upper(string(obj.Direction))=="UL"
+                [prbSet,phrAllocation]=sixgr.l2.mac.receivedPHRAllocationLimit(obj.Cfg,ue,prbSet,symAlloc,amc,nLayers);
+            end
             xOverhead = localResolveTBSXOverhead(obj.Direction, obj.Cfg, symAlloc);
-            if localAMCBlocksGrant(amc)
+            if localAMCBlocksGrant(amc) || isempty(prbSet)
                 rawBits = 0;
                 rawBytes = 0;
                 rawNRE = NaN;
@@ -1241,6 +1245,10 @@ classdef (Abstract) SchedulerBase < handle
                 "MCSReductionSteps", 0, ...
                 "LayerReductionSteps", 0);
 
+            plan.ReceivedPHRAllocation=phrAllocation;
+            if isempty(prbSet)&&~isempty(fieldnames(phrAllocation))&&phrAllocation.Applied
+                plan.GrantBlocker="received_phr_policy_no_positive_prb_budget";
+            end
             if queueBytes <= 0 || rawBits <= 0 || rawBytes <= 0 || isempty(prbSet)
                 return;
             end
@@ -1306,6 +1314,12 @@ classdef (Abstract) SchedulerBase < handle
             plan.QueueAwareReductionSource = char(string(sixgr.util.structGet(best, "QueueAwareReductionSource", "")));
             plan.MCSReductionSteps = double(sixgr.util.structGet(best, "MCSReductionSteps", 0));
             plan.LayerReductionSteps = double(sixgr.util.structGet(best, "LayerReductionSteps", 0));
+            if ~isempty(fieldnames(phrAllocation))&&phrAllocation.Applied&& ...
+                    (plan.MCSIndex~=amc.MCSIndex||plan.NumLayers~=nLayers)
+                plan.ReceivedPHRAllocation.Status="original_candidate_cap_retained_after_queue_reduction";
+                plan.ReceivedPHRAllocation.FinalMCSIndex=plan.MCSIndex;
+                plan.ReceivedPHRAllocation.FinalNumLayers=plan.NumLayers;
+            end
         end
 
         function metric = pfMetric(obj, ue, tbsBits)

@@ -29,13 +29,18 @@ catch ME
 end
 
 cfgOut = cfgIn;
+geometry=struct('Valid',false,'Scope',"codec_projection_without_installed_physical_grid");
+if isfield(cfgIn,'phy') && isfield(cfgIn.phy,'carrier') && ...
+        all(isfield(cfgIn.phy.carrier,{'NSizeGrid','SubcarrierSpacing'}))
+    geometry=sixgr.rrc.asn1.validateSIB1PhysicalGeometry(tree,cfgIn);
+end
 % Mandatory received operands cannot be rescued from the transmitter's
 % authored random_access subtree and then labelled decoded. The constrained
 % semantic decoder retains these fields even when their value is zero.
 requiredRACH = ["configurationIndex","rootSequenceIndex", ...
     "zeroCorrelationZoneConfig","restrictedSet","msg1FDM", ...
     "msg1FrequencyStart","preambleReceivedTargetPower_dBm", ...
-    "powerRampingStep","preambleTransMax","raResponseWindow"];
+    "powerRampingStep","preambleTransMax","raResponseWindow","contentionResolutionTimer"];
 assert(isstruct(rach) && isscalar(rach) && all(isfield(rach,requiredRACH)), ...
     'sixgr:mac:ra:MissingDecodedRACHOperand', ...
     'Mandatory RACH common fields must come from the original decoded SIB1; host defaults are not received evidence.');
@@ -76,6 +81,9 @@ if sixgr.bwop.RIVFDRA.encode(275, initialUlBwpStart, initialUlBwpSize) ~= riv
     error("sixgr:mac:ra:InvalidDecodedBWPRIV", "Decoded initial UL BWP RIV is noncanonical.");
 end
 initialUlBwpSCSkHz = localSCSNameToKHz(sixgr.util.structGet(ulGeneric, "subcarrierSpacing", ""));
+if geometry.Valid
+    initialUlBwpStart=geometry.UL.StartRB;
+end
 initialUlBwpCP = string(sixgr.util.structGet(ulGeneric, "cyclicPrefix", "normal"));
 [prachSCSkHz,prachSCSSource] = sixgr.mac.ra.resolveDecodedPRACHSubcarrierSpacing(rach);
 restrictedSet = string(rach.restrictedSet);
@@ -127,6 +135,16 @@ validateattributes(ssPower,{'numeric'},{'scalar','real','finite','integer','>=',
     "SIB1.rach-ConfigCommon.preambleTransMax", "", "count", "mandatory", "decoded");
 [ra, rows] = localApply(rows, ra, "ra_response_window_slots", localRAResponseWindowSlots(rach), ...
     "SIB1.rach-ConfigCommon.ra-ResponseWindow", "", "slots", "mandatory", "decoded");
+timer=sixgr.mac.ra.resolveContentionResolutionTimer(struct(),initialUlBwpSCSkHz, ...
+    rach.contentionResolutionTimer);
+[ra, rows] = localApply(rows,ra,"ra_contention_resolution_timer_subframes",timer.Subframes, ...
+    "SIB1.rach-ConfigCommon.ra-ContentionResolutionTimer", ...
+    "Original sfN means N subframes independently of slot numerology.","subframes","mandatory","decoded");
+[ra, rows] = localApply(rows,ra,"ra_contention_resolution_timer_slots",timer.Slots, ...
+    "SIB1.rach-ConfigCommon.ra-ContentionResolutionTimer", ...
+    "Exact scheduling projection using the original received initial UL BWP SCS.","slots","mandatory","decoded_derived");
+ra.contention_resolution_timer_received_enum=timer.OriginalEnum;
+ra.contention_resolution_timer_receipt=timer;
 [ra, rows] = localApply(rows, ra, "preamble_count", totalPreambles, ...
     "SIB1.rach-ConfigCommon.totalNumberOfRA-Preambles", ...
     "Absent optional IE means 64; host preamble_count is never a received operand.", ...
@@ -179,6 +197,18 @@ ra.decoded_sib1_payload_hash = string(payloadHash);
 ra.decoded_sib1_tree_hash = string(treeHash);
 cfgOut.random_access = ra;
 cfgOut.UECommonCellConfiguration = localBuildUECommonCellConfiguration(serving, ra, payloadHash, treeHash);
+cfgOut.UECommonCellConfiguration.PhysicalGeometry=geometry;
+if geometry.Valid
+    cfgOut.UECommonCellConfiguration.InitialDLBWP.StartRB=geometry.DL.StartRB;
+end
+cfgOut.UECommonCellConfiguration.FrequencyInfoDL=serving.downlinkConfigCommon.frequencyInfoDL;
+cfgOut.UECommonCellConfiguration.FrequencyInfoUL=serving.uplinkConfigCommon.frequencyInfoUL;
+% RRC establishment timers are received SIB1 operands. Retain the original
+% IE beside its payload/tree identity; do not recover it from host defaults.
+assert(isfield(sib1,'ue_TimersAndConstants') && ...
+    isstruct(sib1.ue_TimersAndConstants) && isscalar(sib1.ue_TimersAndConstants), ...
+    'sixgr:mac:ra:MissingReceivedUETimers','Retain the original SIB1 UE timers.');
+cfgOut.UECommonCellConfiguration.UETimersAndConstants=sib1.ue_TimersAndConstants;
 cfgOut.ue_common_cell_configuration = cfgOut.UECommonCellConfiguration;
 receivedMIB=sixgr.mac.ra.resolveReceivedCommonMIBConfiguration(cfgIn,sib1Evidence);
 if ~isempty(fieldnames(receivedMIB))
@@ -344,7 +374,14 @@ cfg.RACHConfigCommon = struct( ...
     "PreambleTransMax", double(sixgr.util.structGet(ra, "preamble_trans_max", NaN)), ...
     "RAResponseWindowSlots", double(sixgr.util.structGet(ra, "ra_response_window_slots", NaN)), ...
     "PRACHFormat", string(sixgr.util.structGet(ra, "prach_format", "")));
+cfg.RACHConfigCommon.ContentionResolutionTimer=ra.contention_resolution_timer_receipt;
 cfg.PUSCHConfigCommon = sixgr.util.structGet(ul, "pusch_ConfigCommon", struct());
+cfg.PUSCHConfigCommonPresent = isfield(ul,"pusch_ConfigCommon");
+cfg.PUSCHCommonTiming = sixgr.rrc.asn1.resolvePUSCHConfigCommon( ...
+    cfg.PUSCHConfigCommon,cfg.InitialULBWP.SubcarrierSpacing_kHz);
+cfg.PUSCHCommonTiming.PayloadHash=cfg.PayloadHash;
+cfg.PUSCHCommonTiming.TreeHash=cfg.TreeHash;
+cfg.PUSCHCommonTiming.ConfigurationSource=cfg.Source;
 cfg.PUCCHConfigCommon = sixgr.util.structGet(ul, "pucch_ConfigCommon", struct());
 cfg.PUCCHConfigCommonPresent = isfield(ul, "pucch_ConfigCommon");
 % Mandatory received MAC timer authority. Do not substitute a scenario

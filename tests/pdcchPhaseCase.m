@@ -166,7 +166,20 @@ if isempty(cachedCfg)
     root = fileparts(fileparts(mfilename("fullpath")));
     scfg = sixgr.lls6g.config.loadScenarioConfig(fullfile(root, ...
         "simulator", "configs", "scenarios", "master_geometry_based.yaml"));
-    cachedCfg = sixgr.lls6g.buildInternalConfig(scfg, tempdir);
+    % This fixture owns PDCCH assertions, not the master's unqualified
+    % Type-II/subband CSI wire layout. Retain its explicit rejection, then
+    % select the supported report layout without altering any PDCCH input.
+    localAssertError(@() sixgr.lls6g.buildInternalConfig(scfg, tempdir), ...
+        "sixgr:mimo:UnqualifiedCSIWireLayout");
+    fixture=scfg.toStruct();
+    fixture.mimo.codebook_type='type1';
+    fixture.canonical_control.mimo.codebook_type='type1';
+    fixture.csi_acquisition_and_reporting.report_configuration.frequency_granularity='wideband';
+    fixture.csi_acquisition_and_reporting.report_configuration.num_subbands=1;
+    cachedCfg = sixgr.lls6g.buildInternalConfig(fixture, tempdir);
+    assert(string(cachedCfg.phy.csi.reportConfiguration.CodebookType)=="typeI-SinglePanel" && ...
+        string(cachedCfg.phy.csi.reportConfiguration.FrequencyGranularity)=="wideband" && ...
+        cachedCfg.phy.csi.reportConfiguration.NumSubbands==1);
     cachedStrict = sixgr.phy.pdcch.buildPDCCHConfigFromScenario(cachedCfg);
 end
 cfg = cachedCfg;

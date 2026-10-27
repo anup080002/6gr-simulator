@@ -1,6 +1,7 @@
-function [prepared,admission]=prepareConfiguredSRTransmission(state,cfg,h)
+function [prepared,admission,deferred,state]=prepareConfiguredSRTransmission(state,cfg,h,item)
 % UE-side procedure decision only. It must not define the gNB hypothesis.
 prepared=[];
+deferred=false;
 admission=table(); % Negative SR is not a power-deferred positive request.
 assert(~logical(sixgr.util.structGet(cfg,'mac.phase08.sr.enabled',false)), ...
     'sixgr:truth:UnboundMACSRProcedure','Bind enabled MAC triggers/timers before physical SR transmission.');
@@ -10,6 +11,15 @@ calendar=h.SRReportCalendar;
 hit=arrayfun(@(s)s.Data.SRResourceConfigurationID==calendar.SRResourceConfigurationID,states);
 assert(nnz(hit)==1,'sixgr:truth:MissingSRProcedureState','Retain the installed UE SR procedure.');
 data=states(hit).Data;
+p=sixgr.util.structGet(cfg,'phy.mac.uplinkControl',struct('Enabled',false));
+if p.Enabled
+    [state,scope]=sixgr.truth.ensureULMACOwners(state,cfg,h.UEIndex,h.ServingCell);
+    assert(scope.RNTI==h.RNTI,'sixgr:mac:SRCurrentIdentity','Installed SR and current UE MAC scope differ.');
+    sixgr.truth.refreshUEMACQueue(state,h.UEIndex,p,state.CurrentSlot);
+    bsr=state.SharedUEBSRStates{h.UEIndex};
+    data.PendingPositiveSR=bsr.PendingTrigger=="regular" && any(bsr.Buffers>0);
+    snapshot=sixgr.phy.pucch.SchedulingRequestState(data); data=snapshot.Data;
+end
 assert(data.ConfigurationEpoch==h.Context.ConfigurationEpoch && data.UEIndex==h.UEIndex && ...
     data.RNTI==h.RNTI && data.ServingCell==h.ServingCell && ...
     data.SchedulingRequestID==calendar.SchedulingRequestID && ...
@@ -34,9 +44,15 @@ end
 frame=struct('TargetSlot',h.TargetSlot,'SlotSymbolOwnership',string(ownership), ...
     'FlexibleResolutionProvided',false);
 plan=sixgr.phy.pucch.PUCCHConfigBuilder.planSR(cfg,ue,sr,frame);
+powerBinding=[];
+if string(sixgr.util.structGet(cfg,'validation.pucch_resources.power_control.closed_loop_mode','configured'))=="received_dci"
+    assert(nargin==4,'sixgr:truth:PUCCHPowerOccasion','Shared SR power requires the original registered item.');
+    [deferred,powerBinding]=sixgr.truth.resolveSharedReceivedPUCCHPower(state,item,cfg,plan,struct());
+    if deferred, return; end
+end
 [admitted,cfg,admission]=sixgr.truth.resolveSharedPUCCHPowerAdmission(state,cfg,h.UEIndex,h.TargetSlot);
 if ~admitted, return; end
-connected=sixgr.phy.pucch.PUCCHConfigBuilder.materialize(cfg,plan);
+connected=sixgr.phy.pucch.PUCCHConfigBuilder.materialize(cfg,plan,powerBinding);
 args={'Carrier',carrier,'Assignment',connected.Assignment,'Report',connected.Report, ...
     'ReceiverContext',connected.ReceiverContext,'SNR_dB',sixgr.truth.resolvePUCCHConfiguredSNRMetadata(state,cfg), ...
     'ChannelProfile',sixgr.channel.resolveConcreteProfile(cfg),'Seed',h.TargetSlot, ...

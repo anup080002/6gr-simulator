@@ -2,7 +2,25 @@ function reference = resolveRARDCIReference(cfg)
 %RESOLVERARDCIREFERENCE Receiver-known common reference, never a TX grant.
 decoded = sixgr.util.structGet(cfg,"UECommonCellConfiguration",struct());
 mib = sixgr.util.structGet(cfg,"UECommonMIBConfiguration",struct());
-if ~isempty(fieldnames(decoded))
+gnb=sixgr.util.structGet(cfg,"GNBCommonCellConfiguration",struct());
+gnbMIB=sixgr.util.structGet(cfg,"GNBCommonMIBConfiguration",struct());
+assert((isempty(fieldnames(decoded)) && isempty(fieldnames(mib))) || ...
+    (isempty(fieldnames(gnb)) && isempty(fieldnames(gnbMIB))), ...
+    'sixgr:phy:ra:MixedCommonControlAuthority','Retain either gNB configured or UE decoded authority.');
+if ~isempty(fieldnames(gnb))
+    assert(gnb.ConfigurationSource=="original_gNB_common_configuration" && ...
+        ~isempty(fieldnames(gnbMIB)) && gnbMIB.Source=="original_gNB_configured_MIB", ...
+        'sixgr:phy:ra:MissingConfiguredCommonMIB','The cell producer requires its original configured MIB.');
+    if gnbMIB.CORESET0Present
+        n=gnbMIB.CORESET0NumRB; first=gnbMIB.CORESET0RBStart;
+        source="original_gNB_configured_mib_coreset0";
+    else
+        n=gnb.InitialDLBWP.SizeRB; first=gnb.InitialDLBWP.StartRB;
+        source="original_gNB_configured_initial_dl_bwp";
+    end
+    dmrs=gnbMIB.DMRSTypeAPosition; cp=gnb.InitialDLBWP.CyclicPrefix;
+    decoded=gnb; % Same common-list validation below; never stored as UE state.
+elseif ~isempty(fieldnames(decoded))
     if isempty(fieldnames(mib))
         error("sixgr:phy:ra:MissingDecodedCommonMIB", ...
             "RAR DCI needs recovered MIB/CORESET0 authority as well as decoded SIB1.");
@@ -38,4 +56,7 @@ reference = struct("FrequencyReferenceSize",double(n), ...
     "FrequencyRange",string(sixgr.util.structGet(cfg,"frequency.range_name","")), ...
     "TimeAllocationSource","38.214_default_A", ...
     "ConfigurationEpoch",double(sixgr.util.structGet(cfg,"initial_access.configuration_epoch",0)));
+if ~isempty(fieldnames(gnb))
+    reference.AuthorityRole="original_gNB_transmitter_configuration";
+end
 end

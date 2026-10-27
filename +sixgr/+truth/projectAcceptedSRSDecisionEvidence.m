@@ -34,6 +34,18 @@ for pair=["RawSRSLastSuccessfulSlot","LastSuccessfulSRSSlot";"RawSRSValid","SRSV
         "ScheduledSRI","SRI";"ScheduledSRSResourceIndicator","SRSResourceIndicator"].'
     if isfield(owner,pair(2)), out.(pair(1))=numericScalar(owner.(pair(2)),pair(2)); end
 end
+% A single configured resource has zero SRI payload bits. Its scheduled
+% index still belongs to the original packed control context, not to the
+% accepted sounding measurement's resource ID or today's configuration.
+scheduled=originalScheduledSRI(owner);
+if isfinite(scheduled)
+    for name=["ScheduledSRI","ScheduledSRSResourceIndicator"]
+        assert(~isfinite(out.(name))||out.(name)==scheduled, ...
+            'sixgr:truth:ScheduledSRIPublicationMismatch', ...
+            'Scheduled SRI alias conflicts with the original packed UL control.');
+        out.(name)=scheduled;
+    end
+end
 % Current installation is a separate owner snapshot, not the older accepted
 % measurement's configuration. Never reconstruct it from cfg or decision A.
 installation=sixgr.util.structGet(owner,'SRSCurrentInstallation',struct());
@@ -113,4 +125,37 @@ function value=textScalar(value,name)
 value=string(value);
 assert(isscalar(value)&&~ismissing(value),'sixgr:truth:AcceptedSRSPublicationType', ...
     'Expected supplied scalar text %s.',name);
+end
+
+function value=originalScheduledSRI(owner)
+value=NaN;
+dci=sixgr.util.structGet(owner,'DCI',struct());
+if ~isstruct(dci)||~isscalar(dci)|| ...
+        strlength(string(sixgr.util.structGet(dci,'Format',"")))==0|| ...
+        ~isequal(sixgr.util.structGet(dci,'BitExactPDCCHPayload',false),true)
+    return;
+end
+if sixgr.phy.pdcch.normalizeDCIFormat(dci.Format)~="0_1", return; end
+assert(all(isfield(dci,{'Bits','ContextData','ContextDigest','PayloadHash','DCIGrantContract'}))&& ...
+    string(dci.DCIGrantContract)=="packed_from_finalized_scheduler_phy_grant", ...
+    'sixgr:truth:ScheduledSRIPublicationAuthority','Require original finalized scheduler control authority.');
+context=sixgr.phy.pdcch.DCIContext(dci.ContextData);
+assert(string(context.Digest)==string(dci.ContextDigest)&&context.Data.DCIFormat=="0_1", ...
+    'sixgr:truth:ScheduledSRIPublicationMismatch','Original UL control context digest differs.');
+parsed=sixgr.phy.pdcch.DCIParser.parse(dci.Bits,context);
+assert(string(parsed.PayloadHash)==string(dci.PayloadHash)&&parsed.Direction=="UL", ...
+    'sixgr:truth:ScheduledSRIPublicationMismatch','Original UL control payload hash differs.');
+if isfield(owner,'Direction')
+    assert(upper(string(owner.Direction))=="UL", ...
+        'sixgr:truth:ScheduledSRIPublicationMismatch','UL control belongs to a different grant direction.');
+end
+if isfield(owner,'RNTI')
+    assert(isequal(double(owner.RNTI),double(context.Data.RNTIValue)), ...
+        'sixgr:truth:ScheduledSRIPublicationMismatch','UL control belongs to a different RNTI.');
+end
+if isfield(parsed.Fields,'srs_resource_index0based')
+    value=double(parsed.Fields.srs_resource_index0based);
+    assert(isscalar(value)&&isfinite(value)&&value>=0&&value==fix(value), ...
+        'sixgr:truth:ScheduledSRIPublicationAuthority','Invalid original scheduled resource selector.');
+end
 end

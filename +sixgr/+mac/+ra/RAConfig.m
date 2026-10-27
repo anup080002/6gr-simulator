@@ -51,7 +51,6 @@ mandatory = [ ...
     "occasion.symbol"
     "occasion.frequency_index"
     "ra_response_window_slots"
-    "ra_contention_resolution_timer_slots"
     "preamble_trans_max"
     "power_ramping_step_db"
     "preamble_received_target_power_dbm"
@@ -153,18 +152,7 @@ ra.NSizeGrid = double(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", ...
 ra.CarrierSCSkHz = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", ...
     sixgr.util.structGet(cfg, "carrier.subcarrier_spacing_khz", 30)));
 ra.CarrierCyclicPrefix = string(sixgr.util.structGet(cfg, "phy.carrier.CyclicPrefix", "normal"));
-% A received common TDRA list takes precedence over default A. Until its
-% explicit list codec is supported, reject it instead of silently replacing
-% the receiver's RRC authority with the default table.
-commonPUSCH = sixgr.util.structGet(cfg, ...
-    "UECommonCellConfiguration.PUSCHConfigCommon", struct());
-for field = ["pusch_TimeDomainAllocationList", "pusch-TimeDomainAllocationList", ...
-        "puschTimeDomainAllocationList"]
-    if isfield(commonPUSCH, field) && ~isempty(commonPUSCH.(field))
-        error("sixgr:mac:ra:UnsupportedRARCommonTDRAList", ...
-            "Decoded PUSCH common TDRA list must be consumed; default A cannot replace it.");
-    end
-end
+ra.PUSCHCommonContext=sixgr.mac.ra.resolveRARCommonPUSCHContext(cfg);
 ra.PreambleIndex = double(sixgr.util.structGet(raNode, "preamble_index", 0));
 ra.PRACHFormat = string(sixgr.util.structGet(raNode, "prach_format", "0"));
 ra.PRACHConfigurationIndex = double(sixgr.util.structGet(raNode, "configuration_index", 16));
@@ -286,9 +274,19 @@ if isfield(cfg,'SharedULTimingContext')
 end
 ra.RARMonitoringWindow=sixgr.phy.ia.RARMonitoringWindow.resolve( ...
     frame,control,ra.PRACHActiveEndTicksExclusive,ra.RAResponseWindowSlots,clockOffsetTicks);
-ra.RAContentionResolutionTimerSlots = double(sixgr.util.structGet(raNode, "ra_contention_resolution_timer_slots", 64));
+if isfield(raNode,'contention_resolution_timer_received_enum')
+    timer=sixgr.mac.ra.resolveContentionResolutionTimer(raNode,carrier.SubcarrierSpacing, ...
+        raNode.contention_resolution_timer_received_enum);
+else
+    timer=sixgr.mac.ra.resolveContentionResolutionTimer(raNode,carrier.SubcarrierSpacing);
+end
+ra.RAContentionResolutionTimer=timer;
+ra.RAContentionResolutionTimerSlots=timer.Slots;
+ra.RAContentionResolutionTimerTicks=timer.DurationTicks;
 timingNode = raNode.timing;
 rrcNode = sixgr.util.structGet(cfg, "initial_access.rrc", struct());
+ra.NRAccessPolicy=sixgr.lls6g.config.resolveNRAccessPolicy(rrcNode);
+ra.RRCEncodingProfile=ra.NRAccessPolicy.EncodingProfile;
 ra.RequireRRCSetupComplete = logical(sixgr.util.structGet( ...
     rrcNode, "require_setup_complete", false));
 ra.RRCTransactionID = double(sixgr.util.structGet( ...

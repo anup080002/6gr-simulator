@@ -76,6 +76,7 @@
     "trp_switching": "disabled", "trp_selection_metric": "rsrp", "full_duplex_coordination": "disabled", "self_interference_estimation": "disabled"
   },
   "csi_acquisition_and_reporting": {
+        "selection_backend": "native_maxse_r2026a",
     "dl_csi_enabled": true, "ul_csi_enabled": true, "joint_dl_ul_csi_enabled": false, "csi_rs_baseline_flag": true, "dmrs_based_csi_flag": false,
     "srs_based_csi_flag": true, "reciprocity_based_flag": false, "feedback_based_flag": true, "cqi_policy": "baseline", "pmi_policy": "baseline",
     "ri_policy": "baseline", "cri_policy": "disabled", "channel_state_information_mode": "PMI+CQI+RI", "pmi_codebook_mode": "type1_su_mimo", "l1_sinr_policy": "baseline", "rsrp_policy": "baseline", "delta_mcs_policy": "baseline", "dmrs_port_selection_policy": "baseline",

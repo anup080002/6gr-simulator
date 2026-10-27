@@ -1195,6 +1195,7 @@ mappings = {
     "random_access.binding_source", "random_access.binding_source", "identity"
     "random_access.ra_response_window_slots", "random_access.ra_response_window_slots", "identity"
     "random_access.ra_contention_resolution_timer_slots", "random_access.ra_contention_resolution_timer_slots", "identity"
+    "random_access.ra_contention_resolution_timer_subframes", "random_access.ra_contention_resolution_timer_subframes", "identity"
     "random_access.preamble_trans_max", "random_access.preamble_trans_max", "identity"
     "random_access.power_ramping_step_db", "random_access.power_ramping_step_db", "identity"
     "random_access.preamble_received_target_power_dbm", "random_access.preamble_received_target_power_dbm", "identity"

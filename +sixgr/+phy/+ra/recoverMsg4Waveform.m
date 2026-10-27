@@ -1,5 +1,9 @@
 function [pdcchRx, pdschRx, msg4] = recoverMsg4Waveform(rxWaveform, cfg, raCfg, sched, tx)
 %RECOVERMSG4WAVEFORM Decode temp-C-RNTI PDCCH and Msg4 DL-SCH.
+assert(isempty(fieldnames(sixgr.util.structGet(cfg,'GNBCommonCellConfiguration',struct()))) && ...
+    isempty(fieldnames(sixgr.util.structGet(cfg,'GNBCommonMIBConfiguration',struct()))) && ...
+    string(sixgr.util.structGet(raCfg,'Msg4DCIReference.AuthorityRole',""))~="original_gNB_transmitter_configuration", ...
+    'sixgr:phy:ra:GNBConfigurationAtUEReceiver','A UE Msg4 receiver cannot use gNB authored common authority.');
 sixgr.runtime.RuntimeCallLedger.record("sixgr.phy.ra.recoverMsg4Waveform","MSG4","DL",struct("Stage","RX"));
 cfgRx = sixgr.phy.ra.localizeCarrierConfig(cfg, raCfg, raCfg.Msg4Slot);
 [carrier,~] = sixgr.phy.grid.makeCarrier(cfgRx);
@@ -61,7 +65,13 @@ pdschRx.Msg4DCIReferenceSource = context.Data.FrequencyReferenceSource;
 pdschRx.Msg4MACEncodingProfile = "legacy_bounded_not_NR_MAC_RRC";
 if logical(pdschRx.Ok)
     payloadBits = int8(pdschRx.TransportBlock);
-    msg4 = sixgr.mac.ra.parseMsg4ContentionResolution(payloadBits);
+    if string(sixgr.util.structGet(raCfg,'RRCEncodingProfile',""))=="nr_rrc_access_base_srb1_uper_v1"
+        bytes=uint8(reshape(double(payloadBits),8,[]).'*(2.^(7:-1:0)).');
+        msg4=sixgr.mac.ra.parseNRInitialAccessMACPDU("DL",bytes);
+        pdschRx.Msg4MACEncodingProfile=msg4.EncodingProfile;
+    else
+        msg4 = sixgr.mac.ra.parseMsg4ContentionResolution(payloadBits);
+    end
 else
     msg4 = struct();
 end

@@ -1,8 +1,9 @@
-function ok = testSharedIndependentCSIRSCompletion(timingGuard,receiverDelay,installedArm)
+function ok = testSharedIndependentCSIRSCompletion(timingGuard,receiverDelay,installedArm,portableArm)
 %TESTSHAREDINDEPENDENTCSIRSCOMPLETION Receive CSI-RS without PDSCH/DCI.
 if nargin<1, timingGuard=0; end
 if nargin<2, receiverDelay=0; end
 if nargin<3, installedArm=false; end
+if nargin<4, portableArm=false; end
 pointSNR=-10;
 if receiverDelay>0, pointSNR=30; end
 
@@ -13,26 +14,46 @@ assert(height(schema)==0 && isstring(schema.Direction) && ...
     isstring(schema.PhysicalMeasurementSynchronizationJSON) && ...
     islogical(schema.Observed) && isnumeric(schema.Slot), ...
     'The empty canonical schema must retain types without manufacturing a row.');
-scenario=sixgr.lls6g.config.loadScenarioConfig( ...
-    "simulator/configs/scenarios/lls_tdd_5mhz_rank2_4tx2rx_awgn_m10db.yaml");
+scenarioPath="simulator/configs/scenarios/lls_tdd_5mhz_rank2_4tx2rx_awgn_m10db.yaml";
+if portableArm
+    scenarioPath="simulator/configs/scenarios/lls_tdd_four_port_received_rank_transition_fixture.yaml";
+end
+scenario=sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
 % Exercise the generic configured audit on the existing bounded physical
 % regression; this is not a new 5-MHz campaign or a full n40 qualification.
 scenario=scenario.toStruct();
+if portableArm
+    authored=sixgr.lls6g.config.loadScenarioConfig( ...
+        "simulator/configs/scenarios/lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep.yaml");
+    authored=authored.toStruct();
+    scenario.csi_acquisition_and_reporting.selection_backend='portable_typeI_mmse';
+    scenario.csi_acquisition_and_reporting.portable_cqi_model= ...
+        authored.csi_acquisition_and_reporting.portable_cqi_model;
+end
 scenario.kpi_spec.csi_selection_quality.enabled=true;
 % The installed resource-set vector is authoritative even for one resource.
 % Changing only a legacy scalar after build does not install resource 17.
 scenario.reference_signals.csi_rs_resource_ids=17;
 cfg=sixgr.lls6g.buildInternalConfig(scenario,tempname);
+if portableArm
+    assert(cfg.channel.awgnBeamFailureRecoveryEnabled && ...
+        string(cfg.phy.csirs.runtimeChannelEstimator)=="nr_channel_estimate" && ...
+        cfg.phy.csi.reportConfiguration.Ports==4 && cfg.phy.mimo.ports==4);
+    % This component queues only CSI-RS. TRS is disabled below and SRS is
+    % never emitted; its unrelated estimator is not a condition of this test.
+else
 assert(cfg.channel.awgnBeamFailureRecoveryEnabled && ...
     string(cfg.phy.csirs.runtimeChannelEstimator)=="nr_channel_estimate" && ...
     string(cfg.phy.trs.runtimeChannelEstimator)=="nr_channel_estimate" && ...
     string(cfg.phy.srs.runtimeChannelEstimator)=="nr_channel_estimate", ...
     'test:PiecewiseRSEstimatorConfiguration', ...
     'The production piecewise-channel scenario must select native per-resource RS estimators.');
+end
 cfg=sixgr.truth.bindStandaloneSNRPoint(cfg,pointSNR);
 cfg.phy.ssb.enable=false;
 cfg.phy.sib1.enable=false;
 cfg.phy.trs.enable=false;
+if portableArm,assert(~cfg.phy.trs.enable && cfg.phy.csirs.enable);end
 cfg.phy.csirs.period_slots=1;
 cfg.phy.csirs.offset_slots=0;
 cfg.phy.csirs.resourceID=17; % Keep the legacy singleton alias consistent.
@@ -53,6 +74,7 @@ runFolder=tempname;
 mkdir(runFolder);
 cfg.run.rootRunFolder=runFolder;
 cfg.run.runTag="shared_independent_csirs_population";
+if portableArm,fprintf('PORTABLE_RECEIVED_CSI_FOLDER %s\n',runFolder);end
 
 multi=struct("Enabled",true,"NumUsers",1,"RNTIStart",1, ...
     "ExecutionModel","slot_coupled_truth");
@@ -60,8 +82,12 @@ multi=struct("Enabled",true,"NumUsers",1,"RNTIStart",1, ...
 % root. Storage references must still resolve identically from both CSVs.
 componentFolder=fullfile(runFolder,'air_interface');
 state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,componentFolder,multi,struct(),1);
+if portableArm
+    state=sixgr.truth.CoupledTruthRuntime.startSlot(state,cfg,"DL",1,1,1,12,pointSNR);
+else
 state=sixgr.truth.CoupledTruthRuntime.startSlot( ...
     state,cfg,"DL",1,1,1,pointSNR,12);
+end
 state.CurrentServingIdx(:)=1;
 state.CurrentSweepPointIndex=3;
 [state,owner]=sixgr.truth.CoupledWaveformStream.initialize(state,cfg,{cfg});
@@ -122,6 +148,27 @@ end
 assert(numel(completed)==1 && completed.Kind=="CSIRS", ...
     "The independent CSI-RS observation must complete on its actual RX clock.");
 trial=state.ControlTrials.CSIRS;
+if portableArm
+    report=state.TestCSIRSReport;
+    decision=report.RankSelectionEvidence;
+    assert(string(decision.ContractVersion)=="sixgr.portable_TypeI_MMSE_rank_decision/v1" && ...
+        isequal(decision.RankDomain,cfg.phy.csi.rankDomain) && ...
+        isequal(decision.RankDomain,cfg.phy.csi.reportConfiguration.AllowedRanks) && ...
+        decision.AdditionalRankSearches==0 && ...
+        ~decision.CQIModelEvidence.CalibrationQualified && ...
+        string(trial.RankSelectionEvidenceStatus)== ...
+        "recorded_original_portable_MMSE_model_operands_not_accuracy_qualification", ...
+        'test:PortableCSIReceivedFinalizer','Actual original receiver must reach portable receipt validation/export.');
+    assert(report.PrecoderMatrixSHA256==decision.SelectedMatrixSHA256 && ...
+        trial.RI==report.RI && trial.PMI==report.PMI && trial.CQI==report.CQI && ...
+        trial.RankSelectionEvidenceSHA256==sixgr.util.sha256Hex(char(trial.RankSelectionEvidenceJSON)));
+    for k=1:numel(decision.Candidates)
+        assert(~isfield(decision.Candidates{k},'CandidateSINRPerRELayer') && ...
+            ~isfield(decision.Candidates{k},'SelectedSINRPerRELayer'));
+    end
+    fprintf('PORTABLE_ORIGINAL_RECEIVED_FINALIZER_PASS rank=%g PMI=%g CQI=%g additional_searches=0 calibrated=0\n', ...
+        report.RI,report.PMI,report.CQI);
+end
 assert(trial.SweepPointIndex==3 && trial.ConfiguredSNR_dB==pointSNR && ...
     trial.RunTag==cfg.run.runTag && trial.ConfigHash==queuedPopulation.Fields.ConfigHash && ...
     trial.CSIObservationPopulationSHA256==queuedPopulation.SHA256, ...
@@ -164,6 +211,17 @@ assert(public.csi_rs_runtime_event_table.CSISelectionQualityMATFile==trial.CSISe
     'test:CSISelectionPublicScope','Private UE scoring must survive publication without becoming received UCI.');
 assert(trial.RuntimeStageWaveformsUsed && ...
     trial.ReceiverObservationHashPlane=="actual_receiver_input_before_synchronization");
+if portableArm
+    model=cfg.phy.csi.portableCQIModel;
+    for name=["CQIModelID","CQIModelSource","CQIModelCalibrationQualified", ...
+            "RankSelectionEvidenceJSON","RankSelectionEvidenceSHA256","RankSelectionEvidenceStatus"]
+        assert(ismember(name,string(public.csi_rs_runtime_event_table.Properties.VariableNames))&& ...
+            isequaln(public.csi_rs_runtime_event_table.(name),trial.(name)), ...
+            'test:PortableCSIPublicMetadata','Original portable model/decision metadata dropped: %s',name);
+    end
+    assert(trial.CQIModelID==model.ModelID && trial.CQIModelSource=="explicit_configured_threshold_model" && ...
+        ~trial.CQIModelCalibrationQualified);
+end
 for prefix=["Receiver","PhysicalMeasurement"]
     receipt=jsondecode(trial.(prefix+"ObservationArchiveReceiptJSON"));
     archived=sixgr.phy.waveform.CompletedSampleArchive.read(receipt);
@@ -357,6 +415,20 @@ csv=fullfile(runFolder,'independent_csirs_receiver.csv');
 writetable(trial,csv);
 persisted=readtable(csv,'TextType','string','VariableNamingRule','preserve', ...
     'Delimiter',',','ReadVariableNames',true,'NumHeaderLines',0);
+if portableArm
+    for name=["CQIModelID","CQIModelSource","CQIModelCalibrationQualified", ...
+            "RankSelectionEvidenceJSON","RankSelectionEvidenceSHA256","RankSelectionEvidenceStatus"]
+        assert(ismember(name,string(persisted.Properties.VariableNames)), ...
+            'test:PortableCSIPersistedMetadata','CSV omitted portable field %s.',name);
+        if name=="CQIModelCalibrationQualified"
+            assert(ismember(double(persisted.(name)),[0 1])&& ...
+                logical(persisted.(name))==trial.(name),'CSV changed calibration qualification.');
+        else
+            assert(isequaln(string(persisted.(name)),string(trial.(name))), ...
+                'test:PortableCSIPersistedMetadata','CSV changed portable field %s.',name);
+        end
+    end
+end
 for prefix=["Receiver","PhysicalMeasurement"]
     assert(persisted.(prefix+"TimingCorrection_samples")==trial.(prefix+"TimingCorrection_samples") && ...
         persisted.(prefix+"SynchronizationJSON")==trial.(prefix+"SynchronizationJSON") && ...
@@ -521,6 +593,11 @@ for item=reshape(items,1,[])
         'test:CSIDirectRowPlane','A direct receiver row has no physical owner binding.');
     before=state.SharedWaveformStream.Events.NextSampleIndex;
     [state,completedRow,reception,csi]=sixgr.truth.completeSharedCSIRSReception(state,item);
+    assert(completedRow.CSIRSReceivedEVMAvailable&&completedRow.CSIRSReceivedEVMSamplesCount>0&& ...
+        ~completedRow.CSIRSReceivedEVMRFConformanceQualified&& ...
+        ~completedRow.CSIRSReceivedEVMStandardizedAccuracyQualified, ...
+        'test:CanonicalCSIReceivedEVM','Canonical received aggregate EVM unavailable: %s', ...
+        completedRow.CSIRSReceivedEVMStatus);
     % Only the power-plane metadata may acquire original owner authority;
     % all actual reports, estimates and the immutable CSI state stay exact.
     assert(csi.MeasurementPowerReferencePlane==reception.CSIRSObservation.PowerReferencePlane);

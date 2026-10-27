@@ -48,6 +48,7 @@ classdef HARQEntity < handle
         UEProcs = {}                        % {NUE} each is struct array NumProcesses
         DeliveryLedger table = table()
         TerminalLedger table = table()
+        UEResetReceipts cell = {}
     end
 
     properties
@@ -142,6 +143,7 @@ classdef HARQEntity < handle
             obj.UEProcs = {};
             obj.DeliveryLedger = table();
             obj.TerminalLedger = table();
+            obj.UEResetReceipts = {};
             obj.Stats = struct('Tx',0,'Retx',0,'Ack',0,'Nack',0,'Dtx',0,'Drop',0, ...
                 'TimeoutDrop',0,'StaleFeedbackIgnored',0,'SoftBufferStore',0, ...
                 'SoftBufferClear',0,'FirstSuccessDelivery',0,'ScheduledUL',0,'ScheduledULDrop',0);
@@ -149,6 +151,56 @@ classdef HARQEntity < handle
 
         function tf = hasUE(obj, rnti)
             tf = any(obj.UEList == double(rnti));
+        end
+
+        function receipt = resetUE(obj,rnti,context)
+            % TS38.321 V18.8 5.12: scope the MAC reset to this identity.
+            % Internal generations are never rolled back with the wire NDI.
+            id='sixgr:mac:HARQResetAuthority';
+            validateattributes(rnti,{'numeric'},{'scalar','finite','integer','>=',1,'<=',65535});
+            required={'ResetSample','SampleRateHz','ClockEpoch','Reason','SourceEventID'};
+            assert(isstruct(context)&&isscalar(context)&&all(isfield(context,required)),id, ...
+                'Require the original per-UE reset event and clock.');
+            validateattributes(context.ResetSample,{'numeric'},{'scalar','finite','integer','nonnegative'});
+            validateattributes(context.SampleRateHz,{'numeric'},{'scalar','finite','positive'});
+            validateattributes(context.ClockEpoch,{'numeric'},{'scalar','finite','integer','nonnegative'});
+            assert(isstring(context.Reason)&&isscalar(context.Reason)&&~ismissing(context.Reason)&& ...
+                strlength(context.Reason)>0 && isstring(context.SourceEventID)&& ...
+                isscalar(context.SourceEventID)&&~ismissing(context.SourceEventID)&& ...
+                strlength(context.SourceEventID)>0,id,'Require explicit original reason/event identity.');
+            for k=1:numel(obj.UEResetReceipts)
+                prior=obj.UEResetReceipts{k};
+                if prior.RNTI==rnti && prior.Context.SourceEventID==context.SourceEventID
+                    assert(isequaln(prior.Context,context),id,'A reset event cannot be relabeled or retimed.');
+                    receipt=prior;return;
+                end
+            end
+            [ui,procs]=obj.getUE(double(rnti),true);
+            oldEpoch=[procs.NDIEpoch]; cleared=0; retired=0;
+            for pid=1:numel(procs)
+                p=procs(pid);
+                cleared=cleared+~isempty(fieldnames(p.SoftBuffer));
+                if p.TxCount>0
+                    obj.appendTerminalEvent(rnti,pid-1,p,p.LastTxSlot,NaN, ...
+                        "RESET","mac_reset_"+context.Reason);
+                    retired=retired+1;
+                end
+                next=obj.newProcTemplate();
+                next.NDI=false;
+                next.NDIEpoch=p.NDIEpoch+1;
+                next.FeedbackIdentityRequired=true;
+                procs(pid)=next;
+            end
+            obj.UEProcs{ui}=procs;
+            obj.Stats.SoftBufferClear=obj.Stats.SoftBufferClear+cleared;
+            receipt=struct('ContractVersion',"per_UE_HARQ_MAC_reset/v1", ...
+                'Direction',string(obj.Direction),'RNTI',double(rnti),'Context',context, ...
+                'PreviousProcessEpochs',oldEpoch,'NextProcessEpochs',[procs.NDIEpoch], ...
+                'WireNDI',false,'ProcessesReset',numel(procs), ...
+                'ActualTXProcessesRetired',retired,'SoftBuffersCleared',cleared, ...
+                'HistoricalDeliveryRowsRetained',height(obj.DeliveryLedger), ...
+                'ApplicationBytesDropped',0,'Scope',"one_RNTI_one_direction_MAC_state_only");
+            obj.UEResetReceipts{end+1,1}=receipt;
         end
 
         function tf = hasPendingRetx(obj, rnti, currentSlot)
@@ -382,6 +434,14 @@ classdef HARQEntity < handle
                 error('sixgr:HARQEntity:BadHarqId','Bad HarqID=%d for UE RNTI=%d.', harqId0, rnti);
             end
 
+            if procs(pid).FeedbackIdentityRequired
+                assert(procs(pid).Active && isstruct(grant) && isfield(grant,'HARQ') && ...
+                    isfield(grant.HARQ,'NDIEpoch') && isfield(grant.HARQ,'NDI') && ...
+                    isequal(grant.HARQ.NDIEpoch,procs(pid).NDIEpoch) && ...
+                    isequal(logical(grant.HARQ.NDI),procs(pid).NDI), ...
+                    'sixgr:mac:StaleHARQTransmissionAfterReset', ...
+                    'An old physical callback cannot revive a reset process or change its new generation.');
+            end
             priorTxCount = double(procs(pid).TxCount);
             priorTB = procs(pid).TB;
             if ~isa(tbBytes,'uint8')
@@ -545,6 +605,7 @@ classdef HARQEntity < handle
             ack = outcome == "ACK";
             sourceSlot = NaN;
             feedbackSlot = NaN;
+            ndiEpoch = NaN;
             if ~isempty(varargin)
                 if mod(numel(varargin),2) ~= 0
                     error('sixgr:HARQEntity:BadNV','Name-value inputs must come in pairs.');
@@ -558,6 +619,8 @@ classdef HARQEntity < handle
                             sourceSlot = double(val);
                         case 'feedbackslot'
                             feedbackSlot = double(val);
+                        case 'ndiepoch'
+                            ndiEpoch = double(val);
                     end
                 end
             end
@@ -573,6 +636,14 @@ classdef HARQEntity < handle
             end
 
             p = procs(pid);
+            if (p.FeedbackIdentityRequired && ...
+                    ~(isscalar(sourceSlot)&&isfinite(sourceSlot)&&sourceSlot==fix(sourceSlot)&& ...
+                      isscalar(feedbackSlot)&&isfinite(feedbackSlot)&&feedbackSlot>sourceSlot)) || ...
+                    (~isscalar(ndiEpoch) || (~isnan(ndiEpoch) && ...
+                    (~isfinite(ndiEpoch)||ndiEpoch~=p.NDIEpoch)))
+                obj.Stats.StaleFeedbackIgnored=obj.Stats.StaleFeedbackIgnored+1;
+                return;
+            end
             if ~logical(p.Active) && ~logical(p.AwaitingFeedback) && ...
                     ~logical(p.NeedsRetx) && double(p.TxCount) == 0
                 obj.Stats.StaleFeedbackIgnored = obj.Stats.StaleFeedbackIgnored + 1;
@@ -815,6 +886,12 @@ classdef HARQEntity < handle
                 ui = numel(obj.UEList);
             end
             procs = obj.UEProcs{ui};
+            if ~isfield(procs,'FeedbackIdentityRequired')
+                % Older saved owners predate scoped reset and therefore
+                % have no such reset event. Preserve their existing policy.
+                [procs.FeedbackIdentityRequired]=deal(false);
+                obj.UEProcs{ui}=procs;
+            end
         end
 
         function p = newProcTemplate(obj)
@@ -823,6 +900,7 @@ classdef HARQEntity < handle
             p.Active = false;
             p.NDI = false;
             p.NDIEpoch = 0;
+            p.FeedbackIdentityRequired = false;
             p.RVIdx = 1;
             p.RV = 0;
             p.TxCount = 0;
@@ -849,9 +927,11 @@ classdef HARQEntity < handle
             % Reset process to idle while keeping NDI state (so it toggles next time).
             ndi = p.NDI;
             ndiEpoch = p.NDIEpoch;
+            requireIdentity=p.FeedbackIdentityRequired;
             p = obj.newProcTemplate();
             p.NDI = ndi;
             p.NDIEpoch = ndiEpoch;
+            p.FeedbackIdentityRequired=requireIdentity;
         end
 
         function expireStaleProcesses(obj, rnti, currentSlot)

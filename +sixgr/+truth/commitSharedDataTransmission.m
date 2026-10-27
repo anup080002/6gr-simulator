@@ -44,6 +44,16 @@ slot0=prepared.ReceiverConfig.lls6g.runtime.AbsoluteSlotIndex0;
 validateattributes(slot0,{'numeric'},{'scalar','real','finite','integer','nonnegative'});
 grant.Slot=double(slot0)+1;
 grant.Frame=floor(double(slot0)/double(prepared.Tx.Carrier.SlotsPerFrame))+1;
+if prepared.Direction=="UL" && isfield(grant,'MACOwnerScope') && ...
+        ~sixgr.truth.GrantPreparation.grantIsRetransmission(grant)
+    grant.PHRAllocationReference=struct('NumPRB',numel(prepared.Tx.PUSCH.PRBSet), ...
+        'SubcarrierSpacing',double(prepared.Tx.Carrier.SubcarrierSpacing), ...
+        'SymbolAllocation',double(prepared.Tx.PUSCH.SymbolAllocation), ...
+        'MCSIndex',double(grant.MCSIndex),'MCSTable',string(grant.MCSTable), ...
+        'NumLayers',double(grant.NumLayers), ...
+        'PowerConfigurationSHA256',sixgr.l2.mac.MACHash.of(prepared.InputConfig.phy.pusch.powerControl), ...
+        'Source',"original_gNB_allocation_and_installed_power_configuration_not_UE_power_measurement");
+end
 [appliedWeights,appliedPatterns]=sixgr.truth.buildExecutedDataPrecoderEvidence(owner,prepared,item.UE);
 % A gNB expects feedback because it transmitted a scheduled DL assignment,
 % even if the UE later misses DCI. This is separate from UE feedback rows
@@ -61,10 +71,21 @@ end
 if prepared.Direction=="UL" && isfield(prepared.Tx,'UEHARQIsRetransmission')
     grant.ExecutedUEHARQIsRetransmission=prepared.Tx.UEHARQIsRetransmission;
 end
+sixgr.truth.sharedMACTransmissionTransaction('validate',state,grant,bits,item.UE, ...
+    prepared.Direction,identity,records(hit).FirstActiveSample,grant.Slot);
 nextState=sixgr.truth.CoupledTruthRuntime.commitGrantExecution(state,item.UE,prepared.Direction,grant);
 reference=localCSIReference(prepared,grant,owner.Physical.ConfigurationEpoch);
+sixgr.truth.sharedMACTransmissionTransaction('commit',state,grant,bits,item.UE, ...
+    prepared.Direction,identity,records(hit).FirstActiveSample,grant.Slot);
 entity.onTx(identity.RNTI,pid,uint8(bits(:)),grant,grant.Slot);
 state=nextState;
+if logical(sixgr.util.structGet(grant,'ProtocolPayloadSameWaveformTruth',false))
+    binding=state.ProtocolBridge.originalTransportApplicationBinding(grant.TransportBlockId);
+    if isequal(sixgr.util.structGet(binding,'ControlOnly',false),true)
+        state=sixgr.truth.recordMACControlTransport(state,binding,identity,"TX", ...
+            records(hit).FirstActiveSample,NaN,"original_control_MAC_actual_TX");
+    end
+end
 if ~isempty(expectation)
     state.SharedDLHARQExpectations=[expectations;{expectation}];
 end

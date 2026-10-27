@@ -968,3 +968,59 @@ def test_uci_decode_alone_does_not_prove_a_transmitted_block():
     assert result["csv_status"] == "unavailable_exact_reason"
     assert "transmission_evidence_unavailable=1" in result["note"]
     assert "metric_value" not in rows[0]
+
+@pytest.mark.parametrize('marker', ['', 'not_recorded_by_active_dl_pdsch_trials_runtime', 'not_applicable_for_active_ul_pusch_trials_runtime'])
+def test_physical_carrier_unavailable_opposite_plane_is_not_power(marker):
+    records = list(csv.DictReader(io.StringIO(data_carrier_power_payload().decode())))
+    records[0]['AllocationCarrierRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es'] = marker
+    result, rows = chart('PUSCH-window carrier RSSI timeline', {radio.TRIALS[1]: csv_records(records)})
+    assert result['csv_status'] == 'specialized_runtime_radio_measurement_dataset'
+    assert len(rows) == 2
+    records[0]['AllocationCarrierRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es'] = '[1,2]'
+    result, _ = chart('PUSCH-window carrier RSSI timeline', {radio.TRIALS[1]: csv_records(records)})
+    assert result['csv_status'] == 'unavailable_exact_reason'
+
+
+def test_isolated_srs_requires_retained_proof_projection_not_source_label():
+    records = list(csv.DictReader(io.StringIO(control_pairs('SRS').decode())))
+    for r in records:
+        r.update(MeasurementDomain='received_resource_elements', ReferencePlane='isolated_emitted_SRS_effective_port_response_on_recorded_RX_clock_CFO_before_noise_other_RX_RF',
+                 ReferenceSource='same_executed_isolated_emitted_SRS_received_pilot_grid',
+                 AlignmentSource='recorded_receiver_timing_and_frequency_clock_no_fit',
+                 PortRole='physical_RX_branch_not_equalized_layer', IsolatedComponentProved='true', OriginalPairRecordSHA256='a'*64)
+    name='SRS received-pilot EVM'; path=radio.CONTROL_EVM[name][1]
+    result, rows=chart(name,{path:csv_records(records)})
+    assert result['csv_status']=='specialized_runtime_radio_measurement_dataset'
+    assert rows[0]['isolated_component_proved']=='True'
+    for field,value in [('IsolatedComponentProved',''),('IsolatedComponentProved','false'),('OriginalPairRecordSHA256',''),('GainOrPhaseFitted','true')]:
+        changed=[dict(r,**{field:value}) for r in records]
+        result,_=chart(name,{path:csv_records(changed)})
+        assert result['csv_status']=='unavailable_exact_reason'
+
+@pytest.mark.parametrize('family', ['CSI', 'SSB'])
+def test_internal_element_power_retains_scope_and_requires_original_receipt(family):
+    import hashlib
+    row = next(csv.DictReader(io.StringIO((csi_power_payload() if family=='CSI' else ssb_power_payload()).decode())))
+    binding={'Available':True,'ReferencePlane':'internal_physical_receive_element_before_RX_front_end',
+             'RFReferenceQualified':False,'PowerUnitQualified':False,'StandardizedReferencePointQualified':False,
+             'HardwareConformanceVerified':False,'AccuracyQualified':False,'Layout':{'LayoutSHA256':'a'*64},
+             'IntervalReceipts':[{'ExecutionVerified':True,'OriginalSampleOrderingPreserved':True,'LayoutSHA256':'a'*64,
+                                  'ReceiptSHA256':'b'*64,'ElementInputSHA256':'c'*64,'RFInputSHA256':'c'*64}]}
+    if family=='CSI':
+        demod=json.dumps({'InputSHA256':'d'*64}); digest=hashlib.sha256(demod.encode()).hexdigest()
+        outer=json.dumps({'ReceiveElementBinding':binding,'OriginalInputSHA256':'d'*64,'OriginalDemodulationReceiptSHA256':digest})
+        row.update(PowerReferencePlane=binding['ReferencePlane'],MeasurementSource='received_port3000_linear_RSRP_and_native_RSSI_pre_front_end_grid',
+                   PhysicalMeasurementPlaneBindingJSON=outer,PhysicalMeasurementPlaneBindingSHA256=hashlib.sha256(outer.encode()).hexdigest(),
+                   PhysicalMeasurementDemodulationReceiptJSON=demod,PhysicalMeasurementDemodulationReceiptSHA256=digest)
+        name='CSI-RS RSSI timeline'; path='air_interface/csv/csi_rs_trials.csv'; proof='PhysicalMeasurementPlaneBindingJSON'
+    else:
+        row.update(PowerReferencePlane='actual_post_tx_rf_sss_epre_to_internal_physical_receive_element_before_RX_front_end',
+                   SSBReceiveElementBindingEvidenceJSON=json.dumps(binding))
+        name=radio.SSB_POWER_CHART; path='air_interface/csv/pbch_trials.csv'; proof='SSBReceiveElementBindingEvidenceJSON'
+    result, rows=chart(name,{path:csv_records([row])})
+    assert result['csv_status']=='specialized_runtime_radio_measurement_dataset'
+    assert all(r['standardized_reference_point_qualified']=='False' and r['rf_reference_qualified']=='False' for r in rows)
+    assert b'internal' in result['img_bytes']
+    row[proof]='{}'
+    rejected,_=chart(name,{path:csv_records([row])})
+    assert rejected['csv_status']=='unavailable_exact_reason'

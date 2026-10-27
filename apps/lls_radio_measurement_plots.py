@@ -426,9 +426,13 @@ def _control_evm_rows(m, name, run_id, path, samples, seen):
                 alignment != "frozen_transmitter_OFDM_clock_no_gain_phase_or_timing_fit" or
                 m._row_text(row, "PortRole") != "physical_TX_antenna_not_equalized_RX_stream"):
             return _unavailable(m, name, run_id, "Transmitter EVM requires actual pre/post-RF samples on the frozen TX clock, not a receiver estimate.", sources)
+        isolated_srs = (family == "SRS" and
+            reference_source == "same_executed_isolated_emitted_SRS_received_pilot_grid" and
+            m._row_text(row, "IsolatedComponentProved").strip().lower() in {"true", "1"} and
+            re.fullmatch(r"[0-9a-fA-F]{64}", m._row_text(row, "OriginalPairRecordSHA256")) is not None)
         if family in {"TRS", "SRS"} and (domain != expected_domain or
                 not m._row_text(row, "ReferencePlane") or
-                reference_source != "same_executed_desired_link_received_pilot_grid" or
+                (reference_source != "same_executed_desired_link_received_pilot_grid" and not isolated_srs) or
                 alignment != "recorded_receiver_timing_and_frequency_clock_no_fit" or
                 m._row_text(row, "PortRole") != "physical_RX_branch_not_equalized_layer" or
                 any(m._row_text(row, flag).strip().lower() in {"true", "1"}
@@ -447,6 +451,8 @@ def _control_evm_rows(m, name, run_id, path, samples, seen):
             "port_index": port, "evm_definition": definition, "alignment_source": alignment,
             "reference_source": reference_source, "measurement_domain": domain,
             "reference_plane": m._row_text(row, "ReferencePlane"),
+            "isolated_component_proved": bool(isolated_srs),
+            "original_pair_record_sha256": m._row_text(row, "OriginalPairRecordSHA256"),
             "standardized_modulation_evm_qualified": False,
             "amplitude_reference_treatment": "pre_TX_RF_amplitude_no_PA_backoff_or_gain_removal" if tx_domain else ("same_execution_desired_pilot_grid_no_gain_phase_fit" if family in {"TRS", "SRS"} else "retained_reference_and_receiver_equalization"),
             "measurement_claim": "raw_gain_inclusive_TX_pair_error_not_standardized_modulation_EVM" if tx_domain else ("received_pilot_grid_pair_error_not_equalized_or_RF_conformance" if family in {"TRS", "SRS"} else "receiver_paired_symbol_error_not_RF_conformance"),
@@ -1021,6 +1027,44 @@ def _relationships(m, name, existing, fetch, run_id):
         "Scheduled TB bitrate / delivered goodput (Mbit/s)" if name == "throughput vs SNR" else "Pilot-fit residual (dB)" if name == "CSI-RS pilot residual" else "Channel NMSE (linear ratio)" if linear_nmse_axis else "Channel NMSE (dB); declared reference plane" if name == "NMSE vs SNR / SINR" else "Observed block error (0/1)", note, list(paths), extra_summary=limit_summary)
 
 
+def _operand_present(m, row, field):
+    token = m._row_text(row, field).strip().lower()
+    return bool(token and token not in {"nan", "<missing>", "not_applicable"} and
+                not token.startswith(("not_recorded_by_active_", "not_emitted_by_active_", "not_applicable_for_active_")))
+
+
+def _internal_element_binding(m, row, csi=False):
+    """Validate retained internal column execution without promoting RF authority."""
+    field = "PhysicalMeasurementPlaneBindingJSON" if csi else "SSBReceiveElementBindingEvidenceJSON"
+    token = m._row_text(row, field)
+    evidence = json.loads(token)
+    if csi:
+        if hashlib.sha256(token.encode()).hexdigest() != m._row_text(row, "PhysicalMeasurementPlaneBindingSHA256"):
+            raise ValueError("CSI internal measurement binding digest mismatch.")
+        demod = m._row_text(row, "PhysicalMeasurementDemodulationReceiptJSON")
+        digest = hashlib.sha256(demod.encode()).hexdigest()
+        if (digest != evidence.get("OriginalDemodulationReceiptSHA256") or
+                digest != m._row_text(row, "PhysicalMeasurementDemodulationReceiptSHA256") or
+                json.loads(demod).get("InputSHA256") != evidence.get("OriginalInputSHA256")):
+            raise ValueError("CSI internal measurement lacks its original demodulation binding.")
+        evidence = evidence.get("ReceiveElementBinding", {})
+    if (evidence.get("Available") is not True or
+            evidence.get("ReferencePlane") != "internal_physical_receive_element_before_RX_front_end" or
+            any(evidence.get(k) is not False for k in ("RFReferenceQualified", "PowerUnitQualified",
+                "StandardizedReferencePointQualified", "HardwareConformanceVerified", "AccuracyQualified"))):
+        raise ValueError("Internal element observations require explicit limited qualification.")
+    layout = evidence.get("Layout", {})
+    receipts = evidence.get("IntervalReceipts", [])
+    if isinstance(receipts, dict):
+        receipts = [receipts]
+    if (not re.fullmatch(r"[0-9a-fA-F]{64}", str(layout.get("LayoutSHA256", ""))) or not receipts or
+            any(r.get("ExecutionVerified") is not True or r.get("OriginalSampleOrderingPreserved") is not True or
+                r.get("LayoutSHA256") != layout["LayoutSHA256"] or
+                not re.fullmatch(r"[0-9a-fA-F]{64}", str(r.get("ReceiptSHA256", ""))) or
+                r.get("ElementInputSHA256") != r.get("RFInputSHA256") for r in receipts)):
+        raise ValueError("Internal element measurements lack original layout/execution receipts.")
+
+
 def _csi_physical_power(m, name, existing, fetch, run_id):
     sources = CHART_SOURCES[name]
     path, samples = m._first_available_rows(existing, fetch, sources)
@@ -1095,11 +1139,15 @@ def _csi_physical_power(m, name, existing, fetch, run_id):
                     m._row_text(row, "MeasurementSource") != "actual_csirs_re_measurement_relative_to_unit_occupied_re_es"):
                 raise ValueError("Normalized CSI-RS power requires its actual unit-RE measurement source and plane.")
         else:
+            internal = plane == "internal_physical_receive_element_before_RX_front_end"
+            if internal:
+                _internal_element_binding(m, row, csi=True)
             if plane not in {"receiver_antenna_connector_pre_composite_front_end",
-                             "receiver_antenna_connector_no_composite_front_end"}:
+                             "receiver_antenna_connector_no_composite_front_end", "internal_physical_receive_element_before_RX_front_end"}:
                 raise ValueError("CSI-RS physical power requires an explicit antenna-connector measurement plane.")
-            if (m._row_text(row, "MeasurementSource") !=
-                    "nrCSIRSMeasurements_runtime_pre_front_end_antenna_plane_grid"):
+            if m._row_text(row, "MeasurementSource") not in {
+                    "nrCSIRSMeasurements_runtime_pre_front_end_antenna_plane_grid",
+                    "received_port3000_linear_RSRP_and_native_RSSI_pre_front_end_grid"}:
                 raise ValueError("CSI-RS physical power has no supported actual measurement source.")
         try:
             resources = json.loads(m._row_text(row, "MeasurementPhysicalResourcesJSON"))
@@ -1168,8 +1216,17 @@ def _csi_physical_power(m, name, existing, fetch, run_id):
     if normalized and any(row.get("power_reference_plane") != "normalized_fixed_esn0_unit_occupied_re_es" for row in rows):
         raise ValueError("Absolute and normalized power cannot share one numeric measurement axis.")
     display_units = units.replace("(dBm)", "(dB re unit occupied-RE Es)") if normalized else units
+    internal = any(r.get("power_reference_plane") == "internal_physical_receive_element_before_RX_front_end" for r in rows)
+    if internal and any(r.get("power_reference_plane") != "internal_physical_receive_element_before_RX_front_end" for r in rows):
+        raise ValueError("Internal element and connector powers require separate plots.")
+    if internal:
+        display_units += " at internal pre-RX element plane (simulated units)"
+        for r in rows:
+            r.update(standardized_reference_point_qualified=False, hardware_qualified=False, rf_reference_qualified=False, power_unit_qualified=False, accuracy_qualified=False)
     note = ("Actual CSI-RS waveform measurements in the fixed-Es/N0 normalized power plane, not dBm. All retained resource records and receive branches are plotted; legacy selected-resource-only rows are explicitly scoped in CSV."
             if normalized else "Actual CSI-RS antenna-plane measurements; all retained receive branches and resources. RSSI uses only the recorded bandwidth and CSI-RS symbol window.")
+    if internal:
+        note = "Original internal physical receive-element measurements before RX front end; simulated dBm operands, not an antenna-connector reference or standardized/hardware qualification. All original resource and branch values retained."
     by_resource = name == "CSI-RS RSRP by resource"
     for record in rows:
         resource_ids = _numbers(str(record["resource_id"]), integers=True)
@@ -1270,8 +1327,11 @@ def _ssb_window_power(m, name, existing, fetch, run_id):
             continue
         identity = _identity(m, row, path, index)
         plane = m._row_text(row, "PowerReferencePlane")
+        internal = plane == "actual_post_tx_rf_sss_epre_to_internal_physical_receive_element_before_RX_front_end"
+        if internal:
+            _internal_element_binding(m, row)
         if plane not in {"receiver_antenna_connector_pre_composite_front_end",
-                         "receiver_antenna_connector_no_composite_front_end"}:
+                         "receiver_antenna_connector_no_composite_front_end", "actual_post_tx_rf_sss_epre_to_internal_physical_receive_element_before_RX_front_end"}:
             if plane != "actual_post_tx_rf_sss_epre_to_actual_pre_rx_rf_connector_sss_rsrp":
                 raise ValueError("SSB-window RSSI requires the actual antenna-connector plane, not AGC-normalized power.")
         try:
@@ -1331,8 +1391,17 @@ def _ssb_window_power(m, name, existing, fetch, run_id):
     if normalized and any(row.get("power_reference_plane") != "normalized_fixed_esn0_unit_occupied_re_es" for row in rows):
         raise ValueError("Absolute and normalized SSB power cannot share one numeric measurement axis.")
     units = "SSB-window RSSI (dB re unit occupied-RE Es)" if normalized else "SSB-window RSSI (dBm)"
+    internal = any(r.get("power_reference_plane") == "actual_post_tx_rf_sss_epre_to_internal_physical_receive_element_before_RX_front_end" for r in rows)
+    if internal and any(r.get("power_reference_plane") != "actual_post_tx_rf_sss_epre_to_internal_physical_receive_element_before_RX_front_end" for r in rows):
+        raise ValueError("Internal element and connector SSB powers require separate plots.")
+    if internal:
+        units += " at internal pre-RX element plane (simulated units)"
+        for r in rows:
+            r.update(standardized_reference_point_qualified=False, hardware_qualified=False, rf_reference_qualified=False, power_unit_qualified=False, accuracy_qualified=False)
     note = ("Actual received SSB-window power per branch in the fixed-Es/N0 normalized plane. It is deliberately not labeled dBm; it is not a full-carrier/SMTC RSSI report."
             if normalized else "Actual 20-PRB/four-symbol SSB received power, including observed noise/interference, per receive branch. Not full carrier/SMTC RSSI or a UE carrier-RSSI report.")
+    if internal:
+        note = "Original internal physical receive-element SSB-window power before RX front end; simulated dBm operands, not an antenna-connector reference or standardized/hardware qualification. Four received symbols, 20 PRBs per branch."
     return _finish(m, name, run_id, rows, series, "Burst source slot", units, note, sources)
 
 
@@ -1370,13 +1439,13 @@ def _data_carrier_power(m, name, existing, fetch, run_id):
                 raise ValueError("Do not combine absolute dBm and normalized carrier power on one axis.")
             if normalized:
                 if ("RSSIPerAntenna_dBm" in e or "SymbolPowerPerAntenna_W" in e or
-                        m._row_text(row, "AllocationCarrierRSSIPerReceiveAntenna_dBm")):
+                        _operand_present(m, row, "AllocationCarrierRSSIPerReceiveAntenna_dBm")):
                     raise ValueError("Normalized carrier power must not claim absolute watts/dBm.")
                 rssi_field, power_field = "RSSIPerAntenna_dB_re_UnitOccupiedRE_Es", "SymbolPowerPerAntenna_UnitOccupiedRE_Es"
                 mirror_field = "AllocationCarrierRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es"
             else:
                 if ("RSSIPerAntenna_dB_re_UnitOccupiedRE_Es" in e or "SymbolPowerPerAntenna_UnitOccupiedRE_Es" in e or
-                        m._row_text(row, "AllocationCarrierRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es")):
+                        _operand_present(m, row, "AllocationCarrierRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es")):
                     raise ValueError("Physical carrier power must not mix normalized power operands.")
                 rssi_field, power_field = "RSSIPerAntenna_dBm", "SymbolPowerPerAntenna_W"
                 mirror_field = "AllocationCarrierRSSIPerReceiveAntenna_dBm"

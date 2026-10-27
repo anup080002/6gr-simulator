@@ -82,12 +82,14 @@ def test_invalid_present_timing_offset_rejected(offset):
         codec.bounded_object(s)
 
 
-def test_unrepresented_ul_carrier_is_rejected_not_replaced_with_dl():
+def test_distinct_ul_carrier_is_retained_not_replaced_with_dl():
     value = codec.bounded_object(semantic())
     ul = value["message"][1][1]["servingCellConfigCommon"]["uplinkConfigCommon"]
     ul["frequencyInfoUL"]["scs-SpecificCarrierList"][0]["carrierBandwidth"] = 100
-    with pytest.raises(ValueError, match="losslessly"):
-        codec.semantic_from_object(value)
+    received=codec.semantic_from_object(value)
+    assert received['ul_carrier_bandwidth_rb']==100
+    assert received['carrier_bandwidth_rb']!=100
+    assert codec.bounded_object(received)==value
 
 
 def test_independent_generator_non_octet_bit_strings():

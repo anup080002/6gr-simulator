@@ -6,11 +6,13 @@ classdef PDCCHControlRuntime
     % completeShared consumes the original completed item exactly once.
     % logSink is the caller's existing runtime logger, not a policy hook.
     methods (Static)
-        function [r,receivedAssignment,channelEvidence] = receiveTrial(preparedPDCCH,observation,grantContext,snr_dB,k,nVar,replay,scoring)
+        function [r,receivedAssignment,channelEvidence,powerClock] = receiveTrial(preparedPDCCH,observation,grantContext,snr_dB,k,nVar,replay,scoring,powerContext)
         % Receive-completion reducer for a retained control preparation. This stage
         % never regenerates TX, propagates fading, or executes an RF chain.
         cfgTrial = preparedPDCCH.ReceiverConfig;
         if nargin<8, scoring=struct(); end
+        if nargin<9, powerContext=struct(); end
+        powerClock=struct();
         receivedAssignment=struct();
         channelEvidence=table();
         tx = preparedPDCCH.Tx;
@@ -61,6 +63,10 @@ classdef PDCCHControlRuntime
             rx, tx, dciFormatSeed, grantContext, cfgTrial);
         if rxInfo.ReceiverConfiguredMonitoring && rx.Ok
             receivedAssignment=sixgr.phy.pdcch.materializeConnectedDCI(rx,rxInfo,cfgTrial);
+            if ~isempty(fieldnames(powerContext)) && string(receivedAssignment.Direction)=="DL"
+                powerClock=sixgr.truth.buildReceivedPUCCHTPCClock(preparedPDCCH,observation, ...
+                    rx,rxInfo,receivedAssignment,powerContext.ObservationID,powerContext.ClockEpoch);
+            end
         end
         aggLevel = sixgr.truth.PDCCHControlRuntime.pdcchScalar(tx.PDCCH, "AggregationLevel", NaN);
         usedCCEs = aggLevel;
@@ -505,8 +511,14 @@ classdef PDCCHControlRuntime
         [post,~,~,replay,receiver]=sixgr.truth.sharedObservationEvidence(item.Planes,p);
         [reference,referenceEvidence]=sixgr.truth.sharedLinkScoringObservation(item.Planes,p,c.DesiredReferencePlane);
         scoring=struct('Observation',reference,'Evidence',referenceEvidence);
-        [raw,receivedAssignment,channelEvidence]=sixgr.truth.PDCCHControlRuntime.receiveTrial(p,receiver,c.Grant,c.SNR,1, ...
-            double(sixgr.util.structGet(replay,'SampleNoiseVariance',NaN)),replay,scoring);
+        powerContext=struct();
+        if string(sixgr.util.structGet(p.ReceiverConfig, ...
+                'validation.pucch_resources.power_control.closed_loop_mode','configured'))=="received_dci"
+            powerContext=struct('ObservationID',string(item.ID), ...
+                'ClockEpoch',state.SharedWaveformStream.Physical.ConfigurationEpoch);
+        end
+        [raw,receivedAssignment,channelEvidence,powerClock]=sixgr.truth.PDCCHControlRuntime.receiveTrial(p,receiver,c.Grant,c.SNR,1, ...
+            double(sixgr.util.structGet(replay,'SampleNoiseVariance',NaN)),replay,scoring,powerContext);
         if ~isempty(channelEvidence)
             n=height(channelEvidence);
             channelEvidence.AbsoluteSlot0=repmat(double(c.Slot-1),n,1);
@@ -531,6 +543,7 @@ classdef PDCCHControlRuntime
         trial=sixgr.truth.bindSharedRFExecutionEvidence(trial,item.Planes,true);
         [trial,grant]=sixgr.truth.PDCCHControlRuntime.annotateGrant(trial,c.Grant,c.Config,c.Direction);
         [state,grant,allowed]=sixgr.truth.CoupledTruthRuntime.applyPDCCHGrantTrial(state,grant,c.Direction,trial);
+        state=sixgr.truth.ingestSharedReceivedPUCCHTPC(state,item,receivedAssignment,powerClock,allowed);
         [trial,grant]=sixgr.truth.PDCCHControlRuntime.annotateGrant(trial,grant,c.Config,c.Direction);
         trial.ObservationStartSample=post.StartSample;
         trial.ObservationEndSampleExclusive=post.EndSampleExclusive;
@@ -652,6 +665,7 @@ classdef PDCCHControlRuntime
                 sixgr.util.structGet(state,'ScheduledDLDAILedger',struct()),cfgU,grant);
             grant=sixgr.truth.prepareScheduledULDAI(candidateDAILedger,cfgU,grant);
             cfgControl = sixgr.truth.PDCCHControlRuntime.resolvePDCCHTrialConfig(cfgU, pdcchSNR_dB, 1, 1, grant);
+            state=sixgr.truth.installSharedReceivedPUCCHPower(state,cfgControl,ueIdx);
             [controlCarrier, ~] = sixgr.phy.grid.makeCarrier(cfgControl);
             [state.PDCCHResourceLedger, occupiedControlREs] = ...
                 sixgr.truth.PDCCHSlotResourceLedger.lookup( ...

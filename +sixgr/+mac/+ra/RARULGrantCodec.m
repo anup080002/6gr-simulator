@@ -3,7 +3,7 @@ classdef RARULGrantCodec
     % FDRA is type-1 RIV, not a private PRB-start/length packing. The
     % TDRA resolves default-A from the received index and UL numerology.
     % This codec does not certify the caller's absolute Msg3 schedule or
-    % duplex availability. A configured common TDRA list is not implemented.
+    % duplex availability. Original common-list rows precede default A.
     methods (Static)
         function grant = encode(raCfg, mcsIndex)
             if nargin < 2, mcsIndex = raCfg.Msg3PUSCH.MCS; end
@@ -14,7 +14,7 @@ classdef RARULGrantCodec
             allocation = localTDRA(c, c.TDRAIndex);
             if s.SymbolStart ~= allocation.StartSymbol || s.NumSymbols ~= allocation.NumSymbols
                 error("sixgr:mac:ra:RARTDRAAllocationMismatch", ...
-                    "Configured Msg3 symbols must match the signalled default-A row %d: [%d %d].", ...
+                    "Configured Msg3 symbols must match the signalled TDRA row %d: [%d %d].", ...
                     allocation.RowIndex, allocation.StartSymbol, allocation.NumSymbols);
             end
             if s.NLayers ~= 1 || s.RV ~= 0
@@ -109,11 +109,12 @@ c = struct("NSizeGrid", localInteger(ra.NSizeGrid, 1, 275, "NSizeGrid"), ...
     "SubcarrierSpacingKHz", ra.CarrierSCSkHz, "CyclicPrefix", ra.CarrierCyclicPrefix, ...
     "TransformPrecoding", logical(ra.Msg3PUSCH.TransformPrecoding), ...
     "EnablePTRS", logical(ra.Msg3PUSCH.EnablePTRS));
+c.CommonPUSCH=sixgr.util.structGet(ra,'PUSCHCommonContext',struct());
 end
 
 function allocation = localTDRA(c, index)
-allocation = sixgr.phy.frame.TimeDomainResourceAllocationCatalog.resolvePUSCHDefaultA( ...
-    index, c.SubcarrierSpacingKHz, c.CyclicPrefix);
+allocation = sixgr.mac.ra.resolveRARTimeDomainAllocation( ...
+    index, c.SubcarrierSpacingKHz, c.CyclicPrefix,c.CommonPUSCH);
 end
 
 function value = localInteger(value, lo, hi, name)

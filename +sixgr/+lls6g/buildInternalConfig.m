@@ -16,6 +16,10 @@ s=sixgr.lls6g.config.CSIReportPeriodAuthority.apply(s);
 catalog = sixgr.lls6g.config.loadParameterCatalog("scenario");
 
 cfg = sixgr.config.defaultConfig();
+cfg.measurements.srsPathPower=sixgr.lls6g.config.resolveSRSPathPowerPolicy();
+if isfield(s,'kpi_spec') && isfield(s.kpi_spec,'srs_path_power')
+    cfg.measurements.srsPathPower=sixgr.lls6g.config.resolveSRSPathPowerPolicy(s.kpi_spec.srs_path_power);
+end
 
 % Only an authored/resolved policy can enable this private post-reception
 % study. Directly built legacy scenario structs with no block remain off.
@@ -863,6 +867,14 @@ cfg = sixgr.util.structSet(cfg, "phy.numerology.mu", declaredMu);
 cfg = sixgr.util.structSet(cfg, "phy.numerology.scs_kHz", double(scsKHz));
 cfg = sixgr.util.structSet(cfg, "phy.numerology.slotsPerFrame", double(slotsPerFrame));
 cfg = sixgr.util.structSet(cfg, "phy.numerology.slotDuration_ms", double(slotDuration_ms));
+ulMACPolicy=sixgr.lls6g.config.resolveULMACControlPolicy( ...
+    sixgr.util.structGet(cfg,"protocol.mac.uplink_control",struct()),double(slotDuration_ms)/1000);
+if ulMACPolicy.Enabled
+    assert(logical(sixgr.util.structGet(cfg,"protocol.enabled",false)) && ...
+        logical(sixgr.util.structGet(cfg,"protocol.strict",false)), ...
+        'sixgr:mac:StrictProtocolRequired','Received UL MAC requires original strict protocol payloads.');
+end
+cfg=sixgr.util.structSet(cfg,"phy.mac.uplinkControl",ulMACPolicy);
 cfg = sixgr.util.structSet(cfg, "phy.numerology.symbolsPerSlot", ...
     symbolsPerSlot);
 cfg = sixgr.util.structSet(cfg, "frame_timing.slots_per_frame", double(slotsPerFrame));
@@ -2905,6 +2917,17 @@ if isfinite(outageRecoveryMaxGapSlots)
         "phy.linkAdaptation.outageRecoveryMaxGapSlots", ...
         double(outageRecoveryMaxGapSlots));
 end
+% Optional authored override; complete legacy scenarios retain the explicit
+% core catalog default rather than gaining a newly required YAML field.
+initialSpatialConfirmationReports=localGetNested(s, ...
+    "link_adaptation.initial_spatial_confirmation_reports", ...
+    cfg.phy.linkAdaptation.initialSpatialConfirmationReports);
+assert(isnumeric(initialSpatialConfirmationReports) && isscalar(initialSpatialConfirmationReports) && ...
+    isreal(initialSpatialConfirmationReports) && isfinite(initialSpatialConfirmationReports) && ...
+    initialSpatialConfirmationReports>=1 && initialSpatialConfirmationReports==fix(initialSpatialConfirmationReports), ...
+    'sixgr:lls6g:config:InvalidInitialSpatialConfirmationCount', ...
+    'link_adaptation.initial_spatial_confirmation_reports must be a positive integer.');
+cfg.phy.linkAdaptation.initialSpatialConfirmationReports=double(initialSpatialConfirmationReports);
 rankIncreaseConfirmationReports = localNumericScalarOrNaN(localGetNested(s, ...
     "link_adaptation.rank_increase_confirmation_reports", NaN));
 if isfinite(rankIncreaseConfirmationReports)
@@ -3049,6 +3072,8 @@ initialAccessSection = localGetNested(s, "initial_access", struct());
 if builtin("isstruct", initialAccessSection) && ~isempty(fieldnames(initialAccessSection))
     cfg = sixgr.util.structSet(cfg, "initial_access", initialAccessSection);
 end
+cfg.lls6g.NRAccessPolicy=sixgr.lls6g.config.resolveNRAccessPolicy( ...
+    localGetNested(initialAccessSection,"rrc",struct()));
 cfg = sixgr.util.structSet(cfg, "lls6g.impairments", s.impairments);
 cfg = sixgr.util.structSet(cfg, "lls6g.ai_ml", s.ai_ml);
 cfg = sixgr.util.structSet(cfg, "lls6g.energy_efficiency", s.energy_efficiency);
@@ -3191,6 +3216,7 @@ p=section.power_control;
 assert(isstruct(p)&&isscalar(p), ...
     'sixgr:lls6g:config:InvalidPUCCHPowerValue', ...
     'pucch_resources.power_control must be a scalar structure.');
+p=sixgr.phy.pucch.validateReceivedPowerPolicy(p);
 physical=logical(cfg.phy.pucch.enable)&& ...
     logical(sixgr.util.structGet(section,'enabled',false))&& ...
     ~sixgr.rf.isNormalizedFixedSNRPowerReference(cfg);
@@ -3207,7 +3233,11 @@ assert((ischar(declared)&&(isrow(declared)||isempty(declared)))|| ...
     'sixgr:lls6g:config:InvalidPUCCHPowerValue', ...
     'pucch_resources.power_control.tpc_command_source must be scalar text.');
 p.configured_tpc_command_source=declared;
-p.tpc_command_source='configured_static_pucch_adjustment';
+if p.closed_loop_mode=="received_dci"
+    p.tpc_command_source='received_owner_required_not_yet_applied';
+else
+    p.tpc_command_source='configured_static_pucch_adjustment';
+end
 p.received_tpc_state_applied=false;
 p.physical_power_terms_applied=physical;
 section.power_control=p;
@@ -3497,6 +3527,7 @@ if logical(cfg.phy.srs.enable)
     end
 end
 cfg = localBindCSISelectionQualityDomain(cfg, s);
+cfg = sixgr.lls6g.config.bindCSISelectionBackend(cfg,s);
 end
 
 function cfg = localBindCSISelectionQualityDomain(cfg, s)

@@ -12,6 +12,18 @@ assert(isequaln(state.PacketDeliveryLedgerTable(:, ...
     {'OfferedBits','ScheduledBits','RemainingBits','DeliveredBits','DeliverySuccess'})), ...
     'Attempt reconciliation must not invent completed application bytes.');
 assert(isequaln(sixgr.truth.reconcilePacketHARQAttempts(state),state));
+% A new HARQ TB carrying RLC retransmission is an additional actual attempt,
+% not a second application ownership range or another count per fragment.
+recovered=before;recovered.RLCRecoveryTransportLedgerTable=before.PacketSDULedgerTable(1,:);
+recovered.RLCRecoveryTransportLedgerTable.TransportBlockId(:)="rlc-recovery-tb";
+row=before.HARQTimelineTable(1,:);row.TBId(:)="rlc-recovery-tb";
+row.PHYGrantContextId(:)="rlc-recovery-attempt";
+recovered.HARQTimelineTable=[before.HARQTimelineTable;row];
+recovered=sixgr.truth.reconcilePacketHARQAttempts(recovered);
+assert(recovered.PacketDeliveryLedgerTable.HARQAttemptCount(1)==3 && ...
+    recovered.RLCRecoveryTransportLedgerTable.HARQAttemptCount==1 && ...
+    isequal(recovered.PacketSDULedgerTable.HARQAttemptCount,[2;2;1]) && ...
+    isequaln(recovered.PacketDeliveryLedgerTable.DeliveredBits,before.PacketDeliveryLedgerTable.DeliveredBits));
 ul=before; ul.PacketDeliveryLedgerTable.Direction(:)="UL";
 ul.PacketSDULedgerTable.Direction(:)="UL"; ul.HARQTimelineTable.Direction(:)="UL";
 ul=sixgr.truth.reconcilePacketHARQAttempts(ul);

@@ -5,6 +5,7 @@ cfg = sixgr.config.defaultConfig();
 cfg.frequency.band_name = 'n77';
 cfg.phy.carrier.NSizeGrid = 25;
 cfg.phy.carrier.SubcarrierSpacing = 15;
+cfg.phy.ssb.scs_kHz = 15;
 % The actual broadcast common reference cannot exceed either received BWP
 % SCS. Declare a coherent 15-kHz TX pattern instead of inherited ref30.
 cfg.phy.duplex.tddCommon=struct('ReferenceSubcarrierSpacingKHz',15, ...
@@ -19,6 +20,8 @@ received = sixgr.rrc.asn1.decodeSIB1UPER(sixgr.rrc.asn1.encodeSIB1UPER(tree));
 assert(installed.random_access.initial_ul_bwp_size == 25);
 assert(installed.random_access.initial_ul_bwp_start == 0);
 assert(installed.UECommonCellConfiguration.InitialULBWP.SubcarrierSpacing_kHz == 15);
+assert(isequal(installed.UECommonCellConfiguration.UETimersAndConstants, ...
+    received.message.c1.systemInformationBlockType1.ue_TimersAndConstants));
 assert(installed.UECommonCellConfiguration.RACHConfigCommon.PRACHSubcarrierSpacing_kHz == 30);
 assert(~installed.UECommonCellConfiguration.PDCCHConfigCommonPresent);
 assert(isempty(fieldnames(installed.UECommonCellConfiguration.PUSCHConfigCommon)));

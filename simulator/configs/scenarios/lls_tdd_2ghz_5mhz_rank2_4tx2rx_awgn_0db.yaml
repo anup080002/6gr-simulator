@@ -17,7 +17,7 @@ meta:
 # This prevents the SIB1 decoder from deriving an FDD PRACH table while the
 # physical frame executes TDD.
 frequency:
-  band_name: n39_1900mhz_5mhz_tdd
+  band_name: n39
   center_frequency_hz: 1900000000
   bandwidth_hz: 5000000
   bandwidth_options_hz: [5000000]

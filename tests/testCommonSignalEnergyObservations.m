@@ -49,6 +49,55 @@ assert(nnz(C.RecordedReceiverOutcome==0)==2 && ...
     'Access outcomes/allocations must never manufacture application payload credit.');
 assert(all(startsWith(C.Domain,["RA_","SI_"])) && all(C.ObservationSampleRateHz==1e6));
 assert(all(C.Frame==1) && all(C.SlotIndexBase==1));
+numericC=C; numericA=A; numericU=U;
+% Native RA producers retain logical flags and CRCs. Their CSV form is
+% numeric 1/0; both must preserve failed-decode energy without new credit.
+native=raw;
+for name=["RuntimeStageWaveformUsed","SelfLoopWaveformUsed"]
+    native.RAEvidenceTables.ra_runtime_stage_waveforms.(name)=logical(S.(name));
+end
+for name=["Msg2DCICrcPass","Msg2PDSCHCrcPass","Msg3PUSCHCrcPass", ...
+        "Msg4PDCCHCrcPass","Msg4PDSCHCrcPass","RRCSetupCompleteCRC"]
+    native.PRACH.(name)=logical(P.(name));
+end
+for name=["SIB1DCICrcPass","SIB1DLSCHCrcPass"]
+    native.PBCH.(name)=logical(B.(name));
+end
+[C,A,U]=sixgr.truth.buildCommonSignalEnergyObservations(native,cfg,R,hash,source);
+assert(isequaln(C,numericC)&&isequaln(A,numericA)&&isequaln(U,numericU));
+assert(nnz(C.RecordedReceiverOutcome==0)==2 && nnz(C.RecordedReceiverOutcome==1)==6);
+roundtripRoot=string(tempname); mkdir(roundtripRoot);
+roundtripCleanup=onCleanup(@()cleanupFixture(roundtripRoot)); %#ok<NASGU>
+csvRaw=native;
+for name=["PRACH","PBCH"]
+    path=fullfile(roundtripRoot,name+".csv");
+    sixgr.util.csvWriteTable(path,native.(name));
+    csvRaw.(name)=sixgr.util.csvReadTable(path,'TextType','string');
+end
+path=fullfile(roundtripRoot,'stages.csv');
+sixgr.util.csvWriteTable(path,native.RAEvidenceTables.ra_runtime_stage_waveforms);
+csvRaw.RAEvidenceTables.ra_runtime_stage_waveforms=sixgr.util.csvReadTable(path,'TextType','string');
+[C,A,U]=sixgr.truth.buildCommonSignalEnergyObservations(csvRaw,cfg,R,hash,source);
+assert(isequaln(C,numericC)&&isequaln(A,numericA)&&isequaln(U,numericU));
+for fault=["prepared","self_loop","missing_runtime","malformed_text","nonbinary","vector"]
+    bad=native;
+    switch fault
+        case "prepared"
+            bad.RAEvidenceTables.ra_runtime_stage_waveforms.WaveformSource(1)="prepared_not_received";
+        case "self_loop"
+            bad.RAEvidenceTables.ra_runtime_stage_waveforms.SelfLoopWaveformUsed(1)=true;
+        case "missing_runtime"
+            bad.RAEvidenceTables.ra_runtime_stage_waveforms.RuntimeStageWaveformUsed(1)=false;
+        case "malformed_text"
+            bad.RAEvidenceTables.ra_runtime_stage_waveforms.RuntimeStageWaveformUsed=repmat("true",height(S),1);
+        case "nonbinary"
+            bad.RAEvidenceTables.ra_runtime_stage_waveforms.RuntimeStageWaveformUsed=2*ones(height(S),1);
+        case "vector"
+            bad.RAEvidenceTables.ra_runtime_stage_waveforms.RuntimeStageWaveformUsed=true(height(S),2);
+    end
+    reject(@()sixgr.truth.buildCommonSignalEnergyObservations(bad,cfg,R,hash,source), ...
+        'sixgr:truth:UnexecutedCommonSignalObservation');
+end
 missing=raw; missing.RAEvidenceTables=struct();
 [C,~,U]=sixgr.truth.buildCommonSignalEnergyObservations(missing,cfg,R,hash,source);
 assert(height(C)==2 && height(U)==6);
@@ -111,6 +160,7 @@ assert(out.ResourceLoadAudit.CacheHit && height(out.CommonSignalObservations)==2
     ~out.ResourceCoverageComplete && ~out.CompleteRunEnergyAvailable);
 assert(isfile(out.CommonSignalObservationsCSV) && height(out.UnboundResourceTable)==6);
 ok=true;
+fprintf('COMMON_SIGNAL_TYPED_PROVENANCE_PASS positive_representations=3 authority_negatives=6 original_regressions=retained\n');
 end
 
 function R=resource(channel,id,slot,symbol,ue,scope,source)

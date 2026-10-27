@@ -1,0 +1,83 @@
+function result=measureSRSDetectedPathPower(response,coordinates,noisePower,policy,binding)
+% Same-capture receiver path diagnostic: coherent mean first, magnitude next.
+% Response is the actual pre-RX per-pilot estimated received amplitude in
+% sqrt(W), after known reference phase removal. No model taps are accepted.
+result=struct('Available',false,'Status',"disabled",'Paths',struct([]), ...
+    'IndependentAccuracyQualified',false,'HardwareQualified',false, ...
+    'StandardizedReferencePointQualified',false,'PowerUnitQualified',false, ...
+    'SameCaptureDetectionAndAveraging',true,'SelectionBiasPresent',true, ...
+    'Definition',"abs_mean_complex_received_response_at_detected_delay_squared", ...
+    'Estimator',"same_capture_pilot_frequency_coherent_delay_search", ...
+    'NoiseThresholdRole',"estimated_variance_over_pilot_count_proxy_not_calibrated_false_alarm_probability");
+if nargin==0, return; end
+if ~policy.Enabled, return; end
+id='sixgr:srs:DetectedPathPowerInput';
+assert(isnumeric(response)&&ismatrix(response)&&~isempty(response)&&all(isfinite(response),'all')&& ...
+    isnumeric(coordinates)&&size(coordinates,1)==size(response,1)&&size(coordinates,2)==3&& ...
+    all(isfinite(coordinates),'all')&&all(coordinates>=0,'all')&&all(coordinates==fix(coordinates),'all')&& ...
+    size(unique(coordinates,'rows'),1)==size(coordinates,1),id,'Retain unique original subcarrier/symbol/port samples.');
+assert(isnumeric(noisePower)&&isequal(size(noisePower),size(response))&& ...
+    all(isfinite(noisePower),'all')&&all(noisePower>=0,'all'),id,'Retain finite per-pilot receiver noise variance in W.');
+assert(string(binding.ReferencePlane)=="internal_physical_receive_element_before_RX_front_end"&& ...
+    string(binding.ResponseUnit)=="sqrt_W"&&isfinite(binding.SubcarrierSpacingHz)&&binding.SubcarrierSpacingHz>0&& ...
+    ~isempty(regexp(char(binding.ObservationSHA256),'^[a-f0-9]{64}$','once'))&& ...
+    ~isempty(regexp(char(binding.ReceivedGridSHA256),'^[a-f0-9]{64}$','once'))&& ...
+    isequal(binding.TruthChannelConsumed,false)&&isequal(binding.PostRFEstimateConsumed,false), ...
+    id,'Original internal pre-RX scale/capture identity is required, not model or post-RF response.');
+delay=(policy.DelayMin_us:policy.DelayStep_us:policy.DelayMax_us).'*1e-6;
+assert(numel(delay)>=3&&numel(delay)<=100000,id,'Bound the configured delay search grid.');
+ports=unique(coordinates(:,3)); paths=struct([]); support=cell(numel(ports),1);
+for portOrdinal=1:numel(ports)
+    at=coordinates(:,3)==ports(portOrdinal); freq=double(coordinates(at,1))*binding.SubcarrierSpacingHz;
+    uniqueFreq=unique(coordinates(at,1)); delta=diff(uniqueFreq);
+    assert(numel(uniqueFreq)>=2&&all(delta>0),id,'A path needs at least two distinct observed frequencies.');
+    spacing=delta(1); for q=2:numel(delta), spacing=gcd(spacing,delta(q)); end
+    ambiguity=1/(spacing*binding.SubcarrierSpacingHz);
+    assert(delay(end)-delay(1)<ambiguity,id,'Declared delay window spans an unresolved comb ambiguity.');
+    aperture=(max(freq)-min(freq))+binding.SubcarrierSpacingHz;
+    resolution=1/aperture;
+    steering=exp(1i*2*pi*(delay*freq.'));
+    coherent=steering*double(response(at,:))/nnz(at);
+    power=abs(coherent).^2;
+    noiseFloor=mean(double(noisePower(at,:)),1)/nnz(at);
+    support{portOrdinal}=struct('PortIndex0',ports(portOrdinal),'PilotCount',nnz(at), ...
+        'FrequencyApertureHz',aperture,'NominalDelayResolution_s',resolution, ...
+        'CombAmbiguityPeriod_s',ambiguity,'EstimatedCoherentNoiseFloor_W',noiseFloor);
+    for branch=1:size(response,2)
+        v=power(:,branch); threshold=max(max(v)*10^(policy.PeakRelativeThreshold_dB/10), ...
+            noiseFloor(branch)*10^(policy.NoiseThreshold_dB/10));
+        candidates=find(v>threshold&v>0&v>=[-Inf;v(1:end-1)]&v>=[v(2:end);-Inf]);
+        [~,order]=sort(v(candidates),'descend'); accepted=[];
+        separation=max(policy.MinimumPathSeparation_us*1e-6,resolution);
+        % Preserve the first detected-in-time peak even when a later one
+        % is stronger and the configured output population is capped.
+        if ~isempty(candidates), accepted=candidates(1); end
+        for c=reshape(candidates(order),1,[])
+            if numel(accepted)>=policy.MaximumPaths, break; end
+            if isempty(accepted)||all(abs(delay(c)-delay(accepted))>=separation)
+                accepted(end+1)=c; %#ok<AGROW>
+            end
+        end
+        accepted=sort(accepted);
+        for ordinal=1:numel(accepted)
+            c=accepted(ordinal); amplitude=coherent(c,branch);
+            row=struct('PortIndex0',ports(portOrdinal),'ReceiveElementIndex0',branch-1, ...
+                'DetectedPathOrdinal1',ordinal,'FirstDetectedPath',ordinal==1, ...
+                'DelayRelativeToOriginalFFT_s',delay(c),'CoherentResponseReal_sqrtW',real(amplitude), ...
+                'CoherentResponseImag_sqrtW',imag(amplitude),'PathPower_W',v(c), ...
+                'PathPower_dBm',10*log10(v(c))+30,'DetectionThreshold_W',threshold, ...
+                'AtSearchBoundary',c==1||c==numel(delay),'PilotAverageCount',nnz(at));
+            if isempty(paths), paths=row; else, paths(end+1)=row; end %#ok<AGROW>
+        end
+    end
+end
+result.Available=true; result.Status="measured_same_capture_detected_path_response_not_accuracy_qualified";
+if isempty(paths), result.Status="observed_no_path_above_declared_threshold"; end
+result.Paths=paths; result.Support=support; result.Policy=policy; result.Binding=binding;
+result.ResponseSHA256=sixgr.phy.waveform.WaveformHash.runtimeArray(response);
+result.CoordinatesSHA256=sixgr.phy.waveform.WaveformHash.runtimeArray(coordinates);
+result.NoisePowerSHA256=sixgr.phy.waveform.WaveformHash.runtimeArray(noisePower);
+result.OriginalPilotOperands=struct('Subcarrier0Symbol0Port0',coordinates, ...
+    'ResponseReal_sqrtW',real(response),'ResponseImag_sqrtW',imag(response), ...
+    'EstimatedNoisePower_W',noisePower);
+end

@@ -178,6 +178,9 @@ state.ControlGating.PBCHRequired=false; state.ControlGating.PRACHRequired=false;
 state.ControlGating.TRSRequired=false; state.ControlGating.SRSRequired=true;
 state.ControlGating.SRSMaxAgeSlots=5;
 row=declaredSRS(4,45); row.TPMIEstimate=4;
+strictSRS=sixgr.phy.srs.buildSRSConfigFromScenario(cfg);
+assert(isscalar(strictSRS.ResourceIds));
+row.ReferenceSignalId=strictSRS.ResourceIds; % Declared configured resource, not inferred scheduled SRI.
 row.WidebandCQI=NaN;
 row.PredictedPUSCHMinimumLayerSINR_dB=NaN;
 row.PredictedPUSCHPostEqSINRValueStatus="unavailable_power_plane_calibrated_pusch_prediction";
@@ -186,18 +189,17 @@ row.PredictedPUSCHPostEqSINRAnchor_dB=NaN;
 row.SRSBandwidthFraction=48/51;
 row.SRSBandwidthCoverageStatus="within_configured_carrier_edge_tolerance";
 originalRow=row;
-% Distinct earlier SRS observations may confirm spatial rank even when
-% absolute PUSCH quality is unavailable. Replays never add confirmation.
+% The first received spatial point uses the explicit initial policy; do not
+% invent earlier soundings to satisfy steady-state rank hysteresis.
+assert(cfg.phy.linkAdaptation.initialSpatialConfirmationReports==1);
 confirmations=double(cfg.phy.linkAdaptation.rankIncreaseConfirmationReports);
-for k=1:confirmations-1
-    earlier=row; earlier.Slot=45-5*(confirmations-k);
-    state.CurrentSlot=earlier.Slot+1; state.CurrentCanonicalSlot=state.CurrentSlot;
-    state=sixgr.truth.CoupledTruthRuntime.applySRSTrial(state,1,earlier);
-    beforeReplay=state.LatestULFeedback;
-    beforeAMC=state.ULLinkAdaptationState;
-    state=sixgr.truth.CoupledTruthRuntime.applySRSTrial(state,1,earlier);
-    assert(isequaln(beforeReplay,state.LatestULFeedback) && ...
-        isequaln(beforeAMC,state.ULLinkAdaptationState),'Replay cannot confirm spatial rank.');
+for controlSlot=[41 45]
+    beforeSRS=state; beforeSRS.CurrentSlot=controlSlot;
+    beforeSRS.CurrentCanonicalSlot=controlSlot;
+    [~,blockedBeforeSRS]=sixgr.truth.CoupledTruthRuntime.buildSchedulerUEStateRuntime( ...
+        beforeSRS,cfg,1,'UL',1);
+    assert(~blockedBeforeSRS.Active && ~blockedBeforeSRS.AcceptedSRSCausalUsable, ...
+        'No pre-sounding scheduling authority may be inferred from bootstrap rank.');
 end
 state.CurrentSlot=46; state.CurrentCanonicalSlot=46;
 state=sixgr.truth.CoupledTruthRuntime.applySRSTrial(state,1,row);
@@ -214,6 +216,19 @@ assert(ue.Active && ue.AcceptedSRSCausalUsable && ue.RI==4 && ue.TPMI==4 && ...
     string(ue.MCSIndexAuthority)=="bootstrap_cqi_conservative_lab_default", ...
     'Quality bootstrap must preserve original accepted spatial identity/clocks, not claim measured CQI.');
 assert(isequaln(plan.LatestULFeedback(1),stored),'Consumer must not rewrite the received record.');
+% Real normal planner, declared access/traffic and original slot-only SRS
+% boundary. This proves control/data timing, not decoded DCI or PUSCH RX.
+[~,firstGrants,firstPlanning]=sixgr.truth.planFutureULGrants( ...
+    state,cfg,{cfg},repmat(struct(),0,1),1,cfg.run.totalSlots);
+assert(firstPlanning.ControlSlot==46 && firstPlanning.DataSlot==50 && ...
+    firstPlanning.K2==4 && firstPlanning.ScheduleAttempted && ~isempty(firstGrants), ...
+    'sixgr:test:FirstSRSNotPlannedAt50', ...
+    'First accepted SRS45 must reach control46/data50: %s',string(firstPlanning.Status));
+for gi=1:numel(firstGrants)
+    assert(isequaln(firstGrants(gi).AcceptedSRSSpatialDecision,A) && ...
+        firstGrants(gi).PHYGrant.PrecodingState.TPMI==A.PMI && ...
+        firstGrants(gi).PHYGrant.CodingLayout.NumLayers==A.RI);
+end
 assert(state.ULLinkAdaptationState{1}.SchedulerAcceptedRank==4 && ...
     state.ULLinkAdaptationState{1}.SchedulerAcceptedPMI==4 && ...
     ~state.ULLinkAdaptationState{1}.Initialized, ...

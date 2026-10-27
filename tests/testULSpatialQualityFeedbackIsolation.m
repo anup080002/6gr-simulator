@@ -9,6 +9,7 @@ setup6GRSimToolkit('Verbose',false);
 source = sixgr.lls6g.config.loadScenarioConfig( ...
     'simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_gate.yaml');
 cfg = sixgr.lls6g.buildInternalConfig(source,tempname);
+cfg.phy.linkAdaptation.initialSpatialConfirmationReports=2; % Explicit two-report initial fixture.
 assert(cfg.phy.pusch.numLayers == 1 && cfg.phy.pusch.maxLayers == 4 && ...
     cfg.phy.linkAdaptation.rankIncreaseConfirmationReports == 2);
 cases = {@qualityBetweenSoundings, @qualityAfterRankTransition, ...
@@ -114,6 +115,7 @@ requireSpatialState(state,1,4,1);
 end
 
 function candidateQualityDoesNotPolluteCurrentRank(cfg)
+cfg.phy.linkAdaptation.initialSpatialConfirmationReports=1; % First measured point; steady increases remain two-report.
 state = declaredState(cfg);
 [state,current] = deliver(state,report("SRS",40,41,1,3));
 assert(~current.SchedulerSpatialDecisionDeferred && ...
@@ -166,6 +168,7 @@ assert(state.ULLinkAdaptationState{1}.SchedulerAcceptedRank == 4 && ...
 end
 
 function sameRankPrecoderQualityIsolation(cfg)
+cfg.phy.linkAdaptation.initialSpatialConfirmationReports=1; % First measured point; steady increases remain two-report.
 % Equal rank is not sufficient: quality belongs to the executed TPMI too.
 % Check the declared pair against the native four-port NR codebook, without
 % claiming that these delivery-boundary fixtures are waveform measurements.
@@ -227,6 +230,7 @@ assert(out.SchedulerSpatialDecisionDeferred && ...
 end
 
 function publicQualityPreservesSpatialAge(cfg)
+cfg.phy.linkAdaptation.initialSpatialConfirmationReports=1; % First measured point; steady increases remain two-report.
 state=initializedRuntime(cfg);
 state=deliverSRSThroughProducer(state,1,45,46);
 state.CurrentSlot=50;
@@ -248,6 +252,7 @@ assert(latest.Valid && latest.RI==1 && latest.PMI==0 && latest.SourceSlot==50 &&
 end
 
 function publicQualityDoesNotRenewSpatialAdmission(cfg)
+cfg.phy.linkAdaptation.initialSpatialConfirmationReports=1; % First measured point; steady increases remain two-report.
 state=initializedRuntime(cfg);
 state=deliverSRSThroughProducer(state,1,45,46);
 state.CurrentSlot=50;
@@ -277,6 +282,7 @@ assert(ue.FeedbackSourceSlot==50 && ue.FeedbackAgeSlots==1 && ...
 end
 
 function publicAcceptedQualityDoesNotRenewSpatialAdmission(cfg)
+cfg.phy.linkAdaptation.initialSpatialConfirmationReports=1; % First measured point; steady increases remain two-report.
 % Full public SRS publisher with declared component receiver inputs, not IQ.
 % Its accepted identity is produced normally, never installed by the test.
 state=initializedRuntime(cfg);

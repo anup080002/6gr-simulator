@@ -16,6 +16,7 @@
     "modulation_candidate_tag": "baseline_benchmark", "high_order_modulation_stress_enabled": false, "qam4096_candidate_enabled": false
   },
   "link_adaptation": {
+    "initial_spatial_confirmation_reports": 1,
     "mcs_transition": {"enabled": false, "max_up_step": 1, "max_down_step": 2, "increase_ack_count": 2},
     "fixed_or_amc": "amc", "domain": "cqi", "cqi_table": "table1", "outer_loop_flag": true, "inner_loop_flag": true, "cqi_source": "csi_feedback",
     "dmrs_based_tracking_flag": false, "csi_rs_based_tracking_flag": true, "delta_cqi_policy": "none", "delta_mcs_policy": "baseline",
@@ -89,6 +90,12 @@
     "per_snr_curve_points": [-10, 0, 10], "target_bler_points": [0.1, 0.01], "target_latency_points": [1000], "target_energy_points": [1],
     "aggregation_rules": "mean", "confidence_interval_policy": "95pct", "percentile_policy": "p50_p90_p99", "comparison_policy": "baseline_delta",
     "baseline_diff_policy": "absolute_and_relative",
+    "srs_path_power": {
+      "enabled": false, "delay_min_us": -1, "delay_max_us": 5,
+      "delay_step_us": 0.05, "peak_relative_threshold_db": -15,
+      "noise_threshold_db": 6, "minimum_path_separation_us": 0.1,
+      "maximum_paths": 8, "classification": "IMPLEMENTATION_POLICY"
+    },
     "csi_selection_quality": {
       "enabled": false,
       "objective": "mean_support_sum_log2_one_plus_linear_mmse_sinr",

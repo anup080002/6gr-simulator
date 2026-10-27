@@ -34,6 +34,19 @@ classdef PAPRMeasurement
                     'VariableNames',{'OversamplingFactor','PAPR_dB','ReferenceDomain','PayloadID', ...
                     'PortIndex','PeakPower_InputAmplitudeSquared','MeanPower_InputAmplitudeSquared', ...
                     'MeasuredSampleCount','InputSampleCount','MeasurementStatus','OversamplingDefinition'});
+                % Raw cubic-envelope statistic from these same samples.
+                % Normalize before cubing to avoid amplitude-scale overflow.
+                % This is not a calibrated NR power-backoff or WCDMA CM.
+                normalizedPower=power./average.';
+                sixthMoment=mean(normalizedPower.^3,1).';
+                chunks{i}.NormalizedEnvelopeSixthMoment=sixthMoment;
+                chunks{i}.RawCubicEnvelope_dB=10*log10(sixthMoment);
+                chunks{i}.CubicMetricDefinition=repmat( ...
+                    "10log10_mean_abs_x_over_rms_x_to_the_sixth",ports,1);
+                chunks{i}.CalibratedCubicMetricAvailable=false(ports,1);
+                chunks{i}.RFConformanceQualified=false(ports,1);
+                chunks{i}.InputWaveformSHA256=repmat(string( ...
+                    sixgr.phy.waveform.WaveformHash.numeric(samples)),ports,1);
             end
             rows=vertcat(chunks{:});
         end

@@ -1,0 +1,21 @@
+# Explicit bounded component; all parameters resolved before initialization.
+inherits:
+  - ../scenarios/lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep.yaml
+  - ../protocol/bounded_preconfigured_drb_ul_mac.yaml
+meta:
+  scenario_id: lls_n40_shared_rlc_status_recovery
+  description: Original received CSI/TRS/TCI and shared reverse STATUS; declared connected TAG and one missing receiver event.
+run_control:
+  total_slots: 80
+  total_time_ms: 40
+  measurement_slots: 80
+  measurement_time_ms: 40
+random_access:
+  num_slots: 80
+  num_subframes: 40
+canonical_control:
+  protocol_stack:
+    rlc:
+      t_reassembly_ms: 5
+      t_status_prohibit_ms: 0
+      t_poll_retransmit_ms: 45

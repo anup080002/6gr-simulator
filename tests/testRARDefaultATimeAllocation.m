@@ -63,8 +63,19 @@ bad = ra; bad.Msg3PUSCH.NumSymbols = 14;
 localThrows(@() sixgr.mac.ra.buildRARULGrant(bad),"sixgr:mac:ra:RARTDRAAllocationMismatch");
 badCfg = cfg;
 badCfg.UECommonCellConfiguration.PUSCHConfigCommon.pusch_TimeDomainAllocationList = ...
-    struct("k2",1,"mappingType","typeB","startSymbolAndLength",128);
-localThrows(@() sixgr.mac.ra.RAConfig(badCfg),"sixgr:mac:ra:UnsupportedRARCommonTDRAList");
+    struct("k2",1,"mappingType","typeB","startSymbolAndLength",81);
+localThrows(@() sixgr.mac.ra.RAConfig(badCfg),"sixgr:mac:ra:RARCommonPUSCHAuthority");
+% A populated list does not itself establish received authority. A fully
+% bound configured common list can be inspected, but this physical branch
+% still explicitly supports only Type-A/S0 common-list allocations.
+configured=cfg;
+sliv=sixgr.phy.frame.ResourceAllocationValidator.encodeSLIV(2,10,14);
+assert(sliv==81);
+configured.initial_access.sib1.pusch_config_common.pusch_TimeDomainAllocationList= ...
+    struct("k2",1,"mappingType","typeB","startSymbolAndLength",sliv);
+common=sixgr.mac.ra.resolveRARCommonPUSCHContext(configured);
+localThrows(@()sixgr.mac.ra.resolveRARTimeDomainAllocation(0,30,"normal",common), ...
+    "sixgr:mac:ra:UnsupportedRARCommonMapping");
 ok = true;
 fprintf('PASS testRARDefaultATimeAllocation: all default-A rows, Msg3 delta and mapping-B coded waveform.\n');
 end

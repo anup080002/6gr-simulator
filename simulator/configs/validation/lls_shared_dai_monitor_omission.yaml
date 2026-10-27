@@ -1,0 +1,10 @@
+inherits:
+  - ../scenarios/lls_tdd_pusch_independent_harq_csi_fixture.yaml
+meta:
+  scenario_id: lls_shared_dai_monitor_omission
+  description: Actual shared two-assignment HARQ and CSI with declared UE monitor omission; not RF miss probability
+  research_class: optional_research_experiment
+tdd_timing:
+  dl_harq_feedback_k1: [4, 3]
+pucch_resources:
+  dl_data_to_ul_ack: [4, 3]

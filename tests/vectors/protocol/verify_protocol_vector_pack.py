@@ -26,6 +26,12 @@ for x in rows(HERE/'protocol_rlc_um_header_vectors.csv'):
 for x in rows(HERE/'protocol_rlc_am_header_vectors.csv'):
  if truth(x['ExpectedValid']) and len(bytes.fromhex(x['HeaderHex']))!=int(x['HeaderBytes']):fail.append('am_len:'+x['CaseID'])
  if truth(x['ExpectedValid']) and (int(x['HeaderHex'][:2],16)&0x80)==0:fail.append('am_dc:'+x['CaseID'])
+ if truth(x['ExpectedValid']) and int(x['SNBits'])==18:
+  # TS 38.322 V18.2.0 Fig6.2.2.4-2/-4, literal network bit order.
+  bits=f"{int(x['D_C']):01b}{int(x['Poll']):01b}{int(x['SI']):02b}00{int(x['SN']):018b}"
+  expected=int(bits,2).to_bytes(3,'big')
+  if int(x['SI']) in (2,3):expected+=int(x['SO']).to_bytes(2,'big')
+  if bytes.fromhex(x['HeaderHex'])!=expected:fail.append('am18_wire:'+x['CaseID'])
 # STATUS lengths byte aligned and feature fields consistent.
 for x in rows(HERE/'protocol_rlc_status_vectors.csv'):
  if int(x['ExpectedBits'])%8 or int(x['ExpectedBytes'])*8!=int(x['ExpectedBits']):fail.append('status_len:'+x['CaseID'])

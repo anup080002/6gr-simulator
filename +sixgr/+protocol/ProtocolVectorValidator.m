@@ -251,8 +251,11 @@ classdef ProtocolVectorValidator
                 for sn = arrivals
                     state.receive(sn);
                 end
-                actualDelivered = join(string(state.Delivered), "|");
-                actualBuffered = join(string(state.Buffered), "|");
+                % These legacy columns contain SN projections. Runtime
+                % state retains full COUNT across wrap for security.
+                modulus = 2^state.SNBits;
+                actualDelivered = join(string(mod(state.Delivered,modulus)), "|");
+                actualBuffered = join(string(mod(state.Buffered,modulus)), "|");
                 if ismissing(actualDelivered), actualDelivered = ""; end
                 if ismissing(actualBuffered), actualBuffered = ""; end
                 mismatch = mismatch + double( ...
@@ -260,7 +263,7 @@ classdef ProtocolVectorValidator
                     actualBuffered ~= rows.BufferedSNs(index) || ...
                     state.DuplicateCount ~= ...
                     str2double(rows.DuplicateCount(index)) || ...
-                    state.RX_DELIV ~= str2double(rows.RX_DELIV(index)));
+                    mod(state.RX_DELIV,modulus) ~= str2double(rows.RX_DELIV(index)));
             end
             maxError = mismatch > 0;
         end

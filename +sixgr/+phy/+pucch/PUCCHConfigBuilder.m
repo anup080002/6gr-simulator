@@ -55,7 +55,8 @@ classdef PUCCHConfigBuilder
             planned=sixgr.phy.pucch.PUCCHConfigBuilder.planCombined(cfg,ueData,harq,part1,part2,frame);
             out=sixgr.phy.pucch.PUCCHConfigBuilder.materialize(cfg,planned);
         end
-        function out=materialize(cfg,planned)
+        function out=materialize(cfg,planned,receivedPowerBinding)
+            if nargin<3, receivedPowerBinding=[]; end
             assert(isstruct(planned) && isfield(planned,'Plan') && ...
                 isa(planned.Plan,'sixgr.phy.pucch.PUCCHResourcePlan') && ...
                 isfield(planned,'Report') && isa(planned.Report,'sixgr.phy.pucch.UCIReport'), ...
@@ -71,6 +72,30 @@ classdef PUCCHConfigBuilder
             % Current causal power evidence is mandatory here, not in planning.
             power=localPower(section,cfg,planned.Plan.Resource);
             spatial=localSpatial(section);
+            deltaMode=string(sixgr.util.structGet(section,'power_control.delta_tf_mode','configured'));
+            assert(any(deltaMode==["configured","ts_38_213_payload_resource"]), ...
+                'sixgr:phy:pucch:InvalidPowerControlState','Declare the format/payload power policy.');
+            if deltaMode=="ts_38_213_payload_resource" && ...
+                    ~sixgr.rf.isNormalizedFixedSNRPowerReference(cfg)
+                carrier=sixgr.phy.grid.makeCarrier(cfg);
+                [delta,evidence]=sixgr.phy.pucch.resolvePUCCHDeltaTF(carrier,planned);
+                data=power.Data; data.ConfiguredDeltaTFdB=data.DeltaTFdB;
+                data.DeltaTFdB=delta; data.DeltaTFEvidence=evidence;
+                power=sixgr.phy.pucch.PUCCHPowerControlState(data);
+            end
+            mode=string(sixgr.util.structGet(section,'power_control.closed_loop_mode','configured'));
+            assert(isscalar(mode) && any(mode==["configured","received_dci"]), ...
+                'sixgr:phy:pucch:InvalidPowerControlState','Explicit configured or received_dci power mode required.');
+            if mode=="received_dci"
+                assert(isstruct(receivedPowerBinding) && isscalar(receivedPowerBinding) && ...
+                    all(isfield(receivedPowerBinding,{'Owner','Proposal'})), ...
+                    'sixgr:truth:ReceivedPUCCHPowerBinding','Received mode cannot fall back to configured g.');
+                power=sixgr.truth.bindReceivedPUCCHPowerState(power,spatial,planned, ...
+                    receivedPowerBinding.Owner,receivedPowerBinding.Proposal);
+            else
+                assert(isempty(receivedPowerBinding),'sixgr:truth:ReceivedPUCCHPowerBinding', ...
+                    'Do not silently apply received power in configured-only mode.');
+            end
             ueData.RRCContext=rrc;
             ueData.PowerControlState=power;
             ueData.SpatialRelationState=spatial;

@@ -8,6 +8,9 @@ if ~isempty(T)
     T=localBind(T,cfg,'ConfigHash',"meta.configHash");
 end
 [carrier,native,ssb]=sixgr.truth.splitREAllocationDomains(T);
+% Exact frequency/time union is independent of the existing PRB-symbol
+% energy projection. Collapse mixed port domains; never add reservations.
+occupiedUnion=sixgr.truth.buildObservedRETimeFrequencyUnion(carrier);
 carrierPaths=[string(fullfile(layout.ComponentCSVDirs.frame_grid,'observed_re_allocation.csv')), ...
     string(fullfile(layout.ReportCSVDir,'live_re_allocation_snapshot.csv'))];
 nativePaths=[string(fullfile(layout.ComponentCSVDirs.frame_grid,'observed_prach_native_allocation.csv')), ...
@@ -17,6 +20,9 @@ localWrite(native,nativePaths);
 ssbPaths=[string(fullfile(layout.ComponentCSVDirs.frame_grid,'observed_ssb_native_allocation.csv')), ...
     string(fullfile(layout.ReportCSVDir,'live_ssb_native_allocation_snapshot.csv'))];
 localWrite(ssb,ssbPaths);
+unionPaths=[string(fullfile(layout.ComponentCSVDirs.frame_grid,'observed_re_time_frequency_union.csv')), ...
+    string(fullfile(layout.ReportCSVDir,'live_re_time_frequency_union.csv'))];
+localWrite(occupiedUnion,unionPaths);
 end
 
 function T=localBind(T,cfg,name,paths)

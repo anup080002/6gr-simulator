@@ -11,12 +11,11 @@ classdef BSR_PHR < handle
 % It follows TS 38.321 high-level structure:
 %  - Short BSR: fixed size, includes 3-bit LCG ID and 5-bit Buffer Size index
 %  - Long BSR: variable size, includes LCG bitmap and 8-bit Buffer Size indices
-%  - PHR: 2 octets with 6-bit PH plus flags (simplified quantization)
+%  - PHR: two octets, release-pinned PH/PCMAX intervals and P flag
 %
-% IMPORTANT: Exact dB mapping for PH/PCMAX indices is defined in TS 38.133.
-% For simulation coherence we use a common 1 dB quantization mapping:
-%   PH_index = clamp(round(PH_dB) + 23, 0, 63)
-% This matches the typical LTE/NR representation range [-23..40] dB.
+% PHRMappingR18 owns TS 38.133 V18.8.0 quantization. Single-entry wire
+% layout follows TS 38.321 V18.8.0 Figure 6.1.3.8-1 with MPE/DPC absent.
+% Decoded scalar values are bin midpoints, not original measured powers.
 %
 % Keep this file ASCII-only.
 
@@ -115,7 +114,7 @@ classdef BSR_PHR < handle
             %
             % Inputs:
             %   ph_dB      : power headroom in dB (Pmax - Ptx), Type1
-            %   pcmax_dBm  : nominal max UE tx power used (approx)
+            %   pcmax_dBm  : applicable maximum used to calculate this PH
             %
             % Name-Value:
             %   'PowerBackoff' : logical (P field). default false.
@@ -124,10 +123,9 @@ classdef BSR_PHR < handle
             ip.parse(varargin{:});
             opt = ip.Results;
 
+            payload = sixgr.l2.mac.BSR_PHR.encodeSingleEntryPHR(ph_dB, pcmax_dBm, opt.PowerBackoff);
             obj.LastPH_dB = double(ph_dB);
             obj.LastPCMAX_dBm = double(pcmax_dBm);
-
-            payload = sixgr.l2.mac.BSR_PHR.encodeSingleEntryPHR(ph_dB, pcmax_dBm, opt.PowerBackoff);
             ce = struct('LCID',57,'Payload',payload,'IsFixed',true,'Name','PHR_SingleEntry'); % LCID 57
         end
     end
@@ -274,43 +272,41 @@ classdef BSR_PHR < handle
         end
 
         function payload = encodeSingleEntryPHR(ph_dB, pcmax_dBm, powerBackoff)
-            % Single Entry PHR MAC CE (2 octets) per TS 38.321 Figure 6.1.3.8-1.
-            %
-            % We encode:
-            %  - PH: 6 bits (index 0..63), approx mapping [-23..40] dB.
-            %  - P : 1 bit (power backoff flag)
-            %  - PCMAX,f,c: 6 bits (index 0..63), approximate mapping to dBm
-            %  - Remaining bits: set to 0 (R bits / MPE not modelled here)
+            % TS 38.321 V18.8.0 Figure 6.1.3.8-1: P,R,PH / R,R,PCMAX.
+            % Supported subset: MPE/DPC absent. P is supplied by the
+            % applicable power-management owner, not inferred here.
             phIdx = sixgr.l2.mac.BSR_PHR.quantizePH(ph_dB);
             pcIdx = sixgr.l2.mac.BSR_PHR.quantizePCMAX(pcmax_dBm);
-            P = uint8(powerBackoff ~= 0);
-
-            % Octet1: [R(1)=0 | PH(6) | P(1)]
-            oct1 = bitshift(uint8(phIdx),1) + uint8(P);
-
-            % Octet2: [R(1)=0 | PCMAX(6) | R(1)=0] (we ignore MPE)
-            oct2 = bitshift(uint8(pcIdx),1);
-
-            payload = uint8([oct1; oct2]);
+            assert((islogical(powerBackoff) || isnumeric(powerBackoff)) && ...
+                isreal(powerBackoff) && isscalar(powerBackoff) && ...
+                isfinite(powerBackoff) && any(powerBackoff==[0 1]), ...
+                'sixgr:mac:InvalidPHRPowerBackoff','P must be an explicit binary flag.');
+            payload = uint8([double(powerBackoff)*128+phIdx; pcIdx]);
         end
 
-        function [ph_dB_est, pcmax_dBm_est, P] = decodeSingleEntryPHR(payload)
-            b = uint8(payload(:));
-            if numel(b) < 2
-                ph_dB_est = NaN;
-                pcmax_dBm_est = NaN;
-                P = false;
-                return;
-            end
-            oct1 = b(1);
-            oct2 = b(2);
-
-            P = logical(bitand(oct1,1));
-            phIdx = double(bitshift(oct1,-1));
-            pcIdx = double(bitshift(oct2,-1));
-
+        function [ph_dB_est, pcmax_dBm_est, P, report] = decodeSingleEntryPHR(payload)
+            % Received powers are intervals. Legacy scalar outputs are bin
+            % midpoints, with NaN for open bins, not exact measured powers.
+            assert(isnumeric(payload) && isreal(payload) && isvector(payload) && ...
+                numel(payload)==2 && all(isfinite(payload(:))) && ...
+                all(payload(:)==fix(payload(:))) && all(payload(:)>=0 & payload(:)<=255), ...
+                'sixgr:mac:InvalidPHROctets','Single-entry PHR requires exactly two integer octets.');
+            b=uint8(payload(:));
+            assert(bitand(b(1),uint8(64))==0 && bitand(b(2),uint8(192))==0, ...
+                'sixgr:mac:UnsupportedPHRFields', ...
+                'Reserved bits must be zero; MPE/DPC requires its own configured codec.');
+            P=logical(bitand(b(1),uint8(128)));
+            phIdx=double(bitand(b(1),uint8(63)));
+            pcIdx=double(bitand(b(2),uint8(63)));
             ph_dB_est = sixgr.l2.mac.BSR_PHR.dequantizePH(phIdx);
             pcmax_dBm_est = sixgr.l2.mac.BSR_PHR.dequantizePCMAX(pcIdx);
+            [phLower,phUpper]=sixgr.l2.mac.PHRMappingR18.phRange(phIdx);
+            [pcLower,pcUpper]=sixgr.l2.mac.PHRMappingR18.pcmaxRange(pcIdx);
+            report=struct('PHIndex',phIdx,'PCMAXIndex',pcIdx,'PowerBackoff',P, ...
+                'PHRange_dB',[phLower phUpper],'PCMAXRange_dBm',[pcLower pcUpper], ...
+                'RangeConvention',"lower_inclusive_upper_exclusive", ...
+                'ScalarValueRole',"bin_midpoint_open_bin_unavailable_not_exact_received_power", ...
+                'MPEOrDPCReportingSupported',false);
         end
 
         function idx = bufferSizeIndex5bit(bufferBytes)
@@ -336,31 +332,23 @@ classdef BSR_PHR < handle
         end
 
         function phIdx = quantizePH(ph_dB)
-            % Common 1 dB quantizer with range [-23..40] -> [0..63]
-            x = double(ph_dB);
-            if ~isfinite(x), x = -23; end
-            phIdx = round(x + 23);
-            phIdx = max(0, min(63, phIdx));
+            phIdx=sixgr.l2.mac.PHRMappingR18.phIndex(ph_dB);
         end
 
         function ph_dB = dequantizePH(phIdx)
-            phIdx = max(0, min(63, round(double(phIdx))));
-            ph_dB = phIdx - 23;
+            [lo,hi]=sixgr.l2.mac.PHRMappingR18.phRange(phIdx);
+            ph_dB=NaN;
+            if isfinite(lo) && isfinite(hi), ph_dB=(lo+hi)/2; end
         end
 
         function pcIdx = quantizePCMAX(pcmax_dBm)
-            % Approx map of PCMAX to 6-bit index. We assume a nominal range
-            % [-30..33] dBm mapped to [0..63]. Adjust if you use different
-            % PCMAX modeling.
-            x = double(pcmax_dBm);
-            if ~isfinite(x), x = 23; end
-            pcIdx = round(x + 30);
-            pcIdx = max(0, min(63, pcIdx));
+            pcIdx=sixgr.l2.mac.PHRMappingR18.pcmaxIndex(pcmax_dBm);
         end
 
         function pc_dBm = dequantizePCMAX(pcIdx)
-            pcIdx = max(0, min(63, round(double(pcIdx))));
-            pc_dBm = pcIdx - 30;
+            [lo,hi]=sixgr.l2.mac.PHRMappingR18.pcmaxRange(pcIdx);
+            pc_dBm=NaN;
+            if isfinite(lo) && isfinite(hi), pc_dBm=(lo+hi)/2; end
         end
 
         function lcgBytes = localLCGBufferVector(lcgBufferMap)

@@ -1,4 +1,10 @@
 function validateCSIRSRankSelectionEvidence(decision,prepared,reception,csi)
+if isstruct(decision)&&isfield(decision,'ContractVersion') && ...
+        string(decision.ContractVersion)=="sixgr.portable_TypeI_MMSE_rank_decision/v1"
+    sixgr.truth.validatePortableCSIRankSelectionEvidence(decision,prepared,reception,csi);
+    return;
+end
+
 % Validate retained MaxSE operands against the ORIGINAL completed receiver.
 % No receiver, PMI/CQI/rank search, channel or RF execution occurs here.
 % Arithmetic consistency is not independent optimality, decoded BLER or

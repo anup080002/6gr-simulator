@@ -29,6 +29,7 @@ ip = inputParser;
 ip.addParameter("RunId", "", @(x) ischar(x) || isstring(x) || isnumeric(x));
 ip.addParameter("ScenarioName", "", @(x) ischar(x) || isstring(x));
 ip.addParameter("StrictMode", false, @(x) islogical(x) || isnumeric(x));
+ip.addParameter("PublicationScope", "full", @(x) any(string(x)==["full","precoder_only"]));
 ip.parse(extraArgs{:});
 runId = string(ip.Results.RunId);
 scenarioName = string(ip.Results.ScenarioName);
@@ -36,6 +37,10 @@ strictMode = logical(ip.Results.StrictMode);
 
 cfgT = sixgr.mimo.buildMIMOConfigFromScenario(cfg, "RunId", runId, "ScenarioName", scenarioName);
 [rankTrials, layerMetrics] = localBuildRankAndLayerTables(cfgT, rawTrials, runId, scenarioName);
+if string(ip.Results.PublicationScope)=="precoder_only"
+    out=struct('PrecoderEvidence',sixgr.mimo.buildPrecoderEvidence(rankTrials));
+    return;
+end
 cfgT = localAttachRuntimeEvidenceSummary(cfgT, rankTrials);
 configAudit = sixgr.mimo.validateMIMOConfigStrict(cfgT);
 configuredEffective = localConfiguredVsEffective(cfgT, rankTrials, runId, scenarioName, strictMode);
@@ -43,7 +48,7 @@ cfgT = localAttachRuntimeValidationStatus(cfgT, configuredEffective, configAudit
 rankUtil = localRankUtilization(rankTrials, runId, scenarioName);
 antennaArray = localAntennaArrayConfig(cfgT, rankTrials);
 portMapping = localAntennaPortMapping(cfgT, rankTrials);
-precoderEvidence = localPrecoderEvidence(rankTrials);
+precoderEvidence = sixgr.mimo.buildPrecoderEvidence(rankTrials);
 beamCodebook = localBeamCodebook(cfgT, rankTrials);
 beamSweep = localBeamSweep(rankTrials);
 negativeTrials = localNegativeTrials();
@@ -437,7 +442,7 @@ for direction = ["DL","UL"]
                 row.MeasuredDMRSPortCount);
         end
         row.DMRSPorts = localVectorToken(measuredDMRSPorts);
-        row.PrecoderId = localFirstTextTable(tr, ["AppliedPrecoderPMI","PMI","ConfiguredPMI"], "");
+        row.PrecoderId = localFirstTextTable(tr, ["AppliedPrecoderPMI","PMI"], "");
         row.BeamId = localFirstTextTable(tr, ["AppliedBeamIndexSet","SelectedBeamIndex"], "");
         row.CSIReportId = localFirstTextTable(tr, ["CSIReportId","CSIPayloadHex"], "");
         row.LayerSINRdB = localVectorToken(perLayer);
@@ -970,46 +975,6 @@ for i = 1:height(cfgT)
         rows(i).FailureReason = "no_runtime_trials";
         rows(i).MappingEvidenceSource = "no_runtime_trials";
     end
-end
-T = struct2table(rows);
-end
-
-function T = localPrecoderEvidence(rankT)
-rows = repmat(struct("RunId","", "TrialId",NaN, "Direction","", "PrecoderId","", ...
-    "PMI","", "AppliedPrecoderMatrixSHA256","", "EvidenceType","", ...
-    "PrecoderSource","", "PrecodingActive",false, "SourceRowsHash","", ...
-    "Status","", "FailureReason",""), height(rankT), 1);
-for i = 1:height(rankT)
-    rows(i).RunId = string(rankT.RunId(i));
-    rows(i).TrialId = double(rankT.TrialId(i));
-    rows(i).Direction = string(rankT.Direction(i));
-    pmi = strtrim(string(rankT.PrecoderId(i)));
-    matrixHash = lower(strtrim(string(rankT.AppliedPrecoderMatrixSHA256(i))));
-    pmiAvailable = localUsableText(pmi);
-    matrixAvailable = ~ismissing(matrixHash) && ...
-        ~isempty(regexp(char(matrixHash), '^[0-9a-f]{64}$', 'once')); %#ok<RGXP1>
-    rows(i).PMI = string(localTernary(pmiAvailable, pmi, ""));
-    rows(i).AppliedPrecoderMatrixSHA256 = ...
-        string(localTernary(matrixAvailable, matrixHash, ""));
-    if matrixAvailable
-        rows(i).PrecoderId = "matrix_sha256:" + matrixHash;
-        rows(i).EvidenceType = string(localTernary(pmiAvailable, ...
-            "pmi_and_applied_matrix", "applied_matrix"));
-        rows(i).PrecoderSource = ...
-            "air_interface_trial_applied_precoder_matrix_sha256";
-    elseif pmiAvailable
-        rows(i).PrecoderId = "pmi:" + pmi;
-        rows(i).EvidenceType = "pmi";
-        rows(i).PrecoderSource = "air_interface_trial_applied_pmi";
-    else
-        rows(i).PrecoderId = "";
-        rows(i).EvidenceType = "missing";
-        rows(i).PrecoderSource = "air_interface_trial_precoder_fields";
-    end
-    rows(i).PrecodingActive = pmiAvailable || matrixAvailable;
-    rows(i).SourceRowsHash = string(rankT.SourceRowsHash(i));
-    rows(i).Status = string(localTernary(rows(i).PrecodingActive || double(rankT.ConfiguredLayers(i)) <= 1, "pass", "fail"));
-    rows(i).FailureReason = string(localTernary(rows(i).Status == "pass", "", "multi_layer_precoder_evidence_missing"));
 end
 T = struct2table(rows);
 end

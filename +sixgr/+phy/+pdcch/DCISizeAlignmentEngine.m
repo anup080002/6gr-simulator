@@ -27,7 +27,14 @@ classdef DCISizeAlignmentEngine
             idx00 = find(string({rows.DCIFormat}) == "0_0", 1);
             idx10 = find(string({rows.DCIFormat}) == "1_0", 1);
             if ~isempty(idx00) && ~isempty(idx10)
-                target = max(rows(idx00).RawBits, rows(idx10).RawBits);
+                common=any(upper(string(data.SearchSpaceType))==["CSS","TYPE0","TYPE0A","TYPE1","TYPE2","TYPE3"]);
+                if common
+                    % Step0 aligns UL to the DL common size, including
+                    % leading FDRA truncation. It never pads common 1_0.
+                    target=rows(idx10).RawBits;
+                else
+                    target = max(rows(idx00).RawBits, rows(idx10).RawBits);
+                end
                 rows(idx00).AlignedBits = target;
                 rows(idx10).AlignedBits = target;
                 if rows(idx00).RawBits < target
@@ -60,6 +67,21 @@ classdef DCISizeAlignmentEngine
                 "UniqueMonitoredSizes", uniqueSizes, ...
                 "UniqueCRNTISizes", cRNTISizes, ...
                 "Status", "PASS");
+        end
+
+        function definitions = wireDefinitions(schema,selected)
+            definitions=schema.Definitions;
+            cut=selected.TruncatedFrequencyBits;
+            if cut==0, return; end
+            assert(schema.Format=="0_0" && cut==fix(cut) && cut>0, ...
+                'sixgr:phy:pdcch:dci_size_alignment_failure','Only fallback UL FDRA can be truncated.');
+            hit=find(string({definitions.Name})=="frequency_resource_assignment");
+            assert(isscalar(hit) && definitions(hit).Width>=cut, ...
+                'sixgr:phy:pdcch:dci_size_alignment_failure','Truncation must fit the original FDRA.');
+            d=definitions(hit); width=d.Width-cut;
+            definitions(hit)=sixgr.phy.pdcch.DCIFieldDefinition(d.Name,width,0, ...
+                min(d.ValueMax,2^width-1),d.SemanticSource, ...
+                "TS38.212 V18.8.0 7.3.1.0 leading FDRA truncation",d.Generated);
         end
     end
 end

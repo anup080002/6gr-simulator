@@ -56,7 +56,19 @@ future.ReferenceSignalMeasurementTable.AvailableSlot(:)=7;
 assert(~sixgr.truth.resolveSRSPowerReference(future,cfg,1,9).Usable);
 
 bound=sixgr.phy.grid.applyRuntimeCarrierTimeline(bound,5);
-bound.phy.srs.receivedPowerControlState=sixgr.link.ReceivedULPowerControlState(bound);
+[state,bound]=sixgr.truth.bindSharedSRSReceivedPowerOwner(state,bound,1);
+assert(isequaln(bound.phy.srs.receivedPowerControlState,state.SharedUEULPowerControlStates{1}) && ...
+    isempty(state.SharedUEULPowerControlStates{1}.History));
+beforeOwner=state.SharedUEULPowerControlStates{1};
+[state,rebound]=sixgr.truth.bindSharedSRSReceivedPowerOwner(state,bound,1);
+assert(isequaln(rebound.phy.srs.receivedPowerControlState,beforeOwner) && ...
+    isequaln(state.SharedUEULPowerControlStates{1},beforeOwner), ...
+    'SRS preparation must retain the live owner without adding a TPC or resetting history.');
+% The n40 harness's existing queue performs this second runtime bind.
+% Exercise it before real waveform preparation, preserving the live owner.
+[bound,state]=sixgr.truth.CoupledTruthRuntime.applyUserContext(bound,state,1,'UL');
+bound=sixgr.phy.grid.applyRuntimeCarrierTimeline(bound,5);
+assert(isequaln(bound.phy.srs.receivedPowerControlState,beforeOwner));
 args={'SlotIndex',5,'TrialIndex',1,'TimingAdvanceSamples',0,'PrepareOnly',true};
 pending=sixgr.link.runSRSChannelEstimation(bound,args{:});
 p=pending.PreparedTransmission; evidence=p.Metadata.PowerEvidence;

@@ -1,0 +1,2246 @@
+{
+  "ReviewDate": "2026-10-26",
+  "OriginalSHA256": "e315f50a1212baa0952ae4f9cb3fe1e63a7f893927fa551fddd8a2404d100668",
+  "ReviewedDataRows": 221,
+  "RemovedScopedDefects": 13,
+  "AddedIntegrationRows": 2,
+  "OriginalResultsRewritten": false,
+  "FullScenarioAccepted": false,
+  "Rows": [
+    {
+      "TableIndex0": 0,
+      "DataRowIndex1": 1,
+      "Disposition": "move_scoped_defect_to_closure_inventory",
+      "RecommendRemoveEntireActiveRow": true,
+      "RecommendedUpdate": "Original3 SRS trials now contain55296 pairs. Actual original MAT/trial hashes and logical isolation markers verified; diagnostic re-export and192 branch-observation EVM rows pass, original4 files unchanged. Keep broader cold-access/adaptation/statistical acceptance once.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\srs_evm_replay\\receipt.json",
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\power_plot_verification.json"
+      ],
+      "Issue": "P0 — SRS noise receipt and isolated-pilot EVM publication"
+    },
+    {
+      "TableIndex0": 0,
+      "DataRowIndex1": 2,
+      "Disposition": "move_scoped_defect_to_closure_inventory",
+      "RecommendRemoveEntireActiveRow": true,
+      "RecommendedUpdate": "Retain named passing focused evidence and original failed artifacts in closure inventory. Remove repaired crash/parser/layout defect from active list; consolidate fresh native-run/final-publication acceptance under one integration row. Wider alternatives/statistics remain separate.",
+      "EvidencePaths": [],
+      "Issue": "P0 — Persisted RF recovery execution identity"
+    },
+    {
+      "TableIndex0": 0,
+      "DataRowIndex1": 3,
+      "Disposition": "move_scoped_defect_to_closure_inventory",
+      "RecommendRemoveEntireActiveRow": true,
+      "RecommendedUpdate": "Retain named passing focused evidence and original failed artifacts in closure inventory. Remove repaired crash/parser/layout defect from active list; consolidate fresh native-run/final-publication acceptance under one integration row. Wider alternatives/statistics remain separate.",
+      "EvidencePaths": [],
+      "Issue": "P0 — TRS continuation OFDM metadata"
+    },
+    {
+      "TableIndex0": 0,
+      "DataRowIndex1": 4,
+      "Disposition": "move_scoped_defect_to_closure_inventory",
+      "RecommendRemoveEntireActiveRow": true,
+      "RecommendedUpdate": "Retain named passing focused evidence and original failed artifacts in closure inventory. Remove repaired crash/parser/layout defect from active list; consolidate fresh native-run/final-publication acceptance under one integration row. Wider alternatives/statistics remain separate.",
+      "EvidencePaths": [],
+      "Issue": "P0 — SRS/PUCCH resource repair: full n40 verification"
+    },
+    {
+      "TableIndex0": 0,
+      "DataRowIndex1": 5,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No new causal UE TX frequency-control owner or independently qualified Doppler/LO separation was established in this repair. Keep implementation gap; RX common-frequency correction is not UE TX AFC.",
+      "EvidencePaths": [],
+      "Issue": "P1 — UE DL-referenced transmit-frequency tracking"
+    },
+    {
+      "TableIndex0": 0,
+      "DataRowIndex1": 6,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Keep amplitude/detection limitation and independent uncertainty/population qualification. Current PRACH reception does not establish statistical tails or oscillator-only AFC.",
+      "EvidencePaths": [],
+      "Issue": "P1 — PRACH frequency diagnostic: broader qualification"
+    },
+    {
+      "TableIndex0": 0,
+      "DataRowIndex1": 7,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Current CSI-RS EVM diagnostic uses pre/post TX-RF pairs, not independent received equalized CSI symbols. Newly repaired power plots and SRS pilot EVM do not close this receiver-EVM producer gap.",
+      "EvidencePaths": [],
+      "Issue": "P1 — CSI-RS receiver EVM"
+    },
+    {
+      "TableIndex0": 0,
+      "DataRowIndex1": 8,
+      "Disposition": "move_scoped_defect_to_closure_inventory",
+      "RecommendRemoveEntireActiveRow": true,
+      "RecommendedUpdate": "Retain named passing focused evidence and original failed artifacts in closure inventory. Remove repaired crash/parser/layout defect from active list; consolidate fresh native-run/final-publication acceptance under one integration row. Wider alternatives/statistics remain separate.",
+      "EvidencePaths": [],
+      "Issue": "P0 — Slot-45 timing outcome repair: full n40 verification"
+    },
+    {
+      "TableIndex0": 0,
+      "DataRowIndex1": 9,
+      "Disposition": "move_scoped_defect_to_closure_inventory",
+      "RecommendRemoveEntireActiveRow": true,
+      "RecommendedUpdate": "Retain named passing focused evidence and original failed artifacts in closure inventory. Remove repaired crash/parser/layout defect from active list; consolidate fresh native-run/final-publication acceptance under one integration row. Wider alternatives/statistics remain separate.",
+      "EvidencePaths": [],
+      "Issue": "P0 — SRS retained-reference preparation: integrated verification"
+    },
+    {
+      "TableIndex0": 0,
+      "DataRowIndex1": 10,
+      "Disposition": "move_scoped_defect_to_closure_inventory",
+      "RecommendRemoveEntireActiveRow": true,
+      "RecommendedUpdate": "Retain named passing focused evidence and original failed artifacts in closure inventory. Remove repaired crash/parser/layout defect from active list; consolidate fresh native-run/final-publication acceptance under one integration row. Wider alternatives/statistics remain separate.",
+      "EvidencePaths": [],
+      "Issue": "P0 — Failed recovery measurement parsing: integrated publication"
+    },
+    {
+      "TableIndex0": 0,
+      "DataRowIndex1": 11,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Move implemented accounting defect into closure history; retain independent H0/H1 populations, transmitted-candidate scope, threshold qualification and whole-run publication in their dedicated acceptance rows.",
+      "EvidencePaths": [],
+      "Issue": "P1 — PBCH/PDCCH/PUCCH miss-detection populations: scenario verification"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 1,
+      "Disposition": "move_repaired_stage_publication_to_closure_inventory",
+      "RecommendRemoveEntireActiveRow": true,
+      "RecommendedUpdate": "Shared live/failure/final reducers publish 15 valid control bindings, 13 applied precoder rows and 13 link-adaptation rows (five applied/eight unapplied). One blocked control attempt remains excluded. All 28 causal stages pass in separate original-data replay; 23 original hashes and RNG remain unchanged. Native two-child completion remains in the generic integration row.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\causal_publication_replay03\\receipt.json",
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\causal_publication_batch02.log"
+      ],
+      "Issue": "P0 — Causal-audit downstream publication and integrated acceptance"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 2,
+      "Disposition": "move_scoped_defect_to_closure_inventory",
+      "RecommendRemoveEntireActiveRow": true,
+      "RecommendedUpdate": "85 original current rows have ValueMatch=ConsumerObserved=StrictPass=1; failed19510624 rows stay historical. Move scoped defect out of active list. Construction versus actual reception remains defined per receipt; this does not qualify every future configuration.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\lls\\lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep\\n40_integration_60slots_20261026_100846\\sweeps\\reference_esn0_20_db\\reports\\csv\\causal_phy_parameter_authority.csv"
+      ],
+      "Issue": "P1 — Parameter-consumer provenance"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 3,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "P0 — PUCCH synchronization integration and qualification"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 4,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "P0 — Current PDSCH/PUSCH tracking-authority verification"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 5,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "P0 — PDCCH synchronization integration and qualification"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 6,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "P0 — Decoded SSB-to-PRACH association: full scenario and independent cell ownership"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 7,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Original current audit records successful native PRACH occasion, Msg1, RAR, Msg3, Msg4 and SetupComplete. Remove the claim validity still awaits wiring; retain absent-IE/SSB-gap and broader mask/repetition/collision/independent cell receiver ownership coverage.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\lls\\lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep\\n40_integration_60slots_20261026_100846\\sweeps\\reference_esn0_20_db\\reports\\csv\\causal_phy_chain_audit.csv"
+      ],
+      "Issue": "P0 — Received TDD common configuration for PRACH validity"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 8,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Latest100846 has actual SI/Msg1/RAR/Msg3/Msg4/SetupComplete evidence and12DL+1UL. Replace older statement that no main-run RA progression exists. Keep the listed independent ownership, optional fields, lifecycle variants and protocol/statistical scope.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\lls\\lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep\\n40_integration_60slots_20261026_100846\\sweeps\\reference_esn0_20_db\\reports\\csv\\causal_phy_chain_audit.csv"
+      ],
+      "Issue": "P0 — Retained-MIB repair: main-run RA progression"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 9,
+      "Disposition": "move_scoped_defect_to_closure_inventory",
+      "RecommendRemoveEntireActiveRow": true,
+      "RecommendedUpdate": "Preserve twelve original native before/after cases and historical failed run. Actual current access/CSI/data now exists; generic full-run/statistical acceptance remains once, not as active repaired phase defect.",
+      "EvidencePaths": [
+        "+sixgr/+phy/+dl/SSB_Rx.m",
+        "E:/SixGRResults/logs/ssb_phase_after_20261025_01.log"
+      ],
+      "Issue": "P0 — Off-centre SSB receiver OFDM phase reference"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 10,
+      "Disposition": "move_scoped_defect_to_closure_inventory",
+      "RecommendRemoveEntireActiveRow": true,
+      "RecommendedUpdate": "Current original initial SSB measurements are available slot5; actual SI resources10/11 deliver13/14 without new BCH, followed by Msg1/access/data. Keep general unknown-origin cold search and independent full calendar study separately.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\lls\\lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep\\n40_integration_60slots_20261026_100846\\sweeps\\reference_esn0_20_db\\control\\csv\\reference_signal_measurements.csv",
+        "E:\\SixGRResults\\lls\\lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep\\n40_integration_60slots_20261026_100846\\sweeps\\reference_esn0_20_db\\air_interface\\csv\\sib1_received_trials.csv"
+      ],
+      "Issue": "P0 — Initial acquisition waits for full archive and misses first SI"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 11,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "future_handoff_affected_20261025_01.log explicitly records HANDOFF_TEST_PASS testLLSHARQReplayCurrentGrantAuthority. Delete stale unverified/license-blocked guard claim while preserving that batch other failures. Actual receiver combining/received feedback/current TCI and UL variants remain separate.",
+      "EvidencePaths": [
+        "E:/SixGRResults/logs/future_handoff_affected_20261025_01.log"
+      ],
+      "Issue": "P0 — HARQ retry after a DL beam/TCI change"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 12,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Latest actual main runner has complete access/data evidence, but exact testMainIndependentBroadcastAccess logs still include historical fixture failure and no terminal successful rerun was independently found. Keep fixture regression separately from a supposed production no-access defect.",
+      "EvidencePaths": [],
+      "Issue": "P0 — Bounded SI-to-PRACH integration fixture"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 13,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "P0 — Four SSB beams to eight CSI resources: physical refinement handoff"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 14,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Latest100846 has actual SI/Msg1/RAR/Msg3/Msg4/SetupComplete evidence and12DL+1UL. Replace older statement that no main-run RA progression exists. Keep the listed independent ownership, optional fields, lifecycle variants and protocol/statistical scope.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\lls\\lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep\\n40_integration_60slots_20261026_100846\\sweeps\\reference_esn0_20_db\\reports\\csv\\causal_phy_chain_audit.csv"
+      ],
+      "Issue": "P0 — Selected SSB beam to PRACH timing ownership"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 15,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Latest run has actual access, DL12, UL1, SRS3 and CSI feedback3. These counts narrow historical no-data claims but do not close the entire named no-TX/CSI-reference/reacquisition/rank/codebook/DMRS variant. Ongoing bounded n40 test results must be incorporated only after terminal receipt.",
+      "EvidencePaths": [],
+      "Issue": "P0 — PUCCH measured-power admission: target-scenario verification"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 16,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Latest run has actual access, DL12, UL1, SRS3 and CSI feedback3. These counts narrow historical no-data claims but do not close the entire named no-TX/CSI-reference/reacquisition/rank/codebook/DMRS variant. Ongoing bounded n40 test results must be incorporated only after terminal receipt.",
+      "EvidencePaths": [],
+      "Issue": "P0 — PUCCH-specific reference ownership: remaining branches"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 17,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Latest run has actual access, DL12, UL1, SRS3 and CSI feedback3. These counts narrow historical no-data claims but do not close the entire named no-TX/CSI-reference/reacquisition/rank/codebook/DMRS variant. Ongoing bounded n40 test results must be incorporated only after terminal receipt.",
+      "EvidencePaths": [],
+      "Issue": "P0 — PUCCH non-transmission completion: selected-PUSCH transport"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 18,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Latest run has actual access, DL12, UL1, SRS3 and CSI feedback3. These counts narrow historical no-data claims but do not close the entire named no-TX/CSI-reference/reacquisition/rank/codebook/DMRS variant. Ongoing bounded n40 test results must be incorporated only after terminal receipt.",
+      "EvidencePaths": [],
+      "Issue": "P0 — Measured SSB path-loss reference lifecycle: full access"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 19,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Latest100846 has actual SI/Msg1/RAR/Msg3/Msg4/SetupComplete evidence and12DL+1UL. Replace older statement that no main-run RA progression exists. Keep the listed independent ownership, optional fields, lifecycle variants and protocol/statistical scope.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\lls\\lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep\\n40_integration_60slots_20261026_100846\\sweeps\\reference_esn0_20_db\\reports\\csv\\causal_phy_chain_audit.csv"
+      ],
+      "Issue": "P0 — RAR Msg3 power / SetupComplete allocation: wider coverage"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 20,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "P0/P1 — UL power configuration, adjustment and operands"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 21,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Latest run has actual access, DL12, UL1, SRS3 and CSI feedback3. These counts narrow historical no-data claims but do not close the entire named no-TX/CSI-reference/reacquisition/rank/codebook/DMRS variant. Ongoing bounded n40 test results must be incorporated only after terminal receipt.",
+      "EvidencePaths": [],
+      "Issue": "P0 — SRS measured-power admission: full integration"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 22,
+      "Disposition": "move_scoped_defect_to_closure_inventory",
+      "RecommendRemoveEntireActiveRow": true,
+      "RecommendedUpdate": "Current original independent CSI rows16/26/36/46/56 have authority1/post_installation_original_received_measurement; slot6 correctly remains preinstallation diagnostic. Original233800 failure retained. Move repair to closure inventory; sustained feedback/checkpoint/final-run acceptance stays generic.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\lls\\lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep\\n40_integration_60slots_20261026_100846\\sweeps\\reference_esn0_20_db\\air_interface\\csv\\csi_rs_trials.csv",
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\csi_identity_batch02_results.json"
+      ],
+      "Issue": "P0 — CSI/TRS acquisition and installation: full integration"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 23,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Latest run has actual access, DL12, UL1, SRS3 and CSI feedback3. These counts narrow historical no-data claims but do not close the entire named no-TX/CSI-reference/reacquisition/rank/codebook/DMRS variant. Ongoing bounded n40 test results must be incorporated only after terminal receipt.",
+      "EvidencePaths": [],
+      "Issue": "P0 — Queued CSI during reacquisition: full n40 verification"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 24,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Latest run has actual access, DL12, UL1, SRS3 and CSI feedback3. These counts narrow historical no-data claims but do not close the entire named no-TX/CSI-reference/reacquisition/rank/codebook/DMRS variant. Ongoing bounded n40 test results must be incorporated only after terminal receipt.",
+      "EvidencePaths": [],
+      "Issue": "P0 — Late CSI carried by PUSCH: full n40 verification"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 25,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Latest run has actual access, DL12, UL1, SRS3 and CSI feedback3. These counts narrow historical no-data claims but do not close the entire named no-TX/CSI-reference/reacquisition/rank/codebook/DMRS variant. Ongoing bounded n40 test results must be incorporated only after terminal receipt.",
+      "EvidencePaths": [],
+      "Issue": "P0 — Received CSI drives DL scheduling: sustained adaptation"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 26,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "P1 — BWP/RE/CORESET and special-slot planning"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 27,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Latest run has actual access, DL12, UL1, SRS3 and CSI feedback3. These counts narrow historical no-data claims but do not close the entire named no-TX/CSI-reference/reacquisition/rank/codebook/DMRS variant. Ongoing bounded n40 test results must be incorporated only after terminal receipt.",
+      "EvidencePaths": [],
+      "Issue": "P1 — CSI report quantity and Type-I subset: physical qualification"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 28,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Latest run has actual access, DL12, UL1, SRS3 and CSI feedback3. These counts narrow historical no-data claims but do not close the entire named no-TX/CSI-reference/reacquisition/rank/codebook/DMRS variant. Ongoing bounded n40 test results must be incorporated only after terminal receipt.",
+      "EvidencePaths": [],
+      "Issue": "P1 — PUSCH DM-RS configuration: wider dynamic coverage"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 29,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Latest run has actual access, DL12, UL1, SRS3 and CSI feedback3. These counts narrow historical no-data claims but do not close the entire named no-TX/CSI-reference/reacquisition/rank/codebook/DMRS variant. Ongoing bounded n40 test results must be incorporated only after terminal receipt.",
+      "EvidencePaths": [],
+      "Issue": "P1 — Type-I matrices, ports and rank codebook"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 30,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Actual current CSI resources6/16/26/36/46/56 and3 received CSI feedback rows replace statement that no actual current CSI/UCI calendar execution exists. Preserve mixed numerology/partial BWP unsupported branches and sustained schedule qualification.",
+      "EvidencePaths": [],
+      "Issue": "P1 — CSI-RS/TRS/report periods: broader physical verification"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 31,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Current dedicated SI rows resource10/11, delivery13/14, both DCI/DLSCH CRC pass, NewBCHReceptionAttempted0. Access completes. Remove active claim disabled routing/delivery wiring merely under repair unless backed by a new failure; keep independent calendar/multi-UE/unknown-origin and full-run variants.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\lls\\lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep\\n40_integration_60slots_20261026_100846\\sweeps\\reference_esn0_20_db\\air_interface\\csv\\sib1_received_trials.csv"
+      ],
+      "Issue": "P1 — Independent SI scheduling and shared SSB phase"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 32,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "P0/P1 — Independent power/SINR and PMI/RI/CQI accuracy"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 33,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "P1 — Ec/N0 / Eb/N0 coverage"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 34,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "33 source-bound diagnostic charts plus1 original-SRS replay chart verify all34 PNGs and CSV/PNG hashes. Four CSI power plots192 records each, DL48, UL64, SSB32, SRS192 branch observations from55296 pairs. Keep cold-load/concurrent/full native WebGUI acceptance.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\power_plot_verification.json",
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\power_plot_tests01.log"
+      ],
+      "Issue": "P1 — CSV/PNG/WebGUI measurement publication"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 35,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "P1 — Downloadable resolved YAML/JSON"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 36,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Replace obsolete RUN STARTED/process-active statement. Current selected100846 two-point60-slot attempt stopped at58 after energy boolean parsing failure; checkpoint55 retained, DL12UL1. Scoped parser/report fixes pass; no complete fresh campaign or genuine checkpoint continuation acceptance yet.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\stop_failed_recovery.json"
+      ],
+      "Issue": "P0 — Fresh six-point n40 scenario"
+    },
+    {
+      "TableIndex0": 1,
+      "DataRowIndex1": 37,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "Qualification — BLER/HARQ, detector, RF and Chair-note studies"
+    },
+    {
+      "TableIndex0": 2,
+      "DataRowIndex1": 1,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Rewrite Current implementation/RCA as historical defect, because status already records removal. Keep actual independent comparator/domain/coding/statistical coverage as distinct remaining scope. Do not leave contradictory current-tense bad formula beside fixed status.",
+      "EvidencePaths": [],
+      "Issue": "P0"
+    },
+    {
+      "TableIndex0": 2,
+      "DataRowIndex1": 2,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Rewrite Current implementation/RCA as historical defect, because status already records removal. Keep actual independent comparator/domain/coding/statistical coverage as distinct remaining scope. Do not leave contradictory current-tense bad formula beside fixed status.",
+      "EvidencePaths": [],
+      "Issue": "P0"
+    },
+    {
+      "TableIndex0": 2,
+      "DataRowIndex1": 3,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Rewrite Current implementation/RCA as historical defect, because status already records removal. Keep actual independent comparator/domain/coding/statistical coverage as distinct remaining scope. Do not leave contradictory current-tense bad formula beside fixed status.",
+      "EvidencePaths": [],
+      "Issue": "P0"
+    },
+    {
+      "TableIndex0": 2,
+      "DataRowIndex1": 4,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Rewrite Current implementation/RCA as historical defect, because status already records removal. Keep actual independent comparator/domain/coding/statistical coverage as distinct remaining scope. Do not leave contradictory current-tense bad formula beside fixed status.",
+      "EvidencePaths": [],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 2,
+      "DataRowIndex1": 5,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Rewrite Current implementation/RCA as historical defect, because status already records removal. Keep actual independent comparator/domain/coding/statistical coverage as distinct remaining scope. Do not leave contradictory current-tense bad formula beside fixed status.",
+      "EvidencePaths": [],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 2,
+      "DataRowIndex1": 6,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Rewrite Current implementation/RCA as historical defect, because status already records removal. Keep actual independent comparator/domain/coding/statistical coverage as distinct remaining scope. Do not leave contradictory current-tense bad formula beside fixed status.",
+      "EvidencePaths": [],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 2,
+      "DataRowIndex1": 7,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Rewrite Current implementation/RCA as historical defect, because status already records removal. Keep actual independent comparator/domain/coding/statistical coverage as distinct remaining scope. Do not leave contradictory current-tense bad formula beside fixed status.",
+      "EvidencePaths": [],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 2,
+      "DataRowIndex1": 8,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Rewrite Current implementation/RCA as historical defect, because status already records removal. Keep actual independent comparator/domain/coding/statistical coverage as distinct remaining scope. Do not leave contradictory current-tense bad formula beside fixed status.",
+      "EvidencePaths": [],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 2,
+      "DataRowIndex1": 9,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 2,
+      "DataRowIndex1": 10,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Current raw12DL+1UL and regenerated error summaries reconcile from original records; execution crashes remain separate. Other generic control/detection and per-codeword populations remain separately auditable.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\compact_receiver_summaries\\receiver_summary_replay.json",
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\report_replay03\\receipt.json"
+      ],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 2,
+      "DataRowIndex1": 11,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Add numeric-vector empty-plane preservation, original SRS proof export and internal-element power consumer guards; source-file existence alone still cannot qualify all metrics.",
+      "EvidencePaths": [
+        "+sixgr/+truth/isSerializedMeasurementOperandField.m",
+        "apps/lls_radio_measurement_plots.py"
+      ],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 3,
+      "DataRowIndex1": 1,
+      "Disposition": "move_scoped_defect_to_closure_inventory",
+      "RecommendRemoveEntireActiveRow": true,
+      "RecommendedUpdate": "Move removed scalar-to-BLER shortcut to closure inventory. This RF-only driver intentionally has no TB decoder and must not emit BLER. If coded RF comparison is desired, retain that separate study capability rather than keep repaired fabrication active.",
+      "EvidencePaths": [
+        "+sixgr/+truth/exportLLSReportingBundle.m"
+      ],
+      "Issue": "“BLER” is derived from a generic scalar such as min(1,Value/100) ."
+    },
+    {
+      "TableIndex0": 4,
+      "DataRowIndex1": 1,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "P0"
+    },
+    {
+      "TableIndex0": 4,
+      "DataRowIndex1": 2,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "P0"
+    },
+    {
+      "TableIndex0": 4,
+      "DataRowIndex1": 3,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "P0"
+    },
+    {
+      "TableIndex0": 4,
+      "DataRowIndex1": 4,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "P0"
+    },
+    {
+      "TableIndex0": 4,
+      "DataRowIndex1": 5,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "P0"
+    },
+    {
+      "TableIndex0": 4,
+      "DataRowIndex1": 6,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 4,
+      "DataRowIndex1": 7,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 4,
+      "DataRowIndex1": 8,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 4,
+      "DataRowIndex1": 9,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 4,
+      "DataRowIndex1": 10,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 4,
+      "DataRowIndex1": 11,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 4,
+      "DataRowIndex1": 12,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 4,
+      "DataRowIndex1": 13,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 4,
+      "DataRowIndex1": 14,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 4,
+      "DataRowIndex1": 15,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 4,
+      "DataRowIndex1": 16,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 4,
+      "DataRowIndex1": 17,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 4,
+      "DataRowIndex1": 18,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 4,
+      "DataRowIndex1": 19,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Actual CSV and native-logical retained energy publication agree; endpoint-energy/integrity tests pass. Latest run remains aborted58, so complete disjoint whole-run delivered-bit closure remains.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\report_replay03\\receipt.json",
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\power_plane_publication_review.txt"
+      ],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 5,
+      "DataRowIndex1": 1,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "PSS/SSS"
+    },
+    {
+      "TableIndex0": 5,
+      "DataRowIndex1": 2,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "SS/PBCH block"
+    },
+    {
+      "TableIndex0": 5,
+      "DataRowIndex1": 3,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Latest original2 SI receptions pass with received identity/time and no new BCH; subsequent access/data demonstrates usable installed context. Keep broader ASN.1 optional fields/configuration matrices and normative full protocol qualification.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\lls\\lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep\\n40_integration_60slots_20261026_100846\\sweeps\\reference_esn0_20_db\\air_interface\\csv\\sib1_received_trials.csv",
+        "E:\\SixGRResults\\lls\\lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep\\n40_integration_60slots_20261026_100846\\sweeps\\reference_esn0_20_db\\reports\\csv\\causal_phy_chain_audit.csv"
+      ],
+      "Issue": "PBCH/MIB"
+    },
+    {
+      "TableIndex0": 5,
+      "DataRowIndex1": 4,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Latest original2 SI receptions pass with received identity/time and no new BCH; subsequent access/data demonstrates usable installed context. Keep broader ASN.1 optional fields/configuration matrices and normative full protocol qualification.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\lls\\lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep\\n40_integration_60slots_20261026_100846\\sweeps\\reference_esn0_20_db\\air_interface\\csv\\sib1_received_trials.csv",
+        "E:\\SixGRResults\\lls\\lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep\\n40_integration_60slots_20261026_100846\\sweeps\\reference_esn0_20_db\\reports\\csv\\causal_phy_chain_audit.csv"
+      ],
+      "Issue": "SIB1"
+    },
+    {
+      "TableIndex0": 5,
+      "DataRowIndex1": 5,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "PRACH"
+    },
+    {
+      "TableIndex0": 5,
+      "DataRowIndex1": 6,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "PDCCH"
+    },
+    {
+      "TableIndex0": 5,
+      "DataRowIndex1": 7,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "DCI formats"
+    },
+    {
+      "TableIndex0": 5,
+      "DataRowIndex1": 8,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "PDSCH"
+    },
+    {
+      "TableIndex0": 5,
+      "DataRowIndex1": 9,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "PUSCH CP-OFDM"
+    },
+    {
+      "TableIndex0": 5,
+      "DataRowIndex1": 10,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "PUSCH DFT-s-OFDM"
+    },
+    {
+      "TableIndex0": 5,
+      "DataRowIndex1": 11,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "PUCCH format 0"
+    },
+    {
+      "TableIndex0": 5,
+      "DataRowIndex1": 12,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "PUCCH format 1"
+    },
+    {
+      "TableIndex0": 5,
+      "DataRowIndex1": 13,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "PUCCH format 2"
+    },
+    {
+      "TableIndex0": 5,
+      "DataRowIndex1": 14,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "PUCCH formats 3/4"
+    },
+    {
+      "TableIndex0": 5,
+      "DataRowIndex1": 15,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "UCI-on-PUSCH"
+    },
+    {
+      "TableIndex0": 5,
+      "DataRowIndex1": 16,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "DMRS"
+    },
+    {
+      "TableIndex0": 5,
+      "DataRowIndex1": 17,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "CSI-RS / CSI-IM"
+    },
+    {
+      "TableIndex0": 5,
+      "DataRowIndex1": 18,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Current actual3 SRS observations and55296 independent pairs are retained/recovered. Keep detected-path RSRPP, standardized connector/reference accuracy, broader comb/hopping/repetition/port and sustained data-loop requirements.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\srs_evm_replay\\receipt.json"
+      ],
+      "Issue": "SRS"
+    },
+    {
+      "TableIndex0": 5,
+      "DataRowIndex1": 19,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Actual retained preview has24 paired-pilot EVM observations,3 NMSE and3 post-correction common-frequency records. Remove missing CSV/PNG subclaim; retain full native status-plane acceptance and independent interpretation under channel evolution.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\measurement_preview02\\reports\\live_measurements\\latest.json"
+      ],
+      "Issue": "TRS"
+    },
+    {
+      "TableIndex0": 5,
+      "DataRowIndex1": 20,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "PT-RS"
+    },
+    {
+      "TableIndex0": 5,
+      "DataRowIndex1": 21,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "Beam management / TCI / QCL"
+    },
+    {
+      "TableIndex0": 5,
+      "DataRowIndex1": 22,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "Beam failure/recovery"
+    },
+    {
+      "TableIndex0": 5,
+      "DataRowIndex1": 23,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "SPS/configured grant"
+    },
+    {
+      "TableIndex0": 5,
+      "DataRowIndex1": 24,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "Selective CBG HARQ"
+    },
+    {
+      "TableIndex0": 5,
+      "DataRowIndex1": 25,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "Multi-TRP/MU-MIMO"
+    },
+    {
+      "TableIndex0": 5,
+      "DataRowIndex1": 26,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "PRS/sidelink and other optional NR families"
+    },
+    {
+      "TableIndex0": 6,
+      "DataRowIndex1": 1,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Latest original2 SI receptions pass with received identity/time and no new BCH; subsequent access/data demonstrates usable installed context. Keep broader ASN.1 optional fields/configuration matrices and normative full protocol qualification.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\lls\\lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep\\n40_integration_60slots_20261026_100846\\sweeps\\reference_esn0_20_db\\air_interface\\csv\\sib1_received_trials.csv",
+        "E:\\SixGRResults\\lls\\lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep\\n40_integration_60slots_20261026_100846\\sweeps\\reference_esn0_20_db\\reports\\csv\\causal_phy_chain_audit.csv"
+      ],
+      "Issue": "MIB/common broadcast"
+    },
+    {
+      "TableIndex0": 6,
+      "DataRowIndex1": 2,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Latest original2 SI receptions pass with received identity/time and no new BCH; subsequent access/data demonstrates usable installed context. Keep broader ASN.1 optional fields/configuration matrices and normative full protocol qualification.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\lls\\lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep\\n40_integration_60slots_20261026_100846\\sweeps\\reference_esn0_20_db\\air_interface\\csv\\sib1_received_trials.csv",
+        "E:\\SixGRResults\\lls\\lls_tdd_n40_20mhz_64txru_4rx_cdlc100_reference_snr_sweep\\n40_integration_60slots_20261026_100846\\sweeps\\reference_esn0_20_db\\reports\\csv\\causal_phy_chain_audit.csv"
+      ],
+      "Issue": "SIB1"
+    },
+    {
+      "TableIndex0": 6,
+      "DataRowIndex1": 3,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "PRACH Msg1"
+    },
+    {
+      "TableIndex0": 6,
+      "DataRowIndex1": 4,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "RAR/Msg2"
+    },
+    {
+      "TableIndex0": 6,
+      "DataRowIndex1": 5,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "Msg3"
+    },
+    {
+      "TableIndex0": 6,
+      "DataRowIndex1": 6,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "Msg4"
+    },
+    {
+      "TableIndex0": 6,
+      "DataRowIndex1": 7,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "RRCSetup"
+    },
+    {
+      "TableIndex0": 6,
+      "DataRowIndex1": 8,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "RRCSetupComplete"
+    },
+    {
+      "TableIndex0": 6,
+      "DataRowIndex1": 9,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "SR"
+    },
+    {
+      "TableIndex0": 6,
+      "DataRowIndex1": 10,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "BSR"
+    },
+    {
+      "TableIndex0": 6,
+      "DataRowIndex1": 11,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "PHR"
+    },
+    {
+      "TableIndex0": 6,
+      "DataRowIndex1": 12,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "CSI report"
+    },
+    {
+      "TableIndex0": 6,
+      "DataRowIndex1": 13,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "TPC"
+    },
+    {
+      "TableIndex0": 6,
+      "DataRowIndex1": 14,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "TCI activation"
+    },
+    {
+      "TableIndex0": 6,
+      "DataRowIndex1": 15,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "RLC/PDCP/SDAP"
+    },
+    {
+      "TableIndex0": 6,
+      "DataRowIndex1": 16,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "NAS registration/PDU session"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 1,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Latest original operands preserve exact resource/window/branch and internal pre-RX plane. Seven formerly unavailable power plots now publish, including CSI same-branch RSRP/RSSI/RSRQ closure. All RF-reference, power-unit, standardized, accuracy and hardware qualification flags remain false. No relabel as calibrated connector power.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\power_plot_verification.json",
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\power_plane_publication_review.txt"
+      ],
+      "Issue": "SS-RSRP"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 2,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Latest original operands preserve exact resource/window/branch and internal pre-RX plane. Seven formerly unavailable power plots now publish, including CSI same-branch RSRP/RSSI/RSRQ closure. All RF-reference, power-unit, standardized, accuracy and hardware qualification flags remain false. No relabel as calibrated connector power.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\power_plot_verification.json",
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\power_plane_publication_review.txt"
+      ],
+      "Issue": "CSI-RSRP"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 3,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Latest original operands preserve exact resource/window/branch and internal pre-RX plane. Seven formerly unavailable power plots now publish, including CSI same-branch RSRP/RSSI/RSRQ closure. All RF-reference, power-unit, standardized, accuracy and hardware qualification flags remain false. No relabel as calibrated connector power.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\power_plot_verification.json",
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\power_plane_publication_review.txt"
+      ],
+      "Issue": "UL SRS-RSRP"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 4,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "UL SRS-RSRPP"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 5,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Latest original operands preserve exact resource/window/branch and internal pre-RX plane. Seven formerly unavailable power plots now publish, including CSI same-branch RSRP/RSSI/RSRQ closure. All RF-reference, power-unit, standardized, accuracy and hardware qualification flags remain false. No relabel as calibrated connector power.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\power_plot_verification.json",
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\power_plane_publication_review.txt"
+      ],
+      "Issue": "RSSI"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 6,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Latest original operands preserve exact resource/window/branch and internal pre-RX plane. Seven formerly unavailable power plots now publish, including CSI same-branch RSRP/RSSI/RSRQ closure. All RF-reference, power-unit, standardized, accuracy and hardware qualification flags remain false. No relabel as calibrated connector power.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\power_plot_verification.json",
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\power_plane_publication_review.txt"
+      ],
+      "Issue": "RSRQ"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 7,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "SS/CSI SINR"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 8,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "PDSCH/PUSCH SINR"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 9,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "Ec/N0, Eb/N0"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 10,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Original SRS isolated proof survives export and55296 pairs recover without RF re-execution; TRS paired error publishes. CSI-RS RX EVM remains missing and TX pairs must not be relabelled receiver/conformance EVM.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\srs_evm_replay\\receipt.json"
+      ],
+      "Issue": "EVM"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 11,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "Channel NMSE"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 12,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "CRI"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 13,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "RI"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 14,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "PMI/TPMI"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 15,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "CQI"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 16,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "Residual timing"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 17,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Three original post-correction common-frequency records now publish. Preserve common LO/Doppler/channel-evolution ambiguity and independent accuracy requirement; no oscillator-only or maximum-Doppler claim.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\measurement_preview02\\reports\\live_measurements\\latest.json"
+      ],
+      "Issue": "Residual frequency"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 18,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "Doppler spread"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 19,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "TA"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 20,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "AoA/AoD/ZoA/ZoD"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 21,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "Path loss/PDP"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 22,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "SRS port leakage"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 23,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "Inter-layer leakage"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 24,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Original12DL+1UL receiver outcomes and16792/5000 scheduled TBS bits reconcile in retained report replay;16 scheduler checks pass and originals unchanged. This does not close whole-run elapsed-time/unique-HARQ/energy or statistical qualification.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\report_replay03\\receipt.json"
+      ],
+      "Issue": "BER"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 25,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Original12DL+1UL receiver outcomes and16792/5000 scheduled TBS bits reconcile in retained report replay;16 scheduler checks pass and originals unchanged. This does not close whole-run elapsed-time/unique-HARQ/energy or statistical qualification.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\report_replay03\\receipt.json"
+      ],
+      "Issue": "BLER"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 26,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "HARQ residual BLER"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 27,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "Detection/miss/false detection"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 28,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "False ACK/NACK, DTX, SR errors"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 29,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Original12DL+1UL receiver outcomes and16792/5000 scheduled TBS bits reconcile in retained report replay;16 scheduler checks pass and originals unchanged. This does not close whole-run elapsed-time/unique-HARQ/energy or statistical qualification.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\report_replay03\\receipt.json"
+      ],
+      "Issue": "Goodput"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 30,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Original12DL+1UL receiver outcomes and16792/5000 scheduled TBS bits reconcile in retained report replay;16 scheduler checks pass and originals unchanged. This does not close whole-run elapsed-time/unique-HARQ/energy or statistical qualification.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\report_replay03\\receipt.json"
+      ],
+      "Issue": "Spectral efficiency"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 31,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "Latency"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 32,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "Resource overhead"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 33,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "PHR/PCMAX"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 34,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "PAPR/CM"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 35,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "PSD/occupied bandwidth"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 36,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "ACLR/SEM"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 37,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "TRP/EIRP"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 38,
+      "Disposition": "update_stale_cells",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Original12DL+1UL receiver outcomes and16792/5000 scheduled TBS bits reconcile in retained report replay;16 scheduler checks pass and originals unchanged. This does not close whole-run elapsed-time/unique-HARQ/energy or statistical qualification.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\report_replay03\\receipt.json"
+      ],
+      "Issue": "Energy/J per bit"
+    },
+    {
+      "TableIndex0": 7,
+      "DataRowIndex1": 39,
+      "Disposition": "retain_open_scope",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current retained receipt closes the entire stated implementation/variant/qualification requirement. Preserve named component passes and original failures; do not infer broad acceptance from the latest12DL+1UL or diagnostic replays.",
+      "EvidencePaths": [],
+      "Issue": "Complexity/runtime"
+    },
+    {
+      "TableIndex0": 8,
+      "DataRowIndex1": 1,
+      "Disposition": "retain_missing_implementation",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "The exposed channelEstimate method switch accepts LS/wiener/lmmse/ideal, not DCT. Keep coordinate/CDM/boundary/noise/fading qualification requirement.",
+      "EvidencePaths": [
+        "+sixgr/+phy/+rx/channelEstimate.m"
+      ],
+      "Issue": "Configurable DCT channel interpolation"
+    },
+    {
+      "TableIndex0": 8,
+      "DataRowIndex1": 2,
+      "Disposition": "retain_partial_implementation",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Supplied-covariance full LMMSE is implemented; no evidence here closes native first-pass covariance/noise acquisition plus second-pass receiver wiring.",
+      "EvidencePaths": [
+        "+sixgr/+phy/+rx/channelEstimate.m"
+      ],
+      "Issue": "Explicit two-pass MMSE channel estimation"
+    },
+    {
+      "TableIndex0": 8,
+      "DataRowIndex1": 3,
+      "Disposition": "retain_unverified_alternative",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Do not equate current SRS estimation and repaired received-pilot EVM with a legal-delay denoising implementation or its noise-only qualification.",
+      "EvidencePaths": [
+        "+sixgr/+link/runSRSChannelEstimation.m",
+        "tests/testSRSReceivedPilotEVM.m"
+      ],
+      "Issue": "SRS delay-window denoising"
+    },
+    {
+      "TableIndex0": 8,
+      "DataRowIndex1": 4,
+      "Disposition": "retain_unverified_chain",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current receipt establishes end-to-end causal SRS basis, compressed samples/channel, transformed covariance and decoding. CSICompressionAutoencoder is a different responsibility.",
+      "EvidencePaths": [
+        "+sixgr/+phy/+ul/PUSCH_Rx.m",
+        "+sixgr/+ai/CSICompressionAutoencoder.m"
+      ],
+      "Issue": "SRS-derived receive compression"
+    },
+    {
+      "TableIndex0": 8,
+      "DataRowIndex1": 5,
+      "Disposition": "retain_missing_qualification",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No current recovery evidence supplies measured speed classifier or qualified interpolation comparison. No guessed speed thresholds introduced.",
+      "EvidencePaths": [
+        "+sixgr/+phy/+rx/channelEstimate.m"
+      ],
+      "Issue": "Speed-dependent interpolation"
+    },
+    {
+      "TableIndex0": 8,
+      "DataRowIndex1": 6,
+      "Disposition": "retain_unverified_alternative",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Actual PUCCH synchronization repairs are not independent false-ACK/DTX operating-point qualification for alternative metrics.",
+      "EvidencePaths": [
+        "+sixgr/+phy/+ul/PUCCH_Rx.m"
+      ],
+      "Issue": "Alternative PUCCH DTX detectors"
+    },
+    {
+      "TableIndex0": 8,
+      "DataRowIndex1": 7,
+      "Disposition": "retain_unverified_alternative",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Existing PRACH/NTN false-alarm calibration components are not evidence for the full proposed gamma/PNR alternative and correlated-bin/near-far coverage.",
+      "EvidencePaths": [
+        "+sixgr/+ntn/+resilientsync/+prach/calibrateFalseAlarmThreshold.m"
+      ],
+      "Issue": "Alternative PRACH gamma/PNR detector"
+    },
+    {
+      "TableIndex0": 8,
+      "DataRowIndex1": 8,
+      "Disposition": "retain_unverified_alternative",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "SSB frequency-phase repair and practical PRACH do not close root/restricted-set CFO ghost rejection qualification.",
+      "EvidencePaths": [
+        "+sixgr/+ntn/+resilientsync/+prach/runPrachResidualGrid.m"
+      ],
+      "Issue": "PRACH CFO ghost-peak rejection"
+    },
+    {
+      "TableIndex0": 8,
+      "DataRowIndex1": 9,
+      "Disposition": "retain_separate_backend",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Current floating-point MATLAB evidence cannot qualify fixed-point word length/saturation. No fixed-point backend acceptance receipt reviewed.",
+      "EvidencePaths": [
+        "+sixgr/+phy/+rx/channelEstimate.m"
+      ],
+      "Issue": "Fixed-point implementation"
+    },
+    {
+      "TableIndex0": 9,
+      "DataRowIndex1": 1,
+      "Disposition": "update_partial_fixed_subtasks",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Add slot58 native logical energy parser fix and actual retained CSV/native-equivalent energy plus live-derived replay. Reconciled real12DL+1UL, 16792/5000 TBS bits and16 scheduler checks. Original failed run remains failed; all report mathematics/full final run not closed.",
+      "EvidencePaths": [
+        "+sixgr/+truth/buildCommonSignalEnergyObservations.m",
+        "tests/diagnoseN40FailedRunReports.m",
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\report_replay03\\receipt.json"
+      ],
+      "Issue": "P0"
+    },
+    {
+      "TableIndex0": 9,
+      "DataRowIndex1": 2,
+      "Disposition": "update_partial_fixed_subtasks",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Absolute modeled SRS power and actual independent SRS EVM are implemented, not wholly missing. Original3 SRS trials/55296 pairs re-export with original isolation proof,4 original hashes unchanged. Seven physical-power plots recovered by producer operand preservation and correct internal-plane consumer contracts. Internal element measurements explicitly lack standardized connector/RF/power calibration/accuracy qualification.",
+      "EvidencePaths": [
+        "+sixgr/+report/exportControlEVMSamples.m",
+        "+sixgr/+phy/+srs/measureSRSAntennaPower.m",
+        "apps/lls_radio_measurement_plots.py",
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\srs_evm_replay\\receipt.json",
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\power_plot_verification.json"
+      ],
+      "Issue": "P0"
+    },
+    {
+      "TableIndex0": 9,
+      "DataRowIndex1": 3,
+      "Disposition": "replace_obsolete_subclaim",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "DELETE claim live signal-chain projection does not expose SGCS. Actual original dl_pdsch_trials.csv has finite ChannelSGCS and12 provenance/arithmetic fields (first0.995182070938943). Retain live SGCS chart and full final publication acceptance gap; final producer independently recomputes resource pairs.",
+      "EvidencePaths": [
+        "+sixgr/+report/collectChannelSGCSEvidence.m",
+        "+sixgr/+truth/exportLLSReportingBundle.m",
+        "apps/lls_radio_measurement_plots.py"
+      ],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 9,
+      "DataRowIndex1": 4,
+      "Disposition": "update_partial_verified_diagnostics",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Original exhaustive audit parsed470 CSV/6.78M rows and decoded61 PNG; failed run has4 empty aborted report files. New diagnostic previews verify34 PNGs and all plotted CSV/PNG hashes, preserving exact source scopes. This is not complete fresh final-run acceptance.",
+      "EvidencePaths": [
+        "tools/audit_lls_run_exhaustive.py",
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\power_plot_verification.json",
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\exhaustive\\audit_summary.json"
+      ],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 9,
+      "DataRowIndex1": 5,
+      "Disposition": "retain_partial_campaign",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Point/identity safeguards and multiseries tests remain; selected current recovery is2 points,60 slots, not complete six-point/100-slot campaign. No campaign-wide acceptance inferred.",
+      "EvidencePaths": [
+        "tests/test_lls_radio_measurement_plots.py"
+      ],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 9,
+      "DataRowIndex1": 6,
+      "Disposition": "update_partial_fixed_subtasks",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Compact receiver_observations publication now runs separately before heavy energy/static work and passed retained13-trial summaries. Keep full-run latency/performance qualification open; availability is not advanced.",
+      "EvidencePaths": [
+        "+sixgr/+truth/exportLLSLiveDerivedTables.m",
+        "tests/testLiveReceiverSummaryPublication.m",
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\compact_receiver_summaries"
+      ],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 9,
+      "DataRowIndex1": 7,
+      "Disposition": "update_partial_fixed_subtasks",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Original CSI prepared UE/serving-cell binding now precedes authority stamp; actual bounded installed CSI tests pass. Four quiet SSB searches retain original requested candidate/capture identity without inventing detected ResourceId/power. All producer families/full final provenance still require integration.",
+      "EvidencePaths": [
+        "+sixgr/+truth/completeSharedCSIRSReception.m",
+        "+sixgr/+truth/bindSSBSearchMeasurementIdentity.m",
+        "tests/testSSBSearchMeasurementIdentity.m",
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\csi_fixture_batch03_results.json"
+      ],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 9,
+      "DataRowIndex1": 8,
+      "Disposition": "retain_scope_distinctions",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain complete-vs-decode-vs-publication-vs-statistical distinction. Latest native run aborted slot58; successful separate report replay is explicitly nonprimary and not native completion.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\stop_failed_recovery.json",
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\report_replay03\\receipt.json"
+      ],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 9,
+      "DataRowIndex1": 9,
+      "Disposition": "replace_overbroad_reexecution_claim",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Missing original operands still require re-execution. But historical missing export fields are recoverable without RF rerun when actual original pairs/proof are retained: SRS replay proves55296 samples, original hashes unchanged. Do not state all historical gaps require RF re-execution.",
+      "EvidencePaths": [
+        "tests/diagnoseN40RetainedSRSEVM.m",
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\srs_evm_replay\\receipt.json"
+      ],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 9,
+      "DataRowIndex1": 10,
+      "Disposition": "retain_performance_qualification",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Bounded report replay avoids large waveform loading; compact receiver publication is repaired. No integrated memory/runtime/paging qualification or complete fresh run established.",
+      "EvidencePaths": [
+        "tests/diagnoseN40FailedRunReports.m",
+        "tests/testLiveReceiverSummaryPublication.m"
+      ],
+      "Issue": "P1"
+    },
+    {
+      "TableIndex0": 9,
+      "DataRowIndex1": 11,
+      "Disposition": "retain_documentation_audit",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Current selected n40 is30kHz. This HTML itself still has outdated65-slot selection text and a six-point100-slot backlog, while latest attempted recovery uses60slots. Parent owns scenario-history correction; no claim all15kHz documentation is incorrect (some tests intentionally use15kHz).",
+      "EvidencePaths": [
+        "docs/lls/lls_gap_status_20261023.html"
+      ],
+      "Issue": "P2"
+    },
+    {
+      "TableIndex0": 10,
+      "DataRowIndex1": 1,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [],
+      "Issue": "10.1 — Tasks from RAN plenary"
+    },
+    {
+      "TableIndex0": 10,
+      "DataRowIndex1": 2,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [
+        "+sixgr/+phy/+waveform/FDSSStudyEngine.m"
+      ],
+      "Issue": "10.2.1 — Waveform"
+    },
+    {
+      "TableIndex0": 10,
+      "DataRowIndex1": 3,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [],
+      "Issue": "10.3.1 — Coding"
+    },
+    {
+      "TableIndex0": 10,
+      "DataRowIndex1": 4,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [],
+      "Issue": "10.3.2 — Modulation/JCCM"
+    },
+    {
+      "TableIndex0": 10,
+      "DataRowIndex1": 5,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [],
+      "Issue": "10.4.1 — Idle multi-carrier operation"
+    },
+    {
+      "TableIndex0": 10,
+      "DataRowIndex1": 6,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [],
+      "Issue": "10.4.2 — Connected multi-carrier/BW operation"
+    },
+    {
+      "TableIndex0": 11,
+      "DataRowIndex1": 1,
+      "Disposition": "update_partial_implementation",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Add original quiet-SSB candidate identity fix and actual acquisition/receiver provenance progress; uncertainty/coverage matrix, independent detection/energy populations remain.",
+      "EvidencePaths": [
+        "+sixgr/+truth/bindSSBSearchMeasurementIdentity.m",
+        "tests/testSSBSearchMeasurementIdentity.m"
+      ],
+      "Issue": "10.5.1.1 — Synchronization/beam acquisition"
+    },
+    {
+      "TableIndex0": 11,
+      "DataRowIndex1": 2,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [
+        "+sixgr/+truth/CoupledTruthRuntime.m"
+      ],
+      "Issue": "10.5.1.2 — PRACH/RACH"
+    },
+    {
+      "TableIndex0": 11,
+      "DataRowIndex1": 3,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [
+        "+sixgr/+truth/CoupledTruthRuntime.m"
+      ],
+      "Issue": "10.5.1.3 — Bandwidth operation"
+    },
+    {
+      "TableIndex0": 11,
+      "DataRowIndex1": 4,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [
+        "+sixgr/+truth/CoupledTruthRuntime.m"
+      ],
+      "Issue": "10.5.2.1 — DL control transmission"
+    },
+    {
+      "TableIndex0": 11,
+      "DataRowIndex1": 5,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [
+        "+sixgr/+truth/CoupledTruthRuntime.m"
+      ],
+      "Issue": "10.5.2.2 — DL shared transmission"
+    },
+    {
+      "TableIndex0": 11,
+      "DataRowIndex1": 6,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [
+        "+sixgr/+truth/CoupledTruthRuntime.m"
+      ],
+      "Issue": "10.5.2.3 — UL transmission"
+    },
+    {
+      "TableIndex0": 11,
+      "DataRowIndex1": 7,
+      "Disposition": "update_partial_implementation",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Original installed CSI completion authority and internal-plane measurement publication now pass bounded tests; broader codebook/high-port/throughput/statistical comparisons remain.",
+      "EvidencePaths": [
+        "+sixgr/+truth/completeSharedCSIRSReception.m",
+        "tests/testSharedInstalledCSIRSCompletion.m",
+        "apps/lls_radio_measurement_plots.py"
+      ],
+      "Issue": "10.5.3.1 — DL CSI"
+    },
+    {
+      "TableIndex0": 11,
+      "DataRowIndex1": 8,
+      "Disposition": "replace_obsolete_subclaim",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Do not list all absolute SRS power as absent: original modeled internal received-power path and independent pilot pairs exist and are verified. Keep broader high-port/cross-slot/reciprocity/power accuracy/campaign matrix open.",
+      "EvidencePaths": [
+        "+sixgr/+phy/+srs/measureSRSAntennaPower.m",
+        "+sixgr/+report/collectSRSPhysicalMeasurementObservations.m",
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\srs_evm_replay\\receipt.json"
+      ],
+      "Issue": "10.5.3.2 — UL CSI/SRS"
+    },
+    {
+      "TableIndex0": 11,
+      "DataRowIndex1": 9,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [
+        "+sixgr/+truth/CoupledTruthRuntime.m"
+      ],
+      "Issue": "10.5.3.3 — Joint/other CSI/tracking"
+    },
+    {
+      "TableIndex0": 11,
+      "DataRowIndex1": 10,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [
+        "+sixgr/+truth/CoupledTruthRuntime.m"
+      ],
+      "Issue": "10.5.3.4 — Beam management"
+    },
+    {
+      "TableIndex0": 11,
+      "DataRowIndex1": 11,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [
+        "+sixgr/+truth/CoupledTruthRuntime.m"
+      ],
+      "Issue": "10.5.4.1 — DCI/dynamic scheduling"
+    },
+    {
+      "TableIndex0": 11,
+      "DataRowIndex1": 12,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [
+        "+sixgr/+truth/CoupledTruthRuntime.m"
+      ],
+      "Issue": "10.5.4.2 — Without dynamic scheduling"
+    },
+    {
+      "TableIndex0": 11,
+      "DataRowIndex1": 13,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [
+        "+sixgr/+truth/CoupledTruthRuntime.m"
+      ],
+      "Issue": "10.5.4.3 — HARQ"
+    },
+    {
+      "TableIndex0": 11,
+      "DataRowIndex1": 14,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [
+        "+sixgr/+truth/CoupledTruthRuntime.m"
+      ],
+      "Issue": "10.5.4.4 — Multiple UL transmissions"
+    },
+    {
+      "TableIndex0": 11,
+      "DataRowIndex1": 15,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [
+        "+sixgr/+truth/CoupledTruthRuntime.m"
+      ],
+      "Issue": "10.5.5 — Other PHY"
+    },
+    {
+      "TableIndex0": 12,
+      "DataRowIndex1": 1,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [],
+      "Issue": "10.6.1.1 — OFDM-sequence DL WUS"
+    },
+    {
+      "TableIndex0": 12,
+      "DataRowIndex1": 2,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [],
+      "Issue": "10.6.1.2 — WUS in RRC states"
+    },
+    {
+      "TableIndex0": 12,
+      "DataRowIndex1": 3,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [],
+      "Issue": "10.6.2 — UL WUS"
+    },
+    {
+      "TableIndex0": 12,
+      "DataRowIndex1": 4,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [],
+      "Issue": "10.6.3 — WUS with other functions"
+    },
+    {
+      "TableIndex0": 13,
+      "DataRowIndex1": 1,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [
+        "+sixgr/+ntn/+resilientsync/runCampaign.m",
+        "+sixgr/+ntn/+resilientsync/runTDocStudyChainGate.m",
+        "tests/ntn_resilient_sync/TestTDocChainGate.m"
+      ],
+      "Issue": "Scenario matrix"
+    },
+    {
+      "TableIndex0": 13,
+      "DataRowIndex1": 2,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [
+        "+sixgr/+ntn/+resilientsync/runCampaign.m",
+        "+sixgr/+ntn/+resilientsync/runTDocStudyChainGate.m",
+        "tests/ntn_resilient_sync/TestTDocChainGate.m"
+      ],
+      "Issue": "Synchronization"
+    },
+    {
+      "TableIndex0": 13,
+      "DataRowIndex1": 3,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [
+        "+sixgr/+ntn/+resilientsync/runCampaign.m",
+        "+sixgr/+ntn/+resilientsync/runTDocStudyChainGate.m",
+        "tests/ntn_resilient_sync/TestTDocChainGate.m"
+      ],
+      "Issue": "Acquisition"
+    },
+    {
+      "TableIndex0": 13,
+      "DataRowIndex1": 4,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [
+        "+sixgr/+ntn/+resilientsync/runCampaign.m",
+        "+sixgr/+ntn/+resilientsync/runTDocStudyChainGate.m",
+        "tests/ntn_resilient_sync/TestTDocChainGate.m"
+      ],
+      "Issue": "UL"
+    },
+    {
+      "TableIndex0": 13,
+      "DataRowIndex1": 5,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [
+        "+sixgr/+ntn/+resilientsync/runCampaign.m",
+        "+sixgr/+ntn/+resilientsync/runTDocStudyChainGate.m",
+        "tests/ntn_resilient_sync/TestTDocChainGate.m"
+      ],
+      "Issue": "Feedback/HARQ"
+    },
+    {
+      "TableIndex0": 13,
+      "DataRowIndex1": 6,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [
+        "+sixgr/+ntn/+resilientsync/runCampaign.m",
+        "+sixgr/+ntn/+resilientsync/runTDocStudyChainGate.m",
+        "tests/ntn_resilient_sync/TestTDocChainGate.m"
+      ],
+      "Issue": "RF/link budget"
+    },
+    {
+      "TableIndex0": 13,
+      "DataRowIndex1": 7,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [
+        "+sixgr/+ntn/+resilientsync/runCampaign.m",
+        "+sixgr/+ntn/+resilientsync/runTDocStudyChainGate.m",
+        "tests/ntn_resilient_sync/TestTDocChainGate.m"
+      ],
+      "Issue": "Qualification"
+    },
+    {
+      "TableIndex0": 14,
+      "DataRowIndex1": 1,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [
+        "+sixgr/+isac/runJointStudy.m",
+        "+sixgr/+isac/run1083Validation.m",
+        "+sixgr/+isac/verifyJointArtifacts.m"
+      ],
+      "Issue": "10.8.1 — Evaluation"
+    },
+    {
+      "TableIndex0": 14,
+      "DataRowIndex1": 2,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [
+        "+sixgr/+isac/runJointStudy.m",
+        "+sixgr/+isac/run1083Validation.m",
+        "+sixgr/+isac/verifyJointArtifacts.m"
+      ],
+      "Issue": "10.8.2 — Integration with communication"
+    },
+    {
+      "TableIndex0": 14,
+      "DataRowIndex1": 3,
+      "Disposition": "retain_separate_study",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain: no complete accepted experiment/statistical population for the entire stated requirement was supplied by the current n40 recovery. Component code existence or bounded terrestrial tests do not establish study closure.",
+      "EvidencePaths": [
+        "+sixgr/+isac/runJointStudy.m",
+        "+sixgr/+isac/run1083Validation.m",
+        "+sixgr/+isac/verifyJointArtifacts.m"
+      ],
+      "Issue": "10.8.3 — Waveform/frame structure"
+    },
+    {
+      "TableIndex0": 15,
+      "DataRowIndex1": 1,
+      "Disposition": "update_partial_fixed_subtasks",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Add exact energy/native-logical report repair, retained energy replay, categorical numeric-operand preservation and eight recovered measurement outputs; accuracy/full integrated acceptance still open. Duplicate summary of table9 rows1/2 and detailed reports section; cross-reference rather than duplicate active bugs.",
+      "EvidencePaths": [
+        "tests/testCommonSignalEnergyObservations.m",
+        "tests/testSerializedMeasurementOperandPreservation.m",
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\report_replay03\\receipt.json",
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\power_plot_verification.json"
+      ],
+      "Issue": "1 — P0"
+    },
+    {
+      "TableIndex0": 15,
+      "DataRowIndex1": 2,
+      "Disposition": "retain_active_integration",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Latest real run reached12DL+1UL before slot58 abort; no sustained UL rank/MCS population or full n40 qualification. Current acquisition policy agent is still repairing/rerunning focused cases; do not mark ongoing edits accepted based on source presence.",
+      "EvidencePaths": [
+        "+sixgr/+truth/CoupledTruthRuntime.m",
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\report_replay03\\receipt.json"
+      ],
+      "Issue": "3 — P0"
+    },
+    {
+      "TableIndex0": 15,
+      "DataRowIndex1": 3,
+      "Disposition": "retain_integrated_power_matrix",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Received grants, original shared SRS proof and bounded data power arithmetic exist; entire simultaneous-channel power/collision/timing matrix not accepted.",
+      "EvidencePaths": [
+        "tests/test20MHzSharedSRSPowerBinding.m",
+        "+sixgr/+truth/measureReceivedDataCarrierPower.m"
+      ],
+      "Issue": "4 — P0/P1"
+    },
+    {
+      "TableIndex0": 15,
+      "DataRowIndex1": 4,
+      "Disposition": "update_partial_verified_diagnostics",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Add production CSV/PNG recovery:33 source-bound preview charts plus1 original-pair SRS diagnostic;162 Python power tests and3 MATLAB tests pass. No fresh final full-run/WebGUI acceptance. Cross-reference table9 rows2/4/6 instead of duplicate broad bugs.",
+      "EvidencePaths": [
+        "apps/lls_radio_measurement_plots.py",
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\power_matlab_batch01.log",
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\power_plot_verification.json"
+      ],
+      "Issue": "5 — P1"
+    },
+    {
+      "TableIndex0": 15,
+      "DataRowIndex1": 5,
+      "Disposition": "retain_campaign_not_completed",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "Retain explicit not completed six-point100-slot campaign. Clarify it is backlog scope, not current selected recovery command; latest two-point60-slot run aborted slot58 and no checkpoint55→completion resume accepted. No report replay can close native run.",
+      "EvidencePaths": [
+        "E:\\SixGRResults\\diagnostics\\n40_failure_20261026_slot58\\stop_failed_recovery.json"
+      ],
+      "Issue": "7 — Integration"
+    },
+    {
+      "TableIndex0": 15,
+      "DataRowIndex1": 6,
+      "Disposition": "retain_separate_qualification",
+      "RecommendRemoveEntireActiveRow": false,
+      "RecommendedUpdate": "No independent statistical/held-out/Chair-note campaign receipt supplied by this recovery; keep separate from core bug backlog.",
+      "EvidencePaths": [],
+      "Issue": "8 — Qualification"
+    }
+  ],
+  "LatestMeasurementInventory": "measurement_inventory_review.json",
+  "LatestMeasurementFamilyCount": 39
+}

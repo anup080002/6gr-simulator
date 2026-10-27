@@ -140,6 +140,8 @@
       "full_duplex_coordination": {"required": true, "type": "string"}, "self_interference_estimation": {"required": true, "type": "string"}
     }},
     "csi_acquisition_and_reporting": {"required": true, "parameters": {
+        "selection_backend": {"required": false, "type": "string", "allowed_values": ["native_maxse_r2026a", "portable_typeI_mmse"]},
+        "portable_cqi_model": {"required": false, "type": "struct", "nested_rule": "portable_cqi_model"},
       "dl_csi_enabled": {"required": true, "type": "boolean"}, "ul_csi_enabled": {"required": true, "type": "boolean"},
       "joint_dl_ul_csi_enabled": {"required": true, "type": "boolean"}, "csi_rs_baseline_flag": {"required": true, "type": "boolean"},
       "dmrs_based_csi_flag": {"required": true, "type": "boolean"}, "srs_based_csi_flag": {"required": true, "type": "boolean"},
@@ -165,6 +167,7 @@
     }}
   },
   "nested_sections": {
+    "portable_cqi_model": {"parameters": {"model_id": {"required": true, "type": "string"}, "source": {"required": true, "type": "string"}, "cqi_table": {"required": true, "type": "string"}, "thresholds_db": {"required": true, "type": "array", "item_type": "number", "min_items": 15}, "comparison_tolerance_db": {"required": true, "type": "number", "min": 0, "max": 0.001}, "calibration_qualified": {"required": true, "type": "boolean"}}},
     "csi_report_configuration": {"parameters": {
       "report_config_id": {"required": true, "type": "string", "nonempty": true},
       "epoch": {"required": true, "type": "integer", "min": 0},

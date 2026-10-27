@@ -201,8 +201,18 @@ end
 function value=num(T,names)
 value=NaN;
 for name=names
-    candidate=str2double(txt(T,name));
-    if isscalar(candidate)&&isfinite(candidate), value=candidate; return; end
+    if ~ismember(name,T.Properties.VariableNames), continue; end
+    original=T.(name);
+    % Native completed-stage flags/CRC outcomes are logical. Converting
+    % them through string produces true/false, not numeric CSV tokens.
+    if isnumeric(original)||islogical(original)
+        candidate=double(original);
+    elseif isstring(original)||ischar(original)||iscellstr(original)
+        candidate=str2double(string(original));
+    else
+        continue;
+    end
+    if isreal(candidate)&&isscalar(candidate)&&isfinite(candidate), value=candidate; return; end
 end
 end
 

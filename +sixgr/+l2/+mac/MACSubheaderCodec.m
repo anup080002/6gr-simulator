@@ -27,7 +27,7 @@ classdef MACSubheaderCodec
             end
         end
         function [schema,payloadLength,headerLength]=decode(direction,bytes)
-            bytes=uint8(bytes(:).');
+            bytes=sixgr.l2.mac.requireMACOctets(bytes);
             if isempty(bytes), error("sixgr:mac:TruncatedMACPDU","Missing subheader."); end
             lcid=bitand(bytes(1),63);
             schema=sixgr.l2.mac.MACCESchemaRegistry.resolve(direction,double(lcid));

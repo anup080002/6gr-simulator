@@ -1,4 +1,4 @@
-function state=completeSharedMsg1Transmission(state,item)
+function [state,observed]=completeSharedMsg1Transmission(state,item)
 % UE-only completion: no gNB detector, TA, cell response or receiver row.
 assert(isstruct(item) && isscalar(item) && item.Kind=="Msg1TX", ...
     'sixgr:truth:InvalidMsg1TXCompletion','Require the original Msg1 TX callback.');
@@ -21,9 +21,25 @@ assert(isequaln(next.RAConfig,cp.RAConfig) && isequaln(next.RARReceiver,cp.RARRe
     isempty(fieldnames(next.Detection)) && isempty(fieldnames(next.TimingAdvance)), ...
     'sixgr:truth:Msg1TXChangedReceiverState','Emission cannot manufacture gNB or received-RAR state.');
 attempt.Continuation=next;
+attempt.Msg1TransmissionCompletion=result.Msg1TransmissionCompletion;
 % Do not set attempt.Received: this is a physical TX receipt, not a receiver
 % result for the legacy control-trial publication path.
 state.PendingRAAttempts{ue}=attempt;
 state.RARetryByUE{ue}=retry;
 state.CompletedMsg1TransmissionIDs=[done(:);string(item.ID)];
+proof=result.Msg1TransmissionCompletion;
+tx=cp.Msg1Tx;p=item.Context.Prepared;
+tx.TransmitPortResourceGrid=p.TransmitPortResourceGrid;
+tx.TransmitProjectionMatrix=p.TransmitProjectionMatrix;
+tx.TransmitProjectionMatrixSHA256=p.TransmitProjectionMatrixSHA256;
+tx.WaveformStartSample=proof.TransmitStartSample;
+observed=sixgr.truth.buildObservedREAllocation(tx,'Channel','PRACH','Direction','UL', ...
+    'AbsoluteSlot',cp.RAConfig.PRACHAbsoluteSlot,'CellID',cp.RAConfig.ServingCell, ...
+    'UEID',ue,'AllocationID',string(item.ID));
+observed.observation_start_sample=repmat(proof.TransmitStartSample,height(observed),1);
+observed.observation_end_sample_exclusive=repmat(proof.ActiveEndSample,height(observed),1);
+observed.observation_sample_rate_hz=repmat(proof.SampleRateHz,height(observed),1);
+root=attempt.Config.run.rootRunFolder;
+folder=fullfile(root,'control','ue_msg1_transmissions');sixgr.util.ensureFolder(folder);
+sixgr.util.jsonWrite(fullfile(folder,string(item.ID)+'.json'),proof);
 end

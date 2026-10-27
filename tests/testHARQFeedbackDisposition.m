@@ -12,7 +12,7 @@ for outcome=["ACK","NACK","DTX"]
     assert(isequal(harq.getSoftBuffer(321,0),soft) && ...
         isequal(state.DLCombinedLLR{1,1},soft.LLRSum), ...
         'Stale feedback must preserve both current-attempt soft buffers.');
-    assert(isempty(recorder.Updates) && harq.Stats.Ack==stats.Ack && ...
+    assert(isempty(recorder.Updates) && isempty(recorder.TransitionUpdates) && harq.Stats.Ack==stats.Ack && ...
         harq.Stats.Nack==stats.Nack && harq.Stats.Dtx==stats.Dtx && ...
         harq.Stats.StaleFeedbackIgnored==stats.StaleFeedbackIgnored+1);
     t=state.PUCCHGrantTraceTable;
@@ -28,6 +28,9 @@ for outcome=["ACK","NACK","DTX"]
     row.SourceSlot=3; row.DueSlot=4;
     state=sixgr.truth.CoupledTruthRuntime.applyObservedPUCCHFeedbackRuntime(state,row,observed);
     assert(numel(recorder.Updates)==1 && string(recorder.Updates{1}.Outcome)==outcome);
+    assert(numel(recorder.TransitionUpdates)==1 && ...
+        recorder.TransitionUpdates{1}.SourceSlot==3 && ...
+        string(recorder.TransitionUpdates{1}.Outcome)==outcome);
     assert(state.PUCCHGrantTraceTable.HARQFeedbackApplied(1)==1 && ...
         state.PUCCHGrantTraceTable.StateChangeApplied(1));
     assert(state.ControlTrials.PUCCH.HARQFeedbackAppliedCount(1)==1 && ...
@@ -39,7 +42,8 @@ for outcome=["ACK","NACK","DTX"]
             isequal(harq.getSoftBuffer(321,0),soft));
     end
     state=sixgr.truth.CoupledTruthRuntime.applyObservedPUCCHFeedbackRuntime(state,row,observed);
-    assert(numel(recorder.Updates)==1 && state.PUCCHGrantTraceTable.StaleFeedbackIgnored(1)==1, ...
+    assert(numel(recorder.Updates)==1 && numel(recorder.TransitionUpdates)==1 && ...
+        state.PUCCHGrantTraceTable.StaleFeedbackIgnored(1)==1, ...
         'Duplicate current-attempt feedback must not update adaptation twice.');
 end
 
@@ -48,12 +52,15 @@ for ack=[true,false]
     [state,row,harq,recorder,soft]=localState("UL");
     row.Ack=ack; row.DueSlot=2;
     state=sixgr.truth.CoupledTruthRuntime.applyDecodedULHARQOutcomeRuntime(state,row);
-    assert(isempty(recorder.Updates) && isequal(harq.getSoftBuffer(321,0),soft));
+    assert(isempty(recorder.Updates) && isempty(recorder.TransitionUpdates) && ...
+        isequal(harq.getSoftBuffer(321,0),soft));
     row.SourceSlot=3; row.DueSlot=4;
     state=sixgr.truth.CoupledTruthRuntime.applyDecodedULHARQOutcomeRuntime(state,row);
     assert(numel(recorder.Updates)==1 && recorder.Updates{1}.Ack==ack);
+    assert(numel(recorder.TransitionUpdates)==1 && ...
+        recorder.TransitionUpdates{1}.SourceSlot==3 && recorder.TransitionUpdates{1}.Ack==ack);
     sixgr.truth.CoupledTruthRuntime.applyDecodedULHARQOutcomeRuntime(state,row);
-    assert(numel(recorder.Updates)==1);
+    assert(numel(recorder.Updates)==1 && numel(recorder.TransitionUpdates)==1);
 end
 
 % Reject ambiguous physical-trial ownership before any handle mutation.

@@ -1,0 +1,20 @@
+inherits:
+  - ./lls_missing_selected_ssb_pucch_recovery.yaml
+meta:
+  scenario_id: lls_selected_pusch_retained_ssb_recovery
+  description: Actual CSI6 and withheld UCI10 followed by received SRS9, fresh SSB11, decoded UL control14 and selected PUSCH15; component RA/TAG only.
+reference_signals:
+  srs_slot_within_period: 4
+  srs:
+    period_offset: 3
+
+# Declared SRS resource-set reference; independent of PUCCH's missing beam1.
+# Its power comes from actual beam0 SSB and decoded SIB1 delivered at slot6.
+rf_frontend:
+  ul_power_control:
+    srs:
+      pathloss_reference:
+        reference_signal_type: SSB
+        reference_signal_id: 0
+        pathloss_reference_rs_id: 1
+        maximum_age_slots: 20

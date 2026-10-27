@@ -402,9 +402,17 @@ methods(Static)
         state.PacketDeliveryLedgerTable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptyPacketDeliveryLedgerRow(), 0, 1));
         state.PacketSDULedgerTable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptyPacketSDULedgerRow(), 0, 1));
         protocolCfg = sixgr.util.structGet(cfgMob, "protocol", struct());
+        state.ULMACPolicy=sixgr.util.structGet(cfgMob,'phy.mac.uplinkControl',struct('Enabled',false));
         state.ProtocolWaveformEnabled = logical(sixgr.util.structGet(protocolCfg, "enabled", false)) && ...
             logical(sixgr.util.structGet(protocolCfg, "strict", false));
         if state.ProtocolWaveformEnabled
+            state.ProtocolPayloadSeed=double(sixgr.util.structGet(cfg,"run.seed",NaN));
+            if logical(sixgr.util.structGet(protocolCfg,'rlc.arq_enabled',false)) || ...
+                    isfinite(double(sixgr.util.structGet(protocolCfg,'pdcp.discard_timer_ms',inf)))
+                info=nrOFDMInfo(sixgr.phy.grid.makeCarrier(cfg));
+                protocolCfg.sample_rate_hz=double(info.SampleRate);
+                protocolCfg.clock_epoch=double(cfg.rf.configurationEpoch);
+            end
             state.ProtocolBridge = sixgr.protocol.WaveformProtocolBridge(protocolCfg, nUsers);
         else
             state.ProtocolBridge = [];
@@ -1526,7 +1534,9 @@ methods(Static)
                     carrier=sixgr.phy.grid.makeCarrier(cfg);
                     cfg.lls6g.userContext.RuntimeSlotStartTime_s=sixgr.phy.frame.slotStartSample( ...
                         carrier,slot-1,state.SharedWaveformStream.SampleRateHz)/state.SharedWaveformStream.SampleRateHz;
-                    [prepared,admission]=sixgr.truth.prepareConfiguredSRTransmission(state,cfg,hypothesis);
+                    state=sixgr.truth.installSharedReceivedPUCCHPower(state,cfg,ue);
+                    [prepared,admission,deferred,state]=sixgr.truth.prepareConfiguredSRTransmission(state,cfg,hypothesis,item);
+                    if deferred, return; end
                     if ~isempty(admission) && ~admission.PreparationAdmitted
                         state=sixgr.truth.CoupledTruthRuntime.deferSharedPUCCHPowerRuntime( ...
                             state,item,cfg,hypothesis,rows,admission);
@@ -1620,6 +1630,15 @@ methods(Static)
             assert(execution.GNBReception.SelectedTransport=="PUCCH", ...
                 'sixgr:truth:CSITransportOwnershipConflict', ...
                 'A CSI PUCCH producer cannot override an overlapping scheduled PUSCH transport.');
+        end
+        if string(sixgr.util.structGet(cfg,'validation.pucch_resources.power_control.closed_loop_mode','configured'))=="received_dci"
+            state=sixgr.truth.installSharedReceivedPUCCHPower(state,cfg,ue);
+            planning=execution; planning.PlanOnly=true;
+            [~,powerPlan]=sixgr.truth.CoupledTruthRuntime.observePUCCHFeedback(state,rows,csi,planning);
+            bookForPower=sixgr.util.structGet(execution,'UEHARQCodebook',struct());
+            [deferred,powerBinding]=sixgr.truth.resolveSharedReceivedPUCCHPower(state,item,cfg,powerPlan,bookForPower);
+            if deferred, return; end
+            execution.ReceivedPowerBinding=powerBinding;
         end
         [admitted,cfg,admission]=sixgr.truth.resolveSharedPUCCHPowerAdmission(state,cfg,ue,slot);
         if ~admitted
@@ -2228,6 +2247,11 @@ methods(Static)
             'UETransmissionExecuted',NaN,'FalseSRDetection',NaN, ...
             'MissedSRDetection',NaN,'SchedulerStateChanged',false, ...
             'Disposition',disposition,'Source',"actual_shared_PUCCH_SR_receiver");
+        if logical(sixgr.util.structGet(c.Config,'phy.mac.uplinkControl.Enabled',false))
+            [state,scope]=sixgr.truth.ensureULMACOwners(state,c.Config,item.UE,h.ServingCell);
+            row.SchedulerStateChanged=state.SharedGNBBufferStates{item.UE}.admitSR(row,scope);
+            if row.SchedulerStateChanged, row.Disposition="positive_SR_admitted_received_demand"; end
+        end
         state.SharedGNBSRReceptionTable=sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
             sixgr.util.structGet(state,'SharedGNBSRReceptionTable',table()),struct2table(row,'AsArray',true));
         % No positive SR transmission means there is no payload to compare.
@@ -3363,6 +3387,9 @@ methods(Static, Access=private)
                 "Runtime scheduling direction must be DL or UL.");
         end
         state.CurrentDirection = direction;
+        if logical(sixgr.util.structGet(state,'ProtocolWaveformEnabled',false))&&state.ProtocolBridge.OriginalRRCRequired
+            state=sixgr.truth.enqueueProtocolApplicationPackets(state,cfg);
+        end
         grants = repmat(struct(), 0, 1);
         info = struct("Direction", char(direction), "ActiveUsers", 0, ...
             "GrantedUsers", 0, "GrantCount", 0, "QueueBits", 0, ...
@@ -3756,12 +3783,12 @@ methods(Static, Access=private)
         end
         queueBits = 0;
         if direction == "UL"
-            queueBits = sum(double(state.ULQueueBits), "omitnan");
+            queueBits = sum(sixgr.truth.ulSchedulingQueueBits(state), "omitnan");
             state.LastULGrantCount = nGrant;
             state.LastULGrantedUsers = numel(unique(grantedUsers));
             state.LastULActiveUsers = activeUsers;
         else
-            queueBits = sum(double(state.DLQueueBits), "omitnan");
+            queueBits = sum(sixgr.truth.dlSchedulingQueueBits(state), "omitnan");
             state.LastDLGrantCount = nGrant;
             state.LastDLGrantedUsers = numel(unique(grantedUsers));
             state.LastDLActiveUsers = activeUsers;
@@ -4327,6 +4354,11 @@ methods(Static, Access=private)
             layout, state.CfgMobility, "prach", "prach_trials.csv", ...
             sixgr.util.structGet(state.ControlTrials, "PRACH", table()));
         sixgr.truth.CoupledTruthRuntime.writeMirroredTable(layout, "pdcch_trials.csv", sixgr.util.structGet(state.ControlTrials, "PDCCH", table()));
+        receivedPowerHistory=sixgr.truth.collectReceivedPUCCHPowerHistory(state);
+        if ~isempty(receivedPowerHistory)
+            sixgr.truth.CoupledTruthRuntime.writeMirroredTable( ...
+                layout,"pucch_received_power_history.csv",receivedPowerHistory);
+        end
         pucchT = sixgr.util.structGet(state.ControlTrials, "PUCCH", table());
         standalonePUCCHRequired = logical(sixgr.util.structGet(state.CfgMobility, ...
             "control_gating.pucch_required", sixgr.util.structGet(state.CfgMobility, ...
@@ -4399,8 +4431,12 @@ methods(Static, Access=private)
         end
         % Compact post-reception timing evidence uses the same arithmetic as
         % final publication. It does not modify the received CSI or UE state.
+        identityTransitions=sixgr.report.loadCSIIdentityTransitions(layout.Root, ...
+            sixgr.util.structGet(state,'RadioIdentityBindings',struct([])), ...
+            sixgr.truth.bindCoupledExecutionIdentity( ...
+                sixgr.util.structGet(state.ControlTrials,'PRACH',table()),state.CfgMobility,'PRACH'));
         csiLatency=sixgr.report.collectCSIReportLatency(receivedCSI, ...
-            sixgr.util.structGet(state.ControlTrials,'CSIRS',table()));
+            sixgr.util.structGet(state.ControlTrials,'CSIRS',table()),identityTransitions);
         sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, ...
             "csi_report_latency_observations.csv"),csiLatency, ...
             'PreserveSchema',true,'RoundTripNumericText',true);
@@ -6296,11 +6332,11 @@ methods(Static, Access=private)
         feedback = sixgr.truth.CoupledTruthRuntime.latestFeedbackForDirection(state, ueIdx, direction);
         rnti = sixgr.truth.CoupledRadioIdentity.resolve(state,ueIdx,servingCell);
         if direction == "UL"
-            queueBits = double(state.ULQueueBits(ueIdx));
+            ulQueues=sixgr.truth.ulSchedulingQueueBits(state); queueBits=ulQueues(ueIdx);
             harq = state.ULHarq;
             layersCfg = double(sixgr.util.structGet(cfg, "phy.pusch.nLayers", sixgr.util.structGet(cfg, "phy.pusch.numLayers", 1)));
         else
-            queueBits = double(state.DLQueueBits(ueIdx));
+            dlQueues=sixgr.truth.dlSchedulingQueueBits(state); queueBits=dlQueues(ueIdx);
             harq = state.DLHarq;
             layersCfg = double(sixgr.util.structGet(cfg, "phy.pdsch.nLayers", sixgr.util.structGet(cfg, "phy.pdsch.numLayers", 1)));
         end
@@ -6407,6 +6443,17 @@ methods(Static, Access=private)
         ueState.UEIndex = double(ueIdx);
         ueState.ServingCell = double(servingCell);
         ueState.RNTI = double(rnti);
+        ueState.ReceivedPHREvidence=struct('Usable',false,'Reason',"not_applicable",'Report',struct());
+        macPolicy=sixgr.util.structGet(cfg,'phy.mac.uplinkControl',struct('Enabled',false));
+        if direction=="UL" && macPolicy.Enabled && isfield(state,'SharedGNBPHRStates') && ...
+                numel(state.SharedGNBPHRStates)>=ueIdx && ~isempty(state.SharedGNBPHRStates{ueIdx})
+            phrOwner=state.SharedGNBPHRStates{ueIdx}; scope=phrOwner.Scope;
+            if scope.RNTI==rnti && scope.CellID==servingCell && ...
+                    scope.ConfigurationEpoch==cfg.protocol.configuration_epoch
+                ueState.ReceivedPHREvidence=phrOwner.eligible(scope,state.SharedWaveformStream.Events.NextSampleIndex, ...
+                    floor(macPolicy.ReceivedReportMaxAge_s*scope.SampleRateHz));
+            end
+        end
         ueState.SharedULTimingRequired=isfield(state,'SharedWaveformStream') && ...
             isa(state.SharedWaveformStream,'sixgr.truth.CoupledWaveformStream');
         ueState.SharedULTimingContext=sixgr.truth.CoupledTruthRuntime. ...
@@ -6722,9 +6769,9 @@ methods(Static, Access=private)
         direction = upper(string(direction));
         servingIdx = reshape(double(sixgr.util.structGet(state, "CurrentServingIdx", [])), [], 1);
         if direction == "UL"
-            queues = reshape(double(sixgr.util.structGet(state, "ULQueueBits", zeros(numel(servingIdx), 1))), [], 1);
+            queues = reshape(sixgr.truth.ulSchedulingQueueBits(state),[],1);
         else
-            queues = reshape(double(sixgr.util.structGet(state, "DLQueueBits", zeros(numel(servingIdx), 1))), [], 1);
+            queues = reshape(sixgr.truth.dlSchedulingQueueBits(state),[],1);
         end
         n = min(numel(servingIdx), numel(queues));
         for ueIdx = 1:n
@@ -6792,9 +6839,9 @@ methods(Static, Access=private)
         direction = upper(string(direction));
         servingIdx = double(sixgr.util.structGet(state, "CurrentServingIdx", []));
         if direction == "UL"
-            queues = double(sixgr.util.structGet(state, "ULQueueBits", zeros(numel(servingIdx), 1)));
+            queues = sixgr.truth.ulSchedulingQueueBits(state);
         else
-            queues = double(sixgr.util.structGet(state, "DLQueueBits", zeros(numel(servingIdx), 1)));
+            queues = sixgr.truth.dlSchedulingQueueBits(state);
         end
         if isempty(servingIdx)
             allowedCell = NaN;
@@ -6901,9 +6948,9 @@ methods(Static, Access=private)
         direction = upper(string(direction));
         servingIdx = reshape(double(sixgr.util.structGet(state, "CurrentServingIdx", [])), [], 1);
         if direction == "UL"
-            queues = reshape(double(sixgr.util.structGet(state, "ULQueueBits", zeros(numel(servingIdx), 1))), [], 1);
+            queues = reshape(sixgr.truth.ulSchedulingQueueBits(state),[],1);
         else
-            queues = reshape(double(sixgr.util.structGet(state, "DLQueueBits", zeros(numel(servingIdx), 1))), [], 1);
+            queues = reshape(sixgr.truth.dlSchedulingQueueBits(state),[],1);
         end
         n = min(numel(servingIdx), numel(queues));
         if n <= 0
@@ -6957,6 +7004,11 @@ methods(Static, Access=private)
         reason="";
         if ~tf, reason="shared_access_tracking_or_coverage_gate"; end
         direction = upper(strtrim(string(direction)));
+        if tf&&logical(sixgr.util.structGet(state,'ProtocolWaveformEnabled',false))&&state.ProtocolBridge.OriginalRRCRequired
+            endpoint="TX";if direction=="UL",endpoint="RX";end
+            tf=state.ProtocolBridge.endpointAdmitted(ueIdx,direction,endpoint);
+            if ~tf,reason="original_gNB_DRB_endpoint_not_admitted";end
+        end
         if direction == "DL" && tf
             [tf,qclStatus] = sixgr.truth.qclTimingSchedulingEligibility(state,ueIdx);
             if ~tf, reason=string(qclStatus); end
@@ -7828,6 +7880,7 @@ methods(Static, Access=private)
                 string(targetId) + "_resource_" + string(meas.ResourceId) + ...
                 "_slot_" + string(producerSlot));
         end
+        meas=sixgr.truth.bindSSBSearchMeasurementIdentity(meas,row);
         if signalType=="TRS" && targetType=="UE"
             assert(isfinite(meas.ServingCell) && meas.ServingCell>=1 && ...
                 meas.ServingCell==fix(meas.ServingCell), ...
@@ -10239,17 +10292,33 @@ methods(Static, Access=private)
         scheduledPayloadBits = tbsBits;
         if payloadSameWaveform
             scheduledPayloadBits = double(sixgr.util.structGet(grant, "ProtocolPayloadBits", NaN));
-            if ~(isfinite(scheduledPayloadBits) && scheduledPayloadBits > 0 && ...
+            if ~(isfinite(scheduledPayloadBits) && scheduledPayloadBits >= 0 && ...
                     scheduledPayloadBits <= tbsBits && scheduledPayloadBits == fix(scheduledPayloadBits))
                 error("sixgr:protocol:InvalidProtocolPayloadBinding", ...
-                    "Protocol-bound grant payload bits must be an integer in (0,TBSBits].");
+                    "Protocol-bound grant payload bits must be an integer in [0,TBSBits].");
             end
         elseif logical(sixgr.util.structGet(state, "ProtocolWaveformEnabled", false))
             error("sixgr:protocol:UnboundNewDataTransportBlock", ...
                 "Strict protocol execution cannot reserve a new-data TB without same-waveform payload evidence.");
         end
+        recovery=false;controlOnly=false;
+        if payloadSameWaveform && isfield(state,'ProtocolBridge')
+            id=sixgr.truth.CoupledTruthRuntime.transportBlockIdFromGrant(state,grant,direction,ueIdx);
+            binding=state.ProtocolBridge.originalTransportApplicationBinding(id);
+            recovery=isequal(sixgr.util.structGet(binding,'IsRLCRetransmission',false),true);
+            controlOnly=isequal(sixgr.util.structGet(binding,'ControlOnly',false),true);
+            if controlOnly
+                assert(scheduledPayloadBits==0&&binding.UEIndex==ueIdx&& ...
+                    string(binding.Direction)==upper(string(direction))&& ...
+                    binding.TransportBlockBits==tbsBits&&string(binding.MACSHA256)==string(grant.ProtocolMACSHA256), ...
+                    'sixgr:protocol:InvalidControlOnlyBinding','Original STATUS MAC TB carries no application bytes.');
+            end
+        end
+        if ~controlOnly
         state = sixgr.truth.CoupledTruthRuntime.allocatePacketSegmentsToGrant( ...
             state, ueIdx, direction, scheduledPayloadBits, grant);
+        end
+        if recovery,scheduledPayloadBits=0;end % RLC recovery is a new MAC TB, not a new application arrival.
         if upper(string(direction)) == "UL"
             state.ULQueueBits(ueIdx) = max(0, double(state.ULQueueBits(ueIdx)) - scheduledPayloadBits);
             state.ULTransmittedBits(ueIdx) = double(state.ULTransmittedBits(ueIdx)) + tbsBits;
@@ -10286,6 +10355,15 @@ methods(Static, Access=private)
             if bits <= 0
                 continue;
             end
+            packetBits=bits; packetMeta=struct();
+            protocolActive=logical(sixgr.util.structGet(state,"ProtocolWaveformEnabled",false));
+            if protocolActive
+                [packetBits,packetMeta]=sixgr.protocol.packetizeApplicationArrival( ...
+                    bits,state.ProtocolBridge.Configuration,direction);
+            end
+            basePacketId=sixgr.truth.CoupledTruthRuntime.composeRuntimePacketId(state,direction,ueIdx,enqueueFrame);
+            for packetIndex=1:numel(packetBits)
+            bits=packetBits(packetIndex);
             row = sixgr.truth.CoupledTruthRuntime.emptyPacketDeliveryLedgerRow();
             row.Direction = direction;
             row.UEIndex = double(ueIdx);
@@ -10297,24 +10375,59 @@ methods(Static, Access=private)
             row.EnqueueTime_s = double(enqueueTime);
             row.OfferedBits = double(bits);
             row.RemainingBits = double(bits);
-            row.PacketId = sixgr.truth.CoupledTruthRuntime.composeRuntimePacketId(state, direction, ueIdx, enqueueFrame);
+            row.PacketId = basePacketId;
+            if numel(packetBits)>1, row.PacketId=row.PacketId+"_unit"+string(packetIndex); end
             row.ApplicationPacketId = row.PacketId;
+            if logical(sixgr.util.structGet(state,"ProtocolWaveformEnabled",false))
+                assert(mod(bits,8)==0,'sixgr:protocol:NonByteAlignedApplicationPayload', ...
+                    'Original application packet must contain whole bytes.');
+                original=sixgr.protocol.applicationPayloadBytes(state.ProtocolPayloadSeed, ...
+                    row.PacketId,direction,ueIdx,0,bits/8);
+                row.OriginalApplicationPayloadSHA256=sixgr.protocol.ProtocolHash.bytes(original);
+            end
             row.FlowId = direction + "_ue" + string(ueIdx);
             row.PacketizationSource = "runtime_offered_bits_canonical_slot_packet";
             row.TimingStatus = "canonical_slot_enqueued";
             row.Status = "queued";
             row.Notes = "Application packet created from the coupled runtime offered-bit arrival for this canonical slot/UE/direction.";
+            if protocolActive
+                row.FlowId=packetMeta.FlowID; row.QFI=packetMeta.QFI;row.PduSessionID=packetMeta.PduSessionID;
+                row.PacketizationSource=packetMeta.Source;
+                row.Notes="Configured application packetization conserves every byte and the original arrival clock of the offered burst.";
+            end
             rows(end+1, 1) = row; %#ok<AGROW>
+            end
         end
         if ~isempty(rows)
             state.PacketDeliveryLedgerTable = sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
                 state.PacketDeliveryLedgerTable, struct2table(rows, "AsArray", true));
+            if logical(sixgr.util.structGet(state,"ProtocolWaveformEnabled",false))
+                state=sixgr.truth.enqueueProtocolApplicationPackets(state,state.CfgMobility);
+            end
         end
     end
 
     function state = allocatePacketSegmentsToGrant(state, ueIdx, direction, tbsBits, grant)
         direction = upper(string(direction));
-        if ~(isfinite(double(ueIdx)) && double(ueIdx) >= 1) || ~(isfinite(double(tbsBits)) && double(tbsBits) > 0)
+        binding=struct();recovery=false;
+        if logical(sixgr.util.structGet(grant,'ProtocolPayloadSameWaveformTruth',false)) && isfield(state,'ProtocolBridge')
+            id=sixgr.truth.CoupledTruthRuntime.transportBlockIdFromGrant(state,grant,direction,ueIdx);
+            binding=state.ProtocolBridge.originalTransportApplicationBinding(id);
+            recovery=isequal(sixgr.util.structGet(binding,'IsRLCRetransmission',false),true);
+            if isfield(binding,'RLCFullCount')
+                assert(binding.UEIndex==ueIdx&&string(binding.Direction)==direction&& ...
+                    string(binding.PacketID)==string(grant.ProtocolPacketId)&& ...
+                    8*binding.ApplicationOffsetBytes==grant.ProtocolPayloadOffsetBits&& ...
+                    8*binding.ApplicationPayloadBytes==grant.ProtocolPayloadBits&& ...
+                    string(binding.MACSHA256)==string(grant.ProtocolMACSHA256)&& ...
+                    string(binding.EncodedSHA256)==string(grant.ProtocolEncodedRLC_SHA256), ...
+                    'sixgr:protocol:ProtocolGrantLedgerDivergence','Require the private original bearer/byte binding.');
+            end
+        end
+        zeroProtocol=logical(sixgr.util.structGet(grant,'ProtocolPayloadSameWaveformTruth',false)) && ...
+            isequal(double(sixgr.util.structGet(grant,'ProtocolPayloadBits',NaN)),0) && ...
+            strlength(string(sixgr.util.structGet(grant,'ProtocolEncodedRLC_SHA256','')))==64;
+        if ~(isfinite(double(ueIdx)) && double(ueIdx) >= 1) || ~(isfinite(double(tbsBits)) && (double(tbsBits) > 0 || zeroProtocol))
             return;
         end
         if ~isfield(state, "PacketDeliveryLedgerTable") || ~istable(state.PacketDeliveryLedgerTable) || isempty(state.PacketDeliveryLedgerTable)
@@ -10331,7 +10444,7 @@ methods(Static, Access=private)
         remainingBudget = max(0, round(double(tbsBits)));
         packetMask = upper(string(packetT.Direction)) == direction & ...
             abs(double(packetT.UEIndex) - double(ueIdx)) < 1e-9 & ...
-            double(packetT.RemainingBits) > 0 & ~logical(packetT.DeliverySuccess);
+            (double(packetT.RemainingBits) > 0 | zeroProtocol | recovery) & (~logical(packetT.DeliverySuccess) | recovery);
         protocolPacketId = strtrim(string(sixgr.util.structGet(grant, "ProtocolPacketId", "")));
         if strlength(protocolPacketId) > 0
             packetMask = packetMask & string(packetT.PacketId) == protocolPacketId;
@@ -10341,6 +10454,9 @@ methods(Static, Access=private)
             return;
         end
         tbId = sixgr.truth.CoupledTruthRuntime.transportBlockIdFromGrant(state, grant, direction, ueIdx);
+        allTransport=sixgr.truth.combinePacketTransportLedgers(state);
+        assert(isempty(allTransport)||~any(string(allTransport.TransportBlockId)==string(tbId)), ...
+            'sixgr:protocol:DuplicateTransportBlockCommit','An actual new MAC TB may reserve its original interval once.');
         grantContextId = char(string(sixgr.util.structGet(grant, "GrantContextId", "")));
         harqStruct = sixgr.util.structGet(grant, "HARQ", struct());
         harqId = double(sixgr.util.structGet(harqStruct, "HarqID", NaN));
@@ -10354,12 +10470,13 @@ methods(Static, Access=private)
         end
         segRows = repmat(sixgr.truth.CoupledTruthRuntime.emptyPacketSDULedgerRow(), 0, 1);
         for k = 1:numel(packetIdx)
-            if remainingBudget <= 0
+            if remainingBudget <= 0 && ~zeroProtocol
                 break;
             end
             pi = packetIdx(k);
             segBits = min(remainingBudget, max(0, round(double(packetT.RemainingBits(pi)))));
-            if segBits <= 0
+            if recovery,segBits=remainingBudget;end
+            if segBits <= 0 && ~zeroProtocol
                 continue;
             end
             packetId = string(packetT.PacketId(pi));
@@ -10371,7 +10488,7 @@ methods(Static, Access=private)
                     string(existingSduT.PacketId) == packetId & ...
                     string(existingSduT.ApplicationPacketId) == string(packetT.ApplicationPacketId(pi)));
             end
-            if logical(sixgr.util.structGet(grant, "ProtocolPayloadSameWaveformTruth", false))
+            if logical(sixgr.util.structGet(grant, "ProtocolPayloadSameWaveformTruth", false)) && ~recovery
                 boundSegmentIndex = double(sixgr.util.structGet(grant, "ProtocolSegmentIndex", NaN));
                 boundOffsetBits = double(sixgr.util.structGet(grant, "ProtocolPayloadOffsetBits", NaN));
                 boundPayloadBits = double(sixgr.util.structGet(grant, "ProtocolPayloadBits", NaN));
@@ -10420,13 +10537,23 @@ methods(Static, Access=private)
             row.ProtocolMACPDUBytes = double(sixgr.util.structGet(grant, "ProtocolMACPDUBytes", NaN));
             row.ProtocolMACPaddingBytes = double(sixgr.util.structGet(grant, "ProtocolMACPaddingBytes", NaN));
             row.ProtocolEvidenceSource = string(sixgr.util.structGet(grant, "ProtocolEvidenceSource", ""));
+            if isfield(binding,'RLCFullCount')
+                row.ProtocolRLCFullCount=binding.RLCFullCount;
+                row.ProtocolUEID=string(binding.UEID);row.ProtocolBearerID=string(binding.BearerID);
+                row.ProtocolConfigurationEpoch=binding.ConfigurationEpoch;
+            end
             row.ScheduleSlot = double(schedSlot);
             row.ScheduleCanonicalSlot = double(schedSlot);
             row.ScheduleTime_s = double(schedTime);
             row.Status = "scheduled_pending_harq";
             row.Notes = "MAC SDU segment mapped from queued application packet bits into a finalized new-data PHY grant.";
+            if recovery
+                row.Status="rlc_recovery_pending_harq";
+                row.Notes="Original RLC byte interval retransmitted in a new actual MAC TB; no new application-byte reservation.";
+            end
             segRows(end+1, 1) = row; %#ok<AGROW>
 
+            if recovery,remainingBudget=remainingBudget-segBits;continue;end
             packetT.RemainingBits(pi) = max(0, double(packetT.RemainingBits(pi)) - segBits);
             packetT.ScheduledBits(pi) = double(packetT.ScheduledBits(pi)) + segBits;
             packetT.SegmentCount(pi) = double(packetT.SegmentCount(pi)) + 1;
@@ -10442,8 +10569,10 @@ methods(Static, Access=private)
         end
         state.PacketDeliveryLedgerTable = packetT;
         if ~isempty(segRows)
-            state.PacketSDULedgerTable = sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
-                state.PacketSDULedgerTable, struct2table(segRows, "AsArray", true));
+            target='PacketSDULedgerTable';
+            if recovery,target='RLCRecoveryTransportLedgerTable';end
+            state.(target) = sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
+                sixgr.util.structGet(state,target,table()), struct2table(segRows, "AsArray", true));
         end
     end
 
@@ -10454,7 +10583,7 @@ methods(Static, Access=private)
         end
         ueIdx=double(sixgr.util.structGet(grant, "UEIndex", ...
             sixgr.truth.CoupledTruthRuntime.rowValue(harqRow, "UEIndex", NaN)));
-        sduT = state.PacketSDULedgerTable;
+        [sduT,initialCount] = sixgr.truth.combinePacketTransportLedgers(state);
         mask = sixgr.truth.matchPacketTransportBlock(sduT,grant,direction,ueIdx);
         if ~any(mask)
             return;
@@ -10466,7 +10595,7 @@ methods(Static, Access=private)
         bridge=sixgr.util.structGet(state,'ProtocolBridge',[]);
         sduT=sixgr.truth.applyPacketHARQReception(sduT,mask,harqRow,decodedTbBits, ...
             deliveryTiming,logical(sixgr.util.structGet(state,'ProtocolWaveformEnabled',false)),bridge);
-        state.PacketSDULedgerTable = sduT;
+        state=sixgr.truth.publishPacketTransportLedgers(state,sduT,initialCount);
         state = sixgr.truth.refreshApplicationPacketDeliveries(state);
     end
 
@@ -11731,6 +11860,8 @@ methods(Static, Access=private)
         end
         report = sixgr.truth.CoupledTruthRuntime.emptyCSIReportRow();
         report.Direction = char(upper(string(direction)));
+        report=sixgr.truth.CoupledTruthRuntime.bindCSIReportExecutionIdentity( ...
+            report,state,cfgExecuted,row,csiMeasurementRow);
         report.UEIndex = double(ueIdx);
         report.RNTI = sixgr.truth.CoupledRadioIdentity.resolve(state,ueIdx);
         servingVec = double(sixgr.util.structGet(state, "CurrentServingIdx", nan(state.NumUsers, 1)));
@@ -12144,6 +12275,8 @@ methods(Static, Access=private)
 
     function [state,report] = publishCSIReport(state,report)
         % Common value-state publication; no UE producer lookup or RF execution.
+        report=sixgr.truth.CoupledTruthRuntime.bindCSIReportExecutionIdentity( ...
+            report,state,struct());
         state = sixgr.truth.CoupledTruthRuntime.ensureFeedbackClockSchema(state);
         ueIdx=double(report.UEIndex); rowDirection=upper(string(report.Direction));
         % Publication occurs only after the independently received UCI has
@@ -12327,6 +12460,12 @@ methods(Static, Access=private)
         assert(all(isfield(report,names)),'sixgr:truth:IncompleteReceivedCSIReport', ...
             'Retain the decoded fields and exact transport binding before scheduler publication.');
         for name=names, received.(name)=report.(name); end
+        % Lifecycle is an immutable producer coordinate, not a private UE
+        % measurement. Preserve it through the received-field projection so
+        % delivery can reject a report from another execution/configuration.
+        for name=["ScenarioID","ConfigHash","RunTag","RunID","ExecutionID"]
+            if isfield(report,name), received.(name)=report.(name); end
+        end
         if keepUEReference, received.UEReferenceRecordJSON=string(jsonencode(report)); end
         received.SourceSlotAuthority=string(sixgr.util.structGet(report,'SourceSlotAuthority',""));
         received.SourceSignal="received_CSI_UCI";
@@ -12398,6 +12537,9 @@ methods(Static, Access=private)
         report.RankUpdateStatus = "not_evaluated";
         report.RankIncreaseConfirmationCount = NaN;
         report.RankIncreaseRequiredCount = NaN;
+        report.SpatialConfirmationPhase="not_evaluated";
+        report.SpatialConfirmationRequiredCount=NaN;
+        report.HasAcceptedSpatialDecision=false;
         report.SchedulerAdjustedSINR_dB = NaN;
         report.SchedulerSINRBackoff_dB = NaN;
         report.SchedulerCQISource = "";
@@ -12414,6 +12556,47 @@ methods(Static, Access=private)
             return;
         end
 
+        % Validate supplied original generation before it can contribute a
+        % confirmation count. Runtime wire/capsule consumers also validate
+        % their full context; absent generation remains a declared legacy
+        % component boundary, never a newly manufactured epoch.
+        if direction=="DL"
+            originalEpoch=sixgr.util.structGet(report,'CSIConfigurationEpoch',NaN);
+            if isfinite(originalEpoch)
+                assert(isequal(double(originalEpoch),double(state.CfgMobility.phy.csi.reportConfigurationEpoch)), ...
+                    'sixgr:truth:SpatialAcquisitionGenerationMismatch', ...
+                    'Retired received CSI cannot acquire the current spatial generation.');
+            end
+        elseif string(sixgr.util.structGet(report,'SourceSignal',""))=="SRS"
+            original=row;
+            if istable(original)
+                assert(height(original)==1,'sixgr:truth:SpatialAcquisitionSourceShape','One original SRS row is required.');
+                original=table2struct(original);
+            end
+            if isstruct(original) && isscalar(original)
+                originalEpoch=sixgr.util.structGet(original,'SRSConfigurationEpoch',NaN);
+                if isfinite(originalEpoch)
+                    assert(isequal(double(originalEpoch),double(state.CfgMobility.rf.configurationEpoch)), ...
+                        'sixgr:truth:SpatialAcquisitionGenerationMismatch', ...
+                        'Retired received SRS cannot acquire the current spatial generation.');
+                end
+                if isfield(original,'ServingCell') && isfinite(original.ServingCell)
+                    assert(original.ServingCell==report.ServingCell, ...
+                        'sixgr:truth:SpatialAcquisitionGenerationMismatch','Original SRS serving cell differs.');
+                end
+                if isfield(original,'UEIndex') && isfinite(original.UEIndex)
+                    assert(original.UEIndex==ueIdx, ...
+                        'sixgr:truth:SpatialAcquisitionGenerationMismatch','Original SRS UE differs.');
+                end
+                if isfield(original,'TargetId') && isfinite(original.TargetId)
+                    assert(original.TargetId==ueIdx, ...
+                        'sixgr:truth:SpatialAcquisitionGenerationMismatch','Original SRS target differs.');
+                end
+                original.TargetId=ueIdx;
+                original.ServingCell=report.ServingCell;
+                sixgr.truth.validateAcceptedSRSConfiguration(state.CfgMobility,original);
+            end
+        end
         previousState = sixgr.truth.CoupledTruthRuntime.linkAdaptationStateForUE(state, direction, ueIdx);
         previousState = sixgr.truth.CoupledTruthRuntime.seedRuntimeLinkAdaptationState( ...
             state.CfgMobility, direction, previousState, report.ServingCell);
@@ -12585,12 +12768,15 @@ methods(Static, Access=private)
             nextState.CSIAdaptationOutageRecoveryPending=logical(decision.CQIOutageRecoveryPending);
         end
         report.AdaptationDeliveryStatus="accepted_new_feedback_delivery";
+        report.SpatialConfirmationPhase=string(decision.SpatialConfirmationPhase);
+        report.SpatialConfirmationRequiredCount=double(decision.SpatialConfirmationRequiredCount);
+        report.HasAcceptedSpatialDecision=logical(decision.HasAcceptedSpatialDecision);
         report.RankUpdateStatus = string(decision.RankUpdateStatus);
         report.RankIncreaseConfirmationCount = double(decision.RankIncreaseConfirmationCount);
         report.RankIncreaseRequiredCount = double(decision.RankIncreaseRequiredCount);
         report.SchedulerSpatialDecisionDeferred = ...
             any(report.RankUpdateStatus==["held_fixed_rank_feedback_mismatch", ...
-            "pending_increase_confirmation","held_missing_atomic_pmi"]);
+            "pending_increase_confirmation","pending_initial_spatial_confirmation","held_missing_atomic_pmi"]);
         if spatialOnly && ~decision.Valid
             report.SchedulerSpatialDecisionDeferred=true;
         end
@@ -13187,7 +13373,8 @@ methods(Static, Access=private)
             "DeltaMCS", 0, ...
             "UpdateCount", 0, ...
             "ServingCell", double(servingCell), ...
-            "LastResetReason", "awaiting_first_measured_feedback");
+            "LastResetReason", "awaiting_first_measured_feedback", ...
+            "HasAcceptedSpatialDecision",false);
         if servingChanged
             previousState.LastResetReason = "serving_cell_change";
         end
@@ -16908,6 +17095,10 @@ methods(Static, Access=private)
                     markFeedbackRowsReservedForPUSCH(state, grantIds, contextId,producerBitIndices);
             end
             if ~isempty(matchedCSIIndices)
+                for reservationIndex=reshape(matchedCSIIndices,1,[])
+                    sixgr.truth.assertPUSCHUCIReservationOwner( ...
+                        state.PendingCSITable(reservationIndex,:),contextId,"csi");
+                end
                 state.PendingCSITable = sixgr.truth.CoupledTruthRuntime. ...
                     setStringValueAt(state.PendingCSITable, ...
                     "CSIUCITransport", matchedCSIIndices, "pusch_bound");
@@ -17396,6 +17587,8 @@ methods(Static, Access=private)
                         "PUSCH UCI reservation requires one unprocessed pending row for grant %s.", ...
                         char(grantIds(bitIdx)));
                 end
+                sixgr.truth.assertPUSCHUCIReservationOwner( ...
+                    pending(mask,:),contextId,"pending_harq",producerBitIndices(bitIdx));
                 pending.DeliveryMechanism(mask) = "pusch_uci";
                 pending.PUSCHGrantContextId(mask) = contextId;
                 pending.MultiplexedBitIndex(mask) = producerBitIndices(bitIdx);
@@ -17428,6 +17621,8 @@ methods(Static, Access=private)
                         "PUSCH UCI reservation requires one unexecuted control-grant row for grant %s.", ...
                         char(grantIds(bitIdx)));
                 end
+                sixgr.truth.assertPUSCHUCIReservationOwner( ...
+                    traceT(mask,:),contextId,"trace_harq",producerBitIndices(bitIdx));
                 traceT.MultiplexedOnPUSCH(mask) = true;
                 traceT.PUSCHGrantContextId(mask) = contextId;
                 traceT.MultiplexedBitIndex(mask) = producerBitIndices(bitIdx);
@@ -17815,15 +18010,58 @@ methods(Static, Access=private)
         % Preserve the lifecycle already installed by the runner. Component
         % callers without that lifecycle remain explicitly unbound. These
         % are reception-completion coordinates, not a guessed TX point.
-        report.RunID=string(sixgr.util.structGet(cfg,'run.runTag',""));
-        report.ExecutionID=string(sixgr.util.structGet(cfg,'run.executionID',""));
-        report.ConfigHash=string(sixgr.util.structGet(cfg,'meta.configHash',""));
-        report.ScenarioID=string(sixgr.util.structGet(cfg,'run.scenarioID',""));
+        report=sixgr.truth.CoupledTruthRuntime.bindCSIReportExecutionIdentity( ...
+            report,state,cfg);
         report.RandomSeed=double(sixgr.util.structGet(cfg,'run.seed',NaN));
         report.ChannelSeed=double(sixgr.util.structGet(cfg,'channel.seed',NaN));
         report.SweepPointIndex=double(sixgr.util.structGet(state,'CurrentSweepPointIndex',NaN));
         report.ConfiguredSNR_dB=double(sixgr.util.structGet(state,'CurrentSNR_dB',NaN));
         report.PopulationIdentitySource="receiver_completion_runtime_context_not_transmission_point_claim";
+    end
+
+    function report=bindCSIReportExecutionIdentity(report,state,cfgExecuted,varargin)
+        % Original producer/delivery lifecycle only. Do not repair recovered
+        % CSVs here or infer received CSI, decode success, quality, or clocks.
+        % The executed configuration and live producer must agree whenever
+        % either carries populated immutable identity. Component callers with
+        % no complete lifecycle remain visibly unbound.
+        bound=struct2table(report,'AsArray',true);
+        authorities={cfgExecuted,state.CfgMobility};
+        lifecycle=cell(2,1);
+        for a=1:2
+            cfgAuthority=authorities{a};
+            lifecycle{a}=strtrim([string(sixgr.util.structGet(cfgAuthority,'run.scenarioID', ...
+                sixgr.util.structGet(cfgAuthority,'meta.scenarioID',""))), ...
+                lower(string(sixgr.util.structGet(cfgAuthority,'meta.configHash',""))), ...
+                string(sixgr.util.structGet(cfgAuthority,'run.runTag',"")), ...
+                string(sixgr.util.structGet(cfgAuthority,'run.executionID', ...
+                sixgr.util.structGet(cfgAuthority,'meta.executionID',"")))]);
+            assert(numel(lifecycle{a})==4,'sixgr:truth:CoupledControlIdentityInvalid', ...
+                'CSI producer lifecycle coordinates must be scalar.');
+        end
+        comparable=~ismissing(lifecycle{1})&strlength(lifecycle{1})>0& ...
+            ~ismissing(lifecycle{2})&strlength(lifecycle{2})>0;
+        assert(~any(comparable&lifecycle{1}~=lifecycle{2}), ...
+            'sixgr:truth:CoupledControlIdentityMismatch', ...
+            'CSI executed and producer lifecycle coordinates disagree.');
+        for a=1:numel(authorities)
+            cfgAuthority=authorities{a};
+            for k=1:numel(varargin)
+                source=varargin{k};
+                if isstruct(source)&&isscalar(source)
+                    source=struct2table(source,'AsArray',true);
+                end
+                if istable(source)&&~isempty(source)
+                    % Validate the original input's populated fields, but
+                    % neither mutate that input nor copy receiver values.
+                    sixgr.truth.bindCoupledExecutionIdentity( ...
+                        source,cfgAuthority,"CSI_report_source");
+                end
+            end
+            bound=sixgr.truth.bindCoupledExecutionIdentity( ...
+                bound,cfgAuthority,"CSI_report");
+        end
+        report=table2struct(bound);
     end
 
     function state=stageIndependentPUSCHCSI(state,report)
@@ -18352,15 +18590,20 @@ methods(Static, Access=private)
     function row = emptyPacketDeliveryLedgerRow()
         row = struct( ...
             "Direction", "", "UEIndex", NaN, "RNTI", NaN, ...
-            "PacketId", "", "ApplicationPacketId", "", "FlowId", "", "QFI", NaN, ...
+            "PacketId", "", "ApplicationPacketId", "", "FlowId", "", "QFI", NaN, "PduSessionID",NaN, ...
             "EnqueueFrame", NaN, "EnqueueSlot", NaN, "EnqueueCanonicalSlot", NaN, "EnqueueSlotInFrame", NaN, "EnqueueTime_s", NaN, ...
             "OfferedBits", NaN, "ScheduledBits", 0, "DeliveredBits", 0, "RemainingBits", 0, ...
+            "DiscardedUnscheduledBits",0,"DiscardReceiptID","", ...
+            "ProtocolUEID","","ProtocolBearerID","","ProtocolConfigurationEpoch",NaN, ...
+            "ProtocolAdmissionTime_s",NaN,"ProtocolAdmissionSource","", ...
             "SegmentCount", 0, "HARQAttemptCount", 0, ...
             "FirstGrantSlot", NaN, "FirstGrantTime_s", NaN, ...
             "ReassemblyCompleteFlag", false, "DeliverySuccess", false, ...
             "DeliverySlot", NaN, "DeliveryCanonicalSlot", NaN, "DeliveryTime_s", NaN, "Latency_ms", NaN, ...
             "ProtocolFragmentCount", 0, "SameWaveformProtocolComplete", false, ...
             "ProtocolReassemblyStatus", "", ...
+            "OriginalApplicationPayloadSHA256", "", "DecodedApplicationPayloadSHA256", "", ...
+            "DecodedApplicationBytes", NaN, ...
             "PacketizationSource", "", "DeliverySource", "", ...
             "TimingStatus", "", "Status", "", "Notes", "");
     end
@@ -18375,6 +18618,8 @@ methods(Static, Access=private)
             "DeliveryEvidenceMode","", ...
             "ProtocolPayloadSameWaveformTruth", false, "ProtocolFragmentId", "", ...
             "ProtocolPayloadOffsetBits", NaN, "ProtocolPayloadSHA256", "", ...
+            "ProtocolUEID","","ProtocolBearerID","","ProtocolConfigurationEpoch",NaN,"ProtocolRLCFullCount",NaN, ...
+            "ProtocolDecodedPayloadSHA256", "", ...
             "ProtocolSDAPHeaderHex", "", "ProtocolPDCPHeaderHex", "", ...
             "ProtocolRLCHeaderHex", "", "ProtocolEncodedRLC_SHA256", "", ...
             "ProtocolMACSHA256", "", "ProtocolMACPDUBytes", NaN, ...
@@ -19159,6 +19404,8 @@ methods(Static, Access=private)
             "LinkAdaptationMCSIndex", NaN, "LinkAdaptationDecisionReason", "", ...
             "AdaptationDeliveryStatus", "not_evaluated", ...
             "SchedulerSpatialDecisionDeferred", false, "SchedulerAcceptedRank", NaN, ...
+            "SpatialConfirmationPhase","not_evaluated","SpatialConfirmationRequiredCount",NaN, ...
+            "HasAcceptedSpatialDecision",false, ...
             "SpatialDecisionSourceSlot", NaN, "SpatialDecisionDeliveredSlot", NaN, ...
             "QualityMeasurementSourceSlot", NaN, "QualityMeasurementDeliveredSlot", NaN, ...
             "RankUpdateStatus", "not_evaluated", "RankIncreaseConfirmationCount", NaN, ...
@@ -19899,7 +20146,8 @@ methods(Static, Access=private)
             observed=connected;
             return; % No power materialization, samples, decode or primary output.
         end
-        connected=sixgr.phy.pucch.PUCCHConfigBuilder.materialize(cfgU,connected);
+        connected=sixgr.phy.pucch.PUCCHConfigBuilder.materialize(cfgU,connected, ...
+            sixgr.util.structGet(execution,'ReceivedPowerBinding',[]));
         if height(feedbackRow) == 1 && ~hasCSI && ~isfield(execution,'UEHARQCodebook')
             sixgr.truth.CoupledTruthRuntime.assertPUCCHAssignmentMatchesGrant( ...
                 connected.Assignment,row,"desired");

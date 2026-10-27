@@ -1,0 +1,46 @@
+function [ok,fixture]=testCellMsg3ReceiveAuthority()
+% Actual prepared RAR bytes; completed-TX evidence is explicitly declared
+% for this pure planner arm. A real empty owner must reject the same claim.
+[~,f]=testCellRARWaveformPreparation();p=f.Prepared;c=f.Original.Calendar;
+p.Config.initial_access.rrc=struct('encoding_profile',"nr_rrc_access_base_srb1_uper_v1", ...
+    'require_setup_complete',true,'transaction_id',2,'srb1_lcid',1, ...
+    'establishment_cause',"mo-Signalling",'selected_plmn_identity',1,'dedicated_nas_hex',"7E0041");
+done=p.TransmitStartSample+p.SampleCount;
+proof=struct('ContractVersion',"executed_cell_RAR_component/v1", ...
+    'PhysicalTransmissionVerified',true,'ReceiverExecutionClaimed',false, ...
+    'ServingCell',c.CellID,'CellCalendarSHA256',c.SHA256, ...
+    'RARPlanSHA256',p.RARPlan.PlanSHA256, ...
+    'RARPayloadSHA256',sixgr.protocol.ProtocolHash.bytes(p.Tx.RAR.Bytes), ...
+    'CompletedAtSample',done,'ComponentID',"declared_emitted_RAR_component", ...
+    'PhysicalConfigurationEpoch',1,'FixtureBoundary',"declared_TX_completion_pure_planner_only");
+plans=sixgr.truth.buildCellMsg3ReceivePlans(p,proof,c,done);
+assert(numel(plans)==numel(p.RARPlan.Assignments));
+for k=1:numel(plans)
+    x=plans{k};g=x.Grant;
+    assert(~x.UETransmissionRequired&&~x.UEReceivedRARRequired&&x.ReceiveStartSample>=done && ...
+        x.RAContext.UEId==0&&x.TemporaryCRNTI==p.RARPlan.Assignments(k).TemporaryCRNTI && ...
+        x.TransportBlockSize>0&&x.RARPayloadSHA256==proof.RARPayloadSHA256 && ...
+        g.K2==4&&g.SymbolStart==0&&g.NumSymbols==11);
+end
+changed=p;changed.Config.random_access.preamble_index=63;
+changed.Config.random_access.temp_crnti=60000;changed.Config.random_access.final_crnti=60001;
+assert(isequaln(plans,sixgr.truth.buildCellMsg3ReceivePlans(changed,proof,c,done)), ...
+    'UE-intended identities cannot select a gNB receive hypothesis.');
+bad=proof;bad.PhysicalTransmissionVerified=false;
+reject(@()sixgr.truth.buildCellMsg3ReceivePlans(p,bad,c,done),'sixgr:truth:CellMsg3ReceiveAuthority');
+bad=proof;bad.RARPayloadSHA256="wrong";
+reject(@()sixgr.truth.buildCellMsg3ReceivePlans(p,bad,c,done),'sixgr:truth:CellMsg3ReceiveAuthority');
+reject(@()sixgr.truth.buildCellMsg3ReceivePlans(p,proof,c,done+1),'sixgr:truth:CellMsg3ReceiveAuthority');
+% Pure declared proof cannot bypass the stream's private actual completion.
+owner=sixgr.truth.CoupledWaveformStream();
+item=struct('ID',"forged",'Kind',"CellRARTX",'UE',0, ...
+    'Context',struct('Prepared',p,'EnqueueReceipt',struct()), ...
+    'Planes',struct('ReceiverID',"gnb_1:tx"));
+reject(@()owner.armCellMsg3Receivers(item),'sixgr:truth:CellRARTransmissionContract');
+fixture=struct('PreparedRAR',p,'Plans',{plans},'DeclaredTXProof',proof,'Calendar',c);
+ok=true;fprintf('CELL_MSG3_RECEIVE_AUTHORITY_PASS original_RAR_bytes=1 pure_planner_declared_TX=1 actual_shared_RX=0\n');
+end
+function reject(f,id)
+try,f();catch e,assert(string(e.identifier)==id,'Expected %s, got %s',id,e.identifier);return;end
+error('test:CellMsg3GuardMissing','Expected %s.',id);
+end

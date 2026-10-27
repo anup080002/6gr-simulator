@@ -18,9 +18,11 @@ from pycrate_asn1dir import RRCNR
 if __package__:
     from . import sib1_common_control
     from . import sib1_tdd_common
+    from . import sib1_pusch_common
 else:
     import sib1_common_control
     import sib1_tdd_common
+    import sib1_pusch_common
 
 
 CODEC = RRCNR.NR_RRC_Definitions.BCCH_DL_SCH_Message
@@ -220,7 +222,7 @@ def bounded_object(semantic: dict[str, Any]) -> dict[str, Any]:
                                 ),
                                 "scs-SpecificCarrierList": [
                                     {
-                                        "offsetToCarrier": 0,
+                                        "offsetToCarrier": int(semantic.get("dl_offset_to_carrier", 0)),
                                         "subcarrierSpacing": scs,
                                         "carrierBandwidth": bandwidth,
                                     }
@@ -250,21 +252,11 @@ def bounded_object(semantic: dict[str, Any]) -> dict[str, Any]:
                         },
                         "uplinkConfigCommon": {
                             "frequencyInfoUL": {
-                                "frequencyBandList": [
-                                    {
-                                        "freqBandIndicatorNR": int(
-                                            semantic["band"]
-                                        )
-                                    }
-                                ],
-                                "absoluteFrequencyPointA": int(
-                                    semantic["absolute_frequency_point_a"]
-                                ),
                                 "scs-SpecificCarrierList": [
                                     {
-                                        "offsetToCarrier": 0,
-                                        "subcarrierSpacing": scs,
-                                        "carrierBandwidth": bandwidth,
+                                        "offsetToCarrier": int(semantic.get("ul_offset_to_carrier", 0)),
+                                        "subcarrierSpacing": f"kHz{int(semantic.get('ul_carrier_subcarrier_spacing_khz', semantic['subcarrier_spacing_khz']))}",
+                                        "carrierBandwidth": int(semantic.get("ul_carrier_bandwidth_rb", bandwidth)),
                                     }
                                 ],
                             },
@@ -306,6 +298,15 @@ def bounded_object(semantic: dict[str, Any]) -> dict[str, Any]:
         )
     }
     serving = message["message"][1][1]["servingCellConfigCommon"]
+    ul_frequency = serving["uplinkConfigCommon"]["frequencyInfoUL"]
+    if "absolute_frequency_point_a" in semantic:
+        ul_frequency["absoluteFrequencyPointA"] = int(semantic["absolute_frequency_point_a"])
+    if "uplink_frequency_band" in semantic:
+        ul_frequency["frequencyBandList"] = [{"freqBandIndicatorNR": int(semantic["uplink_frequency_band"])}]
+    elif "absolute_frequency_point_a" in semantic and semantic.get("uplink_frequency_band_present", True):
+        # Compatibility with original semantic vectors, which represented
+        # these two optional IEs together. Decoding retains separate presence.
+        ul_frequency["frequencyBandList"] = [{"freqBandIndicatorNR": int(semantic["band"])}]
     if "tdd_ul_dl_config_common" in semantic:
         serving["tdd-UL-DL-ConfigurationCommon"] = sib1_tdd_common.to_asn1(
             semantic["tdd_ul_dl_config_common"])
@@ -327,6 +328,9 @@ def bounded_object(semantic: dict[str, Any]) -> dict[str, Any]:
     if "pdcch_config_common" in semantic:
         serving["downlinkConfigCommon"]["initialDownlinkBWP"]["pdcch-ConfigCommon"] = (
             "setup", sib1_common_control.to_asn1(semantic["pdcch_config_common"]))
+    if "pusch_config_common" in semantic:
+        serving["uplinkConfigCommon"]["initialUplinkBWP"]["pusch-ConfigCommon"] = (
+            "setup", sib1_pusch_common.to_asn1(semantic["pusch_config_common"]))
     if "pucch_config_common" in semantic:
         spec = semantic["pucch_config_common"]
         allowed = {
@@ -397,9 +401,6 @@ def semantic_from_object(value: dict[str, Any]) -> dict[str, Any]:
             str(dl_carrier["subcarrierSpacing"]).replace("kHz", "")
         ),
         "carrier_bandwidth_rb": int(dl_carrier["carrierBandwidth"]),
-        "absolute_frequency_point_a": int(
-            ul["frequencyInfoUL"]["absoluteFrequencyPointA"]
-        ),
         "prach_configuration_index": int(
             generic["prach-ConfigurationIndex"]
         ),
@@ -447,6 +448,20 @@ def semantic_from_object(value: dict[str, Any]) -> dict[str, Any]:
         "ss_pbch_block_power_dbm": int(serving["ss-PBCH-BlockPower"]),
         **{key: value for key, value in sib["ue-TimersAndConstants"].items()},
     }
+    ul_frequency = ul["frequencyInfoUL"]
+    ul_bands = ul_frequency.get("frequencyBandList", [])
+    if ul_bands and (len(ul_bands) != 1 or ul_bands[0].get("freqBandIndicatorNR") != semantic["band"]):
+        raise ValueError("different UL band is not represented losslessly by this non-SUL paired/unpaired profile")
+    ul_carrier = ul_frequency["scs-SpecificCarrierList"][0]
+    semantic["dl_offset_to_carrier"] = int(dl_carrier["offsetToCarrier"])
+    semantic["ul_offset_to_carrier"] = int(ul_carrier["offsetToCarrier"])
+    semantic["ul_carrier_subcarrier_spacing_khz"] = int(ul_carrier["subcarrierSpacing"].replace("kHz", ""))
+    semantic["ul_carrier_bandwidth_rb"] = int(ul_carrier["carrierBandwidth"])
+    if "absoluteFrequencyPointA" in ul_frequency:
+        semantic["absolute_frequency_point_a"] = int(ul_frequency["absoluteFrequencyPointA"])
+    semantic["uplink_frequency_band_present"] = "frequencyBandList" in ul_frequency
+    if "frequencyBandList" in ul_frequency:
+        semantic["uplink_frequency_band"] = int(ul_frequency["frequencyBandList"][0]["freqBandIndicatorNR"])
     for direction, common, bwp in (("dl", dl, "initialDownlinkBWP"),
                                    ("ul", ul, "initialUplinkBWP")):
         generic_bwp = common[bwp]["genericParameters"]
@@ -480,11 +495,15 @@ def semantic_from_object(value: dict[str, Any]) -> dict[str, Any]:
             if asn1_name in common_control:
                 mapped[semantic_name] = int(common_control[asn1_name])
         semantic["pucch_config_common"] = mapped
-    # This codec does not yet carry these optional IEs into the MATLAB tree.
+    if "pusch-ConfigCommon" in ul["initialUplinkBWP"]:
+        kind, common = ul["initialUplinkBWP"]["pusch-ConfigCommon"]
+        if kind != "setup":
+            raise ValueError("bounded SIB1 requires setup, not release, for present PUSCH-ConfigCommon")
+        semantic["pusch_config_common"] = sib1_pusch_common.from_asn1(common)
+    # This codec does not yet carry this optional IE into the MATLAB tree.
     # Reject them rather than report a silently truncated decode as complete.
-    if "pdsch-ConfigCommon" in dl["initialDownlinkBWP"] or \
-            "pusch-ConfigCommon" in ul["initialUplinkBWP"]:
-        raise ValueError("unsupported common PDSCH/PUSCH IE in bounded SIB1")
+    if "pdsch-ConfigCommon" in dl["initialDownlinkBWP"]:
+        raise ValueError("unsupported common PDSCH IE in bounded SIB1")
     if bounded_object(semantic) != value:
         raise ValueError("decoded SIB1 contains fields not represented losslessly by the bounded semantic profile")
     return semantic

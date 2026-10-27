@@ -15,7 +15,9 @@ localFields(cellContext,["ServingCell","CellId","PRACHAbsoluteSlot", ...
 limits=[0 flintmax;0 1007;0 flintmax;0 13;0 7;1 65535];
 names=["ServingCell","CellId","PRACHAbsoluteSlot","PRACHOccasionSymbol","PRACHFrequencyIndex","RARNTI"];
 for k=1:numel(names), localInteger(cellContext.(names(k)),limits(k,1),limits(k,2)); end
-localFields(grantPolicy,["NSizeGrid","CarrierSCSkHz","CarrierCyclicPrefix","RARGrantConfig","Msg3PUSCH"],"grantPolicy");
+policyFields=["NSizeGrid","CarrierSCSkHz","CarrierCyclicPrefix","RARGrantConfig","Msg3PUSCH"];
+if isfield(grantPolicy,'PUSCHCommonContext'),policyFields(end+1)="PUSCHCommonContext";end
+localFields(grantPolicy,policyFields,"grantPolicy");
 localFields(grantPolicy.RARGrantConfig,["field_layout","frequency_hopping","time_resource_assignment","tpc_command"],"RARGrantConfig");
 localFields(grantPolicy.Msg3PUSCH,["PRBStart","NumPRB","SymbolStart","NumSymbols", ...
     "MCS","Modulation","TargetCodeRate","NLayers","RV","MCSTable","TransformPrecoding","EnablePTRS"],"Msg3PUSCH");

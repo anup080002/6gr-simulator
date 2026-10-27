@@ -50,11 +50,17 @@ for direction = ["downlink", "uplink"]
     if sixgr.bwop.RIVFDRA.encode(275, startRB, sizeRB) ~= riv
         error("sixgr:rrc:asn1:InvalidBWPAllocation", "Noncanonical initial BWP RIV.");
     end
-    for unsupported = ["pdsch_ConfigCommon", "pusch_ConfigCommon"]
+    for unsupported = "pdsch_ConfigCommon"
         if isfield(bwp, unsupported)
             error("sixgr:rrc:asn1:UnsupportedSIB1IE", ...
                 "%s is not encoded by the bounded SIB1 profile.", unsupported);
         end
+    end
+    if direction == "uplink" && isfield(bwp,"pusch_ConfigCommon")
+        sixgr.rrc.asn1.resolvePUSCHConfigCommon(bwp.pusch_ConfigCommon, ...
+            str2double(erase(string(bwp.genericParameters.subcarrierSpacing),"kHz")));
+    elseif direction=="downlink" && isfield(bwp,"pusch_ConfigCommon")
+        error('sixgr:rrc:asn1:UnsupportedSIB1IE','PUSCH-ConfigCommon belongs to the initial UL BWP.');
     end
     if direction == "uplink" && isfield(bwp, "pucch_ConfigCommon")
         localValidatePUCCHConfigCommon(bwp.pucch_ConfigCommon);

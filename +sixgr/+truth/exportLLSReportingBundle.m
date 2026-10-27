@@ -12,6 +12,11 @@ if nargin < 7 || isempty(scenarioStatus)
     scenarioStatus = struct();
 end
 ctx = localBuildContext(runFolder, layout, scfg, cfg, result, manifest, runtimeSummary, scenarioStatus);
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir,'control_data_measurement_acceptance.csv'), ...
+    sixgr.report.collectControlDataMeasurementAcceptance(ctx.Tables.DL,ctx.Tables.UL, ...
+        ctx.Tables.ApplicationPackets,localReadOptionalTable(fullfile(layout.PacketFlowCSVDir, ...
+        'live_packet_sdu_delivery_ledger.csv'))), ...
+    'PreserveSchema',true,'RoundTripNumericText',true);
 [ctx.CompletedSCHPopulations,schOutcomeAudit]=localCollectCompletedSCHOutcomes(ctx);
 sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir,'completed_sch_decode_attempt_observations.csv'), ...
     schOutcomeAudit,'PreserveSchema',true,'RoundTripNumericText',true);
@@ -47,7 +52,8 @@ ctx.ChannelSGCSObservations = sixgr.report.collectChannelSGCSEvidence( ...
     runFolder, ctx.Tables.DL, ctx.Tables.UL);
 sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, 'channel_sgcs_observations.csv'), ...
     ctx.ChannelSGCSObservations, 'PreserveSchema', true, 'RoundTripNumericText', true);
-ctx.CSIReportLatency=sixgr.report.collectCSIReportLatency(ctx.Tables.ReceivedCSI,ctx.Tables.CSIRS);
+ctx.CSIReportLatency=sixgr.report.collectCSIReportLatency(ctx.Tables.ReceivedCSI,ctx.Tables.CSIRS, ...
+    sixgr.report.loadCSIIdentityTransitions(runFolder));
 sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir,'csi_report_latency_observations.csv'), ...
     ctx.CSIReportLatency,'PreserveSchema',true,'RoundTripNumericText',true);
 ctx.CSIDeliveryEvidence=sixgr.report.collectCSIReportDeliveryEvidence(ctx.Tables.ReceivedCSI);
@@ -2650,32 +2656,12 @@ end
 function T = localPUCCHConfusionRows(cat, metric, pucch, mode)
 T = localEmptyMetricTable();
 if ~(istable(pucch) && ~isempty(pucch)), return; end
-vars = string(pucch.Properties.VariableNames);
 source = "air_interface/csv/pucch_trials.csv";
-switch string(mode)
-    case "NACK_TO_ACK"
-        if ismember("FalseAck", vars) && ismember("ExpectedAck", vars)
-            indicator = sixgr.truth.numericMeasurementColumn(pucch.FalseAck, "FalseAck");
-            expected = sixgr.truth.numericMeasurementColumn(pucch.ExpectedAck, "ExpectedAck");
-            eligible = isfinite(indicator) & isfinite(expected) & expected == 0;
-            label = "nack_to_ack";
-        else
-            return;
-        end
-    case "DTX_TO_ACK"
-        if all(ismember(["DTXFlag","DecodedAck"], vars))
-            dtx = sixgr.truth.numericMeasurementColumn(pucch.DTXFlag, "DTXFlag");
-            decoded = sixgr.truth.numericMeasurementColumn(pucch.DecodedAck, "DecodedAck");
-            eligible = isfinite(dtx) & isfinite(decoded) & dtx ~= 0;
-            indicator = decoded ~= 0;
-            label = "dtx_to_ack";
-        else
-            return;
-        end
-end
-if any(eligible)
-    T = localRateWithCounts(cat, metric, "PUCCH", label, logical(indicator(eligible)), source, ...
-        "The denominator contains only the corresponding transmitted NACK or no-transmission (DTX) episodes.");
+population=sixgr.report.collectPUCCHFeedbackConfusion(pucch,string(mode));
+if population.Denominator>0
+    T = localRateWithCounts(cat, metric, "PUCCH", lower(string(mode)), ...
+        population.ErrorIndicators, source, ...
+        "Original executed-target presence defines episodes; receiver DTX never defines H0. NACK uses scalar HARQ hypotheses only.");
 end
 end
 

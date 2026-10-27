@@ -38,6 +38,9 @@ switch kind
                 selectionPolicy=sixgr.lls6g.config.resolveCSISelectionQualityPolicy(cfg.kpi_spec.csi_selection_quality);
                 if selectionPolicy.Enabled, localValidateCSISelectionQualityDependencies(cfg); end
             end
+            if isfield(cfg,'kpi_spec') && isfield(cfg.kpi_spec,'srs_path_power')
+                sixgr.lls6g.config.resolveSRSPathPowerPolicy(cfg.kpi_spec.srs_path_power);
+            end
             sixgr.lls6g.config.validateEnergyOperatingPolicy(cfg);
             bsReference=sixgr.util.structGet(cfg,'power_and_rf_frontend.bs_reference',[]);
             if ~isempty(bsReference)

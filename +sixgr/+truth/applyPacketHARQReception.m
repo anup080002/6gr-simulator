@@ -56,9 +56,23 @@ if logical(localValue(harqRow, "CombinedDecodeOK", false))
         for field=fields
             sduT.(field)(firstMask)=sduT.("LastAttempt"+field)(firstMask);
         end
+        sduT.DataReceiveTimingEvidenceJSON(firstMask)=string( ...
+            sixgr.util.structGet(harqRow,'DataReceiveTimingEvidenceJSON',""));
     end
     sduT.LastAttemptProtocolDeliveryStatus(mask) = protocolStatus;
     sduT.ProtocolDeliveryStatus(firstMask) = protocolStatus;
+    if protocolEnabled
+        completions=sixgr.util.structGet(protocolEvidence,'CompletedTransportBlocks',struct([]));
+        sduT=sixgr.truth.applyProtocolPacketCompletions(sduT,completions,deliveryTiming);
+        waiting=firstMask & ~logical(sduT.DeliverySuccess);
+        sduT.Status(waiting)="phy_decode_pass_protocol_reordering_pending";
+        if any(protocolStatus==["original_RLC_duplicate_bytes_discarded","original_RLC_outside_window_discarded", ...
+                "original_PDCP_duplicate_or_below_RX_DELIV_discarded", ...
+                "original_PDCP_integrity_failed_discarded"])
+            sduT.Status(waiting)="phy_decode_pass_"+protocolStatus;
+        end
+        return;
+    end
     if protocolDelivered
         sduT.DeliverySuccess(firstMask) = true;
         sduT.FirstSuccessDelivery(firstMask) = true;

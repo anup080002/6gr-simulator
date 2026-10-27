@@ -46,24 +46,19 @@ classdef PDCPHeaderCodec
                 error("sixgr:pdcp:MalformedPDU","PDCP PDU is truncated.");
             end
             if bearerType=="SRB" && snBits==12
-                if bitand(bytes(1),uint8(240))~=0
-                    error("sixgr:pdcp:MalformedPDU", ...
-                        "SRB reserved header bits are nonzero.");
-                end
-                sn=double(bitshift(uint16(bytes(1)),8)+uint16(bytes(2)));
+                % TS38.323 6.3.6: receiver ignores R; it is not part of SN.
+                sn=double(bitshift(uint16(bitand(bytes(1),uint8(15))),8)+uint16(bytes(2)));
             elseif bearerType=="DRB" && snBits==12
-                if bitget(bytes(1),8)~=1 || ...
-                        bitand(bytes(1),uint8(112))~=0
+                if bitget(bytes(1),8)~=1
                     error("sixgr:pdcp:MalformedPDU", ...
-                        "DRB12 D/C or reserved bits are invalid.");
+                        "DRB12 data PDU requires D/C=1.");
                 end
                 sn=double(bitshift(uint16(bitand(bytes(1),uint8(15))),8)+ ...
                     uint16(bytes(2)));
             elseif bearerType=="DRB" && snBits==18
-                if bitget(bytes(1),8)~=1 || ...
-                        bitand(bytes(1),uint8(124))~=0
+                if bitget(bytes(1),8)~=1
                     error("sixgr:pdcp:MalformedPDU", ...
-                        "DRB18 D/C or reserved bits are invalid.");
+                        "DRB18 data PDU requires D/C=1.");
                 end
                 sn=double(bitshift(uint32(bitand(bytes(1),uint8(3))),16)+ ...
                     bitshift(uint32(bytes(2)),8)+uint32(bytes(3)));

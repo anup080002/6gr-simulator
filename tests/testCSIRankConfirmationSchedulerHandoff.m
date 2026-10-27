@@ -7,6 +7,7 @@ cfg.phy.linkAdaptation.dlPolicy='baseline';
 cfg.phy.linkAdaptation.rankPolicy='adaptive';
 cfg.phy.linkAdaptation.beamPolicy='adaptive';
 cfg.phy.linkAdaptation.domain='cqi';
+cfg.phy.linkAdaptation.initialSpatialConfirmationReports=2; % Explicit two-report initial fixture.
 cfg.phy.linkAdaptation.rankIncreaseConfirmationReports=2;
 cfg.phy.pdsch.numLayers=1; cfg.phy.pdsch.nLayers=1;
 cfg.phy.pdsch.maxLayers=2;
@@ -82,6 +83,7 @@ ok=true;
 end
 
 function localFourPortQualityIsolation(cfg)
+cfg.phy.linkAdaptation.initialSpatialConfirmationReports=1; % Acquire first rank-one point; later increases still need two.
 % Authored decoded-report boundary values, NOT a waveform/BLER campaign.
 % CQI is conditional on the reported rank/PMI/CRI. An unconfirmed higher
 % rank must not pollute the current-rank filter; a newly accepted point

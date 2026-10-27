@@ -913,19 +913,37 @@ def _audit_link_table(
             operating_failures.append(prefix + ":effective_layers_missing_or_mismatch")
         if not _close(effective_rank, rank, atol=0):
             operating_failures.append(prefix + ":effective_rank_missing_or_mismatch")
+        # LinkAdaptationScheduled describes a future feedback update, not
+        # the frozen grant consumed by this transmission. Match the actual
+        # producer contract, retaining its original owner/context checks.
+        status = _text(row, "ScheduledOperatingPointEvidenceStatus").lower()
+        grant_source = _text(row, "GrantOperatingPointSource", "MCSAuthority").lower()
+        grant_context = _text(row, "GrantContextId", "FrozenGrantContextId")
+        frozen_context = _text(row, "FrozenGrantContextId")
         genuinely_scheduled = (
             _boolean(row, "AdaptiveMode") is True
-            and _boolean(row, "LinkAdaptationScheduled") is True
+            and bool(grant_context)
+            and ("scheduler_grant" in grant_source or bool(frozen_context)
+                 or _boolean(row, "PDCCHGrantBindingOk") is True)
         )
         if genuinely_scheduled:
+            if status != "materialized_from_executed_frozen_scheduler_grant":
+                operating_failures.append(prefix + ":frozen_grant_materialization_status_missing_or_conflict")
+            if "scheduler_grant" not in _text(row, "ScheduledOperatingPointSource").lower():
+                operating_failures.append(prefix + ":scheduled_grant_source_missing")
+            explicit_context = _text(row, "GrantContextId")
+            if explicit_context and frozen_context and explicit_context != frozen_context:
+                operating_failures.append(prefix + ":frozen_grant_context_mismatch")
             if not _close(scheduled_mcs, transmitted_mcs, atol=0):
                 operating_failures.append(prefix + ":scheduled_mcs_mismatch")
+            for alias in ("ScheduledMCS", "ScheduledMCSIndex"):
+                if alias in row and not _close(_number(row, alias), transmitted_mcs, atol=0):
+                    operating_failures.append(prefix + f":{alias}_alias_missing_or_mismatch")
             if scheduled_mod != transmitted_mod or not scheduled_mod:
                 operating_failures.append(prefix + ":scheduled_modulation_mismatch")
             if _boolean(row, "ScheduledOperatingPointMatchesTransmitted") is not True:
                 operating_failures.append(prefix + ":scheduled_transmitted_match_flag_not_true")
         else:
-            status = _text(row, "ScheduledOperatingPointEvidenceStatus").lower()
             if "not_applicable_no_adaptive_scheduled_decision" not in status:
                 operating_failures.append(prefix + ":unscheduled_row_missing_not_applicable_status")
             if _boolean(row, "ScheduledOperatingPointMatchesTransmitted") is True:

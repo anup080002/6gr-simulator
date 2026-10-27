@@ -2266,6 +2266,40 @@ def _mu_check(direction: str, row: dict[str, str]):
     return next(check for check in checks if check.check_id == "mu_mimo_receiver_execution")
 
 
+def test_executed_scheduled_operating_point_is_independent_of_future_feedback():
+    row = {
+        "Direction": "UL", "AdaptiveMode": "1", "LinkAdaptationScheduled": "0",
+        "MCSIndex": "1", "EffectiveMCSIndex": "1", "ScheduledMCS": "1",
+        "ScheduledMCSIndex": "1", "Modulation": "QPSK", "EffectiveModulation": "QPSK",
+        "ScheduledModulation": "QPSK", "Layers": "4", "Rank": "4",
+        "EffectiveLayers": "4", "EffectiveRank": "4", "ModulationOrderQm": "2",
+        "GrantOperatingPointSource": "scheduler_grant", "GrantContextId": "original-grant",
+        "FrozenGrantContextId": "original-grant", "PDCCHGrantBindingOk": "1",
+        "ScheduledOperatingPointSource": "scheduler_grant",
+        "ScheduledOperatingPointEvidenceStatus": "materialized_from_executed_frozen_scheduler_grant",
+        "ScheduledOperatingPointMatchesTransmitted": "1",
+    }
+
+    def check(value):
+        return next(c for c in _audit_link_table("trial.csv", list(value), [value], "UL", 1)
+                    if c.check_id == "scheduled_transmitted_effective_operating_point")
+
+    assert check(row).passed
+    assert check(row | {"LinkAdaptationScheduled": "1"}).passed
+    for changed in (
+        {"GrantContextId": "", "FrozenGrantContextId": ""},
+        {"FrozenGrantContextId": "another-grant"},
+        {"ScheduledMCS": "2"}, {"ScheduledMCSIndex": "2"},
+        {"ScheduledModulation": "16QAM"}, {"ScheduledOperatingPointSource": ""},
+        {"ScheduledOperatingPointMatchesTransmitted": "0"},
+        {"ScheduledOperatingPointEvidenceStatus": "frozen_scheduler_grant_operating_point_conflict"},
+    ):
+        assert not check(row | changed).passed, changed
+    # Future feedback alone must not certify a current transmission's grant.
+    assert not check(row | {"LinkAdaptationScheduled": "1", "GrantContextId": "",
+                            "FrozenGrantContextId": "", "PDCCHGrantBindingOk": "0"}).passed
+
+
 def test_joint_sweep_trial_identity_includes_configured_not_measured_snr() -> None:
     for direction in ("DL", "UL"):
         base = {"Direction": direction, "Frame": "1", "Slot": "1",

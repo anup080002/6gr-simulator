@@ -234,13 +234,19 @@ function [Hest, nVar, info] = channelEstimate(carrier, rxGrid, refInd, refSym, v
             trueChannel, logical(oracleTestMode));
         return;
     elseif estimationMethod == "wiener"
-        % nrChannelEstimate exposes interpolation as an on/off policy. Do
-        % not forward an interpolation-kernel name (for example "linear"):
-        % R2026a rejects such values, while "on" is the documented
-        % semantic option used by supported releases.
-        fwd = localSetFwdNameValue(fwd, "Interpolation", "on");
-        fwd = localSetFwdNameValue(fwd, "AveragingWindow", [0 0]);
-        info.InterpolationMethod = char(localResolveInterpolationMethod(fwd, estimationMethod));
+        % The policy remains native interpolation with automatic averaging.
+        % The Interpolation name-value was added in 5G Toolbox 25.1; older
+        % public APIs always interpolate and must not receive that option.
+        installed = ver('5g');
+        assert(isscalar(installed), 'sixgr:phy:channelEstimate:Missing5GToolbox', ...
+            'Wiener estimation requires the installed public 5G Toolbox API.');
+        [nativeOptions,compatibility] = sixgr.phy.rx.channelEstimateWienerOptions(installed.Version);
+        fwd = localRemoveFwdNameValue(fwd, "Interpolation");
+        for optionIndex = 1:2:numel(nativeOptions)
+            fwd = localSetFwdNameValue(fwd, nativeOptions{optionIndex}, nativeOptions{optionIndex+1});
+        end
+        info.InterpolationMethod = 'on';
+        info.NativeInterpolationCompatibility = compatibility;
     end
 
     if policy.UseFastMexEffective && ...

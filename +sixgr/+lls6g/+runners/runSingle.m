@@ -3659,6 +3659,23 @@ catch ME
             char(string(profilerME.message)));
         localStopProfilerSession(profilerState);
     end
+    if profile == "waveform_bundle"
+        try
+            % Publish only projections of persisted original receiver rows.
+            % A failed heavy/final report must not hide executed control or
+            % precoder evidence from the following partial causal audit.
+            [retainedDL,retainedUL] = sixgr.analytics.resolveRetainedDirectionalTrials( ...
+                runFolder,table(),table());
+            sixgr.truth.exportCompactCausalStageEvidence(runFolder,cfg, ...
+                struct('DL',retainedDL,'UL',retainedUL));
+        catch stageEvidenceME
+            % Keep the original runtime exception and failed-run outcome.
+            localDBLog("WARN", ...
+                "Compact causal-stage publication after failure did not complete: %s | %s", ...
+                char(string(stageEvidenceME.identifier)), ...
+                char(string(stageEvidenceME.message)));
+        end
+    end
     try
         sixgr.runtime.RuntimeCallLedger.flush();
         causalPHYChainAudit = sixgr.truth.exportCausalPHYChainAudit( ...

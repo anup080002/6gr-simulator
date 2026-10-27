@@ -57,6 +57,8 @@ trialPath=fullfile(root,'air_interface','csv','srs_trials.csv');
 isolatedPath=sixgr.report.exportControlEVMSamples(trialPath,isolatedRow);
 isolatedTable=sixgr.util.csvReadTable(isolatedPath,'TextType','string');
 assert(height(isolatedTable)==9 && all(isolatedTable.ReferenceSource==isolated.Source));
+assert(all(isolatedTable.IsolatedComponentProved) && ...
+    all(strlength(string(isolatedTable.OriginalPairRecordSHA256))==64));
 assert(isequal(isolatedTable.ReferenceReal,T.ReferenceReal) && ...
     isequal(isolatedTable.MeasuredReal,T.MeasuredReal));
 for fault=["missing_proof","false_proof","numeric_proof","vector_proof","unknown_source","wrong_signal"]

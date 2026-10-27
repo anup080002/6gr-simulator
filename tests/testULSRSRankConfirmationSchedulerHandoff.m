@@ -5,6 +5,7 @@ setup6GRSimToolkit('Verbose',false);
 source=sixgr.lls6g.config.loadScenarioConfig( ...
     'simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_40db_gate.yaml');
 cfg=sixgr.lls6g.buildInternalConfig(source,tempname);
+cfg.phy.linkAdaptation.initialSpatialConfirmationReports=2; % Explicit two-report initial fixture.
 assert(cfg.phy.pusch.numLayers==1 && cfg.phy.pusch.maxLayers==4 && ...
     cfg.phy.linkAdaptation.rankIncreaseConfirmationReports==2);
 reported=[2 2 2 1 4 4 4]; accepted=[1 2 2 1 1 4 4];

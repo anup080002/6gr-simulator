@@ -171,7 +171,12 @@ def audit_csv(
     observations: list[str] = []
     columns: list[dict] = []
     first_rows: list[dict] = []
+    previous_field_limit = csv.field_size_limit()
     try:
+        # Original bit vectors and frozen evidence JSON can exceed Python's
+        # 128 KiB default in one correctly quoted cell. Bound parsing by the
+        # actual artifact size, as the semantic reader does; never truncate.
+        csv.field_size_limit(max(previous_field_limit, int(file_row["bytes"]) + 1))
         with source_path.open("r", encoding="utf-8-sig", newline="") as handle:
             reader = csv.reader(handle)
             first_record = next(reader, None)
@@ -439,6 +444,8 @@ def audit_csv(
             file_row["parse_ok"] = True
     except Exception as error:  # audit must record, not hide, unreadable artifacts
         issues.append(f"parse_error:{type(error).__name__}:{error}")
+    finally:
+        csv.field_size_limit(previous_field_limit)
     file_row["observations"] = "|".join(observations)
     file_row["observation_count"] = len(observations)
     file_row["issues"] = "|".join(issues)

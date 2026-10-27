@@ -567,6 +567,7 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                     g.TBSInputSource = char(string(sixgr.util.structGet(plan, "TBSInputSource", ...
                         "scheduler_exact_allocation_resource_accounting")));
                     g.MCSTable = char(string(plan.MCSTable));
+                    g.ReceivedPHRAllocation=plan.ReceivedPHRAllocation;
                     g.CQITable = char(string(plan.CQITable));
                     g.AMCMode = char(string(plan.AMCMode));
                     g.InnerLoopEnabled = logical(sixgr.util.structGet(plan, "InnerLoopEnabled", false));
@@ -1086,6 +1087,7 @@ g.ExactTBSInfo = struct("UsedFastNREApprox", false, "StrictTBSMode", false, ...
     "ForceExact", false, "XOverhead", 0);
 g.HARQ = struct('HarqID',[],'NDI',[],'RV',[],'IsRetransmission',false);
 g.MCSIndex = 1;
+g.ReceivedPHRAllocation=struct();
 g.CQIUsed = 1;
 g.PDCCHAggregationLevel = NaN;
 g.PDCCHCandidateIndex = 0;

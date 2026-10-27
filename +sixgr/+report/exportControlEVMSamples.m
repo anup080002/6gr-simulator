@@ -74,6 +74,8 @@ for k=1:height(trials)
         % A pre/post-TX pair retains PA backoff and every other configured
         % gain. It is not a gain-normalized standards modulation-EVM test.
         T.StandardizedModulationEVMQualified=false(n,1);
+        T.IsolatedComponentProved=false(n,1);
+        T.OriginalPairRecordSHA256=repmat(string(sixgr.util.sha256Hex(jsonencode(sixgr.util.jsonSafeValue(e)))),n,1);
         if string(e.MeasurementDomain)=="transmitter_resource_elements"
             T.MeasurementClaim=repmat("raw_gain_inclusive_TX_pair_error_not_standardized_modulation_EVM",n,1);
             T.AmplitudeReferenceTreatment=repmat("pre_TX_RF_amplitude_no_PA_backoff_or_gain_removal",n,1);
@@ -86,6 +88,7 @@ for k=1:height(trials)
             assert(ismember(string(e.SignalName),["TRS","SRS"]) && ...
                 (string(e.ReferenceSource)=="same_executed_desired_link_received_pilot_grid" || isolatedSRS), ...
                 'sixgr:report:ControlEVMPairAuthority','Received-grid pilot EVM needs its independent same-execution reference.');
+            T.IsolatedComponentProved(:)=isolatedSRS;
             T.MeasurementClaim=repmat("received_pilot_grid_pair_error_not_equalized_or_RF_conformance",n,1);
             T.AmplitudeReferenceTreatment=repmat("same_execution_desired_pilot_grid_no_gain_phase_fit",n,1);
         else

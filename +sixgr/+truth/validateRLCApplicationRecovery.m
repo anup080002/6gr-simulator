@@ -1,0 +1,73 @@
+function receipt=validateRLCApplicationRecovery(decodedApplicationBytes,owner,contributors)
+% Validate a private bridge release, not arbitrary public/exported row claims.
+% Caller authenticates contributors against its original decoded/released TB
+% registry. This pure reducer never changes PHY success or application counters.
+id='sixgr:protocol:InvalidRLCApplicationRecovery';
+scope={'Direction','UEID','BearerID','ConfigurationEpoch','PacketID','RLCFullCount'};
+assert(isstruct(owner)&&isscalar(owner)&&all(isfield(owner,[scope {'PayloadBytes','PayloadSHA256'}])),id,'Original application/bearer/count owner required.');
+assert(isa(decodedApplicationBytes,'uint8')&&isrow(decodedApplicationBytes)&&~isempty(decodedApplicationBytes),id,'Retain actual released application octets.');
+assert(any(string(owner.Direction)==["DL","UL"])&&validInteger(owner.ConfigurationEpoch,0)&& ...
+    validInteger(owner.RLCFullCount,0)&&validInteger(owner.PayloadBytes,1)&& ...
+    owner.PayloadBytes==numel(decodedApplicationBytes)&&validHash(owner.PayloadSHA256)&& ...
+    sixgr.protocol.ProtocolHash.bytes(decodedApplicationBytes)==string(owner.PayloadSHA256),id,'Whole released payload must match original offered bytes/hash.');
+for name={'UEID','BearerID','PacketID'}
+    value=string(owner.(name{1}));assert(isscalar(value)&&~ismissing(value)&&strlength(value)>0,id,'Original scope identity is unavailable.');
+end
+required=[scope {'TransportBlockID','ApplicationOffsetBytes','ApplicationBytes', ...
+    'OriginalApplicationFragmentSHA256','OriginalMACSHA256','DecodedMACSHA256', ...
+    'OriginalRLCSHA256','DecodedRLCSHA256','DecodedBitExact','ReleasedAfterPDCP', ...
+    'DecoderEvidenceSource','DecodedTime_s','DeliveryTime_s'}];
+assert(isstruct(contributors)&&~isempty(contributors)&&all(isfield(contributors,required)),id,'Actual decoded/released contributor records required.');
+n=numel(decodedApplicationBytes);covered=false(1,n);tbIDs=strings(numel(contributors),1);
+starts=zeros(numel(contributors),1);lengths=starts;releaseTimes=starts;
+proofHashes=strings(numel(contributors),1);macHashes=proofHashes;rlcHashes=proofHashes;fragmentHashes=proofHashes;
+for k=1:numel(contributors)
+    c=contributors(k);
+    for field=scope
+        assert(isequaln(c.(field{1}),owner.(field{1})),id,'Contributor changed original bearer/packet/full-count identity.');
+    end
+    tb=string(c.TransportBlockID);
+    assert(isscalar(tb)&&~ismissing(tb)&&strlength(tb)>0&&~any(tbIDs(1:k-1)==tb),id,'Each original TB contributes once; no duplicated or missing TB identity.');
+    tbIDs(k)=tb;
+    assert(islogical(c.DecodedBitExact)&&isscalar(c.DecodedBitExact)&&c.DecodedBitExact&& ...
+        islogical(c.ReleasedAfterPDCP)&&isscalar(c.ReleasedAfterPDCP)&&c.ReleasedAfterPDCP&& ...
+        string(c.DecoderEvidenceSource)=="actual_phy_decoder_bits_demuxed_through_strict_mac_rlc_pdcp_sdap",id,'Only original decoded and PDCP-released TB evidence may contribute.');
+    for pair={{'OriginalMACSHA256','DecodedMACSHA256'},{'OriginalRLCSHA256','DecodedRLCSHA256'}}
+        fields=pair{1};
+        assert(validHash(c.(fields{1}))&&validHash(c.(fields{2}))&& ...
+            string(c.(fields{1}))==string(c.(fields{2})),id,'Original and decoded MAC/RLC byte hashes disagree.');
+    end
+    assert(isnumeric(c.DecodedTime_s)&&isscalar(c.DecodedTime_s)&&isfinite(c.DecodedTime_s)&&c.DecodedTime_s>=0&& ...
+        isnumeric(c.DeliveryTime_s)&&isscalar(c.DeliveryTime_s)&&isfinite(c.DeliveryTime_s)&&c.DeliveryTime_s>=c.DecodedTime_s,id,'Release must follow its actual decoder clock.');
+    assert(validInteger(c.ApplicationOffsetBytes,0)&&isa(c.ApplicationBytes,'uint8')&& ...
+        (isrow(c.ApplicationBytes)||isempty(c.ApplicationBytes)),id,'Retain original application byte interval, including legitimate header-only contributions.');
+    start=double(c.ApplicationOffsetBytes);count=numel(c.ApplicationBytes);
+    assert(start+count<=n&&validHash(c.OriginalApplicationFragmentSHA256)&& ...
+        sixgr.protocol.ProtocolHash.bytes(c.ApplicationBytes)==string(c.OriginalApplicationFragmentSHA256),id,'Original fragment hash or bounds disagree.');
+    positions=start+(1:count);
+    assert(isequal(reshape(c.ApplicationBytes,1,[]),decodedApplicationBytes(positions)),id,'Decoded overlap/fragment bytes disagree with the actual whole-packet release.');
+    covered(positions)=true;starts(k)=start;lengths(k)=count;releaseTimes(k)=c.DeliveryTime_s;
+    proofHashes(k)=sixgr.l2.mac.MACHash.of(orderfields(c));
+    macHashes(k)=string(c.DecodedMACSHA256);rlcHashes(k)=string(c.DecodedRLCSHA256);
+    fragmentHashes(k)=string(c.OriginalApplicationFragmentSHA256);
+end
+assert(all(covered),id,'Successful original and retransmitted intervals leave a gap; sums cannot prove byte coverage.');
+receipt=struct('ContractVersion',"sixgr.protocol.original_RLC_application_recovery/v1", ...
+    'Owner',owner,'DecodedApplicationPayloadSHA256',sixgr.protocol.ProtocolHash.bytes(decodedApplicationBytes), ...
+    'DecodedApplicationBytes',n,'UniqueCoveredApplicationBytes',nnz(covered), ...
+    'ContributedApplicationBytes',sum(lengths),'OverlappingApplicationBytes',sum(lengths)-nnz(covered), ...
+    'ContributorTransportBlockIDs',tbIDs,'ContributorOffsetsBytes',starts,'ContributorLengthsBytes',lengths, ...
+    'ContributorEvidenceSHA256',proofHashes,'ContributorDecodedMACSHA256',macHashes, ...
+    'ContributorDecodedRLCSHA256',rlcHashes,'ContributorFragmentSHA256',fragmentHashes, ...
+    'HeaderOnlyContributorCount',nnz(lengths==0),'DeliveryTime_s',max(releaseTimes), ...
+    'Source',"original_decoded_released_TB_byte_union_and_whole_PDCP_application_payload", ...
+    'FailedOriginalTBSuccessChanged',false,'ApplicationGoodputCredited',false, ...
+    'CallerMustAuthenticatePrivateBridgeContributors',true);
+receipt.SHA256=sixgr.l2.mac.MACHash.of(orderfields(receipt));
+end
+function yes=validInteger(x,minimum)
+yes=isnumeric(x)&&~islogical(x)&&isreal(x)&&isscalar(x)&&isfinite(x)&&x>=minimum&&x==fix(x)&&x<flintmax;
+end
+function yes=validHash(x)
+x=string(x);yes=isscalar(x)&&~ismissing(x)&&~isempty(regexp(char(x),'^[0-9a-f]{64}$','once'));
+end

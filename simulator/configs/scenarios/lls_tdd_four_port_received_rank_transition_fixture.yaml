@@ -21,6 +21,7 @@ run_control:
 # control gates, five-slot CSI/SRS calendars and disjoint PUSCH/SRS/PUCCH
 # symbols. Rank confirmation remains the normal two-report policy.
 link_adaptation:
+  initial_spatial_confirmation_reports: 2
   rank_increase_confirmation_reports: 2
 
 channels:

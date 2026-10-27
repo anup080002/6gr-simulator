@@ -14,6 +14,10 @@ fields=["UnscheduledBits","ReservedInFlightBits","CRCConfirmedMappedBits", ...
     "BitVerifiedPendingReassemblyBits","CompletedApplicationBits", ...
     "HARQReleasedUndeliveredBits","UnresolvedReservedBits"];
 for field=fields, P.(field)=zeros(height(P),1); end
+if ~ismember('DiscardedUnscheduledBits',P.Properties.VariableNames)
+    P.DiscardedUnscheduledBits=zeros(height(P),1);
+end
+fields=[fields "DiscardedUnscheduledBits"];
 P.HARQRetryLimitDroppedBits=zeros(height(P),1);
 P.HARQObservedACKWithoutDecodeBits=zeros(height(P),1);
 P.BitConservationErrorBits=nan(height(P),1);
@@ -27,14 +31,23 @@ if ~isempty(S)
     S.ApplicationRangeEndBitExclusive=nan(height(S),1);
     S.ApplicationRangeSource=strings(height(S),1);
     S.PacketBitState=strings(height(S),1);
+    S.RecoveredViaRLC=false(height(S),1);
+    S.RLCRecoverySourceTBIDsJSON=strings(height(S),1);
 end
 owned=false(height(S),1);
 for p=1:height(P)
     counts=double([P.OfferedBits(p),P.ScheduledBits(p),P.RemainingBits(p),P.DeliveredBits(p)]);
+    discarded=double(P.DiscardedUnscheduledBits(p));
     assert(all(isfinite(counts) & counts>=0 & counts==fix(counts)) && ...
-        counts(1)==counts(2)+counts(3), ...
+        isfinite(discarded)&&discarded>=0&&discarded==fix(discarded)&& ...
+        counts(1)==counts(2)+counts(3)+discarded, ...
         'sixgr:protocol:PacketBitConservationFailure', ...
-        'Offered bits must equal committed scheduled bits plus unscheduled bits.');
+        'Offered bits must equal scheduled, still queued and actual unsent-discarded bits.');
+    if discarded>0
+        validatePDCPDiscard(state,P(p,:));
+        assert(discarded==counts(1)&&all(counts(2:4)==0), ...
+            'sixgr:protocol:PacketBitConservationFailure','Only wholly unsubmitted packets can enter this discard partition.');
+    end
     P.UnscheduledBits(p)=counts(3);
     idx=[];
     if ~isempty(S)
@@ -56,11 +69,25 @@ for p=1:height(P)
     end
     lengths=zeros(0,1);
     if ~isempty(idx), lengths=double(S.PayloadBits(idx)); end
-    assert(all(isfinite(lengths) & lengths>0 & lengths==fix(lengths)) && ...
+    assert(all(isfinite(lengths) & lengths>=0 & lengths==fix(lengths)) && ...
         sum(lengths)==counts(2),'sixgr:protocol:PacketBitConservationFailure', ...
         'Committed SDU ranges must reconcile with scheduled application bits.');
+    for z=reshape(idx(lengths==0),1,[])
+        requireColumns(S,{'ProtocolMACPDUBytes','ProtocolMACSHA256','ProtocolEncodedRLC_SHA256'});
+        assert(flag(S,z,'ProtocolPayloadSameWaveformTruth') && ...
+            isfinite(S.ProtocolMACPDUBytes(z)) && S.ProtocolMACPDUBytes(z)>0 && ...
+            strlength(string(S.ProtocolMACSHA256(z)))==64 && ...
+            strlength(string(S.ProtocolEncodedRLC_SHA256(z)))==64, ...
+            'sixgr:protocol:PacketBitConservationFailure','Zero application bytes require actual original protocol/header-bearing MAC evidence.');
+    end
     starts=[0;cumsum(lengths)];
     appDelivered=flag(P,p,'DeliverySuccess');
+    recovery=[];
+    if ismember('RLCApplicationRecoveryEvidenceJSON',P.Properties.VariableNames) && ...
+            strlength(string(P.RLCApplicationRecoveryEvidenceJSON(p)))>0
+        recovery=validateRecovery(state,P(p,:),S);
+        assert(appDelivered,'sixgr:protocol:InvalidApplicationDeliveryEvidence','Recovery receipt requires actual whole application release.');
+    end
     assert((~appDelivered && counts(4)==0) || ...
         (appDelivered && counts(4)==counts(1) && counts(3)==0 && ~isempty(idx)), ...
         'sixgr:protocol:InvalidApplicationDeliveryEvidence', ...
@@ -78,7 +105,13 @@ for p=1:height(P)
                 'Same-waveform payload offsets must match the committed range.');
             S.ApplicationRangeSource(j)="frozen_protocol_payload_offset";
         end
-        if flag(S,j,'DeliverySuccess')
+        if ~flag(S,j,'DeliverySuccess') && ~isempty(recovery) && protocol
+            category="CompletedApplicationBits";
+            S.RecoveredViaRLC(j)=true;
+            start=starts(n)/8;stop=starts(n+1)/8;
+            hit=recovery.Offsets<stop & recovery.Offsets+recovery.Lengths>start;
+            S.RLCRecoverySourceTBIDsJSON(j)=string(jsonencode(recovery.TBIDs(hit)));
+        elseif flag(S,j,'DeliverySuccess')
             if protocol
                 requireDecodedProof(S(j,:));
                 category="BitVerifiedPendingReassemblyBits";
@@ -107,13 +140,97 @@ for p=1:height(P)
     assert(P.BitConservationErrorBits(p)==0,'sixgr:protocol:PacketBitConservationFailure', ...
         'The disjoint bit-state partition must equal offered application bits.');
     P.BitConservationStatus(p)="conserved_disjoint_committed_ranges";
+    if discarded>0
+        P.BitConservationSchema(p)="packet_bit_ranges_with_PDCP_unsent_discard/v2";
+        P.BitConservationStatus(p)="conserved_actual_PDCP_and_RLC_unsent_discard";
+    end
     if P.UnresolvedReservedBits(p)>0
         P.BitConservationStatus(p)="conserved_ranges_unresolved_receiver_or_lifecycle_evidence";
     end
+    if ~isempty(recovery)
+        P.BitConservationSchema(p)="packet_bit_ranges_with_RLC_recovery/v2";
+        P.BitConservationStatus(p)="conserved_original_ranges_with_actual_RLC_recovery";
+    end
 end
+
 assert(all(owned),'sixgr:protocol:UnownedPacketSegment','Every committed segment requires an application owner.');
 state.PacketDeliveryLedgerTable=P; state.PacketSDULedgerTable=S;
 end
+
+function validatePDCPDiscard(state,p)
+id='sixgr:protocol:InvalidPDCPDiscardLedger';
+requireColumns(p,{'DiscardReceiptID','ProtocolUEID','ProtocolBearerID','ProtocolConfigurationEpoch', ...
+    'OriginalApplicationPayloadSHA256'});
+T=sixgr.util.structGet(state,'ProtocolDiscardEventsTable',table());
+assert(~isempty(T)&&ismember('ReceiptID',T.Properties.VariableNames),id,'Actual protocol discard event ledger required.');
+hit=string(T.ReceiptID)==string(p.DiscardReceiptID);
+assert(nnz(hit)==1,id,'Discard must join exactly one original protocol event.');
+r=table2struct(T(hit,:));
+bridge=sixgr.util.structGet(state,'ProtocolBridge',[]);
+assert(isa(bridge,'sixgr.protocol.WaveformProtocolBridge')&& ...
+    isequaln(r,bridge.originalDiscardReceipt(r.ReceiptID)),id,'Original private discard receipt changed.');
+assert(r.UEIndex==p.UEIndex&&r.Direction==string(p.Direction)&& ...
+    r.PacketID==string(p.ApplicationPacketId)&&r.UEID==string(p.ProtocolUEID)&& ...
+    r.BearerID==string(p.ProtocolBearerID)&&r.ConfigurationEpoch==p.ProtocolConfigurationEpoch&& ...
+    r.PayloadSHA256==string(p.OriginalApplicationPayloadSHA256)&& ...
+    r.PacketizationMode=="queued_packet"&&r.Source=="original_PDCP_TX_discard_timer"&& ...
+    r.LowerLayerDisposition=="discarded_wholly_unsubmitted"&&r.ObservedAtSample>=r.DeadlineSample&& ...
+    r.ApplicationBytesDropped==r.PacketBytes&&8*r.ApplicationBytesDropped==p.DiscardedUnscheduledBits&& ...
+    ~p.DeliverySuccess,id,'Only the original expired and wholly unsent packet can be counted as discarded.');
+end
+
+function result=validateRecovery(state,p,S)
+id='sixgr:protocol:InvalidRLCRecoveryLedger';
+requireColumns(p,{'RLCApplicationRecoveryEvidenceSHA256','OriginalApplicationPayloadSHA256'});
+r=jsondecode(char(p.RLCApplicationRecoveryEvidenceJSON));
+assert(isfield(r,'SHA256')&&string(r.SHA256)==string(p.RLCApplicationRecoveryEvidenceSHA256)&& ...
+    sixgr.l2.mac.MACHash.of(orderfields(rmfield(r,'SHA256')))==string(r.SHA256),id,'Original private recovery receipt hash changed.');
+assert(string(r.ContractVersion)=="sixgr.protocol.original_RLC_application_recovery/v1" && ...
+    string(r.Owner.Direction)==string(p.Direction)&& ...
+    string(r.Owner.PacketID)==string(p.PacketId)&&r.Owner.PayloadBytes*8==p.OfferedBits&& ...
+    string(r.Owner.PayloadSHA256)==string(p.OriginalApplicationPayloadSHA256)&& ...
+    string(r.DecodedApplicationPayloadSHA256)==string(p.OriginalApplicationPayloadSHA256)&& ...
+    r.UniqueCoveredApplicationBytes*8==p.OfferedBits,id,'Recovery changed original application owner or byte extent.');
+R=sixgr.util.structGet(state,'RLCRecoveryTransportLedgerTable',table());
+columns={'Direction','UEIndex','PacketId','ApplicationPacketId','TransportBlockId', ...
+    'ProtocolRLCFullCount','ProtocolBearerID','ProtocolUEID','ProtocolConfigurationEpoch','PayloadBits','ProtocolPayloadOffsetBits', ...
+    'DeliverySuccess','ProtocolPayloadSameWaveformTruth','ProtocolDecodedBitExact','ProtocolDecodedBitCount', ...
+    'ProtocolMACPDUBytes','ProtocolDecodedMACSHA256','ProtocolMACSHA256','ProtocolDecodedRLC_SHA256', ...
+    'ProtocolEncodedRLC_SHA256','ProtocolReceiverEvidenceSource','ProtocolDeliveryStatus', ...
+    'ProtocolPayloadSHA256','ProtocolDecodedPayloadSHA256'};
+requireColumns(S,columns);T=S(:,columns);
+original=string(S.Direction)==string(p.Direction)&S.UEIndex==p.UEIndex& ...
+    string(S.PacketId)==string(p.PacketId)&string(S.ApplicationPacketId)==string(p.ApplicationPacketId);
+assert(any(original)&&all(S.ProtocolRLCFullCount(original)==r.Owner.RLCFullCount)&& ...
+    all(string(S.ProtocolBearerID(original))==string(r.Owner.BearerID))&& ...
+    all(string(S.ProtocolUEID(original))==string(r.Owner.UEID))&& ...
+    all(S.ProtocolConfigurationEpoch(original)==r.Owner.ConfigurationEpoch),id, ...
+    'Recovered original ranges must retain the same private RLC bearer/count owner.');
+if ~isempty(R),requireColumns(R,columns);T=[T;R(:,columns)];end
+ids=string(r.ContributorTransportBlockIDs(:));offsets=double(r.ContributorOffsetsBytes(:));lens=double(r.ContributorLengthsBytes(:));
+assert(numel(unique(ids))==numel(ids)&&numel(ids)==numel(offsets)&&numel(ids)==numel(lens),id,'Invalid contributor population.');
+covered=false(1,p.OfferedBits/8);
+for k=1:numel(ids)
+    hit=string(T.TransportBlockId)==ids(k)&string(T.Direction)==string(p.Direction)&T.UEIndex==p.UEIndex& ...
+        string(T.PacketId)==string(p.PacketId)&string(T.ApplicationPacketId)==string(p.ApplicationPacketId);
+    assert(nnz(hit)==1,id,'Recovery must join exactly one original transport ledger owner.');s=T(hit,:);
+    assert(flag(s,1,'DeliverySuccess')&&flag(s,1,'ProtocolPayloadSameWaveformTruth'),id,'Unreceived original TB cannot gain recovery decode evidence.');
+    requireDecodedProof(s);
+    mac=string(r.ContributorDecodedMACSHA256);rlc=string(r.ContributorDecodedRLCSHA256);fragment=string(r.ContributorFragmentSHA256);
+    assert(s.ProtocolRLCFullCount==r.Owner.RLCFullCount&&string(s.ProtocolBearerID)==string(r.Owner.BearerID)&& ...
+        string(s.ProtocolUEID)==string(r.Owner.UEID)&& ...
+        s.ProtocolConfigurationEpoch==r.Owner.ConfigurationEpoch&&s.ProtocolPayloadOffsetBits==offsets(k)*8&& ...
+        s.PayloadBits==lens(k)*8&&string(s.ProtocolDecodedMACSHA256)==mac(k)&& ...
+        string(s.ProtocolDecodedRLC_SHA256)==rlc(k)&&string(s.ProtocolPayloadSHA256)==fragment(k)&& ...
+        string(s.ProtocolDecodedPayloadSHA256)==fragment(k),id,'Original contributor scope, interval or decoded hashes disagree.');
+    assert(isfinite(offsets(k))&&offsets(k)>=0&&offsets(k)==fix(offsets(k))&& ...
+        isfinite(lens(k))&&lens(k)>=0&&lens(k)==fix(lens(k))&&offsets(k)+lens(k)<=numel(covered),id,'Invalid original coverage interval.');
+    covered(offsets(k)+(1:lens(k)))=true;
+end
+assert(all(covered),id,'Recovery receipt leaves original application bytes uncovered.');
+result=struct('TBIDs',ids,'Offsets',offsets,'Lengths',lens);
+end
+
 
 function [category,reason]=unreceivedRangeState(s,L,H)
 category="UnresolvedReservedBits"; reason="";

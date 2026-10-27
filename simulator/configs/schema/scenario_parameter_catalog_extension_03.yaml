@@ -45,6 +45,7 @@
       "outage_recovery_positive_cqi_reports": {"required": false, "type": "integer", "min": 1},
       "outage_recovery_cqi_tolerance": {"required": false, "type": "integer", "min": 0, "max": 15},
       "outage_recovery_max_gap_slots": {"required": false, "type": "integer", "min": 1},
+      "initial_spatial_confirmation_reports": {"required": false, "type": "integer", "min": 1},
       "rank_increase_confirmation_reports": {"required": false, "type": "integer", "min": 1},
       "mcs_transition": {"required": false, "type": "struct"},
       "olla_step_down": {"required": false, "type": "number", "min": 0},
@@ -160,6 +161,7 @@
       "aggregation_rules": {"required": true, "type": "string"}, "confidence_interval_policy": {"required": true, "type": "string"},
       "percentile_policy": {"required": true, "type": "string"}, "comparison_policy": {"required": true, "type": "string"},
       "baseline_diff_policy": {"required": true, "type": "string"},
+      "srs_path_power": {"required": false, "type": "struct", "nested_rule": "kpi_srs_path_power", "notes": "Same-capture pre-RX detected-path coherent-response diagnostic; no independent accuracy or standardized reference qualification."},
       "csi_selection_quality": {"required": false, "type": "struct", "nested_rule": "kpi_csi_selection_quality", "notes": "Private post-reception fixed-CRI nominal-channel study; never receiver/scheduler input or NR optimality/BLER qualification. Units and physical reference plane must come from actual execution."}
     }},
     "sweeps_and_matrix": {"required": true, "parameters": {
@@ -183,6 +185,19 @@
     }}
   },
   "nested_sections": {
+    "kpi_srs_path_power": {
+      "parameters": {
+        "enabled": {"required": true, "type": "boolean"},
+        "delay_min_us": {"required": true, "type": "number"},
+        "delay_max_us": {"required": true, "type": "number"},
+        "delay_step_us": {"required": true, "type": "number", "min": 0},
+        "peak_relative_threshold_db": {"required": true, "type": "number", "max": 0},
+        "noise_threshold_db": {"required": true, "type": "number", "min": 0},
+        "minimum_path_separation_us": {"required": true, "type": "number", "min": 0},
+        "maximum_paths": {"required": true, "type": "integer", "min": 1, "max": 128},
+        "classification": {"required": true, "type": "string", "allowed_values": ["IMPLEMENTATION_POLICY"]}
+      }
+    },
     "kpi_csi_selection_quality": {
       "parameters": {
         "enabled": {"required": true, "type": "boolean"},

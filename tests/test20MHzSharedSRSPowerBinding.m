@@ -1,4 +1,4 @@
-function [ok,publicationFolder]=test20MHzSharedSRSPowerBinding(retainedFolder,mode)
+function [ok,publicationFolder,state]=test20MHzSharedSRSPowerBinding(retainedFolder,mode)
 % One SRS occasion on the production CDL-C/RF clock. Access/TAG and the
 % independently decoded PDCCH/coded PUSCH state are declared boundary inputs,
 % NOT evidence of integrated access, PUSCH reception or statistical BLER.
@@ -6,7 +6,10 @@ function [ok,publicationFolder]=test20MHzSharedSRSPowerBinding(retainedFolder,mo
 % a new sibling diagnostic directory; it never repeats PHY or edits originals.
 setup6GRSimToolkit('Verbose',false);
 publicationFolder="";
-if nargin>=1
+state=struct();
+withMAC=nargin==2&&string(mode)=="mac_chain";
+if withMAC, assert(isempty(retainedFolder),'Use a fresh physical MAC component.'); end
+if nargin>=1 && ~withMAC
     if nargin==2
         assert(isscalar(string(mode)) && string(mode)=="republish_receiver_row", ...
             'test:UnknownSRSRetainedMode','Use the explicit republish_receiver_row mode.');
@@ -15,8 +18,9 @@ if nargin>=1
     % Explicit read-only re-audit of a completed capture; no new PHY claim.
     validateRetainedEnergy(retainedFolder); ok=true; return;
 end
-source=sixgr.lls6g.config.loadScenarioConfig( ...
-    'simulator/configs/scenarios/lls_tdd_n40_20mhz_64txru_4rx_cdlc100_impaired.yaml');
+sourcePath='simulator/configs/scenarios/lls_tdd_n40_20mhz_64txru_4rx_cdlc100_impaired.yaml';
+if withMAC, sourcePath='simulator/configs/scenarios/lls_n40_received_mac_component.yaml'; end
+source=sixgr.lls6g.config.loadScenarioConfig(sourcePath);
 prior=rng; cleanup=onCleanup(@()rng(prior)); %#ok<NASGU>
 rng(double(source.get('simulation.random_seed')),'twister');
 folder=fullfile(pwd,'results','validation','n40_shared_srs_power', ...
@@ -24,6 +28,16 @@ folder=fullfile(pwd,'results','validation','n40_shared_srs_power', ...
 mkdir(folder); fprintf('SHARED_SRS_POWER_ROOT=%s\n',folder);
 publicationFolder=string(folder);
 cfg=sixgr.lls6g.buildInternalConfig(source,folder); cfg.run.rootRunFolder=folder;
+if withMAC
+    [~,tag]=fileparts(folder);
+    id=sixgr.runtime.resolveExecutionIdentity(folder,"n40_received_mac_component_"+string(tag),source.ConfigHash);
+    cfg.run.runTag=char(id.RunID); cfg.run.executionID=char(id.ExecutionID);
+    cfg.meta.executionID=char(id.ExecutionID); cfg.meta.configHash=char(id.ConfigHash);
+    [cfg,macCommon,commonReceipt]=decodedN40MACCommonCodecFixture(cfg,1,1);
+    sixgr.util.matSave(fullfile(folder,'declared_n40_common_codec.mat'),struct('Receipt',commonReceipt));
+end
+% Explicit diagnostic policy activation; the sounding resource is unchanged.
+cfg.measurements.srsPathPower.Enabled=true;
 % This isolated sounding test declares SSB/common-power boundary inputs;
 % it does not execute the new original SSB/SIB1 retention lifecycle.
 cfg.rf.frontend.ul_power_control.pathloss_reference_lifetime='configured_age_limit';
@@ -32,8 +46,21 @@ state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,folder,multi,struct(),0);
 state=sixgr.truth.CoupledTruthRuntime.advanceFrame(state,cfg,multi,1,0);
 state=sixgr.truth.CoupledTruthRuntime.startSlot(state,cfg,'DL',1,1,1,cfg.run.totalSlots,0);
 state.CurrentServingIdx(:)=1;
-state.UECommonCellConfigurationByUE={decodedSSBPowerCodecFixture(cfg,5,1,1)};
-measurement=table(0,95,"SSB-0","declared_integration_boundary_fixture",1,-90,5, ...
+referencePower=5;
+if withMAC
+    state.UECommonCellConfigurationByUE={macCommon};referencePower=macCommon.SSPBCHBlockPower_dBm;
+    recovery=commonReceipt.DecoderRecovery;
+    % These bytes were decoded by the component codec above; availability
+    % is the declared initial common boundary, not a claimed RF reception.
+    recovery.ReceivedSIB1AvailableAtSample=0;
+    recovery.EvidenceBoundary="declared_component_common_codec_not_received_RF_access";
+    assert(recovery.SIB1RxTreeHash==macCommon.TreeHash&& ...
+        recovery.SIB1PayloadHashRx==macCommon.PayloadHash);
+    state.DecodedSIB1RecoveryByUE={recovery};
+else
+    state.UECommonCellConfigurationByUE={decodedSSBPowerCodecFixture(cfg,5,1,1)};
+end
+measurement=table(0,95,"SSB-0","declared_integration_boundary_fixture",1,referencePower-95,referencePower, ...
     'VariableNames',{'ReferenceSignalId','MeasuredReferenceSignalPathloss_dB', ...
     'PathlossReferenceRS','MeasuredReferenceSignalPathlossSource','ServingCell', ...
     'SS_RSRP_dBm','ReferenceSignalTxEPRE_dBm'});
@@ -42,11 +69,40 @@ state=sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementRuntime( 
     'Direction','DL','SourceSignal','SSB','MeasurementSource','declared_integration_boundary_fixture');
 [state,stream]=sixgr.truth.CoupledWaveformStream.initialize(state,cfg,{cfg});
 firstSlot=double(cfg.phy.srs.period_offset)+1;
+prefixStartSlot=1;
+if withMAC
+    % Actual received SS/PBCH timing on this same native channel/RF clock.
+    % SIB1/common and connected TAG remain explicit codec/component inputs.
+    state.TestMACClockRoot=folder;
+    [dl,state]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'DL');
+    broadcast=sixgr.link.runCellSearch_MIB_SIB1(dl,'PrepareOnly',true, ...
+        'UseRuntimeChannel',true,'RuntimeSlot',0,'Content','SSB_MIB');
+    assert(isfield(broadcast,'PreparedBroadcast'),'test:MACSSBPreparation','%s',broadcast.FailureReason);
+    stream.queueDownlink('PBCH',1,broadcast.PreparedBroadcast, ...
+        struct('Config',dl,'Slot',1,'ServingCell',1,'TrackingOnly',true,'Prototype',broadcast));
+    for prefixSlot=1:firstSlot-1
+        [hasDL,~]=sixgr.truth.CoupledTruthRuntime.resolveSlotPartition(cfg,prefixSlot);
+        direction="UL"; if hasDL, direction="DL"; end
+        state=sixgr.truth.CoupledTruthRuntime.startSlot( ...
+            state,cfg,direction,1,1,prefixSlot,cfg.run.totalSlots,cfg.channel.snr_dB);
+        state=stream.advanceSlot(state,sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,prefixSlot), ...
+            @receiveN40MACSSBClock);
+        % Stop acquisition as soon as its original clock is available. Queue
+        % the later SRS before committing intervening UE silence: received
+        % timing advance can place its waveform before the nominal slot edge.
+        if isfield(state,'TestMACReceivedDLClock'), break; end
+    end
+    assert(isfield(state,'TestMACReceivedDLClock') && ...
+        state.TestMACReceivedDLClock.AvailableAtSample<=stream.Events.NextSampleIndex, ...
+        'test:MACSSBClockUnavailable','Original BCH decode must precede first SRS/control preparation.');
+    prefixStartSlot=prefixSlot+1;
+end
 plan=sixgr.truth.CoupledTruthRuntime.futureULPlanningView(state,firstSlot);
 [ul,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,plan,1,'UL');
 ul=sixgr.phy.grid.applyRuntimeCarrierTimeline(ul,firstSlot);
 fs=stream.SampleRateHz; carrier=sixgr.phy.grid.makeCarrier(ul);
 common=struct('Source',"decoded_sib1",'TimingAdvanceOffsetPresent',false,'TimingAdvanceOffset',"");
+if withMAC, common=macCommon; end
 ul.SharedULTimingContext=struct('DLReference',struct( ...
     'Source',"received_SSB_timing_and_decoded_BCH",'NCellID',carrier.NCellID, ...
     'SampleRateHz',fs,'DLPhaseOffsetSamples',0,'AvailableAtSample',0), ...
@@ -54,6 +110,23 @@ ul.SharedULTimingContext=struct('DLReference',struct( ...
     'ReceivedRARTiming',sixgr.phy.ra.resolveRARTimingAdvance(0,30,fs), ...
     'TimingAdvanceAvailableAtSample',0,'TimingAdvanceEffectiveAtSample',0, ...
     'TimeAlignmentExpirySampleExclusive',round(.03*fs));
+if withMAC
+    ul.SharedULTimingContext.DLReference=state.TestMACReceivedDLClock;
+    % Explicit pre-existing connected TAG component input, not received RA.
+    % Its configured timer comes from the original decoded common message.
+    timer=string(macCommon.TimeAlignmentTimerCommon);
+    if timer=="infinity"
+        expiry=Inf;
+    else
+        names=["ms500","ms750","ms1280","ms1920","ms2560","ms5120","ms10240"];
+        duration=[500 750 1280 1920 2560 5120 10240]; index=find(names==timer);
+        assert(isscalar(index),'test:DeclaredTAGTimer','Unsupported original common timer.');
+        expiry=duration(index)*fs/1000;
+    end
+    ul.SharedULTimingContext.TimeAlignmentTimerCommon=timer;
+    ul.SharedULTimingContext.TimeAlignmentExpirySampleExclusive=expiry;
+    ul.SharedULTimingContext.ComponentBoundary="declared_preexisting_connected_TAG_not_received_RAR";
+end
 old=sixgr.link.ReceivedULPowerControlState(ul);
 ul.phy.srs.receivedPowerControlState=old;
 args={'SlotIndex',firstSlot,'TrialIndex',1,'TimingAdvanceSamples',0};
@@ -72,12 +145,20 @@ stream.queueUplinkControl(1,prepared,struct('Config',ul,'Arguments',{args},'Serv
 scope=struct('ScenarioAccepted',false,'StatisticallyQualified',false, ...
     'PathlossReferenceLifetime',"configured_age_limit_declared_boundary_fixture", ...
     'AccessExecuted',false,'PUSCHOnSharedStream',false, ...
+    'ActualSharedSSBClockReceived',withMAC,'SIB1RFReceived',false, ...
     'ControlBoundary',"independent_PDCCH_decode_and_coded_PUSCH_state", ...
     'PhysicalSRSOccasions',1,'SourceScenario',string(source.ConfigPath));
 save(fullfile(folder,'configuration.mat'),'cfg','ul','scope','command');
 bound=0; receivedCount=0; schedulingRow=table(); spatialHandoffVerified=false;
-for slot=1:firstSlot+1
-    state.CurrentSlot=slot;
+for slot=prefixStartSlot:firstSlot+1
+    if withMAC && (isempty(schedulingRow) || spatialHandoffVerified)
+        [hasDL,~]=sixgr.truth.CoupledTruthRuntime.resolveSlotPartition(cfg,slot);
+        direction="UL"; if hasDL, direction="DL"; end
+        state=sixgr.truth.CoupledTruthRuntime.startSlot( ...
+            state,cfg,direction,1,1,slot,cfg.run.totalSlots,cfg.channel.snr_dB);
+    elseif ~withMAC
+        state.CurrentSlot=slot;
+    end
     if ~isempty(schedulingRow) && ~spatialHandoffVerified
         state=verifySpatialOnlyHandoff(state,cfg,ul,schedulingRow,slot,folder);
         spatialHandoffVerified=true;
@@ -92,6 +173,9 @@ save(fullfile(folder,'rf_execution.mat'),'ledger','scope');
 sixgr.util.csvWriteTable(fullfile(folder,'rf_chain_power_intervals.csv'), ...
     ledger.ChainPowerIntervals,'PreserveSchema',true);
 validateRetainedEnergy(folder);
+if withMAC
+    state=testN40ReceivedMACContinuation(state,cfg,ul,firstSlot+1,folder);
+end
 fprintf('SHARED_SRS_POWER_PASS evidence=%s\n',folder); ok=true;
 
     function next=consume(next,items)
@@ -99,6 +183,9 @@ fprintf('SHARED_SRS_POWER_PASS evidence=%s\n',folder); ok=true;
     end
     function next=one(next,items)
         for item=items
+            if withMAC && any(item.Kind==["PBCH","SSBOccasion"])
+                next=receiveN40MACSSBClock(next,item); continue;
+            end
             if item.Kind=="BindSRSPower"
                 assert(stream.Events.NextSampleIndex==resourceStart);
                 next=sixgr.truth.bindSharedSRSPower(next,item); bound=bound+1;
@@ -157,6 +244,25 @@ fprintf('SHARED_SRS_POWER_PASS evidence=%s\n',folder); ok=true;
                 string(comparison.FFTSupport.Source)=="original_noisy_preRF_measurement_native_demodulation" && ...
                 string(nmseProof.FFTSupport.Source)=="recorded_practical_RX_clock_reference_native_demodulation");
             antenna=jsondecode(out.SRSAbsolutePowerEvidenceJSON);
+            assert(out.SRSPathPowerAvailable&&out.SRSPathPowerDetectedCount>0, ...
+                'test:SRSPathPowerUnavailable','Actual path diagnostic: %s (%s)', ...
+                out.SRSPathPowerStatus,out.SRSPathPowerErrorIdentifier);
+            pathEvidence=jsondecode(out.SRSPathPowerEvidenceJSON);
+            assert(string(pathEvidence.Binding.ObservationSHA256)==pre.sampleHash()&& ...
+                pathEvidence.SameCaptureDetectionAndAveraging&&pathEvidence.SelectionBiasPresent&& ...
+                ~pathEvidence.IndependentAccuracyQualified&&~pathEvidence.HardwareQualified&& ...
+                pathEvidence.Binding.OriginalAntennaPowerEvidenceSHA256==out.SRSAbsolutePowerEvidenceSHA256);
+            operands=pathEvidence.OriginalPilotOperands;
+            response=complex(operands.ResponseReal_sqrtW,operands.ResponseImag_sqrtW);
+            coordinates=operands.Subcarrier0Symbol0Port0;
+            for path=reshape(pathEvidence.Paths,1,[])
+                at=coordinates(:,3)==path.PortIndex0;
+                frequency=coordinates(at,1)*pathEvidence.Binding.SubcarrierSpacingHz;
+                coherent=mean(response(at,path.ReceiveElementIndex0+1).* ...
+                    exp(1i*2*pi*frequency*path.DelayRelativeToOriginalFFT_s));
+                assert(abs(abs(coherent)^2-path.PathPower_W)<=128*eps(max(realmin,path.PathPower_W)), ...
+                    'test:SRSPathPowerArithmetic','Original coherent operands must close each published path power.');
+            end
             assert(string(antenna.ObservationID)==string(item.ID) && ...
                 string(antenna.PlaneID)=="gnb_1_rx:pre_rf" && ...
                 string(antenna.ObservationSHA256)==pre.sampleHash() && ...
@@ -323,6 +429,10 @@ direct=[string(fieldnames(power)); ...
     "RISource";"TPMISource";"TPMICandidateCount";"TPMIMutualInformation"; ...
     "SINR_dB";"SINRSource";"SINRValueStatus";"SINRMeasurementDomain";"ConfiguredSNR_dB"]];
 direct=unique(direct,'stable');
+if ~isfield(out,'SRSPathPowerAvailable')
+    % Historical original captures cannot acquire new path measurements.
+    direct=setdiff(direct,string(fieldnames(sixgr.phy.srs.srsPathPowerEvidence())),'stable');
+end
 assert(all(isfield(out,cellstr(direct))) && ...
     isfield(out,'SRSRSRPPerReceiveAntenna_dBm') && ...
     all(isfield(scope,{'ScenarioAccepted','StatisticallyQualified'})), ...
@@ -550,8 +660,20 @@ state.ControlGating.TRSRequired=false;
 state.ConnectedULTimingByUE={ul.SharedULTimingContext};
 % Earlier power-only codec fixture declares15kHz; scheduling now declares
 % this component's installed30kHz initial UL BWP, not a newly decoded SIB1.
-state.UECommonCellConfigurationByUE{1}.InitialULBWP.SubcarrierSpacing_kHz= ...
-    ul.SharedULTimingContext.ReceivedRARTiming.FirstULSCSkHz;
+if ~logical(sixgr.util.structGet(cfg,'phy.mac.uplinkControl.Enabled',false))
+    state.UECommonCellConfigurationByUE{1}.InitialULBWP.SubcarrierSpacing_kHz= ...
+        ul.SharedULTimingContext.ReceivedRARTiming.FirstULSCSkHz;
+else
+    common=state.UECommonCellConfigurationByUE{1};
+    assert(common.InitialULBWP.SizeRB==cfg.phy.carrier.NSizeGrid&& ...
+        common.InitialULBWP.SubcarrierSpacing_kHz==ul.SharedULTimingContext.ReceivedRARTiming.FirstULSCSkHz&& ...
+        common.PayloadHash==cfg.UECommonCellConfiguration.PayloadHash&& ...
+        common.TreeHash==cfg.UECommonCellConfiguration.TreeHash);
+    % The same declared connected boundary used by this component must also
+    % reach the production periodic sounding admission owner.
+    state.AccessState(1)="succeeded";
+    state.LastSuccessfulPRACHSlotByUE(1)=1;
+end
 state.ULQueueBits(:)=8192;
 state=sixgr.truth.CoupledTruthRuntime.startSlot(state,cfg,'DL',1,1,slot,cfg.run.totalSlots,0);
 row.ObservationDeliverySlot=slot;
@@ -561,10 +683,19 @@ row=sixgr.truth.bindDeliveredReferenceClock(state,row);
 assert(isnan(row.WidebandCQI)&&isnan(row.CQIDerivedMCS), ...
     'test:ExpectedUncalibratedSRSQuality','This absolute-power regression must exercise original unavailable CQI.');
 state=sixgr.truth.CoupledTruthRuntime.applySRSTrial(state,1,row);
+if logical(sixgr.util.structGet(cfg,'phy.mac.uplinkControl.Enabled',false))
+    state.LastSRSSlotByUE(1)=double(row.Slot);
+end
 original=state.LatestULFeedback(1); A=original.AcceptedSRSSpatialDecision;
 assert(~original.Valid && ~isempty(fieldnames(A)) && A.RI==row.RIEstimate && A.PMI==row.TPMIEstimate && ...
     A.ObservationStartSample==row.ObservationStartSample && A.ResultAvailableAtSample==row.ResultAvailableAtSample);
 [state,grants,planning]=sixgr.truth.planFutureULGrants(state,cfg,{cfg},repmat(struct(),0,1),1,cfg.run.totalSlots);
+if logical(sixgr.util.structGet(cfg,'phy.mac.uplinkControl.Enabled',false))
+    assert(isempty(grants)&&state.ProtocolBridge.pendingTransmitBytes(1,'UL').TotalBSRBytes>0, ...
+        'test:ReceivedDemandRequired','Private UE queue cannot authorize a grant before original received SR/BSR.');
+    state.TestMACNoGrantBeforeReceivedDemand=true;
+    return;
+end
 assert(planning.ScheduleAttempted && ~isempty(grants), ...
     'test:SpatialOnlySRSNotScheduled','Original spatial-only SRS must reach normal planning: %s',string(planning.Status));
 for k=1:numel(grants)

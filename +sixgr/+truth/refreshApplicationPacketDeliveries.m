@@ -10,6 +10,7 @@ function state = refreshApplicationPacketDeliveries(state)
     state = sixgr.truth.reconcilePacketHARQAttempts(state);
     packetT = state.PacketDeliveryLedgerTable;
     sduT = state.PacketSDULedgerTable;
+    recoveryT=sixgr.util.structGet(state,'RLCRecoveryTransportLedgerTable',table());
     if isempty(sduT)
         state=sixgr.truth.reconcilePacketBitConservation(state);
         return;
@@ -43,14 +44,66 @@ function state = refreshApplicationPacketDeliveries(state)
             end
             continue;
         end
+        rmask=false(height(recoveryT),1);
+        if ~isempty(recoveryT)
+            rmask=string(recoveryT.PacketId)==string(packetT.PacketId(pidx)) & ...
+                string(recoveryT.ApplicationPacketId)==string(packetT.ApplicationPacketId(pidx)) & ...
+                recoveryT.UEIndex==packetT.UEIndex(pidx) & ...
+                upper(string(recoveryT.Direction))==upper(string(packetT.Direction(pidx)));
+        end
+        recovered=any(rmask);
+        bridge=sixgr.util.structGet(state,"ProtocolBridge",[]);
+        if recovered
+            if ~fullyScheduled,continue;end
+            assert(isa(bridge,"sixgr.protocol.WaveformProtocolBridge"), ...
+                'sixgr:protocol:WaveformProtocolBridgeMissing','Recovery needs the private original decoded payload owner.');
+            [ready,decodedPayload,receipt]=bridge.applicationRecoveryReceipt( ...
+                packetT.UEIndex(pidx),string(packetT.Direction(pidx)),string(packetT.PacketId(pidx)));
+            if ~ready,continue;end
+            decodedHash=receipt.DecodedApplicationPayloadSHA256;
+            allTransport=sixgr.truth.combinePacketTransportLedgers(state);
+            contributors=ismember(string(allTransport.TransportBlockId),receipt.ContributorTransportBlockIDs);
+            assert(nnz(contributors)==numel(receipt.ContributorTransportBlockIDs)&& ...
+                all(allTransport.DeliverySuccess(contributors)), ...
+                'sixgr:protocol:InvalidRLCApplicationRecovery','Private released TBs must join actual delivered transport records.');
+            if ~ismember('RLCApplicationRecoveryEvidenceJSON',packetT.Properties.VariableNames)
+                packetT.RLCApplicationRecoveryEvidenceJSON=strings(height(packetT),1);
+                packetT.RLCApplicationRecoveryEvidenceSHA256=strings(height(packetT),1);
+            end
+            packetT.RLCApplicationRecoveryEvidenceJSON(pidx)=string(jsonencode(receipt));
+            packetT.RLCApplicationRecoveryEvidenceSHA256(pidx)=receipt.SHA256;
+            deliveryTime=receipt.DeliveryTime_s;
+            deliverySlot=max(allTransport.FirstSuccessSlot(contributors));
+            fragmentCount=nnz(contributors);protocolComplete=true;
+        else
         protocolComplete = all(logical(sduT.ProtocolPayloadSameWaveformTruth(smask))) && ...
             all(string(sduT.ProtocolDeliveryStatus(smask)) == "delivered_after_exact_phy_decode");
         if ~(fullyScheduled && allDelivered && protocolComplete)
             continue;
         end
         validateFragments(sduT(smask,:),double(packetT.OfferedBits(pidx)));
+        assert(isa(bridge,"sixgr.protocol.WaveformProtocolBridge"), ...
+            'sixgr:protocol:WaveformProtocolBridgeMissing', ...
+            'Application completion requires the retained original decoded payload owner.');
+        fragments=sduT(smask,:);
+        [~,order]=sort(double(fragments.ProtocolPayloadOffsetBits));
+        [decodedPayload,decodedHash]=bridge.reassembleDecodedApplication( ...
+            string(fragments.TransportBlockId(order)),double(fragments.PayloadBits(order))/8);
         deliveryTime = max(double(sduT.DeliveryTime_s(smask)), [], "omitnan");
         deliverySlot = max(double(sduT.FirstSuccessSlot(smask)), [], "omitnan");
+        fragmentCount=sum(smask);
+        end
+        assert(ismember("OriginalApplicationPayloadSHA256",string(packetT.Properties.VariableNames)) && ...
+            strlength(string(packetT.OriginalApplicationPayloadSHA256(pidx)))==64 && ...
+            decodedHash==string(packetT.OriginalApplicationPayloadSHA256(pidx)), ...
+            'sixgr:protocol:InvalidApplicationPayload', ...
+            'Reassembled original decoded bytes must match the offered application packet.');
+        if ~ismember("DecodedApplicationPayloadSHA256",string(packetT.Properties.VariableNames))
+            packetT.DecodedApplicationPayloadSHA256=repmat("",height(packetT),1);
+            packetT.DecodedApplicationBytes=nan(height(packetT),1);
+        end
+        packetT.DecodedApplicationPayloadSHA256(pidx)=decodedHash;
+        packetT.DecodedApplicationBytes(pidx)=numel(decodedPayload);
         packetT.DeliveredBits(pidx) = double(packetT.OfferedBits(pidx));
         packetT.DeliverySuccess(pidx) = true;
         packetT.ReassemblyCompleteFlag(pidx) = true;
@@ -60,16 +113,23 @@ function state = refreshApplicationPacketDeliveries(state)
         packetT.Latency_ms(pidx) = (double(deliveryTime) - double(packetT.EnqueueTime_s(pidx))) * 1e3;
         packetT.TimingStatus(pidx) = localTimingStatus( ...
             double(packetT.EnqueueTime_s(pidx)), double(deliveryTime));
-        packetT.ProtocolFragmentCount(pidx) = sum(smask);
+        packetT.ProtocolFragmentCount(pidx) = fragmentCount;
         packetT.SameWaveformProtocolComplete(pidx) = logical(protocolComplete);
         packetT.ProtocolReassemblyStatus(pidx) = "sdap_pdcp_rlc_mac_fragments_delivered_after_exact_phy_decode";
         packetT.DeliverySource(pidx) = "same_waveform_protocol_harq_first_success_reassembly";
+        if recovered
+            packetT.ProtocolReassemblyStatus(pidx)="original_RLC_recovery_byte_union_released_by_PDCP";
+            packetT.DeliverySource(pidx)="same_waveform_RLC_recovery_and_original_PDCP_application_release";
+            recoveryT.ReassemblyCompleteFlag(rmask & recoveryT.DeliverySuccess)=true;
+            recoveryT.ApplicationDeliveryFlag(rmask & recoveryT.DeliverySuccess)=true;
+        end
         packetT.Status(pidx) = "delivered";
-        sduT.ReassemblyCompleteFlag(smask) = true;
-        sduT.ApplicationDeliveryFlag(smask) = true;
+        sduT.ReassemblyCompleteFlag(smask & sduT.DeliverySuccess) = true;
+        sduT.ApplicationDeliveryFlag(smask & sduT.DeliverySuccess) = true;
     end
     state.PacketDeliveryLedgerTable = packetT;
     state.PacketSDULedgerTable = sduT;
+    if ~isempty(recoveryT),state.RLCRecoveryTransportLedgerTable=recoveryT;end
     state=sixgr.truth.reconcilePacketBitConservation(state);
 end
 
@@ -81,13 +141,15 @@ expected=[0;cumsum(lengths(1:end-1))];
 ids=string(T.ProtocolFragmentId);
 coverage=isfinite(offered) && offered>0 && mod(offered,8)==0 && ...
     all(isfinite(offsets) & offsets>=0 & mod(offsets,8)==0) && ...
-    all(isfinite(lengths) & lengths>0 & mod(lengths,8)==0) && ...
+    all(isfinite(lengths) & lengths>=0 & mod(lengths,8)==0) && ...
     isequal(offsets,expected) && sum(lengths)==offered && ...
     isequal(double(T.SegmentIndex(order)),(1:height(T)).') && ...
     all(~ismissing(ids) & strlength(ids)>0) && numel(unique(ids))==height(T);
 assert(coverage,'sixgr:protocol:InvalidApplicationFragmentCoverage', ...
     'Decoded fragments must cover the offered application bytes exactly once, without gaps or overlaps.');
-exact=all(T.ProtocolDecodedBitExact) && ...
+exact=ismember('ProtocolDecodedPayloadSHA256',T.Properties.VariableNames) && ...
+    all(T.ProtocolDecodedBitExact) && ...
+    all(string(T.ProtocolDecodedPayloadSHA256)==string(T.ProtocolPayloadSHA256)) && ...
     all(T.ProtocolDecodedBitCount==8*T.ProtocolMACPDUBytes) && ...
     all(T.ProtocolDecodedBitCount>0 & isfinite(T.ProtocolDecodedBitCount)) && ...
     all(strlength(string(T.ProtocolMACSHA256))==64 & ...

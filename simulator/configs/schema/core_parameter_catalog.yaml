@@ -142,6 +142,7 @@
       "preamble_index": {"value_type": "integer", "default": 0, "min": 0},
       "ra_response_window_slots": {"value_type": "integer", "default": 8, "min": 1},
       "ra_contention_resolution_timer_slots": {"value_type": "integer", "default": 64, "min": 1},
+      "ra_contention_resolution_timer_subframes": {"value_type": "integer", "allowed_values": [8,16,24,32,40,48,56,64]},
       "preamble_trans_max": {"value_type": "integer", "default": 4, "min": 1},
       "power_ramping_step_db": {"value_type": "number", "default": 2, "min": 0},
       "preamble_received_target_power_dbm": {"value_type": "number", "default": -100},
@@ -386,6 +387,7 @@
         "nPorts": {"value_type": "integer", "default": 8, "min": 1}
       },
       "csi": {
+        "selectionBackend": {"value_type": "string", "default": "native_maxse_r2026a", "allowed_values": ["native_maxse_r2026a", "portable_typeI_mmse"]},
         "enable": {"value_type": "boolean", "default": true},
         "feedbackMode": {"value_type": "string", "default": "PMI+CQI+RI", "allowed_values": ["PMI+CQI", "RI+PMI+CQI", "PMI+CQI+RI", "PMI+CQI+RI+CRI", "CRI", "none"]},
         "reportCQI": {"value_type": "boolean", "default": true},
@@ -406,6 +408,7 @@
         "reportPMIEnhancedType2": {"value_type": "boolean", "default": false}
       },
       "linkAdaptation": {
+        "initialSpatialConfirmationReports": {"value_type": "integer", "default": 1, "min": 1},
         "mcsTransition": {
           "enabled": {"value_type": "boolean", "default": false},
           "maxUpStep": {"value_type": "integer", "default": 1, "min": 1, "max": 31},
